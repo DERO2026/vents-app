@@ -1,0 +1,928 @@
+import React, { useState, useRef } from 'react';
+import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle } from 'lucide-react';
+import { OrganizerEvent } from './types';
+import { insforge } from '../../lib/insforge';
+import confetti from 'canvas-confetti';
+
+interface CreateEventScreenProps {
+  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  onBack: () => void;
+  onCreated: (event: OrganizerEvent) => void;
+}
+
+type Step = 1 | 2 | 3 | 4;
+
+const CATEGORIES = [
+  'Music', 'Technology', 'Food & Drinks', 'Comedy Shows',
+  'Arts & Culture', 'Sports & Wellness', 'Conferences', 'Family Events',
+];
+
+const INPUT_STYLE: React.CSSProperties = {
+  width: '100%',
+  background: '#131629',
+  border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '12px',
+  padding: '12px 14px',
+  color: '#F0F0FF',
+  fontSize: '14px',
+  fontFamily: 'Inter, sans-serif',
+  outline: 'none',
+  boxSizing: 'border-box',
+};
+
+function Label({ children }: { children: React.ReactNode }) {
+  return (
+    <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+      {children}
+    </p>
+  );
+}
+
+export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEventScreenProps) {
+  const [step, setStep] = useState<Step>(1);
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  
+  // Venue / Date states
+  const [date, setDate] = useState('');
+  const [startTime, setStartTime] = useState('');
+  const [endTime, setEndTime] = useState('');
+  const [venue, setVenue] = useState('');
+  const [address, setAddress] = useState('');
+  const [city, setCity] = useState('');
+  const [stateName, setStateName] = useState('');
+  const [capacity, setCapacity] = useState('');
+  
+  // Tickets states
+  const [ticketName, setTicketName] = useState('Regular');
+  const [ticketPrice, setTicketPrice] = useState('');
+  const [ticketQty, setTicketQty] = useState('');
+  const [ticketDesc, setTicketDesc] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const [showPhone, setShowPhone] = useState(false);
+  
+  // Image states
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageKey, setImageKey] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
+
+  // General states
+  const [submitting, setSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Role permissions guard
+  if (!currentUser || currentUser.role !== 'organizer') {
+    return (
+      <div
+        style={{
+          background: '#060A12',
+          width: '100%',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+          textAlign: 'center',
+        }}
+      >
+        <div style={{ fontSize: '64px', marginBottom: '20px' }}>🔒</div>
+        <h2
+          style={{
+            color: '#F0F0FF',
+            fontSize: '22px',
+            fontWeight: 700,
+            fontFamily: 'Space Grotesk, sans-serif',
+            marginBottom: '10px',
+          }}
+        >
+          Access Denied
+        </h2>
+        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
+          Only registered event organizers are authorized to create events on VENTS.
+        </p>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            border: 'none',
+            borderRadius: '14px',
+            padding: '12px 28px',
+            color: '#fff',
+            fontSize: '15px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  const STEPS = [
+    { num: 1, label: 'Details' },
+    { num: 2, label: 'Venue' },
+    { num: 3, label: 'Tickets' },
+    { num: 4, label: 'Review' },
+  ];
+
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploadingImage) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (e.target) {
+      e.target.value = '';
+    }
+
+    if (file.size > 10 * 1024 * 1024) {
+      setErrorMessage('Image file must be under 10MB');
+      return;
+    }
+
+    setUploadingImage(true);
+    setErrorMessage(null);
+
+    try {
+      const { data, error } = await insforge.storage
+        .from('events')
+        .uploadAuto(file);
+
+      if (error) throw error;
+
+      if (data?.url) {
+        setImageUrl(data.url);
+        setImageKey(data.key);
+      }
+    } catch (err: any) {
+      console.error('Image upload failed:', err);
+      setErrorMessage(err.message || 'Image upload failed. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const handleNext = async () => {
+    setErrorMessage(null);
+
+    if (step === 1) {
+      if (!imageUrl) {
+        setErrorMessage('Please upload a cover image for your event.');
+        return;
+      }
+      if (!title.trim()) {
+        setErrorMessage('Please enter an event title.');
+        return;
+      }
+      if (!category) {
+        setErrorMessage('Please select a category.');
+        return;
+      }
+      setStep(2);
+    } else if (step === 2) {
+      if (!date) {
+        setErrorMessage('Please select an event date.');
+        return;
+      }
+      if (!startTime) {
+        setErrorMessage('Please select a start time.');
+        return;
+      }
+
+      // Check if date is in the past
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (date < todayStr) {
+        setErrorMessage('Event date cannot be in the past.');
+        return;
+      }
+      if (date === todayStr) {
+        const currentHours = new Date().getHours();
+        const currentMins = new Date().getMinutes();
+        const [startHours, startMins] = startTime.split(':').map(Number);
+        if (startHours < currentHours || (startHours === currentHours && startMins <= currentMins)) {
+          setErrorMessage('Event start time cannot be in the past.');
+          return;
+        }
+      }
+
+      if (!venue.trim()) {
+        setErrorMessage('Please enter a venue name.');
+        return;
+      }
+      if (!city.trim()) {
+        setErrorMessage('Please enter a city.');
+        return;
+      }
+      if (!capacity || Number(capacity) <= 0) {
+        setErrorMessage('Please enter a valid total capacity.');
+        return;
+      }
+      setStep(3);
+    } else if (step === 3) {
+      if (!ticketName.trim()) {
+        setErrorMessage('Please enter a ticket name.');
+        return;
+      }
+      if (ticketPrice === '' || Number(ticketPrice) < 0) {
+        setErrorMessage('Please enter a valid ticket price (0 for free events).');
+        return;
+      }
+      if (!ticketQty || Number(ticketQty) <= 0) {
+        setErrorMessage('Please enter a valid ticket quantity.');
+        return;
+      }
+      setStep(4);
+    } else if (step === 4) {
+      setSubmitting(true);
+      setErrorMessage(null);
+      try {
+        const locationString = `${venue.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
+        const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
+
+        // Insert event record
+        const { data, error } = await insforge.database
+          .from('events')
+          .insert([{
+            title: title.trim(),
+            description: description.trim(),
+            image_url: imageUrl,
+            location: locationString,
+            event_date: eventTimestamp,
+            price: Number(ticketPrice),
+            category: category,
+            organizer_id: currentUser.id
+          }]);
+
+        if (error) throw error;
+
+        // Celebrate success!
+        confetti({
+          particleCount: 150,
+          spread: 75,
+          origin: { y: 0.6 }
+        });
+
+        setTimeout(() => {
+          onCreated({
+            id: data?.[0]?.id || `event-${Date.now()}`,
+            title: title.trim(),
+            category,
+            description: description.trim(),
+            date,
+            startTime,
+            venue: venue.trim(),
+            city: city.trim(),
+            capacity,
+            ticketName: ticketName.trim(),
+            ticketPrice,
+            ticketQty,
+            contactPhone: showPhone ? contactPhone : '',
+            showPhone,
+            status: 'live',
+            createdAt: Date.now(),
+          });
+        }, 1500);
+
+      } catch (err: any) {
+        console.error('Failed to publish event:', err);
+        setErrorMessage(err.message || 'Failed to publish event. Please try again.');
+        setSubmitting(false);
+      }
+    }
+  };
+
+  return (
+    <div
+      style={{
+        background: '#060A12',
+        width: '100%',
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
+      <style>{`
+        input::placeholder, textarea::placeholder { color: #8B8FA8; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
+
+      {/* Header */}
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+          padding: '20px 16px 14px',
+        }}
+      >
+        <button
+          onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
+          disabled={submitting}
+          style={{
+            background: '#131629',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: submitting ? 'not-allowed' : 'pointer',
+          }}
+        >
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Create Event</h1>
+      </div>
+
+      {/* Step indicator */}
+      <div style={{ padding: '0 16px 16px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {STEPS.map((s, i) => {
+            const isDone = step > s.num;
+            const isActive = step === s.num;
+            return (
+              <React.Fragment key={s.num}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '4px',
+                    flex: 1,
+                  }}
+                >
+                  <div
+                    style={{
+                      width: '28px',
+                      height: '28px',
+                      borderRadius: '50%',
+                      background: isDone
+                        ? '#10B981'
+                        : isActive
+                        ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                        : '#1A1D2E',
+                      border: isActive ? 'none' : '1px solid rgba(255,255,255,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {isDone ? (
+                      <Check size={13} color="#fff" />
+                    ) : (
+                      <span style={{ color: isActive ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 700 }}>
+                        {s.num}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ color: isActive ? '#A78BFA' : '#8B8FA8', fontSize: '10px', fontWeight: isActive ? 600 : 400 }}>
+                    {s.label}
+                  </span>
+                </div>
+                {i < STEPS.length - 1 && (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: '1px',
+                      background: step > s.num ? '#10B981' : 'rgba(255,255,255,0.08)',
+                      marginBottom: '16px',
+                      transition: 'background 0.3s',
+                    }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Form content */}
+      <div
+        style={{
+          flex: 1,
+          overflowY: 'auto',
+          padding: '4px 16px 120px',
+          scrollbarWidth: 'none',
+        }}
+      >
+        {errorMessage && (
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'rgba(239, 68, 68, 0.1)',
+              border: '1px solid rgba(239, 68, 68, 0.25)',
+              borderRadius: '12px',
+              padding: '12px 14px',
+              marginBottom: '16px',
+            }}
+          >
+            <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
+            <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            {/* Image upload */}
+            <div
+              onClick={() => { if (!uploadingImage && !submitting) fileInputRef.current?.click(); }}
+              style={{
+                height: '140px',
+                background: '#131629',
+                border: imageUrl ? '1px solid rgba(167,139,250,0.4)' : '2px dashed rgba(167,139,250,0.3)',
+                borderRadius: '16px',
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                cursor: (uploadingImage || submitting) ? 'not-allowed' : 'pointer',
+                position: 'relative',
+                overflow: 'hidden',
+              }}
+            >
+              {imageUrl ? (
+                <>
+                  <img
+                    src={imageUrl}
+                    alt="Cover preview"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                  />
+                  <div
+                    style={{
+                      position: 'absolute',
+                      bottom: '8px',
+                      right: '8px',
+                      background: 'rgba(0,0,0,0.6)',
+                      borderRadius: '8px',
+                      padding: '4px 8px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                  >
+                    <Camera size={12} color="#fff" />
+                    <span style={{ color: '#fff', fontSize: '11px', fontWeight: 600 }}>Change</span>
+                  </div>
+                </>
+              ) : uploadingImage ? (
+                <div style={{ textAlign: 'center' }}>
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      borderRadius: '50%',
+                      border: '2px solid rgba(255,255,255,0.2)',
+                      borderTopColor: '#A78BFA',
+                      animation: 'spin 0.8s linear infinite',
+                      margin: '0 auto 8px',
+                    }}
+                  />
+                  <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Uploading image...</p>
+                </div>
+              ) : (
+                <>
+                  <div
+                    style={{
+                      width: '44px',
+                      height: '44px',
+                      borderRadius: '12px',
+                      background: 'rgba(167,139,250,0.1)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Camera size={20} color="#A78BFA" />
+                  </div>
+                  <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Upload Cover Image *</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>JPG, PNG or GIF · Max 10MB</p>
+                </>
+              )}
+            </div>
+
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              style={{ display: 'none' }}
+            />
+
+            <div>
+              <Label>Event Title *</Label>
+              <input
+                placeholder="e.g. Afrobeats Night 2026"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+
+            <div>
+              <Label>Category *</Label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    onClick={() => setCategory(cat)}
+                    style={{
+                      background: category === cat ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
+                      border: category === cat ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '20px',
+                      padding: '7px 14px',
+                      color: category === cat ? '#fff' : '#8B8FA8',
+                      fontSize: '12px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <Label>Description</Label>
+              <textarea
+                placeholder="Tell attendees what to expect..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                style={{ ...INPUT_STYLE, resize: 'none' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <Label>Event Date *</Label>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <Label>Start Time *</Label>
+                <input
+                  type="time"
+                  value={startTime}
+                  onChange={(e) => setStartTime(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Label>End Time</Label>
+                <input
+                  type="time"
+                  value={endTime}
+                  onChange={(e) => setEndTime(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Venue Name *</Label>
+              <input
+                placeholder="e.g. Eko Hotel & Suites"
+                value={venue}
+                onChange={(e) => setVenue(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div>
+              <Label>Full Address</Label>
+              <input
+                placeholder="Street address, area"
+                value={address}
+                onChange={(e) => setAddress(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1 }}>
+                <Label>City *</Label>
+                <input
+                  placeholder="Lagos"
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <Label>State</Label>
+                <input
+                  placeholder="Lagos State"
+                  value={stateName}
+                  onChange={(e) => setStateName(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Total Capacity *</Label>
+              <input
+                type="number"
+                placeholder="500"
+                value={capacity}
+                onChange={(e) => setCapacity(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
+
+            {/* Ticket type card */}
+            <div
+              style={{
+                background: '#131629',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '16px',
+                padding: '14px',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Ticket Type 1</p>
+                <span
+                  style={{
+                    background: 'rgba(16,185,129,0.1)',
+                    color: '#10B981',
+                    fontSize: '10px',
+                    padding: '3px 8px',
+                    borderRadius: '5px',
+                    fontWeight: 600,
+                  }}
+                >
+                  Active
+                </span>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div>
+                  <Label>Ticket Name</Label>
+                  <input
+                    value={ticketName}
+                    onChange={(e) => setTicketName(e.target.value)}
+                    style={INPUT_STYLE}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <Label>Price (₦)</Label>
+                    <input
+                      type="number"
+                      placeholder="5000"
+                      value={ticketPrice}
+                      onChange={(e) => setTicketPrice(e.target.value)}
+                      style={INPUT_STYLE}
+                    />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <Label>Quantity</Label>
+                    <input
+                      type="number"
+                      placeholder="200"
+                      value={ticketQty}
+                      onChange={(e) => setTicketQty(e.target.value)}
+                      style={INPUT_STYLE}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <Label>Description</Label>
+                  <input
+                    placeholder="e.g. General admission"
+                    value={ticketDesc}
+                    onChange={(e) => setTicketDesc(e.target.value)}
+                    style={INPUT_STYLE}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Contact phone toggle */}
+            <div
+              style={{
+                background: '#131629',
+                border: showPhone ? '1px solid rgba(168,85,247,0.3)' : '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '14px',
+                padding: '14px',
+              }}
+            >
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                onClick={() => { setShowPhone((v) => !v); if (showPhone) setContactPhone(''); }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div
+                    style={{
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '10px',
+                      background: showPhone ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.05)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Phone size={16} color={showPhone ? '#A855F7' : '#8B8FA8'} />
+                  </div>
+                  <div>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>Show Contact Number</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Ticket buyers can call or message you</p>
+                  </div>
+                </div>
+                <div
+                  style={{
+                    width: '44px',
+                    height: '26px',
+                    borderRadius: '13px',
+                    background: showPhone ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2A2D3E',
+                    position: 'relative',
+                    transition: 'background 0.2s',
+                    flexShrink: 0,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      width: '20px',
+                      height: '20px',
+                      borderRadius: '50%',
+                      background: '#fff',
+                      top: '3px',
+                      left: showPhone ? '21px' : '3px',
+                      transition: 'left 0.2s',
+                    }}
+                  />
+                </div>
+              </div>
+
+              {showPhone && (
+                <div style={{ marginTop: '12px' }}>
+                  <Label>Phone Number</Label>
+                  <div style={{ position: 'relative' }}>
+                    <span
+                      style={{
+                        position: 'absolute',
+                        left: '12px',
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        color: '#8B8FA8',
+                        fontSize: '14px',
+                        userSelect: 'none',
+                      }}
+                    >
+                      +234
+                    </span>
+                    <input
+                      type="tel"
+                      placeholder="8012345678"
+                      value={contactPhone}
+                      onChange={(e) => setContactPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
+                      style={{ ...INPUT_STYLE, paddingLeft: '52px' }}
+                    />
+                  </div>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
+                    Only visible to attendees who have purchased a ticket for this event.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div
+              style={{
+                background: 'rgba(16,185,129,0.06)',
+                border: '1px solid rgba(16,185,129,0.2)',
+                borderRadius: '16px',
+                padding: '16px',
+                display: 'flex',
+                gap: '12px',
+                alignItems: 'center',
+              }}
+            >
+              <div
+                style={{
+                  width: '40px',
+                  height: '40px',
+                  borderRadius: '50%',
+                  background: 'rgba(16,185,129,0.15)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Check size={20} color="#10B981" />
+              </div>
+              <div>
+                <p style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Ready to publish!</p>
+                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
+                  Review your event details before publishing.
+                </p>
+              </div>
+            </div>
+
+            {[
+              { label: 'Title', value: title || '(not set)' },
+              { label: 'Category', value: category || '(not set)' },
+              { label: 'Date', value: date || '(not set)' },
+              { label: 'Time', value: startTime || '(not set)' },
+              { label: 'Venue', value: venue || '(not set)' },
+              { label: 'City', value: city || '(not set)' },
+              { label: 'Capacity', value: capacity ? `${capacity} attendees` : '(not set)' },
+              { label: 'Ticket', value: ticketPrice ? `${ticketName} • ₦${Number(ticketPrice).toLocaleString()}` : '(not set)' },
+              { label: 'Contact Number', value: showPhone && contactPhone ? `+234 ${contactPhone}` : 'Not shown' },
+            ].map(({ label, value }) => (
+              <div
+                key={label}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'flex-start',
+                  padding: '10px 14px',
+                  background: '#131629',
+                  borderRadius: '12px',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                }}
+              >
+                <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{label}</span>
+                <span
+                  style={{
+                    color: value.includes('not set') ? '#8B8FA8' : '#F0F0FF',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    textAlign: 'right',
+                    maxWidth: '180px',
+                  }}
+                >
+                  {value}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Bottom CTA */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: 'rgba(6,10,18,0.95)',
+          backdropFilter: 'blur(20px)',
+          borderTop: '1px solid rgba(255,255,255,0.08)',
+          padding: '14px 16px 28px',
+        }}
+      >
+        <button
+          onClick={handleNext}
+          disabled={submitting || uploadingImage}
+          style={{
+            width: '100%',
+            background: (submitting || uploadingImage)
+              ? 'rgba(123,47,190,0.4)'
+              : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            border: 'none',
+            borderRadius: '16px',
+            padding: '15px',
+            color: '#fff',
+            fontSize: '16px',
+            fontWeight: 700,
+            fontFamily: 'Space Grotesk, sans-serif',
+            cursor: (submitting || uploadingImage) ? 'not-allowed' : 'pointer',
+            boxShadow: (submitting || uploadingImage) ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
+          }}
+        >
+          {submitting
+            ? 'Publishing...'
+            : step === 4
+            ? '🚀 Publish Event'
+            : `Next: ${STEPS[step].label}`}
+        </button>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,732 @@
+import { useState, useEffect, memo } from 'react';
+import { Search, Bell, MapPin, Calendar, X, Filter } from 'lucide-react';
+import { Event } from './types';
+import { insforge } from '../../lib/insforge';
+import { VentsLogo } from './VentsLogo';
+import { formatPrice } from './data';
+
+interface HomeScreenProps {
+  onEventPress: (event: Event) => void;
+  savedEvents: string[];
+  onToggleSave: (eventId: string) => void;
+  onNotificationsPress?: () => void;
+  onProfilePress?: () => void;
+  selectedState?: string;
+  onStateChange?: (stateName: string) => void;
+  onLiveMapPress?: () => void;
+  dbEvents: Event[];
+  loading: boolean;
+  fetchEvents: () => void;
+}
+
+const CATEGORIES = [
+  { id: 'all', label: 'All', icon: '✨' },
+  { id: 'Music', label: 'Music', icon: '🎵' },
+  { id: 'Technology', label: 'Tech', icon: '💻' },
+  { id: 'Food & Drinks', label: 'Food', icon: '🍔' },
+  { id: 'Comedy Shows', label: 'Comedy', icon: '🎤' },
+  { id: 'Arts & Culture', label: 'Arts', icon: '🎨' },
+  { id: 'Sports & Wellness', label: 'Sports', icon: '⚽' },
+  { id: 'Conferences', label: '💼', icon: '💼' },
+  { id: 'Family Events', label: 'Family', icon: '👨‍👩‍👧‍👦' },
+];
+
+export function mapDbEventToFrontend(dbEvent: any): Event {
+  const dt = new Date(dbEvent.event_date);
+  const dateStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  
+  const parts = (dbEvent.location || '').split(',');
+  const venue = (parts[0] || '').trim();
+  const city = (parts[1] || 'Lagos').trim();
+  
+  const categoryIconMap: Record<string, string> = {
+    'Music': '🎵',
+    'Technology': '💻',
+    'Food & Drinks': '🍔',
+    'Comedy Shows': '🎤',
+    'Arts & Culture': '🎨',
+    'Sports & Wellness': '⚽',
+    'Conferences': '💼',
+    'Family Events': '👨‍👩‍👧‍👦'
+  };
+
+  return {
+    id: dbEvent.id,
+    title: dbEvent.title,
+    category: dbEvent.category || 'Music',
+    categoryIcon: categoryIconMap[dbEvent.category] || '🎵',
+    date: dateStr,
+    time: timeStr,
+    endTime: '',
+    venue: venue,
+    area: venue,
+    city: city,
+    state: city + ' State',
+    price: Number(dbEvent.price || 0),
+    image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
+    description: dbEvent.description || '',
+    organizer: 'Verified Organizer',
+    organizerVerified: true,
+    isFeatured: false,
+    isTrending: false,
+    attendees: 150,
+    capacity: 1000,
+    rating: 4.9,
+    reviewCount: 36,
+    ticketTypes: [
+      {
+        id: 't1',
+        name: 'Regular',
+        price: Number(dbEvent.price || 0),
+        description: 'General Admission',
+        available: 500
+      }
+    ],
+    organizer_id: dbEvent.organizer_id,
+    created_at: dbEvent.created_at,
+    event_date: dbEvent.event_date
+  };
+}
+
+const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave }: {
+  event: Event;
+  onPress: (e: Event) => void;
+  isSaved: boolean;
+  onToggleSave: (id: string) => void;
+}) {
+  return (
+    <div
+      onClick={() => onPress(event)}
+      className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
+      style={{
+        width: '100%',
+        background: '#131629',
+        borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.05)',
+      }}
+    >
+      <div style={{ height: '110px', position: 'relative' }}>
+        <img
+          src={event.image}
+          alt={event.title}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSave(event.id);
+          }}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      </div>
+
+      <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+          <span
+            style={{
+              fontSize: '9px',
+              color: '#A78BFA',
+              fontWeight: 700,
+              background: 'rgba(167,139,250,0.12)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              width: 'fit-content',
+            }}
+          >
+            {event.category.toUpperCase()}
+          </span>
+          {event.isPromoted && (
+            <span
+              style={{
+                fontSize: '8px',
+                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                fontWeight: 800,
+                background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
+                border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                padding: '2px 5px',
+                borderRadius: '4px',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {event.promoPlan === 'trending' ? '🔥 TRENDING' : event.promoPlan === 'featured' ? '⭐ FEATURED' : '⚡ SPOTLIGHT'}
+            </span>
+          )}
+        </div>
+        <h4
+          style={{
+            color: '#F0F0FF',
+            fontSize: '12px',
+            fontWeight: 700,
+            lineHeight: 1.35,
+            marginBottom: '4px',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            height: '32px',
+          }}
+        >
+          {event.title}
+        </h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+          <Calendar size={10} color="#8B8FA8" />
+          <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
+          <MapPin size={10} color="#8B8FA8" />
+          <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+            {event.city}
+          </span>
+        </div>
+        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
+            {formatPrice(event.price)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function CardSkeleton() {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: '210px',
+        background: '#131629',
+        borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.05)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        opacity: 0.6,
+      }}
+    >
+      <div style={{ height: '110px', background: '#1A1D36' }} />
+      <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
+        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
+      </div>
+    </div>
+  );
+}
+
+const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
+  event: Event;
+  onPress: (e: Event) => void;
+  isSaved: boolean;
+  onToggleSave: (id: string) => void;
+  badgeText?: string;
+  badgeColor?: string;
+}) {
+  return (
+    <div
+      onClick={() => onPress(event)}
+      className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
+      style={{
+        width: '180px',
+        background: '#131629',
+        borderRadius: '18px',
+        border: '1px solid rgba(255,255,255,0.06)',
+        flexShrink: 0,
+        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+      }}
+    >
+      <div style={{ height: '110px', position: 'relative' }}>
+        <img
+          src={event.image}
+          alt={event.title}
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+        {badgeText && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '8px',
+              left: '8px',
+              background: badgeColor || 'rgba(168,85,247,0.9)',
+              backdropFilter: 'blur(4px)',
+              padding: '3px 8px',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em' }}>
+              {badgeText}
+            </span>
+          </div>
+        )}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSave(event.id);
+          }}
+          className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
+          style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      </div>
+
+      <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1, gap: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span
+            style={{
+              fontSize: '9px',
+              color: '#A78BFA',
+              fontWeight: 700,
+              background: 'rgba(167,139,250,0.12)',
+              padding: '2px 6px',
+              borderRadius: '4px',
+              width: 'fit-content',
+            }}
+          >
+            {event.category.toUpperCase()}
+          </span>
+          {event.isPromoted && (
+            <span
+              style={{
+                fontSize: '8px',
+                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                fontWeight: 800,
+                background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
+                border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
+                padding: '2px 5px',
+                borderRadius: '4px',
+                letterSpacing: '0.05em',
+              }}
+            >
+              {event.promoPlan === 'trending' ? '🔥 TRENDING' : event.promoPlan === 'featured' ? '⭐ FEATURED' : '⚡ SPOTLIGHT'}
+            </span>
+          )}
+        </div>
+        <h4
+          style={{
+            color: '#F0F0FF',
+            fontSize: '13px',
+            fontWeight: 700,
+            lineHeight: 1.3,
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical',
+            overflow: 'hidden',
+            height: '34px',
+            marginTop: '2px',
+          }}
+        >
+          {event.title}
+        </h4>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+          <Calendar size={10} color="#8B8FA8" />
+          <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <MapPin size={10} color="#8B8FA8" />
+          <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+            {event.city}
+          </span>
+        </div>
+        <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: '13px', color: '#FFB830', fontWeight: 800 }}>
+            {formatPrice(event.price)}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function HorizontalCardSkeleton() {
+  return (
+    <div
+      style={{
+        width: '180px',
+        height: '220px',
+        background: '#131629',
+        borderRadius: '18px',
+        border: '1px solid rgba(255,255,255,0.05)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        opacity: 0.6,
+        flexShrink: 0,
+      }}
+    >
+      <div style={{ height: '110px', background: '#1A1D36' }} />
+      <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
+        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
+        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
+      </div>
+    </div>
+  );
+}
+
+export function HomeScreen({
+  onEventPress,
+  savedEvents,
+  onToggleSave,
+  onNotificationsPress,
+  onProfilePress,
+  onLiveMapPress,
+  dbEvents,
+  loading,
+  fetchEvents,
+}: HomeScreenProps) {
+  // Search & Filter state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [inputValue, setInputValue] = useState('');
+  const [activeCategory, setActiveCategory] = useState('all');
+  const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
+  const [upcomingOnly, setUpcomingOnly] = useState(true);
+
+  // Debounce search query
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setSearchQuery(inputValue);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [inputValue]);
+
+
+  // Filter events locally based on requirements
+  const filteredEvents = dbEvents.filter((event) => {
+    // Search matches title, category, or location
+    const matchQuery =
+      !searchQuery.trim() ||
+      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      event.venue.toLowerCase().includes(searchQuery.toLowerCase());
+
+    // Category filter matches category name
+    const matchCategory =
+      activeCategory === 'all' ||
+      event.category.toLowerCase() === activeCategory.toLowerCase();
+
+    // Price filter (free vs paid)
+    const matchPrice =
+      priceFilter === 'all' ||
+      (priceFilter === 'free' && event.price === 0) ||
+      (priceFilter === 'paid' && event.price > 0);
+
+    // Upcoming events only validation (event_date >= now)
+    const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
+    const matchUpcoming = !upcomingOnly || dt >= new Date();
+
+    return matchQuery && matchCategory && matchPrice && matchUpcoming;
+  });
+
+  // Trending events (sort by bookingsCount DESC)
+  const trendingEvents = [...dbEvents]
+    .sort((a, b) => (b.bookingsCount || 0) - (a.bookingsCount || 0))
+    .slice(0, 5);
+
+  // Recently created events (sort by created_at DESC)
+  const recentlyCreatedEvents = [...dbEvents]
+    .sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA;
+    })
+    .slice(0, 5);
+
+  const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
+
+  return (
+    <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+        <div>
+          <VentsLogo />
+          <p style={{ marginTop: '3px', fontSize: '13px', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.01em' }}>
+            Find it.{' '}
+            <em style={{ color: '#A855F7', fontStyle: 'normal', fontWeight: 600 }}>Feel it.</em>
+            {' '}Go.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {onLiveMapPress && (
+            <button
+              onClick={() => onLiveMapPress?.()}
+              className="w-9 h-9 rounded-full flex items-center justify-center"
+              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}
+              title="Live Map"
+            >
+              <MapPin size={16} color="#C4C9E0" />
+            </button>
+          )}
+          <button
+            onClick={onNotificationsPress}
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}
+          >
+            <Bell size={16} color="#C4C9E0" />
+          </button>
+          <button
+            onClick={onProfilePress}
+            className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center"
+            style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', cursor: 'pointer' }}
+          >
+            <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>A</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto pb-20" style={{ scrollbarWidth: 'none' }}>
+        {/* Search Bar */}
+        <div className="px-4 mb-4">
+          <div
+            className="flex items-center gap-3 px-4"
+            style={{
+              height: '48px',
+              background: '#131629',
+              borderRadius: '14px',
+              border: '1px solid rgba(255,255,255,0.07)',
+            }}
+          >
+            <Search size={18} color="#8B8FA8" />
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder="Search title, category, location..."
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: '#F0F0FF',
+                fontSize: '14px',
+                fontFamily: 'Inter, sans-serif',
+              }}
+            />
+            {inputValue && (
+              <button
+                onClick={() => { setInputValue(''); setSearchQuery(''); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+              >
+                <X size={16} color="#8B8FA8" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Categories scroll */}
+        <div className="mb-4">
+          <div className="flex gap-2 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+            {CATEGORIES.map((cat) => {
+              const isActive = activeCategory === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id)}
+                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5"
+                  style={{
+                    background: isActive ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
+                    borderRadius: '20px',
+                    border: isActive ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                    cursor: 'pointer',
+                    boxShadow: isActive ? '0 4px 12px rgba(123,47,190,0.3)' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: '14px' }}>{cat.icon}</span>
+                  <span style={{ fontSize: '12px', color: isActive ? '#fff' : '#8B8FA8', fontWeight: 500 }}>
+                    {cat.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Filters and Sorting bar */}
+        <div className="flex items-center gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginRight: '4px', flexShrink: 0 }}>
+            <Filter size={12} color="#8B8FA8" />
+            FILTERS:
+          </div>
+
+          <button
+            onClick={() => setPriceFilter(priceFilter === 'all' ? 'free' : priceFilter === 'free' ? 'paid' : 'all')}
+            className="flex-shrink-0 px-3 py-1"
+            style={{
+              background: priceFilter !== 'all' ? 'rgba(167,139,250,0.12)' : '#131629',
+              border: `1px solid ${priceFilter !== 'all' ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
+              borderRadius: '20px',
+              fontSize: '11px',
+              color: priceFilter !== 'all' ? '#A78BFA' : '#8B8FA8',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {priceFilter === 'all' ? 'Price: All' : priceFilter === 'free' ? 'Free Only' : 'Paid Only'}
+          </button>
+
+          <button
+            onClick={() => setUpcomingOnly(!upcomingOnly)}
+            className="flex-shrink-0 px-3 py-1"
+            style={{
+              background: upcomingOnly ? 'rgba(16,185,129,0.12)' : '#131629',
+              border: `1px solid ${upcomingOnly ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.08)'}`,
+              borderRadius: '20px',
+              fontSize: '11px',
+              color: upcomingOnly ? '#10B981' : '#8B8FA8',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            {upcomingOnly ? '📅 Upcoming' : '📅 All Time'}
+          </button>
+        </div>
+
+        {/* Results / Feed sections */}
+        {loading ? (
+          <>
+            {isDefaultState && (
+              <>
+                <div className="mb-6">
+                  <div className="px-4 mb-3">
+                    <div style={{ width: '120px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                  </div>
+                  <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <HorizontalCardSkeleton key={i} />
+                    ))}
+                  </div>
+                </div>
+
+                <div className="mb-6">
+                  <div className="px-4 mb-3">
+                    <div style={{ width: '140px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                  </div>
+                  <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+                    {Array.from({ length: 3 }).map((_, i) => (
+                      <HorizontalCardSkeleton key={i} />
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="px-4">
+              <div className="mb-3">
+                <div style={{ width: '100px', height: '16px', background: '#1A1D36', borderRadius: '4px' }} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <CardSkeleton key={i} />
+                ))}
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            {isDefaultState && (
+              <>
+                {/* Trending Events */}
+                {trendingEvents.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between px-4 mb-3">
+                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+                        🔥 Trending Events
+                      </h3>
+                    </div>
+                    <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
+                      {trendingEvents.map((event) => (
+                        <HorizontalEventCard
+                          key={`trending-${event.id}`}
+                          event={event}
+                          onPress={onEventPress}
+                          isSaved={savedEvents.includes(event.id)}
+                          onToggleSave={onToggleSave}
+                          badgeText={`${event.bookingsCount || 0} GOING`}
+                          badgeColor="rgba(239, 68, 68, 0.9)"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Recently Created Events */}
+                {recentlyCreatedEvents.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between px-4 mb-3">
+                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+                        ✨ Recently Created
+                      </h3>
+                    </div>
+                    <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
+                      {recentlyCreatedEvents.map((event) => (
+                        <HorizontalEventCard
+                          key={`recent-${event.id}`}
+                          event={event}
+                          onPress={onEventPress}
+                          isSaved={savedEvents.includes(event.id)}
+                          onToggleSave={onToggleSave}
+                          badgeText="NEW"
+                          badgeColor="rgba(16, 185, 129, 0.9)"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+
+            {/* Main grid of events */}
+            <div className="px-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+                  {isDefaultState ? '🎪 Explore All Events' : '🔍 Search Results'}
+                </h3>
+                <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                  {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+                </span>
+              </div>
+
+              {filteredEvents.length === 0 ? (
+                <div className="flex flex-col items-center py-12 px-4 text-center">
+                  <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
+                  <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
+                    No events found
+                  </p>
+                  <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
+                    Try adjusting your search queries or filters.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                  {filteredEvents.map((event) => (
+                    <FeedCard
+                      key={event.id}
+                      event={event}
+                      onPress={onEventPress}
+                      isSaved={savedEvents.includes(event.id)}
+                      onToggleSave={onToggleSave}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
