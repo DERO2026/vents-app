@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
-import { insforge } from '../lib/insforge';
+import { insforge, clearRefreshToken } from '../lib/insforge';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -249,21 +249,59 @@ export default function App() {
             .catch((err) => console.error('Deep link event fetch failed:', err));
         }
 
-        // 2. Fetch user session (Google OAuth exchange is auto-run by SDK on init, so getCurrentUser will automatically await it)
-        const { data, error } = await insforge.auth.getCurrentUser();
-        
-        if (error) {
-          console.error("GetCurrentUser failed:", error);
-          // Only show error banner if it's a real failure, not just a missing session
-          if (error.statusCode !== 401) {
-            setAuthError(error.message || "Session restoration failed.");
-          }
-          setCurrentUser(null);
-          setAuthLoading(false);
-          return;
+        // 2. Fetch user session.
+        // On localhost, the httpOnly refresh cookie is blocked cross-origin, so we
+        // fall back to a refresh token stored in sessionStorage (set at login).
+        let sessionUserId: string | null = null;
+        let sessionUserEmail: string | null = null;
+
+        const storedRt = sessionStorage.getItem('vents_rt');
+        const hc = (insforge as any).getHttpClient?.();
+        if (storedRt && hc && !hc.userToken) {
+          try {
+            const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
+            const refreshRes = await fetch(`${baseUrl}/api/auth/refresh?client_type=mobile`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ refreshToken: storedRt, refresh_token: storedRt }),
+            });
+            if (refreshRes.ok) {
+              const refreshJson = await refreshRes.json();
+              if (refreshJson.accessToken) hc.userToken = refreshJson.accessToken;
+              if (refreshJson.refreshToken) {
+                hc.refreshToken = refreshJson.refreshToken;
+                sessionStorage.setItem('vents_rt', refreshJson.refreshToken);
+              }
+              sessionUserId = refreshJson.user?.id || null;
+              sessionUserEmail = refreshJson.user?.email || null;
+            } else {
+              sessionStorage.removeItem('vents_rt');
+            }
+          } catch { /* ignore — fall through to normal getCurrentUser */ }
         }
 
-        if (!data?.user) {
+        // If we got the user from the manual refresh, skip SDK call
+        if (!sessionUserId) {
+          const { data, error } = await insforge.auth.getCurrentUser();
+          if (error) {
+            console.error("GetCurrentUser failed:", error);
+            if (error.statusCode !== 401) {
+              setAuthError(error.message || "Session restoration failed.");
+            }
+            setCurrentUser(null);
+            setAuthLoading(false);
+            return;
+          }
+          if (!data?.user) {
+            setCurrentUser(null);
+            setAuthLoading(false);
+            return;
+          }
+          sessionUserId = data.user.id;
+          sessionUserEmail = data.user.email;
+        }
+
+        if (!sessionUserId) {
           setCurrentUser(null);
           setAuthLoading(false);
           return;
@@ -273,13 +311,13 @@ export default function App() {
         const { data: profile } = await insforge.database
           .from('users')
           .select('*')
-          .eq('id', data.user.id)
+          .eq('id', sessionUserId)
           .maybeSingle();
 
         setCurrentUser({
-          id: data.user.id,
-          email: data.user.email,
-          full_name: profile?.full_name || data.user.email.split('@')[0],
+          id: sessionUserId,
+          email: sessionUserEmail || profile?.email || '',
+          full_name: profile?.full_name || (sessionUserEmail || '').split('@')[0],
           role: profile?.role || 'user',
           username: profile?.username,
           phone_number: profile?.phone_number,
@@ -947,6 +985,7 @@ export default function App() {
 
   const handleSignOut = useCallback(async () => {
     setAuthLoading(true);
+    clearRefreshToken();
     try {
       await insforge.auth.signOut();
     } catch (err) {

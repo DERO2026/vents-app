@@ -5,16 +5,30 @@ export const insforge = createClient({
   anonKey: import.meta.env.VITE_INSFORGE_ANON_KEY,
 });
 
-// Clear any leftover tokens that were previously stored in localStorage.
-// Sessions are now restored exclusively via the httpOnly refresh cookie
-// that InsForge sets on its own domain — readable only by InsForge's servers,
-// never by client-side JS.
+const SESSION_KEY = 'vents_rt';
+
+// Persist and restore refresh token so sessions survive page reloads.
+// sessionStorage (not localStorage) — cleared when the tab is closed.
+export function saveRefreshToken(token: string) {
+  try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* ignore */ }
+}
+
+export function clearRefreshToken() {
+  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+}
+
 if (typeof window !== 'undefined') {
   localStorage.removeItem('vents_auth_session');
 
   const httpClient = insforge.getHttpClient();
 
   if (httpClient) {
+    // Restore a previously-saved refresh token so getCurrentUser() can
+    // rehydrate the session without relying on cross-domain httpOnly cookies
+    // (which don't work on http://localhost vs https://insforge.app).
+    const stored = sessionStorage.getItem(SESSION_KEY);
+    if (stored) httpClient.refreshToken = stored;
+
     // Monkey-patch refreshAccessToken to work around a refreshToken vs
     // refresh_token casing inconsistency in the SDK's refresh request body.
     httpClient.refreshAccessToken = async function () {
@@ -40,6 +54,11 @@ if (typeof window !== 'undefined') {
               credentials: 'include',
             }
           );
+          // Persist the rotated refresh token if the SDK returns one
+          if (response?.refreshToken) {
+            httpClient.refreshToken = response.refreshToken;
+            saveRefreshToken(response.refreshToken);
+          }
           return response;
         } finally {
           this.isRefreshing = false;

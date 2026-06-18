@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
-import { insforge } from '../../lib/insforge';
+import { insforge, saveRefreshToken } from '../../lib/insforge';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 
@@ -256,12 +256,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     try {
       if (mode === 'forgot') {
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
-        const resetRedirect = window.location.hostname === 'localhost'
-          ? 'https://vents-one.vercel.app'
-          : window.location.origin;
         const { error } = await insforge.auth.sendResetPasswordEmail({
           email: email.trim().toLowerCase(),
-          redirectTo: resetRedirect
         });
         if (error) throw error;
         setForgotSent(true);
@@ -287,9 +283,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!username.trim()) throw new Error('Username is required.');
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
-        const NIGERIAN_PHONE_REGEX = /^(\+234|0)[789][01]\d{8}$/;
-        if (!NIGERIAN_PHONE_REGEX.test(phone.trim())) {
-          throw new Error('Please enter a valid Nigerian phone number.');
+        const rawDigits = phone.replace(/\D/g, '');
+        const normalizedPhone = rawDigits.startsWith('234') ? '+' + rawDigits : rawDigits.startsWith('0') ? '+234' + rawDigits.slice(1) : '+234' + rawDigits;
+        const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
+        if (!NIGERIAN_PHONE_REGEX.test(normalizedPhone)) {
+          throw new Error('Please enter a valid Nigerian phone number (+234 format).');
         }
         if (!password) throw new Error('Password is required.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
@@ -300,14 +298,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const userMetaPayload = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
-          phone_number: phone.trim(),
+          phone_number: normalizedPhone,
           state: (signupState || selectedState || '').trim(),
           role: strictRole,
           avatar_url: signupAvatarUrl
         };
 
         const normalizedEmail = email.trim().toLowerCase();
-        const normalizedPhone = phone.trim();
         const normalizedUsername = username.trim().toLowerCase();
 
         const { data: existsResult, error: lookupError } = await insforge.database.rpc('check_user_exists', {
@@ -346,8 +343,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           loginEmail = resolvedEmail;
         }
 
-        const { data, error } = await insforge.auth.signInWithPassword({ email: loginEmail, password });
-        if (error) throw error;
+        // Use mobile client_type to get refresh token in response body (works cross-origin on localhost).
+        const baseUrl = (insforge as any).getHttpClient?.().baseUrl || import.meta.env.VITE_INSFORGE_URL;
+        const loginRes = await fetch(`${baseUrl}/api/auth/sessions?client_type=mobile`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: loginEmail, password }),
+        });
+        const loginJson = await loginRes.json();
+        if (!loginRes.ok || loginJson.error) {
+          throw new Error(loginJson.message || loginJson.error || 'Invalid email or password.');
+        }
+        // Save refresh token for session persistence across reloads
+        if (loginJson.refreshToken) {
+          const hc = (insforge as any).getHttpClient?.();
+          if (hc) hc.refreshToken = loginJson.refreshToken;
+          saveRefreshToken(loginJson.refreshToken);
+        }
+        if (loginJson.accessToken) {
+          const hc = (insforge as any).getHttpClient?.();
+          if (hc) hc.userToken = loginJson.accessToken;
+        }
+        const data = loginJson;
+        const error = null;
 
         if (data?.user) {
           const { data: profile } = await insforge.database.from('users').select('*').eq('id', data.user.id).maybeSingle();
@@ -547,7 +565,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 setLoading(true);
                 setErrorMessage(null);
                 try {
-                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: forgotOtpCode });
+                  // Step 1: exchange 6-digit code for a reset token
+                  const { data: tokenData, error: exchangeErr } = await insforge.auth.exchangeResetPasswordToken({
+                    email: email.trim().toLowerCase(),
+                    code: forgotOtpCode,
+                  });
+                  if (exchangeErr) throw exchangeErr;
+                  const resetOtp = tokenData?.token;
+                  if (!resetOtp) throw new Error('Failed to exchange code. Please try again.');
+                  // Step 2: set the new password using the token
+                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: resetOtp });
                   if (error) throw error;
                   setSuccessMessage('Password reset successfully! Please sign in.');
                   setMode('login');
@@ -817,9 +844,19 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {mode === 'signup' && (
                 <InputRow
                   icon={Phone}
-                  placeholder="Phone number"
+                  placeholder="+234 801 234 5678"
                   value={phone}
-                  onChange={setPhone}
+                  onChange={(v) => {
+                    let raw = v.replace(/\D/g, '');
+                    if (raw.startsWith('234')) raw = raw.slice(3);
+                    else if (raw.startsWith('0')) raw = raw.slice(1);
+                    raw = raw.slice(0, 10);
+                    let formatted = '+234';
+                    if (raw.length > 0) formatted += ' ' + raw.slice(0, 3);
+                    if (raw.length > 3) formatted += ' ' + raw.slice(3, 7);
+                    if (raw.length > 7) formatted += ' ' + raw.slice(7);
+                    setPhone(raw.length === 0 ? '' : formatted);
+                  }}
                   type="tel"
                 />
               )}

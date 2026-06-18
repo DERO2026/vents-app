@@ -275,11 +275,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         throw new Error("Username is already taken.");
       }
 
-      const cleanPhone = phone.replace(/\s/g, '').trim();
-      if (cleanPhone) {
-        const NIGERIAN_PHONE_REGEX = /^(\+234|0)[789][01]\d{8}$/;
+      const rawDigits = phone.replace(/\D/g, '');
+      let cleanPhone = '';
+      if (rawDigits) {
+        cleanPhone = rawDigits.startsWith('234') ? '+' + rawDigits : '+234' + (rawDigits.startsWith('0') ? rawDigits.slice(1) : rawDigits);
+        const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
         if (!NIGERIAN_PHONE_REGEX.test(cleanPhone)) {
-          throw new Error("Please enter a valid Nigerian phone number.");
+          throw new Error("Please enter a valid Nigerian phone number (+234 format).");
         }
       }
 
@@ -299,7 +301,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
           bio: bio.trim(),
-          phone_number: phone.trim()
+          phone_number: cleanPhone || phone.trim()
         });
       }
       setSaved(true);
@@ -409,25 +411,23 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 <input
                   value={phone}
                   onChange={(e) => {
-                    // Strip all non-digits, then format as Nigerian number
                     let raw = e.target.value.replace(/\D/g, '');
-                    // If user typed leading +234, strip the country code prefix for formatting
-                    if (raw.startsWith('234') && raw.length > 3) raw = '0' + raw.slice(3);
-                    // Cap at 11 digits (0XX XXXX XXXX)
-                    raw = raw.slice(0, 11);
-                    // Format: 0XXX XXX XXXX
-                    let formatted = raw;
-                    if (raw.length > 7) formatted = raw.slice(0, 4) + ' ' + raw.slice(4, 7) + ' ' + raw.slice(7);
-                    else if (raw.length > 4) formatted = raw.slice(0, 4) + ' ' + raw.slice(4);
-                    setPhone(formatted);
+                    if (raw.startsWith('234')) raw = raw.slice(3);
+                    else if (raw.startsWith('0')) raw = raw.slice(1);
+                    raw = raw.slice(0, 10);
+                    let formatted = '+234';
+                    if (raw.length > 0) formatted += ' ' + raw.slice(0, 3);
+                    if (raw.length > 3) formatted += ' ' + raw.slice(3, 7);
+                    if (raw.length > 7) formatted += ' ' + raw.slice(7);
+                    setPhone(raw.length === 0 ? '' : formatted);
                   }}
                   inputMode="tel"
-                  placeholder="0801 234 5678"
+                  placeholder="+234 801 234 5678"
                   style={inputStyle}
                 />
-                {phone.trim() && !/^(\+234|0)[789][01]\d{8}$/.test(phone.replace(/\s/g, '')) && (
+                {phone.trim() && !/^\+234[789][01]\d{8}$/.test(phone.replace(/[\s\-]/g, '')) && (
                   <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
-                    Enter a valid Nigerian number (e.g. 0801 234 5678)
+                    Enter a valid Nigerian number (e.g. +234 801 234 5678)
                   </p>
                 )}
               </div>
