@@ -10,7 +10,6 @@ import {
   Shield,
   HelpCircle,
   MapPin,
-  LayoutDashboard,
   Users,
   BadgeCheck,
   Gift,
@@ -345,62 +344,7 @@ export function ProfileScreen({
               ))}
             </div>
 
-            {isAdmin ? (
-              <button
-                onClick={() => setActiveView('organizer')}
-                style={{
-                  width: '100%',
-                  background: 'rgba(168,85,247,0.1)',
-                  border: '1px solid rgba(168,85,247,0.25)',
-                  borderRadius: '12px',
-                  padding: '10px',
-                  color: '#A855F7',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  marginTop: '14px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                }}
-              >
-                <LayoutDashboard size={14} />
-                Organizer Dashboard
-              </button>
-            ) : userRole !== 'organizer' && (
-              <button
-                onClick={() => {
-                  const hasOrganizerHistory = isOrganizer ||
-                    currentUser?.hasBeenOrganizer ||
-                    localStorage.getItem(`vents_was_organizer_${currentUser?.id}`) === '1';
-                  if (hasOrganizerHistory) {
-                    setActiveView('organizer');
-                  } else {
-                    onBecomeOrganizer?.();
-                  }
-                }}
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.08)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '12px',
-                  padding: '10px',
-                  color: '#C084FC',
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  marginTop: '14px',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '8px',
-                }}
-              >
-                <LayoutDashboard size={14} />
-                Switch to Organizer Mode
-              </button>
-            )}
+            {/* Organizer/admin: switching is now via the Create tab FAB or the banner */}
           </div>
         </div>
 

@@ -42,7 +42,7 @@ const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
   explore: 'explore',
-  saved: 'saved',
+  'my-tickets': 'my-tickets',
   profile: 'profile',
 };
 
@@ -135,7 +135,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash');
   const [activeTab, setActiveTab] = useState<TabId>('home');
-  const [orgTab, setOrgTab] = useState<OrgTab>('org-dashboard');
+  const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean } | null>(null);
@@ -186,12 +186,8 @@ export default function App() {
       setScreenStack((s) => s.slice(0, -1));
       setScreen(prev);
     } else {
-      if (userRole === 'organizer') {
-        setScreen('org-dashboard');
-      } else {
-        setScreen('home');
-        setActiveTab('home');
-      }
+      setScreen('home');
+      setActiveTab('home');
     }
   }, [screenStack, userRole]);
 
@@ -386,8 +382,9 @@ export default function App() {
           setActiveTab('home');
         } else {
           setUserRole('organizer');
-          setOrgTab('org-dashboard');
-          setScreen('org-dashboard');
+          setOrgTab('home');
+          setScreen('home');
+          setActiveTab('home');
         }
       } else {
         setScreen('welcome');
@@ -398,10 +395,12 @@ export default function App() {
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
     if (currentUser && screen === 'auth') {
-      if (currentUser.role === 'organizer' || currentUser.role === 'admin' || currentUser.isOrganizer) {
+      const storedMode = localStorage.getItem(`vents_view_${currentUser.id}`);
+      if ((currentUser.role === 'organizer' || currentUser.role === 'admin' || currentUser.isOrganizer) && storedMode !== 'attendee') {
         setUserRole('organizer');
-        setOrgTab('org-dashboard');
-        setScreen('org-dashboard');
+        setOrgTab('home');
+        setScreen('home');
+        setActiveTab('home');
       } else {
         setUserRole('attendee');
         setScreen('home');
@@ -825,7 +824,8 @@ export default function App() {
 
   const handleOrgTabChange = useCallback((tab: OrgTab) => {
     setOrgTab(tab);
-    setScreen(tab as Screen);
+    setActiveTab(tab as TabId);
+    setScreen(TAB_SCREENS[tab as TabId] ?? (tab as Screen));
     setScreenStack([]);
   }, []);
 
@@ -1035,13 +1035,20 @@ export default function App() {
     setAuthLoading(false);
   }, []);
 
-  // Attendee screens where bottom nav shows
-  const attendeeNavScreens = ['home', 'explore', 'saved', 'profile', 'my-tickets'];
-  // Organizer screens where org bottom nav shows
-  const orgNavScreens = ['org-dashboard', 'manage-events', 'sales-analytics', 'profile'];
+  // Screens where the bottom nav is visible for both roles
+  const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
+  const showBottomNav = !!currentUser && navScreens.includes(screen);
 
-  const showAttendeeNav = userRole === 'attendee' && attendeeNavScreens.includes(screen);
-  const showOrgNav = userRole === 'organizer' && orgNavScreens.includes(screen);
+  // Organizers who switched to "view as attendee" get a banner to switch back
+  const isOrgViewingAsAttendee =
+    userRole === 'attendee' &&
+    (currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin');
+
+  // Determine if the current user is organizer/admin (for nav FAB)
+  const isOrganizerOrAdmin =
+    userRole === 'organizer' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.id === ROOT_UID;
 
   return (
     <div 
@@ -1138,8 +1145,9 @@ export default function App() {
                   // Already logged in — switch mode directly without re-auth
                   if (role === 'organizer') {
                     setUserRole('organizer');
-                    setOrgTab('org-dashboard');
-                    setScreen('org-dashboard');
+                    setOrgTab('home');
+                    setActiveTab('home');
+                    setScreen('home');
                     setScreenStack([]);
                     if (currentUser.id && currentUser.role !== 'admin') {
                       setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
@@ -1242,8 +1250,9 @@ export default function App() {
               unreadNotificationsCount={unreadCount}
               onBecomeOrganizer={async () => {
                 setUserRole('organizer');
-                setOrgTab('org-dashboard');
-                setScreen('org-dashboard');
+                setOrgTab('home');
+                setActiveTab('home');
+                setScreen('home');
                 setScreenStack([]);
                 if (currentUser?.id && currentUser.role !== 'admin') {
                   setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
@@ -1264,8 +1273,9 @@ export default function App() {
                 if (view === 'organizer') {
                   // Always update local nav state; admin skips DB/badge changes
                   setUserRole('organizer');
-                  setOrgTab('org-dashboard');
-                  setScreen('org-dashboard');
+                  setOrgTab('home');
+                  setActiveTab('home');
+                  setScreen('home');
                   if (currentUser?.id) {
                     localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
@@ -1441,12 +1451,8 @@ export default function App() {
                 setScreen('my-tickets');
               }}
               onGoHome={() => {
-                if (userRole === 'organizer') {
-                  setScreen('org-dashboard');
-                } else {
-                  setScreen('home');
-                  setActiveTab('home');
-                }
+                setScreen('home');
+                setActiveTab('home');
                 setScreenStack([]);
               }}
             />
@@ -1456,7 +1462,7 @@ export default function App() {
           {screen === 'org-dashboard' && (
             <OrganizerDashboard
               currentUser={currentUser}
-              onBack={handleSwitchToAttendee}
+              onBack={goBack}
               onNavigate={handleOrgNavigate}
               setActiveView={(view) => {
                 if (view === 'attendee') {
@@ -1544,22 +1550,64 @@ export default function App() {
             )}
           </div>
 
-        {/* Attendee bottom navigation */}
-        {showAttendeeNav && (
+        {/* Bottom navigation — shared for attendees (4 tabs) and organizers/admin (5 tabs) */}
+        {showBottomNav && (
           <BottomNav
             activeTab={activeTab}
             onTabChange={handleTabChange}
-            onTicketsPress={handleTicketsPress}
+            onFabPress={() => {
+              if (isOrganizerOrAdmin) {
+                navigateTo('org-dashboard');
+              } else {
+                handleTicketsPress();
+              }
+            }}
+            isOrganizer={isOrganizerOrAdmin}
           />
         )}
 
-        {/* Organizer bottom navigation */}
-        {showOrgNav && (
-          <OrganizerBottomNav
-            activeTab={orgTab}
-            onTabChange={handleOrgTabChange}
-            onCreatePress={() => navigateTo('create-event')}
-          />
+        {/* Banner for organizers/admins currently viewing as attendee */}
+        {isOrgViewingAsAttendee && navScreens.includes(screen) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              padding: '6px 16px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              zIndex: 100,
+            }}
+          >
+            <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '12px' }}>
+              👤 Viewing as attendee
+            </span>
+            <button
+              onClick={async () => {
+                setUserRole('organizer');
+                setActiveTab('home');
+                setScreen('home');
+                if (currentUser?.id) {
+                  localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
+                }
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.2)',
+                border: '1px solid rgba(255,255,255,0.3)',
+                borderRadius: '8px',
+                padding: '3px 10px',
+                color: '#fff',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Switch back
+            </button>
+          </div>
         )}
         </ErrorBoundary>
       </div>

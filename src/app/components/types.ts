@@ -111,7 +111,7 @@ export type Screen =
   | 'checkin-scanner'
   | 'transactions';
 
-export type TabId = 'home' | 'explore' | 'saved' | 'profile';
+export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
 export type UserRole = 'attendee' | 'organizer';
 
