@@ -876,7 +876,9 @@ export default function App() {
             title: 'Ticket confirmed! 🎉',
             body: `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
             icon: '🎟️',
-          }]).catch(() => {});
+          }]).then(({ error: notifyErr }: any) => {
+            if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
+          });
         }
 
         // Wait for tickets and events list refresh
@@ -967,7 +969,9 @@ export default function App() {
           p_title: 'New follower',
           p_body: `${displayName} started following you`,
           p_icon: '👤',
-        }).catch(() => {});
+        }).then(({ error: notifyErr }: any) => {
+          if (notifyErr) console.warn('Follow notify failed:', notifyErr.message);
+        });
       }
     } catch (err) {
       console.error("Failed to toggle follow in DB:", err);
