@@ -245,7 +245,7 @@ export function AdminDashboardScreen({
   const handleSoftDelete = (u: UserRow) => {
     setConfirmModal({
       title: 'Delete Account',
-      message: `Permanently delete @${u.username || u.email}? This action cannot be undone.`,
+      message: `Soft-delete @${u.username || u.email}? They will be blocked from login. You can reinstate them later.`,
       confirmLabel: 'Delete',
       danger: true,
       onConfirm: async () => {
@@ -255,13 +255,26 @@ export function AdminDashboardScreen({
           const { error } = await insforge.database.from('users').update({ status: 'deleted' }).eq('id', u.id);
           if (error) throw error;
           await writeAuditLog(currentUser.id, 'delete_user', u.id, { target_email: u.email });
-          setUsers(prev => prev.filter(x => x.id !== u.id));
-          flash(true, 'User soft-deleted.');
+          setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'deleted' } : x));
+          flash(true, 'User deleted. Use Reinstate to restore.');
         } catch (err: any) {
           flash(false, err?.message || 'Failed to delete user.');
         } finally { setBusyId(null); }
       },
     });
+  };
+
+  const handleReinstate = async (u: UserRow) => {
+    setBusyId(u.id);
+    try {
+      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null }).eq('id', u.id);
+      if (error) throw error;
+      await writeAuditLog(currentUser.id, 'reinstate_user', u.id, { target_email: u.email, previous_status: u.status });
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
+      flash(true, 'User reinstated.');
+    } catch (err: any) {
+      flash(false, err?.message || 'Failed to reinstate user.');
+    } finally { setBusyId(null); }
   };
 
   const handleToggleVerify = async (u: UserRow) => {
@@ -597,8 +610,17 @@ export function AdminDashboardScreen({
                             <BadgeCheck size={13} />
                           </button>
 
-                          {/* Ban / Unban */}
-                          {u.status === 'suspended' ? (
+                          {/* Ban / Unban / Reinstate */}
+                          {u.status === 'deleted' ? (
+                            <button
+                              onClick={() => handleReinstate(u)}
+                              disabled={isBusy || isRootUser}
+                              title="Reinstate deleted account"
+                              style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '5px 8px', color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
+                            >
+                              <UserCheck size={13} /> Reinstate
+                            </button>
+                          ) : u.status === 'suspended' ? (
                             <button
                               onClick={() => handleSuspend(u)}
                               disabled={isBusy || isRootUser}

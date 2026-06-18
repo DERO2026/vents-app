@@ -160,11 +160,12 @@ export default function App() {
 
   const handleSwitchToAttendee = useCallback(() => {
     // DB role stays 'organizer' — trigger blocks reverting it.
-    // UI mode switches to attendee; isOrganizer flag stays so next switch is instant.
+    // UI mode switches to attendee; persist preference so next load respects it.
     setUserRole('attendee');
     setActiveTab('home');
     setScreen('home');
     if (currentUser?.id) {
+      localStorage.setItem(`vents_view_${currentUser.id}`, 'attendee');
       setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
     }
   }, [currentUser]);
@@ -350,11 +351,21 @@ export default function App() {
   }, [authLoading]);
 
   // Sync userRole Effect (initialize once on user load)
+  // Respects a stored view-mode preference so organizers who switched to
+  // attendee view don't get routed back to org-dashboard on every reload.
   const userLoadedRef = useRef(false);
   useEffect(() => {
     if (currentUser && !userLoadedRef.current) {
-      // Admin keeps 'attendee' userRole by default — their userRole only changes when they explicitly open Organizer Dashboard
-      setUserRole((currentUser.role === 'admin') ? 'attendee' : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer' : 'attendee');
+      const storedMode = localStorage.getItem(`vents_view_${currentUser.id}`);
+      if (storedMode === 'attendee') {
+        setUserRole('attendee');
+      } else {
+        setUserRole(
+          currentUser.role === 'admin' ? 'attendee'
+          : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer'
+          : 'attendee'
+        );
+      }
       userLoadedRef.current = true;
     }
     if (!currentUser) {
@@ -366,14 +377,17 @@ export default function App() {
   useEffect(() => {
     if (screen === 'splash' && splashMinTimePassed && !authLoading) {
       if (currentUser) {
-        if (currentUser.role === 'organizer') {
-          setUserRole('organizer');
-          setOrgTab('org-dashboard');
-          setScreen('org-dashboard');
-        } else {
+        const storedMode = currentUser.id
+          ? localStorage.getItem(`vents_view_${currentUser.id}`)
+          : null;
+        if (storedMode === 'attendee' || currentUser.role !== 'organizer') {
           setUserRole('attendee');
           setScreen('home');
           setActiveTab('home');
+        } else {
+          setUserRole('organizer');
+          setOrgTab('org-dashboard');
+          setScreen('org-dashboard');
         }
       } else {
         setScreen('welcome');
@@ -854,6 +868,15 @@ export default function App() {
             p_payment_status: 'paid',
           });
           if (insertError) throw insertError;
+
+          // 3.6: Ticket confirmation notification
+          insforge.database.from('notifications').insert([{
+            user_id: currentUser.id,
+            type: 'booking',
+            title: 'Ticket confirmed! 🎉',
+            body: `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
+            icon: '🎟️',
+          }]).catch(() => {});
         }
 
         // Wait for tickets and events list refresh
@@ -936,6 +959,15 @@ export default function App() {
             following_id: userId
           }]);
         if (error) throw error;
+        // 3.6: Notify the followed user
+        const displayName = currentUser.username ? `@${currentUser.username}` : (currentUser.full_name || 'Someone');
+        insforge.database.rpc('notify_user' as any, {
+          p_user_id: userId,
+          p_type: 'social',
+          p_title: 'New follower',
+          p_body: `${displayName} started following you`,
+          p_icon: '👤',
+        }).catch(() => {});
       }
     } catch (err) {
       console.error("Failed to toggle follow in DB:", err);
@@ -1205,9 +1237,6 @@ export default function App() {
               }}
               unreadNotificationsCount={unreadCount}
               onBecomeOrganizer={async () => {
-                // Existing attendee clicks "Switch to Organizer Mode" — skip the
-                // role-choice screen (that's only for brand-new signups) and go
-                // straight to the organizer dashboard, same path as RoleSelectScreen.
                 setUserRole('organizer');
                 setOrgTab('org-dashboard');
                 setScreen('org-dashboard');
@@ -1215,8 +1244,16 @@ export default function App() {
                 if (currentUser?.id && currentUser.role !== 'admin') {
                   setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
                   localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
+                  localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
                   try {
                     await insforge.database.rpc('promote_to_organizer');
+                    // 3.4: Admin-visible log for every new organizer promotion
+                    await insforge.database.from('admin_logs').insert([{
+                      admin_id: currentUser.id,
+                      action: 'organizer_promoted',
+                      target_user_id: currentUser.id,
+                      details: { email: currentUser.email, username: currentUser.username, promoted_at: new Date().toISOString() },
+                    }]);
                   } catch (err) {
                     console.error('Failed to promote to organizer:', err);
                   }
@@ -1229,14 +1266,19 @@ export default function App() {
                   setOrgTab('org-dashboard');
                   setScreen('org-dashboard');
                   if (currentUser?.id) {
-                    // Never overwrite role in DB or memory for admin — mode toggle is purely local UI state
-                    if (currentUser.role !== 'admin') {
-                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
-                    }
+                    localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                     if (currentUser.role !== 'admin') {
+                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
                       try {
                         await insforge.database.rpc('promote_to_organizer');
+                        // 3.4: Log organizer promotion for admin review
+                        await insforge.database.from('admin_logs').insert([{
+                          admin_id: currentUser.id,
+                          action: 'organizer_promoted',
+                          target_user_id: currentUser.id,
+                          details: { email: currentUser.email, username: currentUser.username, promoted_at: new Date().toISOString() },
+                        }]);
                       } catch (err) {
                         console.error('Failed to promote to organizer:', err);
                         setCurrentUser(prev => prev ? { ...prev, role: 'user' } : null);
@@ -1276,12 +1318,12 @@ export default function App() {
                     }
                   }
                 } else {
-                  // Switch back to attendee view — keep DB role as 'organizer' (trigger blocks reverting it)
-                  // The organizer flag in localStorage means they can switch back instantly next time
+                  // Switch back to attendee view — persist preference so reloads respect it
                   setUserRole('attendee');
                   setActiveTab('home');
                   setScreen('home');
                   if (currentUser?.id) {
+                    localStorage.setItem(`vents_view_${currentUser.id}`, 'attendee');
                     setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
                   }
                 }

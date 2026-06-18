@@ -1,10 +1,11 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
-import { insforge, saveRefreshToken } from '../../lib/insforge';
+import { insforge, saveRefreshToken, clearRefreshToken } from '../../lib/insforge';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
+import { verifyTOTP } from '../../lib/totp';
 
 interface AuthScreenProps {
   initialMode: AuthMode;
@@ -124,6 +125,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const forgotOtpRef = useRef<HTMLInputElement>(null);
+
+  // TOTP 2FA prompt (shown after successful password auth when totp_enabled=true)
+  const [totpPending, setTotpPending] = useState<null | { secret: string; profilePayload: Parameters<typeof onSuccess>[0] }>(null);
+  const [totpCode, setTotpCode] = useState('');
+  const [totpError, setTotpError] = useState<string | null>(null);
+  const totpInputRef = useRef<HTMLInputElement>(null);
+
+  // Ban screen (shown when status = suspended or deleted)
+  const [banInfo, setBanInfo] = useState<null | { status: 'suspended' | 'deleted'; until: string | null }>(null);
 
 
   const signupFileInputRef = useRef<HTMLInputElement>(null);
@@ -369,9 +379,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
         if (data?.user) {
           const { data: profile } = await insforge.database.from('users').select('*').eq('id', data.user.id).maybeSingle();
+
+          // 3.5: Block banned / deleted accounts immediately after auth
+          if (profile?.status === 'suspended' || profile?.status === 'deleted') {
+            await insforge.auth.signOut().catch(() => {});
+            clearRefreshToken();
+            setBanInfo({ status: profile.status, until: profile.banned_until ?? null });
+            setLoading(false);
+            return;
+          }
+
           const dbRole = (profile?.role === 'admin') ? 'admin' : (profile?.role === 'organizer' || profile?.role === 'organiser') ? 'organizer' : 'attendee';
-          
-          onSuccess({
+          const profilePayload = {
             id: data.user.id,
             email: data.user.email,
             full_name: profile?.full_name || data.user.user_metadata?.full_name || data.user.email.split('@')[0],
@@ -380,8 +399,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             phone_number: profile?.phone_number || data.user.user_metadata?.phone_number,
             state: profile?.state || data.user.user_metadata?.state,
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
-            isOrganizer: dbRole === 'organizer'
-          });
+            isOrganizer: dbRole === 'organizer',
+          };
+
+          // 3.1: If TOTP is enabled, show the 2FA prompt before completing login
+          if (profile?.totp_enabled && profile?.totp_secret) {
+            setTotpPending({ secret: profile.totp_secret, profilePayload });
+            setTimeout(() => totpInputRef.current?.focus(), 100);
+            setLoading(false);
+            return;
+          }
+
+          onSuccess(profilePayload);
         }
       }
     } catch (err: any) {
@@ -425,6 +454,120 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       setGoogleLoading(false);
     }
   };
+
+  // 3.5: Ban screen
+  if (banInfo) {
+    const isSuspended = banInfo.status === 'suspended';
+    const untilStr = banInfo.until ? new Date(banInfo.until).toLocaleDateString('en-NG', { dateStyle: 'long' }) : null;
+    return (
+      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
+        <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
+          <AlertCircle size={32} color="#EF4444" />
+        </div>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+          {isSuspended ? 'Account Suspended' : 'Account Deleted'}
+        </h2>
+        <p style={{ color: '#C4C9E0', fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
+          {isSuspended
+            ? untilStr
+              ? `Your account has been suspended until ${untilStr}.`
+              : 'Your account has been permanently suspended.'
+            : 'Your account has been removed from VENTS.'}
+        </p>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '28px' }}>
+          If you believe this is a mistake, please reach out to us to appeal.
+        </p>
+        <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '18px 20px', width: '100%', maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+          <a href="https://wa.me/2349030737368" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(37,211,102,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: '18px' }}>💬</span>
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, margin: 0 }}>WhatsApp</p>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>+234 903 073 7368</p>
+            </div>
+          </a>
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
+          <a href="mailto:ventsappltd@gmail.com" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
+            <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(79,70,229,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <span style={{ fontSize: '18px' }}>✉️</span>
+            </div>
+            <div style={{ textAlign: 'left' }}>
+              <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, margin: 0 }}>Email</p>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>ventsappltd@gmail.com</p>
+            </div>
+          </a>
+        </div>
+        <button onClick={() => setBanInfo(null)} style={{ background: 'none', border: 'none', color: '#A78BFA', fontSize: '13px', cursor: 'pointer' }}>
+          ← Back to login
+        </button>
+      </div>
+    );
+  }
+
+  // 3.1: TOTP 2FA prompt
+  if (totpPending) {
+    const handleTotpVerify = async () => {
+      setTotpError(null);
+      if (totpCode.length !== 6) { setTotpError('Enter the 6-digit code from your authenticator.'); return; }
+      const valid = await verifyTOTP(totpPending.secret, totpCode);
+      if (valid) {
+        setTotpPending(null);
+        setTotpCode('');
+        onSuccess(totpPending.profilePayload);
+      } else {
+        setTotpError('Incorrect code. Try again — codes refresh every 30 seconds.');
+        setTotpCode('');
+        setTimeout(() => totpInputRef.current?.focus(), 50);
+      }
+    };
+    return (
+      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+        <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
+          <ShieldCheck size={32} color="#818CF8" />
+        </div>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
+          Two-Factor Authentication
+        </h2>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '28px', lineHeight: 1.5 }}>
+          Enter the 6-digit code from your authenticator app.
+        </p>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} style={{ width: '44px', height: '54px', background: '#131629', border: `1px solid ${totpCode.length > i ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => totpInputRef.current?.focus()}>
+              <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700 }}>{totpCode[i] ?? ''}</span>
+            </div>
+          ))}
+        </div>
+        <input
+          ref={totpInputRef}
+          type="tel"
+          inputMode="numeric"
+          maxLength={6}
+          value={totpCode}
+          onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+          onKeyDown={e => e.key === 'Enter' && handleTotpVerify()}
+          autoFocus
+          style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
+        />
+        {totpError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', marginBottom: '4px' }}>
+            <AlertCircle size={14} color="#EF4444" />
+            <span style={{ color: '#EF4444', fontSize: '12px' }}>{totpError}</span>
+          </div>
+        )}
+        <button
+          onClick={handleTotpVerify}
+          style={{ marginTop: '20px', width: '100%', maxWidth: '320px', background: totpCode.length === 6 ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: 'none', borderRadius: '14px', padding: '14px', color: totpCode.length === 6 ? '#fff' : '#8B8FA8', fontSize: '15px', fontWeight: 700, cursor: totpCode.length === 6 ? 'pointer' : 'not-allowed' }}
+        >
+          Verify
+        </button>
+        <button onClick={() => { setTotpPending(null); setTotpCode(''); }} style={{ marginTop: '14px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>
+          ← Back
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
