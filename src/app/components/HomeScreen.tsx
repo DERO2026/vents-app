@@ -11,6 +11,7 @@ interface HomeScreenProps {
   savedEvents: string[];
   onToggleSave: (eventId: string) => void;
   onNotificationsPress?: () => void;
+  onSearchPress?: () => void;
   onProfilePress?: () => void;
   selectedState?: string;
   onStateChange?: (stateName: string) => void;
@@ -21,6 +22,7 @@ interface HomeScreenProps {
   currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string } | null;
   hasMore?: boolean;
   onLoadMore?: () => void;
+  unreadNotificationsCount?: number;
 }
 
 function useCardCountdown(eventDate?: string): string | null {
@@ -96,7 +98,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
     description: dbEvent.description || '',
-    organizer: 'Verified Organizer',
+    organizer: dbEvent.organizer_name || dbEvent.organizer_username || 'Verified Organizer',
     organizerVerified: true,
     isFeatured: dbEvent.is_featured === true,
     isTrending: false,
@@ -235,12 +237,17 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <Calendar size={10} color="#8B8FA8" />
           <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
           <MapPin size={10} color="#8B8FA8" />
           <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
             {event.city}
           </span>
         </div>
+        {event.organizer && event.organizer !== 'Verified Organizer' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
+          </div>
+        )}
         {countdown && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginBottom: '4px' }}>
             <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
@@ -404,6 +411,11 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
             {event.city}
           </span>
         </div>
+        {event.organizer && event.organizer !== 'Verified Organizer' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
+          </div>
+        )}
         {countdown && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginTop: '3px' }}>
             <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
@@ -510,7 +522,7 @@ function FeaturedCarousel({
           <img
             src={event.image}
             alt={event.title}
-            style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block', minHeight: '180px' }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(6,10,18,0.92) 100%)' }} />
@@ -546,6 +558,7 @@ export function HomeScreen({
   savedEvents,
   onToggleSave,
   onNotificationsPress,
+  onSearchPress: _onSearchPress,
   onProfilePress,
   onLiveMapPress,
   dbEvents,
@@ -554,6 +567,7 @@ export function HomeScreen({
   currentUser,
   hasMore,
   onLoadMore,
+  unreadNotificationsCount: _unreadNotificationsCount,
 }: HomeScreenProps) {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -869,29 +883,7 @@ export function HomeScreen({
                   </div>
                 )}
 
-                {/* Recently Created Events */}
-                {recentlyCreatedEvents.length > 0 && (
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                        ✨ Recently Created
-                      </h3>
-                    </div>
-                    <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
-                      {recentlyCreatedEvents.map((event) => (
-                        <HorizontalEventCard
-                          key={`recent-${event.id}`}
-                          event={event}
-                          onPress={onEventPress}
-                          isSaved={savedEvents.includes(event.id)}
-                          onToggleSave={onToggleSave}
-                          badgeText="NEW"
-                          badgeColor="rgba(16, 185, 129, 0.9)"
-                        />
-                      ))}
-                    </div>
-                  </div>
-                )}
+                {/* Recently Created Events section removed */}
               </>
             )}
 
@@ -899,7 +891,7 @@ export function HomeScreen({
             <div className="px-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                  {isDefaultState ? '🎪 Explore All Events' : '🔍 Search Results'}
+                  {isDefaultState ? '🎪 Explore Events' : '🔍 Search Results'}
                 </h3>
                 <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
                   {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}

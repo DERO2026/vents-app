@@ -236,7 +236,7 @@ export function ProfileScreen({
                 aria-label="Change profile photo"
               >
                 <div
-                  className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden"
+                  className="w-16 h-16 rounded-full flex items-center justify-center overflow-hidden"
                   style={{
                     background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
                     boxShadow: '0 8px 24px rgba(123,47,190,0.4)',

@@ -117,6 +117,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
+  // Forgot-password OTP step (after code is sent)
+  const [forgotOtpStep, setForgotOtpStep] = useState(false);
+  const [forgotOtpCode, setForgotOtpCode] = useState('');
+  const [forgotNewPassword, setForgotNewPassword] = useState('');
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const forgotOtpRef = useRef<HTMLInputElement>(null);
+
+
   const signupFileInputRef = useRef<HTMLInputElement>(null);
   const [signupAvatarUrl, setSignupAvatarUrl] = useState('');
   const [signupAvatarKey, setSignupAvatarKey] = useState('');
@@ -256,6 +265,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         });
         if (error) throw error;
         setForgotSent(true);
+        setForgotOtpStep(true);
 
       } else if (mode === 'reset') {
         if (!password) throw new Error('Password is required.');
@@ -450,27 +460,124 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           <VentsLogo size={34} />
         </div>
 
-        {mode === 'forgot' && forgotSent ? (
-          <div style={{ textAlign: 'center', paddingTop: '30px' }}>
-            <div style={{ fontSize: '52px', marginBottom: '16px' }}>📧</div>
-            <h2
+        {mode === 'forgot' && forgotSent && forgotOtpStep ? (
+          <div style={{ paddingTop: '20px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '52px', marginBottom: '16px' }}>🔐</div>
+              <h2
+                style={{
+                  color: '#F0F0FF',
+                  fontSize: '22px',
+                  fontWeight: 700,
+                  fontFamily: 'Space Grotesk, sans-serif',
+                  marginBottom: '10px',
+                }}
+              >
+                Enter Reset Code
+              </h2>
+              <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65 }}>
+                We've sent a 6-digit code to{' '}
+                <span style={{ color: '#A78BFA' }}>{email}</span>.
+                Enter the code and your new password below.
+              </p>
+            </div>
+
+            {errorMessage && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '20px' }}>
+                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+              </div>
+            )}
+
+            <div
+              onClick={() => forgotOtpRef.current?.focus()}
+              style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '20px', cursor: 'text' }}
+            >
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: '42px', height: '52px', background: '#131629',
+                    border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
+                    borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }}
+                >
+                  <span style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{forgotOtpCode[i] ?? ''}</span>
+                </div>
+              ))}
+            </div>
+            <input
+              ref={forgotOtpRef}
+              type="text"
+              pattern="\d*"
+              maxLength={6}
+              value={forgotOtpCode}
+              onChange={(e) => setForgotOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
+              autoFocus
+            />
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
+              <InputRow
+                icon={Lock}
+                placeholder="New password"
+                value={forgotNewPassword}
+                onChange={setForgotNewPassword}
+                type={showForgotPassword ? 'text' : 'password'}
+                right={
+                  <button onClick={() => setShowForgotPassword(!showForgotPassword)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                    {showForgotPassword ? <EyeOff size={16} color="#8B8FA8" /> : <Eye size={16} color="#8B8FA8" />}
+                  </button>
+                }
+              />
+              <InputRow
+                icon={Lock}
+                placeholder="Confirm new password"
+                value={forgotConfirmPassword}
+                onChange={setForgotConfirmPassword}
+                type={showForgotPassword ? 'text' : 'password'}
+              />
+            </div>
+
+            <button
+              onClick={async () => {
+                if (forgotOtpCode.length !== 6) { setErrorMessage('Please enter the 6-digit code.'); return; }
+                if (!forgotNewPassword) { setErrorMessage('Password is required.'); return; }
+                if (forgotNewPassword !== forgotConfirmPassword) { setErrorMessage('Passwords do not match.'); return; }
+                setLoading(true);
+                setErrorMessage(null);
+                try {
+                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: forgotOtpCode });
+                  if (error) throw error;
+                  setSuccessMessage('Password reset successfully! Please sign in.');
+                  setMode('login');
+                  setForgotSent(false);
+                  setForgotOtpStep(false);
+                  setForgotOtpCode('');
+                  setForgotNewPassword('');
+                  setForgotConfirmPassword('');
+                  setPassword('');
+                } catch (err: any) {
+                  setErrorMessage(err.message || 'Reset failed. Please check the code and try again.');
+                } finally {
+                  setLoading(false);
+                }
+              }}
+              disabled={loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword}
               style={{
-                color: '#F0F0FF',
-                fontSize: '22px',
-                fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
-                marginBottom: '10px',
+                ...BTN_PRIMARY,
+                background: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword)
+                  ? 'rgba(123,47,190,0.35)'
+                  : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                cursor: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 'not-allowed' : 'pointer',
+                marginBottom: '16px',
               }}
             >
-              Check your inbox
-            </h2>
-            <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65, marginBottom: '32px' }}>
-              We've sent a password reset link to{' '}
-              <span style={{ color: '#A78BFA' }}>{email}</span>
-            </p>
+              {loading ? 'Resetting...' : 'Reset Password'}
+            </button>
             <button
-              onClick={() => { setMode('login'); setForgotSent(false); }}
-              style={BTN_PRIMARY}
+              onClick={() => { setMode('login'); setForgotSent(false); setForgotOtpStep(false); setForgotOtpCode(''); setForgotNewPassword(''); setForgotConfirmPassword(''); setErrorMessage(null); }}
+              style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', display: 'block', margin: '0 auto' }}
             >
               Back to Sign In
             </button>

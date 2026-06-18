@@ -522,7 +522,7 @@ export default function App() {
 
       const { data: dbEventsData, error: dbEventsError } = await insforge.database
         .from('events')
-        .select('*')
+        .select('*, users!events_organizer_id_fkey(username, full_name)')
         .range(start, end);
 
       if (dbEventsError) throw dbEventsError;
@@ -533,7 +533,13 @@ export default function App() {
         eventsPageRef.current = loadMore ? nextPage : 0;
 
         const eventIds = dbEventsData.map((e: any) => e.id);
-        const mapped = dbEventsData.map(mapDbEventToFrontend);
+        const mapped = dbEventsData.map((e: any) => {
+          const orgUser = e.users;
+          return mapDbEventToFrontend({
+            ...e,
+            organizer_name: orgUser?.username || orgUser?.full_name || null,
+          });
+        });
 
         let promotionsData: any[] = [];
         let ticketsData: any[] = [];
@@ -955,7 +961,7 @@ export default function App() {
   }, []);
 
   // Attendee screens where bottom nav shows
-  const attendeeNavScreens = ['home', 'explore', 'saved', 'profile'];
+  const attendeeNavScreens = ['home', 'explore', 'saved', 'profile', 'my-tickets'];
   // Organizer screens where org bottom nav shows
   const orgNavScreens = ['org-dashboard', 'manage-events', 'sales-analytics', 'profile'];
 

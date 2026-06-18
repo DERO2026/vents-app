@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ArrowLeft, Ticket, Calendar, MapPin, QrCode } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
@@ -11,6 +11,20 @@ interface MyTicketsScreenProps {
 
 export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const touchStartX = useRef<number | null>(null);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 50) {
+      if (dx < 0) setActiveTab('past');
+      else setActiveTab('upcoming');
+    }
+    touchStartX.current = null;
+  };
 
   const now = Date.now();
   const upcoming = tickets.filter((t) => {
@@ -32,6 +46,8 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
 
   return (
     <div
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
       style={{
         background: '#060A12',
         width: '100%',
