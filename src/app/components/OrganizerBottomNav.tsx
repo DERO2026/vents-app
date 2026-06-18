@@ -50,8 +50,9 @@ export function OrganizerBottomNav({ activeTab, onTabChange, onCreatePress }: Or
         background: 'rgba(10,11,20,0.97)',
         backdropFilter: 'blur(20px)',
         borderTop: '1px solid rgba(168,85,247,0.2)',
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
       }}
-      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pb-4 pt-2 z-50"
+      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pt-2 z-50"
     >
       {LEFT_TABS.map(renderTab)}
 

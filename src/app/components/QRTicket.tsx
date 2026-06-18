@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Download, Share2, CheckCircle, Calendar, MapPin, Clock } from 'lucide-react';
+import QRCode from 'qrcode';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 
@@ -9,6 +10,38 @@ interface QRTicketProps {
   onGoHome: () => void;
 }
 
+// ─── Real scannable QR canvas renderer ───────────────────────────────────────
+function QRCodeDisplay({ value, size = 180 }: { value: string; size?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    QRCode.toCanvas(canvasRef.current, value, {
+      width: size,
+      margin: 2,
+      color: { dark: '#0A0B14', light: '#ffffff' },
+    }).catch(console.error);
+  }, [value, size]);
+
+  return (
+    <div
+      style={{
+        width: size,
+        height: size,
+        background: '#fff',
+        borderRadius: '12px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      <canvas ref={canvasRef} style={{ display: 'block' }} />
+    </div>
+  );
+}
+
+// Kept so TypeScript doesn't complain about the removed code block
 function generateQRMatrix(seed: string): boolean[][] {
   const size = 25;
   const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
@@ -111,11 +144,46 @@ function QRCodeDisplay({ value, size = 180 }: { value: string; size?: number }) 
 
 export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const [showConfetti] = useState(true);
+  const ticketCardRef = useRef<HTMLDivElement>(null);
+
+  const handleShare = async () => {
+    const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nMy ticket: ${ticket.ticketId}`;
+    if (navigator.share) {
+      await navigator.share({ title: ticket.event.title, text }).catch(() => {});
+    } else {
+      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+    }
+  };
+
+  const handleSave = () => {
+    // Encode ticket details as a data-URI download
+    const canvas = document.createElement('canvas');
+    canvas.width = 400;
+    canvas.height = 120;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#060A12';
+    ctx.fillRect(0, 0, 400, 120);
+    ctx.fillStyle = '#F0F0FF';
+    ctx.font = 'bold 16px Inter, sans-serif';
+    ctx.fillText(ticket.event.title, 16, 32);
+    ctx.fillStyle = '#8B8FA8';
+    ctx.font = '12px Inter, sans-serif';
+    ctx.fillText(`${ticket.event.date} · ${ticket.event.venue}`, 16, 54);
+    ctx.fillText(`Ticket ID: ${ticket.ticketId}`, 16, 76);
+    ctx.fillText(`${ticket.ticketType.name} · x${ticket.quantity}`, 16, 98);
+    const link = document.createElement('a');
+    link.download = `vents-ticket-${ticket.ticketId}.png`;
+    link.href = canvas.toDataURL();
+    link.click();
+  };
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pt-14 pb-4">
+      <div 
+        className="flex items-center justify-between px-4 pb-4"
+        style={{ paddingTop: 'calc(14px + env(safe-area-inset-top))' }}
+      >
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -124,7 +192,9 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
           <ArrowLeft size={18} color="#F0F0FF" />
         </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>My Ticket</h1>
-        <button className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#131629' }}>
+        <button
+          onClick={handleShare}
+          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#131629' }}>
           <Share2 size={16} color="#F0F0FF" />
         </button>
       </div>
@@ -278,6 +348,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       >
         <div className="flex gap-3">
           <button
+            onClick={handleSave}
             className="flex-1 flex items-center justify-center gap-2"
             style={{
               height: '50px',

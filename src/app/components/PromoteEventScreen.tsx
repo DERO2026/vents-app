@@ -169,7 +169,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>

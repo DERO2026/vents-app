@@ -1,7 +1,19 @@
-import { useState } from 'react';
-import { ArrowLeft, Bell } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { ArrowLeft, Bell, Loader } from 'lucide-react';
 import { Notification } from './types';
+import { insforge } from '../../lib/insforge';
 
+function formatRelativeTime(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 const TYPE_COLORS: Record<string, string> = {
   reminder: '#A855F7',
@@ -10,15 +22,84 @@ const TYPE_COLORS: Record<string, string> = {
   social: '#3B82F6',
 };
 
-export function NotificationsScreen({ onBack }: { onBack: () => void }) {
+export function NotificationsScreen({
+  onBack,
+  currentUser,
+  onRefreshUnread,
+}: {
+  onBack: () => void;
+  currentUser?: { id: string } | null;
+  onRefreshUnread?: () => void;
+}) {
   const [items, setItems] = useState<Notification[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchNotifications = async () => {
+    if (!currentUser?.id) return;
+    setLoading(true);
+    try {
+      const { data, error } = await insforge.database
+        .from('notifications')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        setItems(data.map((n: any) => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          body: n.body,
+          read: n.read,
+          icon: n.icon,
+          time: formatRelativeTime(n.created_at)
+        })));
+      }
+    } catch (err) {
+      console.error("Failed to fetch notifications:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchNotifications();
+  }, [currentUser]);
 
   const unreadCount = items.filter((n) => !n.read).length;
 
-  const markAllRead = () => setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+  const markAllRead = async () => {
+    if (!currentUser?.id) return;
+    try {
+      setItems((prev) => prev.map((n) => ({ ...n, read: true })));
+      const { error } = await insforge.database
+        .from('notifications')
+        .update({ read: true })
+        .eq('user_id', currentUser.id)
+        .eq('read', false);
+      if (error) throw error;
+      onRefreshUnread?.();
+    } catch (err) {
+      console.error("Failed to mark all as read:", err);
+      fetchNotifications();
+    }
+  };
 
-  const markRead = (id: string) =>
-    setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  const markRead = async (id: string) => {
+    try {
+      setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      const { error } = await insforge.database
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', id);
+      if (error) throw error;
+      onRefreshUnread?.();
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+      fetchNotifications();
+    }
+  };
 
   return (
     <div
@@ -36,7 +117,7 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -92,7 +173,12 @@ export function NotificationsScreen({ onBack }: { onBack: () => void }) {
           padding: '4px 16px 24px',
         }}
       >
-        {items.length === 0 ? (
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: '#8B8FA8' }}>
+            <Loader size={20} className="animate-spin" />
+            <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading notifications...</span>
+          </div>
+        ) : items.length === 0 ? (
           <div
             style={{
               display: 'flex',

@@ -1,4 +1,4 @@
-import { useState, useEffect, memo } from 'react';
+import { useState, useEffect, memo, useMemo } from 'react';
 import { Search, Bell, MapPin, Calendar, X, Filter } from 'lucide-react';
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
@@ -17,6 +17,45 @@ interface HomeScreenProps {
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
+  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string } | null;
+  hasMore?: boolean;
+  onLoadMore?: () => void;
+}
+
+function useCardCountdown(eventDate?: string): string | null {
+  const target = useMemo(() => {
+    if (!eventDate) return NaN;
+    const t = new Date(eventDate).getTime();
+    return isNaN(t) ? NaN : t;
+  }, [eventDate]);
+
+  const [remaining, setRemaining] = useState(() => {
+    if (isNaN(target)) return 0;
+    return Math.max(0, target - Date.now());
+  });
+
+  useEffect(() => {
+    if (isNaN(target) || target <= 0) return;
+    const id = setInterval(() => {
+      const r = target - Date.now();
+      if (r <= 0) { setRemaining(0); clearInterval(id); } else { setRemaining(r); }
+    }, 30000); // update every 30s on cards (not per-second)
+    setRemaining(Math.max(0, target - Date.now()));
+    return () => clearInterval(id);
+  }, [target]);
+
+  if (isNaN(target)) return null;
+  const now = Date.now();
+  // Happening now: event started but within 6h window
+  if (target <= now && now - target < 6 * 3600000) return 'Happening now';
+  if (target <= now) return null; // past
+  const d = Math.floor(remaining / 86400000);
+  const h = Math.floor((remaining % 86400000) / 3600000);
+  const m = Math.floor((remaining % 3600000) / 60000);
+  if (d > 30) return null; // too far out, don't clutter card
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 const CATEGORIES = [
@@ -74,15 +113,23 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     capacity: 1000,
     rating: 4.9,
     reviewCount: 36,
-    ticketTypes: [
-      {
-        id: 't1',
-        name: 'Regular',
-        price: Number(dbEvent.price || 0),
-        description: 'General Admission',
-        available: 500
-      }
-    ],
+    ticketTypes: Array.isArray(dbEvent.ticket_types) && dbEvent.ticket_types.length > 0
+      ? dbEvent.ticket_types.map((t: any, idx: number) => ({
+          id: t.id || `t_${idx}`,
+          name: t.name || 'Regular',
+          price: Number(t.price ?? dbEvent.price ?? 0),
+          description: t.description || 'General Admission',
+          available: Number(t.available ?? t.quantity ?? 500)
+        }))
+      : [
+          {
+            id: 't1',
+            name: 'Regular',
+            price: Number(dbEvent.price || 0),
+            description: 'General Admission',
+            available: 500
+          }
+        ],
     organizer_id: dbEvent.organizer_id,
     created_at: dbEvent.created_at,
     event_date: dbEvent.event_date
@@ -95,15 +142,20 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
   isSaved: boolean;
   onToggleSave: (id: string) => void;
 }) {
+  const isSelling = (event.bookingsCount ?? 0) > 50;
+  const fomoColors = ['#EC4899', '#A855F7', '#00E5FF'];
+  const countdown = useCardCountdown(event.event_date);
+
   return (
     <div
       onClick={() => onPress(event)}
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '100%',
-        background: '#131629',
+        background: '#0D0D1A',
         borderRadius: '16px',
-        border: '1px solid rgba(255,255,255,0.05)',
+        border: '1px solid rgba(168,85,247,0.1)',
+        boxShadow: '0 0 12px rgba(168,85,247,0.04)',
       }}
     >
       <div style={{ height: '110px', position: 'relative' }}>
@@ -112,13 +164,27 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           alt={event.title}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
+        {/* FOMO tag */}
+        {isSelling && (
+          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.15)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '6px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>🔥 Selling Fast!</span>
+          </div>
+        )}
+        {/* Overlapping attendee avatars */}
+        <div style={{ position: 'absolute', top: '8px', right: '30px', display: 'flex' }}>
+          {fomoColors.map((c, i) => (
+            <div key={i} style={{ width: '18px', height: '18px', borderRadius: '50%', background: c, border: '1.5px solid #000', marginLeft: i > 0 ? '-6px' : '0', fontSize: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
+              {String.fromCharCode(65 + i)}
+            </div>
+          ))}
+        </div>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onToggleSave(event.id);
           }}
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
-          style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
+          style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
           <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -178,12 +244,19 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <Calendar size={10} color="#8B8FA8" />
           <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
           <MapPin size={10} color="#8B8FA8" />
           <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
             {event.city}
           </span>
         </div>
+        {countdown && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginBottom: '4px' }}>
+            <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
+              {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
+            </span>
+          </div>
+        )}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
             {formatPrice(event.price)}
@@ -228,6 +301,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
   badgeText?: string;
   badgeColor?: string;
 }) {
+  const countdown = useCardCountdown(event.event_date);
   return (
     <div
       onClick={() => onPress(event)}
@@ -339,6 +413,13 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
             {event.city}
           </span>
         </div>
+        {countdown && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginTop: '3px' }}>
+            <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
+              {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
+            </span>
+          </div>
+        )}
         <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <span style={{ fontSize: '13px', color: '#FFB830', fontWeight: 800 }}>
             {formatPrice(event.price)}
@@ -386,6 +467,9 @@ export function HomeScreen({
   dbEvents,
   loading,
   fetchEvents,
+  currentUser,
+  hasMore,
+  onLoadMore,
 }: HomeScreenProps) {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -401,6 +485,12 @@ export function HomeScreen({
     }, 300);
     return () => clearTimeout(handler);
   }, [inputValue]);
+
+  // Trigger fresh fetch on mount
+  useEffect(() => {
+    fetchEvents();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
 
   // Filter events locally based on requirements
@@ -450,13 +540,15 @@ export function HomeScreen({
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-5 pt-5 pb-3">
+      <div 
+        className="flex items-center justify-between px-5 pb-3"
+        style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
+      >
         <div>
           <VentsLogo />
           <p style={{ marginTop: '3px', fontSize: '13px', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.01em' }}>
-            Find it.{' '}
-            <em style={{ color: '#A855F7', fontStyle: 'normal', fontWeight: 600 }}>Feel it.</em>
-            {' '}Go.
+            Discover Nigeria's{' '}
+            <em style={{ color: '#A855F7', fontStyle: 'normal', fontWeight: 600 }}>Best Events</em>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -482,13 +574,19 @@ export function HomeScreen({
             className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center"
             style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', cursor: 'pointer' }}
           >
-            <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>A</span>
+            {currentUser?.avatar_url ? (
+              <img src={currentUser.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>
+                {(currentUser?.full_name || currentUser?.email || 'A').charAt(0).toUpperCase()}
+              </span>
+            )}
           </button>
         </div>
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto pb-20" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
         {/* Search Bar */}
         <div className="px-4 mb-4">
           <div
@@ -527,33 +625,7 @@ export function HomeScreen({
           </div>
         </div>
 
-        {/* Categories scroll */}
-        <div className="mb-4">
-          <div className="flex gap-2 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-            {CATEGORIES.map((cat) => {
-              const isActive = activeCategory === cat.id;
-              return (
-                <button
-                  key={cat.id}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5"
-                  style={{
-                    background: isActive ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
-                    borderRadius: '20px',
-                    border: isActive ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                    cursor: 'pointer',
-                    boxShadow: isActive ? '0 4px 12px rgba(123,47,190,0.3)' : 'none',
-                  }}
-                >
-                  <span style={{ fontSize: '14px' }}>{cat.icon}</span>
-                  <span style={{ fontSize: '12px', color: isActive ? '#fff' : '#8B8FA8', fontWeight: 500 }}>
-                    {cat.label}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
+
 
         {/* Filters and Sorting bar */}
         <div className="flex items-center gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
@@ -702,13 +774,27 @@ export function HomeScreen({
 
               {filteredEvents.length === 0 ? (
                 <div className="flex flex-col items-center py-12 px-4 text-center">
-                  <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
-                  <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
-                    No events found
-                  </p>
-                  <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
-                    Try adjusting your search queries or filters.
-                  </p>
+                  {isDefaultState ? (
+                    <>
+                      <span style={{ fontSize: '48px', marginBottom: '12px' }}>🎪</span>
+                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                        No events yet
+                      </p>
+                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                        We're just getting started. Check back soon — events are on the way.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
+                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
+                        No matches
+                      </p>
+                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
+                        Try a different search or clear the filters.
+                      </p>
+                    </>
+                  )}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -721,6 +807,28 @@ export function HomeScreen({
                       onToggleSave={onToggleSave}
                     />
                   ))}
+                </div>
+              )}
+
+              {hasMore && onLoadMore && (
+                <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px', marginBottom: '8px' }}>
+                  <button
+                    onClick={onLoadMore}
+                    style={{
+                      background: 'rgba(167,139,250,0.1)',
+                      border: '1px solid rgba(167,139,250,0.2)',
+                      borderRadius: '12px',
+                      padding: '10px 20px',
+                      color: '#A78BFA',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      fontFamily: 'Space Grotesk, sans-serif',
+                    }}
+                  >
+                    Load More Events
+                  </button>
                 </div>
               )}
             </div>

@@ -1,22 +1,19 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, Calendar, Star, Camera, X, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star } from 'lucide-react';
 import { UserProfile } from './types';
 import { EVENTS, formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
+import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
 
-const MOCK_HIGHLIGHTS = [
-  { id: 'h1', label: 'Afrobeats Night', emoji: '🎵', gradient: 'linear-gradient(135deg, #7B2FBE, #EC4899)', date: 'Dec 2024' },
-  { id: 'h2', label: 'Tech Summit', emoji: '💻', gradient: 'linear-gradient(135deg, #4F46E5, #06B6D4)', date: 'Nov 2024' },
-  { id: 'h3', label: 'Food Festival', emoji: '🍜', gradient: 'linear-gradient(135deg, #F97316, #EAB308)', date: 'Oct 2024' },
-  { id: 'h4', label: 'Comedy Show', emoji: '😂', gradient: 'linear-gradient(135deg, #10B981, #3B82F6)', date: 'Sep 2024' },
-];
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface UserProfileScreenProps {
-  user: UserProfile;
+  user: UserProfile & { is_verified?: boolean };
   isFollowing: boolean;
   onToggleFollow: () => void;
   onBack: () => void;
   onEventPress?: (event: import('./types').Event) => void;
+  currentUserId?: string;
 }
 
 const INTEREST_COLORS: Record<string, string> = {
@@ -40,13 +37,21 @@ export function UserProfileScreen({
   onToggleFollow,
   onBack,
   onEventPress,
+  currentUserId,
 }: UserProfileScreenProps) {
-  const [activeHighlight, setActiveHighlight] = useState<typeof MOCK_HIGHLIGHTS[0] | null>(null);
-  const [highlights] = useState(MOCK_HIGHLIGHTS);
-
+  const [highlightData, setHighlightData] = useState<{ items: any[]; startIndex: number } | null>(null);
+  const [highlightRefresh, setHighlightRefresh] = useState(0);
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
+  const isVerified = user.is_verified || user.id === ROOT_UID;
+  const isOwnProfile = currentUserId === user.id;
+
+  useEffect(() => {
+    setFollowers(0);
+    setEventsCreated(0);
+    setAttendees(0);
+  }, [user.id]);
 
   useEffect(() => {
     async function fetchStats() {
@@ -88,7 +93,7 @@ export function UserProfileScreen({
       }
     }
     fetchStats();
-  }, [user.id, isFollowing]);
+  }, [user.id]);
 
   const userEvents = EVENTS.filter((e) =>
     user.interests.some((i) =>
@@ -111,7 +116,7 @@ export function UserProfileScreen({
       }}
     >
       {/* Cover + back button */}
-      <div style={{ position: 'relative', height: '140px', flexShrink: 0 }}>
+      <div style={{ position: 'relative', height: 'calc(140px + env(safe-area-inset-top))', flexShrink: 0 }}>
         <div
           style={{
             width: '100%',
@@ -124,7 +129,7 @@ export function UserProfileScreen({
           onClick={onBack}
           style={{
             position: 'absolute',
-            top: '20px',
+            top: 'calc(20px + env(safe-area-inset-top))',
             left: '16px',
             background: 'rgba(0,0,0,0.4)',
             backdropFilter: 'blur(10px)',
@@ -208,17 +213,22 @@ export function UserProfileScreen({
 
       {/* Name + username */}
       <div style={{ padding: '0 16px', marginBottom: '8px' }}>
-        <h1
-          style={{
-            color: '#F0F0FF',
-            fontSize: '20px',
-            fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
-            marginBottom: '2px',
-          }}
-        >
-          {user.name}
-        </h1>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
+          <h1
+            style={{
+              color: '#F0F0FF',
+              fontSize: '20px',
+              fontWeight: 800,
+              fontFamily: 'Space Grotesk, sans-serif',
+              margin: 0,
+            }}
+          >
+            {user.name}
+          </h1>
+          {isVerified && (
+            <BadgeCheck size={18} color="#3B82F6" title="Verified" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+          )}
+        </div>
         <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 500 }}>
           @{user.username}
         </span>
@@ -265,7 +275,7 @@ export function UserProfileScreen({
       >
         {[
           { label: 'Events', value: String(eventsCreated) },
-          { label: 'Followers', value: String(followers) },
+          { label: 'Followers', value: String(followers + (isFollowing ? 1 : 0)) },
           { label: 'Attendees', value: String(attendees) },
         ].map(({ label, value }, i, arr) => (
           <div
@@ -291,198 +301,23 @@ export function UserProfileScreen({
         ))}
       </div>
 
-      {/* Highlights */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', marginBottom: '10px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em' }}>HIGHLIGHTS</p>
-          <span style={{ color: '#A855F7', fontSize: '11px', fontWeight: 600 }}>{highlights.length} memories</span>
-        </div>
-        <div
-          style={{
-            display: 'flex',
-            gap: '12px',
-            overflowX: 'auto',
-            padding: '0 16px 4px',
-            scrollbarWidth: 'none',
-          }}
-        >
-          {/* Add highlight button */}
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-            <div
-              style={{
-                width: '62px',
-                height: '62px',
-                borderRadius: '50%',
-                border: '2px dashed rgba(168,85,247,0.4)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                background: 'rgba(168,85,247,0.06)',
-              }}
-            >
-              <Camera size={20} color="#A855F7" />
-            </div>
-            <span style={{ color: '#8B8FA8', fontSize: '10px', textAlign: 'center', width: '68px' }}>Add</span>
-          </div>
+      {/* Highlights (real DB-backed) */}
+      <HighlightsStrip
+        userId={user.id}
+        isOwnProfile={isOwnProfile}
+        onHighlightClick={(items, startIndex) => setHighlightData({ items, startIndex })}
+        refreshTrigger={highlightRefresh}
+      />
 
-          {highlights.map((h) => (
-            <div
-              key={h.id}
-              onClick={() => setActiveHighlight(h)}
-              style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0, cursor: 'pointer' }}
-            >
-              <div
-                style={{
-                  width: '62px',
-                  height: '62px',
-                  borderRadius: '50%',
-                  background: h.gradient,
-                  border: '2.5px solid rgba(168,85,247,0.5)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '26px',
-                  boxShadow: '0 4px 16px rgba(168,85,247,0.25)',
-                }}
-              >
-                {h.emoji}
-              </div>
-              <span style={{ color: '#C4C9E0', fontSize: '10px', textAlign: 'center', width: '68px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {h.label}
-              </span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Highlight viewer overlay */}
-      {activeHighlight && (
-        <div
-          onClick={() => setActiveHighlight(null)}
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'rgba(0,0,0,0.9)',
-            zIndex: 100,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          {/* Progress bar */}
-          <div style={{ position: 'absolute', top: '16px', left: '16px', right: '16px', display: 'flex', gap: '4px' }}>
-            {highlights.map((h) => (
-              <div
-                key={h.id}
-                style={{
-                  flex: 1,
-                  height: '3px',
-                  borderRadius: '2px',
-                  background: h.id === activeHighlight.id ? '#fff' : 'rgba(255,255,255,0.3)',
-                }}
-              />
-            ))}
-          </div>
-
-          {/* Close */}
-          <button
-            onClick={() => setActiveHighlight(null)}
-            style={{
-              position: 'absolute',
-              top: '32px',
-              right: '16px',
-              background: 'rgba(255,255,255,0.12)',
-              border: 'none',
-              borderRadius: '50%',
-              width: '36px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <X size={18} color="#fff" />
-          </button>
-
-          {/* Highlight card */}
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '280px',
-              height: '380px',
-              borderRadius: '24px',
-              background: activeHighlight.gradient,
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '16px',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.6)',
-            }}
-          >
-            <span style={{ fontSize: '72px' }}>{activeHighlight.emoji}</span>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ color: '#fff', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                {activeHighlight.label}
-              </p>
-              <p style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', marginTop: '4px' }}>
-                {activeHighlight.date} · {user.name}
-              </p>
-            </div>
-          </div>
-
-          {/* Nav arrows */}
-          <div style={{ position: 'absolute', bottom: '40px', display: 'flex', gap: '16px' }}>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const idx = highlights.findIndex((h) => h.id === activeHighlight.id);
-                if (idx > 0) setActiveHighlight(highlights[idx - 1]);
-              }}
-              disabled={highlights.findIndex((h) => h.id === activeHighlight.id) === 0}
-              style={{
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '50%',
-                width: '44px',
-                height: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                opacity: highlights.findIndex((h) => h.id === activeHighlight.id) === 0 ? 0.3 : 1,
-              }}
-            >
-              <ChevronLeft size={20} color="#fff" />
-            </button>
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                const idx = highlights.findIndex((h) => h.id === activeHighlight.id);
-                if (idx < highlights.length - 1) setActiveHighlight(highlights[idx + 1]);
-              }}
-              disabled={highlights.findIndex((h) => h.id === activeHighlight.id) === highlights.length - 1}
-              style={{
-                background: 'rgba(255,255,255,0.15)',
-                border: 'none',
-                borderRadius: '50%',
-                width: '44px',
-                height: '44px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                opacity: highlights.findIndex((h) => h.id === activeHighlight.id) === highlights.length - 1 ? 0.3 : 1,
-              }}
-            >
-              <ChevronRight size={20} color="#fff" />
-            </button>
-          </div>
-        </div>
+      {highlightData && (
+        <HighlightsModal
+          highlights={highlightData.items}
+          startIndex={highlightData.startIndex}
+          onClose={() => setHighlightData(null)}
+        />
       )}
+
+      {/* Interests section below */}
 
       {/* Interests */}
       <div style={{ padding: '0 16px', marginBottom: '20px' }}>

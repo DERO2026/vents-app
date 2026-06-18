@@ -343,7 +343,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <button
@@ -373,7 +373,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '4px 16px 32px',
+          padding: '4px 16px 110px',
           scrollbarWidth: 'none',
         }}
       >

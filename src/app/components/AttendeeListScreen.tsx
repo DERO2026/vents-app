@@ -80,7 +80,7 @@ export function AttendeeListScreen({ onBack }: AttendeeListScreenProps) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>

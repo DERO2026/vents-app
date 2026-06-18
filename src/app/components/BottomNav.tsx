@@ -21,8 +21,9 @@ export function BottomNav({ activeTab, onTabChange, onTicketsPress }: BottomNavP
         background: 'rgba(10, 11, 20, 0.95)',
         backdropFilter: 'blur(20px)',
         borderTop: '1px solid rgba(255,255,255,0.08)',
+        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
       }}
-      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pb-4 pt-2 z-50"
+      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pt-2 z-50"
     >
       {tabs.map((tab, index) => {
         const Icon = tab.icon;

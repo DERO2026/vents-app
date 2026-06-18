@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeft,
   Share2,
@@ -21,6 +21,7 @@ import {
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
+import { insforge } from '../../lib/insforge';
 
 interface EventDetailsScreenProps {
   event: Event;
@@ -32,23 +33,105 @@ interface EventDetailsScreenProps {
   onBook?: () => void;
   bookingLoading?: boolean;
   onEventPress?: (event: Event) => void;
+  following: string[];
+  onToggleFollow: (userId: string) => void;
 }
 
-function useCountdown(dateStr: string, timeStr: string) {
-  const [diff, setDiff] = useState(0);
-  useEffect(() => {
-    const target = new Date(`${dateStr}, 2025 ${timeStr}`).getTime();
-    const update = () => setDiff(target - Date.now());
-    update();
-    const id = setInterval(update, 1000);
-    return () => clearInterval(id);
-  }, [dateStr, timeStr]);
+function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string): number {
+  if (eventDate) {
+    const t = new Date(eventDate).getTime();
+    if (!isNaN(t)) return t;
+  }
 
-  if (diff <= 0) return null;
-  const d = Math.floor(diff / 86400000);
-  const h = Math.floor((diff % 86400000) / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
+  if (dateStr && timeStr) {
+    try {
+      const cleanDate = dateStr.replace(/^[A-Za-z]+,\s*/, '').trim();
+      const parts = cleanDate.replace(/,/g, '').split(/\s+/);
+      if (parts.length === 3) {
+        const monthStr = parts[0];
+        const day = parseInt(parts[1], 10);
+        const year = parseInt(parts[2], 10);
+
+        const months: Record<string, number> = {
+          jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+          jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11
+        };
+        const monthIndex = months[monthStr.toLowerCase().slice(0, 3)];
+
+        const timeParts = timeStr.trim().split(/\s+/);
+        if (timeParts.length >= 1) {
+          const hm = timeParts[0].split(':');
+          let hours = parseInt(hm[0], 10);
+          const minutes = hm.length > 1 ? parseInt(hm[1], 10) : 0;
+          const ampm = timeParts.length > 1 ? timeParts[1].toLowerCase() : '';
+
+          if (ampm === 'pm' && hours < 12) {
+            hours += 12;
+          } else if (ampm === 'am' && hours === 12) {
+            hours = 0;
+          }
+
+          if (monthIndex !== undefined && !isNaN(day) && !isNaN(year) && !isNaN(hours) && !isNaN(minutes)) {
+            const dateObj = new Date(year, monthIndex, day, hours, minutes, 0, 0);
+            return dateObj.getTime();
+          }
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse fallback date:", e);
+    }
+  }
+
+  return NaN;
+}
+
+function useCountdown(eventDate?: string, dateStr?: string, timeStr?: string) {
+  const target = useMemo(() => {
+    return parseEventDate(eventDate, dateStr, timeStr);
+  }, [eventDate, dateStr, timeStr]);
+
+  const [remaining, setRemaining] = useState(() => {
+    if (isNaN(target)) return 0;
+    const rem = target - Date.now();
+    return rem > 0 ? rem : 0;
+  });
+
+  useEffect(() => {
+    if (isNaN(target) || target <= 0) {
+      setRemaining(0);
+      return;
+    }
+
+    const initialRem = target - Date.now();
+    if (initialRem <= 0) {
+      setRemaining(0);
+      return;
+    }
+
+    setRemaining(initialRem);
+
+    const intervalId = setInterval(() => {
+      const currentRem = target - Date.now();
+      if (currentRem <= 0) {
+        setRemaining(0);
+        clearInterval(intervalId);
+      } else {
+        setRemaining(currentRem);
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [target]);
+
+  if (remaining <= 0) return null;
+
+  const d = Math.floor(remaining / 86400000);
+  const h = Math.floor((remaining % 86400000) / 3600000);
+  const m = Math.floor((remaining % 3600000) / 60000);
+  const s = Math.floor((remaining % 60000) / 1000);
+
   return { d, h, m, s };
 }
 
@@ -95,10 +178,12 @@ export function EventDetailsScreen({
   onBook,
   bookingLoading = false,
   onEventPress,
+  following,
+  onToggleFollow,
 }: EventDetailsScreenProps) {
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
-  const [isFollowingOrg, setIsFollowingOrg] = useState(false);
+  const isFollowingOrg = Array.isArray(following) && following.includes(event.organizer_id || '');
   const [userReviews, setUserReviews] = useState<Review[]>([]);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
@@ -112,30 +197,14 @@ export function EventDetailsScreen({
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [shared, setShared] = useState(false);
 
+  // 1. Static metadata (organizer profile and related events) - fetch once per event
   useEffect(() => {
-    const fetchAttendeeCount = async () => {
-      try {
-        const { data, error } = await insforge.database
-          .from('tickets')
-          .select('id')
-          .eq('event_id', event.id)
-          .eq('status', 'active');
-        
-        if (error) throw error;
-        if (data) {
-          setRealAttendeeCount(data.length);
-        }
-      } catch (err) {
-        console.error('Failed to fetch attendee count:', err);
-      }
-    };
-
     const fetchOrganizerProfile = async () => {
       if (!event.organizer_id) return;
       try {
         const { data, error } = await insforge.database
-          .from('users')
-          .select('*')
+          .from('public_profiles')
+          .select('id, full_name, username, avatar_url, is_verified, state')
           .eq('id', event.organizer_id)
           .maybeSingle();
         
@@ -170,17 +239,53 @@ export function EventDetailsScreen({
       }
     };
 
-    fetchAttendeeCount();
     fetchOrganizerProfile();
     fetchRelatedEvents();
-  }, [event.id, event.category, event.organizer_id, isBooked]);
+  }, [event.id, event.category, event.organizer_id]);
 
-  const handleShare = () => {
-    const link = `${window.location.origin}/events/${event.id}`;
-    navigator.clipboard.writeText(link).then(() => {
-      setShared(true);
-      setTimeout(() => setShared(false), 2000);
-    });
+  // 2. Dynamic attendee count - re-fetch when event changes or booking state updates
+  useEffect(() => {
+    const fetchAttendeeCount = async () => {
+      try {
+        const { data, error } = await insforge.database
+          .from('tickets')
+          .select('id')
+          .eq('event_id', event.id)
+          .eq('status', 'active');
+        
+        if (error) throw error;
+        if (data) {
+          setRealAttendeeCount(data.length);
+        }
+      } catch (err) {
+        console.error('Failed to fetch attendee count:', err);
+      }
+    };
+
+    fetchAttendeeCount();
+  }, [event.id, isBooked]);
+
+  const handleShare = async () => {
+    const deepLink = `${window.location.origin}/?event=${event.id}`;
+    const text =
+      `🎟️ ${event.title}\n` +
+      `📅 ${event.date} · ${event.time}\n` +
+      `📍 ${event.venue}, ${event.city}\n` +
+      `\nGet tickets on Vents 👇\n${deepLink}`;
+
+    try {
+      if (navigator.share) {
+        // Native share sheet — WhatsApp, Messages, Twitter all appear automatically
+        await navigator.share({ title: event.title, text, url: deepLink });
+      } else {
+        // Desktop fallback: open WhatsApp Web with pre-filled message
+        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      }
+    } catch {
+      // User cancelled share — silently ignore
+    }
+    setShared(true);
+    setTimeout(() => setShared(false), 2000);
   };
 
   const allReviews = [...userReviews];
@@ -204,7 +309,7 @@ export function EventDetailsScreen({
     setShowReviewForm(false);
     setReviewSubmitted(true);
   }
-  const countdown = useCountdown(event.date, event.time);
+  const countdown = useCountdown(event.event_date, event.date, event.time);
 
   const openMap = (provider: 'google' | 'apple') => {
     const query = encodeURIComponent(`${event.venue}, ${event.area}, ${event.city}, Nigeria`);
@@ -232,7 +337,7 @@ export function EventDetailsScreen({
       }}
     >
       {/* Hero */}
-      <div style={{ position: 'relative', height: '290px', flexShrink: 0 }}>
+      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0 }}>
         <img
           src={event.image}
           alt={event.title}
@@ -250,7 +355,7 @@ export function EventDetailsScreen({
         <div
           style={{
             position: 'absolute',
-            top: '20px',
+            top: 'calc(20px + env(safe-area-inset-top))',
             left: '16px',
             right: '16px',
             display: 'flex',
@@ -580,7 +685,7 @@ export function EventDetailsScreen({
             </span>
           </div>
           <button
-            onClick={() => setIsFollowingOrg(!isFollowingOrg)}
+            onClick={() => onToggleFollow && onToggleFollow(event.organizer_id || '')}
             style={{
               marginLeft: 'auto',
               background: isFollowingOrg ? 'rgba(16,185,129,0.1)' : 'rgba(167,139,250,0.1)',
@@ -746,6 +851,59 @@ export function EventDetailsScreen({
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
         </div>
+
+        {/* Ticket Options */}
+        {event.ticketTypes && event.ticketTypes.length > 0 && (
+          <div style={{ marginBottom: '24px' }}>
+            <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+              Select Ticket Category
+            </span>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {event.ticketTypes.map((t) => (
+                <div
+                  key={t.id}
+                  onClick={() => !isBooked && onGetTickets && onGetTickets(t)}
+                  style={{
+                    background: '#131629',
+                    border: '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '16px',
+                    padding: '14px 16px',
+                    cursor: isBooked ? 'default' : 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0', display: 'block' }}>{t.description || 'General Admission'}</p>
+                    <span style={{ color: '#6B7280', fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} tickets left</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+                      {formatPrice(t.price)}
+                    </span>
+                    {!isBooked && (
+                      <div style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '50%',
+                        background: 'rgba(167,139,250,0.1)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: '#A78BFA'
+                      }}>
+                        →
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Tags */}
         {event.tags && event.tags.length > 0 && (
@@ -1173,7 +1331,7 @@ export function EventDetailsScreen({
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: isBooked || bookingLoading ? 'not-allowed' : 'pointer',
-            boxShadow: isBooked || bookingLoading ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
+            boxShadow: isBooked || bookingLoading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

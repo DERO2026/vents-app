@@ -46,7 +46,7 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <button
@@ -65,7 +65,7 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>My Events</h1>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>My Tickets</h1>
       </div>
 
       {/* Tabs */}
@@ -99,7 +99,7 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
                 transition: 'all 0.2s ease',
               }}
             >
-              {tab === 'upcoming' ? 'Upcoming Events' : 'Past Events'}{' '}
+              {tab === 'upcoming' ? 'Upcoming' : 'Past'}{' '}
               <span
                 style={{
                   background: activeTab === tab ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)',

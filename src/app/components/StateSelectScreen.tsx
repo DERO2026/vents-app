@@ -1,24 +1,62 @@
 import { useState } from 'react';
 import { MapPin, ChevronRight, Check } from 'lucide-react';
 import { VentsLogo } from './VentsLogo';
+import { Event } from './types';
 
 export const NIGERIA_STATES = [
-  { name: 'Lagos', city: 'Lagos', emoji: '🌆', desc: 'Commercial capital · Entertainment hub', events: 120 },
-  { name: 'Abuja', city: 'Abuja', emoji: '🏛️', desc: 'Federal capital · International events', events: 85 },
-  { name: 'Rivers', city: 'Port Harcourt', emoji: '⛽', desc: 'Oil city · Vibrant music scene', events: 64 },
-  { name: 'Oyo', city: 'Ibadan', emoji: '🎭', desc: 'Ancient city · Cultural festivals', events: 48 },
-  { name: 'Kano', city: 'Kano', emoji: '🕌', desc: 'Northern commercial hub', events: 42 },
-  { name: 'Delta', city: 'Warri', emoji: '🌊', desc: 'Delta culture · Urhobo festivals', events: 36 },
-  { name: 'Anambra', city: 'Onitsha', emoji: '🏘️', desc: 'Igbo heartland · Trade fairs', events: 34 },
-  { name: 'Ogun', city: 'Abeokuta', emoji: '🌿', desc: 'Gateway state · Close to Lagos', events: 30 },
-  { name: 'Kaduna', city: 'Kaduna', emoji: '🏔️', desc: 'Northern Nigeria · Political hub', events: 28 },
-  { name: 'Edo', city: 'Benin City', emoji: '🎨', desc: 'Ancient kingdom · Arts & culture', events: 26 },
-  { name: 'Imo', city: 'Owerri', emoji: '🎉', desc: 'Party capital of the East', events: 24 },
-  { name: 'Enugu', city: 'Enugu', emoji: '🏙️', desc: 'Coal city · Eastern hub', events: 22 },
-  { name: 'Cross River', city: 'Calabar', emoji: '🎪', desc: 'Tourism capital · Calabar Carnival', events: 20 },
-  { name: 'Kwara', city: 'Ilorin', emoji: '🌾', desc: 'Middle Belt · Gateway to north', events: 18 },
-  { name: 'Osun', city: 'Osogbo', emoji: '🌺', desc: 'Cultural heritage · Osun festival', events: 14 },
+  { name: 'Abia', city: 'Umuahia', emoji: '📍', desc: 'God\'s Own State', events: 0 },
+  { name: 'Adamawa', city: 'Yola', emoji: '📍', desc: 'Land of Beauty', events: 0 },
+  { name: 'Akwa Ibom', city: 'Uyo', emoji: '📍', desc: 'Land of Promise', events: 0 },
+  { name: 'Anambra', city: 'Awka', emoji: '📍', desc: 'Light of the Nation', events: 0 },
+  { name: 'Bauchi', city: 'Bauchi', emoji: '📍', desc: 'Pearl of Tourism', events: 0 },
+  { name: 'Bayelsa', city: 'Yenagoa', emoji: '📍', desc: 'Glory of all Lands', events: 0 },
+  { name: 'Benue', city: 'Makurdi', emoji: '📍', desc: 'Food Basket of the Nation', events: 0 },
+  { name: 'Borno', city: 'Maiduguri', emoji: '📍', desc: 'Home of Peace', events: 0 },
+  { name: 'Cross River', city: 'Calabar', emoji: '🎪', desc: 'Tourism Capital · Calabar Carnival', events: 0 },
+  { name: 'Delta', city: 'Asaba', emoji: '🌊', desc: 'The Finger of God', events: 0 },
+  { name: 'Ebonyi', city: 'Abakaliki', emoji: '📍', desc: 'Salt of the Nation', events: 0 },
+  { name: 'Edo', city: 'Benin City', emoji: '🎨', desc: 'Heartbeat of the Nation · Ancient Benin', events: 0 },
+  { name: 'Ekiti', city: 'Ado Ekiti', emoji: '📍', desc: 'Land of Honour', events: 0 },
+  { name: 'Enugu', city: 'Enugu', emoji: '🏙️', desc: 'Coal City State · Eastern Hub', events: 0 },
+  { name: 'Federal Capital Territory (Abuja)', city: 'Abuja', emoji: '🏛️', desc: 'Federal Capital · Center of Unity', events: 0 },
+  { name: 'Gombe', city: 'Gombe', emoji: '📍', desc: 'Jewel in the Savannah', events: 0 },
+  { name: 'Imo', city: 'Owerri', emoji: '🎉', desc: 'Land of Hope · Eastern Hub', events: 0 },
+  { name: 'Jigawa', city: 'Dutse', emoji: '📍', desc: 'The New World', events: 0 },
+  { name: 'Kaduna', city: 'Kaduna', emoji: '🏔️', desc: 'Centre of Learning', events: 0 },
+  { name: 'Kano', city: 'Kano', emoji: '🕌', desc: 'Centre of Commerce · Northern Hub', events: 0 },
+  { name: 'Katsina', city: 'Katsina', emoji: '📍', desc: 'Home of Hospitality', events: 0 },
+  { name: 'Kebbi', city: 'Birnin Kebbi', emoji: '📍', desc: 'Land of Equity', events: 0 },
+  { name: 'Kogi', city: 'Lokoja', emoji: '📍', desc: 'The Confluence State', events: 0 },
+  { name: 'Kwara', city: 'Ilorin', emoji: '🌾', desc: 'State of Harmony', events: 0 },
+  { name: 'Lagos', city: 'Lagos', emoji: '🌆', desc: 'Commercial Capital · Entertainment Hub', events: 120 },
+  { name: 'Nasarawa', city: 'Lafia', emoji: '📍', desc: 'Home of Solid Minerals', events: 0 },
+  { name: 'Niger', city: 'Minna', emoji: '📍', desc: 'The Power State', events: 0 },
+  { name: 'Ogun', city: 'Abeokuta', emoji: '🌿', desc: 'Gateway State · Abeokuta Rocks', events: 0 },
+  { name: 'Ondo', city: 'Akure', emoji: '📍', desc: 'Sunshine State', events: 0 },
+  { name: 'Osun', city: 'Osogbo', emoji: '🌺', desc: 'Land of Virtue · Cultural Heritage', events: 0 },
+  { name: 'Oyo', city: 'Ibadan', emoji: '🎭', desc: 'Pace Setter State', events: 0 },
+  { name: 'Plateau', city: 'Jos', emoji: '📍', desc: 'Home of Peace and Tourism', events: 0 },
+  { name: 'Rivers', city: 'Port Harcourt', emoji: '⛽', desc: 'Treasure Base of the Nation', events: 0 },
+  { name: 'Sokoto', city: 'Sokoto', emoji: '📍', desc: 'Seat of the Caliphate', events: 0 },
+  { name: 'Taraba', city: 'Jalingo', emoji: '📍', desc: 'Nature\'s Gift to the Nation', events: 0 },
+  { name: 'Yobe', city: 'Damaturu', emoji: '📍', desc: 'Pride of the Sahel', events: 0 },
+  { name: 'Zamfara', city: 'Gusau', emoji: '📍', desc: 'Farming is our Pride', events: 0 }
 ];
+
+export function eventMatchesState(event: Event, stateName: string): boolean {
+  if (stateName === 'All States' || stateName === 'All Cities') return true;
+
+  const cleanState = stateName.toLowerCase().replace(/\s+state$/, '').trim();
+  const cleanEventState = (event.state || '').toLowerCase().replace(/\s+state$/, '').trim();
+  const cleanEventCity = (event.city || '').toLowerCase().trim();
+
+  if (cleanState.includes('abuja') || cleanState.includes('federal capital territory')) {
+    return cleanEventCity.includes('abuja') || cleanEventState.includes('abuja') || cleanEventState.includes('federal capital territory');
+  }
+
+  return cleanEventState === cleanState || cleanEventCity === cleanState || cleanEventState.includes(cleanState) || cleanEventCity.includes(cleanState);
+}
+
 
 interface StateSelectScreenProps {
   onContinue: (state: typeof NIGERIA_STATES[0]) => void;
@@ -43,7 +81,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
       {/* Header */}
       <div
         style={{
-          padding: '28px 24px 20px',
+          padding: 'calc(28px + env(safe-area-inset-top)) 24px 20px',
           background: 'linear-gradient(180deg, #0D0520 0%, #060A12 100%)',
           flexShrink: 0,
         }}

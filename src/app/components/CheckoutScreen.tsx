@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, CreditCard, Building2, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X, Eye, EyeOff, CheckCircle, Search } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
+import { openPaystackPopup } from '../../lib/paystack';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -179,21 +180,56 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
 
   const handlePay = () => {
     setEmailTouched(true);
-    if (!isValidEmail(email)) return;
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      const ticket: PurchasedTicket = {
-        event,
-        ticketType,
-        quantity,
-        ticketId: `VNT-${Date.now().toString(36).toUpperCase()}`,
-        purchasedAt: new Date().toISOString(),
-        totalAmount: total,
-        holderName: name || 'Guest',
-      };
-      onSuccess(ticket);
-    }, 1800);
+    if (!email || !isValidEmail(email)) return;
+    if (!name.trim()) return;
+
+    // For card and USSD payments, launch Paystack popup
+    // For bank transfer, we show the manual transfer details (handled in UI)
+    if (payMethod === 'card' || payMethod === 'ussd') {
+      openPaystackPopup({
+        email: email.trim(),
+        amountNaira: total,
+        metadata: {
+          event_id: event.id,
+          event_title: event.title,
+          ticket_type: ticketType.name,
+          quantity,
+          holder_name: name.trim(),
+        },
+        onSuccess: ({ reference }) => {
+          const ticket: PurchasedTicket = {
+            event,
+            ticketType,
+            quantity,
+            ticketId: reference,  // Use Paystack reference as ticket ID
+            purchasedAt: new Date().toISOString(),
+            totalAmount: total,
+            holderName: name.trim() || 'Guest',
+          };
+          onSuccess(ticket);
+        },
+        onClose: () => {
+          // User dismissed the popup — no state change needed
+          setLoading(false);
+        },
+      });
+    } else {
+      // Bank transfer — simulate confirmation (bank transfers are verified asynchronously)
+      setLoading(true);
+      setTimeout(() => {
+        setLoading(false);
+        const ticket: PurchasedTicket = {
+          event,
+          ticketType,
+          quantity,
+          ticketId: `VNT-BANK-${Date.now().toString(36).toUpperCase()}`,
+          purchasedAt: new Date().toISOString(),
+          totalAmount: total,
+          holderName: name.trim() || 'Guest',
+        };
+        onSuccess(ticket);
+      }, 1500);
+    }
   };
 
   return (
@@ -211,7 +247,7 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
       <style>{`input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
           style={{
@@ -616,7 +652,7 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: loading || (payMethod === 'bank' && bankStep !== 'confirm') ? 'not-allowed' : 'pointer',
-            boxShadow: loading || (payMethod === 'bank' && bankStep !== 'confirm') ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
+            boxShadow: loading || (payMethod === 'bank' && bankStep !== 'confirm') ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

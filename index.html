@@ -2,14 +2,26 @@
   <!DOCTYPE html>
   <html lang="en">
     <head>
-      
+      <style>
+        html, body {
+          background-color: #060A14 !important;
+          margin: 0;
+          padding: 0;
+          width: 100%;
+          height: 100%;
+          overscroll-behavior-y: none;
+        }
+      </style>
       <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
       <title>VENTS</title>
       <meta name="description" content="Discover and book events in Nigeria with a user-friendly platform that offers ticket purchasing, event categories, and personalized recommendations." />
       <meta name="robots" content="noindex, nofollow" />
-      <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-      
+      <meta name="theme-color" content="#060A12" media="(prefers-color-scheme: dark)" />
+      <meta name="theme-color" content="#F5F3FA" media="(prefers-color-scheme: light)" />
+
+      <!-- Paystack Inline Payment SDK -->
+      <script src="https://js.paystack.co/v1/inline.js"></script>
     </head>
 
     <body>

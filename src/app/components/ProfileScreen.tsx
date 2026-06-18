@@ -11,19 +11,31 @@ import {
   HelpCircle,
   MapPin,
   LayoutDashboard,
+  Users,
+  BadgeCheck,
+  Gift,
+  Camera,
+  Receipt,
 } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
 
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
+
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; hasBeenOrganizer?: boolean } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
   followingCount: number;
   onViewTicket: (ticket: PurchasedTicket) => void;
   onNavigate: (screen: string) => void;
+  onNavigateToFollowingFilter?: (filter: 'following' | 'followers' | 'attendees' | 'all') => void;
+  setActiveView: (view: 'attendee' | 'organizer') => void;
+  onBecomeOrganizer?: () => void;
+  userRole?: 'attendee' | 'organizer';
+  unreadNotificationsCount?: number;
 }
 
 export function ProfileScreen({
@@ -34,6 +46,11 @@ export function ProfileScreen({
   followingCount,
   onViewTicket,
   onNavigate,
+  onNavigateToFollowingFilter,
+  setActiveView,
+  onBecomeOrganizer,
+  userRole,
+  unreadNotificationsCount = 0,
 }: ProfileScreenProps) {
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
@@ -79,7 +96,7 @@ export function ProfileScreen({
       }
     }
     fetchStats();
-  }, [currentUser]);
+  }, [currentUser?.id]);
   if (!currentUser) {
     return (
       <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
@@ -102,7 +119,7 @@ export function ProfileScreen({
       sublabel: 'Manage alerts',
       color: '#F59E0B',
       screen: 'notifications',
-      badge: 2,
+      badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
     },
     {
       icon: Heart,
@@ -110,6 +127,15 @@ export function ProfileScreen({
       sublabel: `${savedCount} saved`,
       color: '#EC4899',
       screen: 'saved',
+    },
+    { icon: Receipt, label: 'Transactions', sublabel: 'Last 90 days', color: '#06B6D4', screen: 'transactions' },
+    { icon: Users, label: 'Following', sublabel: `${followingCount} people`, color: '#A855F7', screen: 'following-list' },
+    {
+      icon: Gift,
+      label: 'Invite Friends',
+      sublabel: 'Earn Vents Cents',
+      color: '#FFB830',
+      screen: 'referral',
     },
     {
       icon: Settings,
@@ -121,25 +147,33 @@ export function ProfileScreen({
     {
       icon: Shield,
       label: 'Privacy & Security',
-      sublabel: 'Account safety',
+      sublabel: 'Privacy policy & data rights',
       color: '#3B82F6',
-      screen: null,
+      screen: 'privacy-policy',
     },
     {
       icon: HelpCircle,
       label: 'Help & Support',
       sublabel: 'FAQs and contact',
       color: '#8B8FA8',
-      screen: null,
+      screen: 'help-support',
     },
   ];
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
-  const isOrganizer = currentUser?.role === 'organizer';
-  const isAdmin = currentUser?.role === 'admin';
+  const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
+  const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
+  const isVerified = (currentUser as any)?.is_verified === true || currentUser?.id === ROOT_UID;
   const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : 'Attendee';
   
+  const filteredMenuItems = menuItems.filter(item => {
+    if (isOrganizer) {
+      return item.screen !== 'my-tickets' && item.screen !== 'saved';
+    }
+    return true;
+  });
+
   const badgeGradient = isOrganizer
     ? 'linear-gradient(135deg, #C084FC, #7C3AED)'
     : isAdmin
@@ -152,7 +186,10 @@ export function ProfileScreen({
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Header */}
-      <div className="flex items-center justify-between px-4 pb-3 pt-5">
+      <div 
+        className="flex items-center justify-between px-4 pb-3"
+        style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
+      >
         <h1
           style={{
             color: '#F0F0FF',
@@ -163,37 +200,10 @@ export function ProfileScreen({
         >
           Profile
         </h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => onNavigate('notifications')}
-            className="w-9 h-9 rounded-full flex items-center justify-center relative"
-            style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <Bell size={16} color="#C4C9E0" />
-            <div
-              style={{
-                position: 'absolute',
-                top: '7px',
-                right: '7px',
-                width: '8px',
-                height: '8px',
-                background: '#EF4444',
-                borderRadius: '50%',
-                border: '1.5px solid #060A12',
-              }}
-            />
-          </button>
-          <button
-            onClick={() => onNavigate('settings')}
-            className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)' }}
-          >
-            <Settings size={16} color="#C4C9E0" />
-          </button>
-        </div>
+        <div />
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-24" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
         {/* Profile card */}
         <div className="px-4 mb-4">
           <div
@@ -220,26 +230,50 @@ export function ProfileScreen({
             />
 
             <div className="flex items-center gap-4 mb-4">
-              <div
-                className="w-16 h-16 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{
-                  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-                  boxShadow: '0 8px 24px rgba(123,47,190,0.4)',
-                }}
+              <button
+                onClick={() => onNavigate('settings')}
+                style={{ position: 'relative', padding: 0, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
+                aria-label="Change profile photo"
               >
-                <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>{initial}</span>
-              </div>
-              <div>
-                <h2
+                <div
+                  className="w-16 h-16 rounded-2xl flex items-center justify-center overflow-hidden"
                   style={{
-                    color: '#F0F0FF',
-                    fontSize: '17px',
-                    fontWeight: 700,
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                    boxShadow: '0 8px 24px rgba(123,47,190,0.4)',
                   }}
                 >
-                  {displayName}
-                </h2>
+                  {currentUser?.avatar_url ? (
+                    <img src={currentUser.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>{initial}</span>
+                  )}
+                </div>
+                <div style={{
+                  position: 'absolute', bottom: -4, right: -4,
+                  background: '#7B2FBE', borderRadius: '50%', width: '22px', height: '22px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  border: '2px solid #060A12',
+                }}>
+                  <Camera size={11} color="#fff" />
+                </div>
+              </button>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <h2
+                    style={{
+                      color: '#F0F0FF',
+                      fontSize: '17px',
+                      fontWeight: 700,
+                      fontFamily: 'Space Grotesk, sans-serif',
+                      margin: 0,
+                    }}
+                  >
+                    {displayName}
+                  </h2>
+                  {isVerified && (
+                    <BadgeCheck size={16} color="#3B82F6" title="Verified" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+                  )}
+                </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <MapPin size={12} color="#8B8FA8" />
                   <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{currentUser?.state || 'Lagos'}, Nigeria</span>
@@ -264,16 +298,35 @@ export function ProfileScreen({
               </div>
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            {/* Followers/Following stats hidden until marketplace activity exists */}
+            <div className="grid grid-cols-2 gap-2">
               {[
-                { label: 'Events', value: String(eventsCreated) },
-                { label: 'Followers', value: String(followers) },
-                { label: 'Attendees', value: String(attendees) },
+                {
+                  label: isOrganizer ? 'My Events' : 'Events',
+                  value: String(isOrganizer ? eventsCreated : tickets.length),
+                  onClick: () => {
+                    if (isOrganizer) {
+                      onNavigate('manage-events');
+                    } else {
+                      onNavigate('my-tickets');
+                    }
+                  }
+                },
+                {
+                  label: 'Saved',
+                  value: String(savedCount),
+                  onClick: () => onNavigate('saved')
+                },
               ].map((stat) => (
                 <div
                   key={stat.label}
+                  onClick={stat.onClick}
                   className="text-center p-3"
-                  style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px' }}
+                  style={{
+                    background: 'rgba(255,255,255,0.05)',
+                    borderRadius: '12px',
+                    cursor: 'pointer'
+                  }}
                 >
                   <p
                     style={{
@@ -291,48 +344,66 @@ export function ProfileScreen({
                 </div>
               ))}
             </div>
+
+            {isAdmin ? (
+              <button
+                onClick={() => setActiveView('organizer')}
+                style={{
+                  width: '100%',
+                  background: 'rgba(168,85,247,0.1)',
+                  border: '1px solid rgba(168,85,247,0.25)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  color: '#A855F7',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  marginTop: '14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <LayoutDashboard size={14} />
+                Organizer Dashboard
+              </button>
+            ) : userRole !== 'organizer' && (
+              <button
+                onClick={() => {
+                  const hasOrganizerHistory = isOrganizer ||
+                    currentUser?.hasBeenOrganizer ||
+                    localStorage.getItem(`vents_was_organizer_${currentUser?.id}`) === '1';
+                  if (hasOrganizerHistory) {
+                    setActiveView('organizer');
+                  } else {
+                    onBecomeOrganizer?.();
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  background: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.1)',
+                  borderRadius: '12px',
+                  padding: '10px',
+                  color: '#C084FC',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  marginTop: '14px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                }}
+              >
+                <LayoutDashboard size={14} />
+                Switch to Organizer Mode
+              </button>
+            )}
           </div>
         </div>
 
-        {/* Organizer mode CTA */}
-        <div className="px-4 mb-4">
-          <button
-            onClick={() => onNavigate('org-dashboard')}
-            style={{
-              width: '100%',
-              background: 'linear-gradient(135deg, rgba(124,58,237,0.15), rgba(79,70,229,0.1))',
-              border: '1px solid rgba(124,58,237,0.3)',
-              borderRadius: '16px',
-              padding: '14px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              cursor: 'pointer',
-            }}
-          >
-            <div
-              style={{
-                width: '40px',
-                height: '40px',
-                borderRadius: '12px',
-                background: 'rgba(124,58,237,0.2)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <LayoutDashboard size={20} color="#A855F7" />
-            </div>
-            <div style={{ flex: 1, textAlign: 'left' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Organizer Mode</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
-                Create & manage your events
-              </p>
-            </div>
-            <ChevronRight size={16} color="#A855F7" />
-          </button>
-        </div>
 
         {/* Recent ticket */}
         {tickets.length > 0 && (
@@ -404,7 +475,7 @@ export function ProfileScreen({
               overflow: 'hidden',
             }}
           >
-            {menuItems.map((item, index) => {
+            {filteredMenuItems.map((item, index) => {
               const Icon = item.icon;
               return (
                 <button
@@ -413,7 +484,7 @@ export function ProfileScreen({
                   className="w-full flex items-center gap-3 p-4 text-left"
                   style={{
                     borderBottom:
-                      index < menuItems.length - 1
+                      index < filteredMenuItems.length - 1
                         ? '1px solid rgba(255,255,255,0.04)'
                         : 'none',
                     cursor: item.screen ? 'pointer' : 'default',
@@ -457,6 +528,28 @@ export function ProfileScreen({
           </div>
         </div>
 
+        {/* Admin Dashboard (ROOT_UID only) */}
+        {isAdmin && (
+          <div className="px-4 mb-3">
+            <button
+              onClick={() => onNavigate('admin-dashboard')}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))',
+                borderRadius: '14px',
+                border: '1px solid rgba(239,68,68,0.35)',
+                cursor: 'pointer',
+                boxShadow: '0 0 18px rgba(239,68,68,0.18)',
+              }}
+            >
+              <Shield size={16} color="#EF4444" />
+              <span style={{ color: '#EF4444', fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                Admin Dashboard
+              </span>
+            </button>
+          </div>
+        )}
+
         {/* Sign out */}
         <div className="px-4 mb-5">
           <button
@@ -474,8 +567,8 @@ export function ProfileScreen({
           </button>
         </div>
 
-        <p style={{ color: '#6B7280', fontSize: '11px', textAlign: 'center' }} className="pb-2">
-          VENTS v2.1.0 · Made with ❤️ in Lagos, Nigeria
+        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '8px', paddingBottom: '4px' }}>
+          VENTS v1.1.0 | © VENTS LTD
         </p>
       </div>
     </div>

@@ -1,8 +1,9 @@
 import React, { useState, useRef } from 'react';
-import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
 import confetti from 'canvas-confetti';
+import { NIGERIA_STATES } from './StateSelectScreen';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -52,13 +53,20 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const [address, setAddress] = useState('');
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
+  const [showStateModal, setShowStateModal] = useState(false);
+  const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [capacity, setCapacity] = useState('');
   
   // Tickets states
-  const [ticketName, setTicketName] = useState('Regular');
-  const [ticketPrice, setTicketPrice] = useState('');
-  const [ticketQty, setTicketQty] = useState('');
-  const [ticketDesc, setTicketDesc] = useState('');
+  interface TicketFormType {
+    name: string;
+    price: string;
+    quantity: string;
+    description: string;
+  }
+  const [ticketTypes, setTicketTypes] = useState<TicketFormType[]>([
+    { name: 'Standard', price: '', quantity: '', description: 'General Admission' }
+  ]);
   const [contactPhone, setContactPhone] = useState('');
   const [showPhone, setShowPhone] = useState(false);
   
@@ -74,7 +82,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Role permissions guard
-  if (!currentUser || currentUser.role !== 'organizer') {
+  if (!currentUser || (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin')) {
     return (
       <div
         style={{
@@ -166,6 +174,69 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     }
   };
 
+  const submitEvent = async (eventStatus: 'live' | 'draft') => {
+    setSubmitting(true);
+    setErrorMessage(null);
+    try {
+      const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
+      const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
+
+      const { data, error } = await insforge.database
+        .from('events')
+        .insert([{
+          title: title.trim(),
+          description: description.trim(),
+          image_url: imageUrl,
+          location: locationString,
+          event_date: eventTimestamp,
+          price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+          category: category,
+          organizer_id: currentUser.id,
+          status: eventStatus,
+          ticket_types: ticketTypes.map((t, idx) => ({
+            id: `t_${idx}`,
+            name: t.name.trim(),
+            price: Number(t.price),
+            quantity: Number(t.quantity),
+            description: t.description.trim()
+          }))
+        }]);
+
+      if (error) throw error;
+
+      if (eventStatus === 'live') {
+        confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+      }
+
+      setTimeout(() => {
+        onCreated({
+          id: data?.[0]?.id || `event-${Date.now()}`,
+          title: title.trim(),
+          category,
+          description: description.trim(),
+          date,
+          startTime,
+          venue: venue.trim(),
+          city: city.trim(),
+          capacity,
+          ticketName: ticketTypes[0]?.name || 'Regular',
+          ticketPrice: ticketTypes[0]?.price || '0',
+          ticketQty: ticketTypes[0]?.quantity || '500',
+          contactPhone: showPhone ? contactPhone : '',
+          showPhone,
+          status: eventStatus,
+          createdAt: Date.now(),
+        });
+      }, eventStatus === 'live' ? 1500 : 500);
+
+    } catch (err: any) {
+      console.error('Failed to save event:', err);
+      setErrorMessage(err.message || 'Failed to save event. Please try again.');
+      setSubmitting(false);
+    }
+  };
+
+
   const handleNext = async () => {
     setErrorMessage(null);
 
@@ -192,107 +263,47 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         setErrorMessage('Please select a start time.');
         return;
       }
-
-      // Check if date is in the past
-      const todayStr = new Date().toISOString().split('T')[0];
-      if (date < todayStr) {
-        setErrorMessage('Event date cannot be in the past.');
+      if (!venue.trim()) {
+        setErrorMessage('Please enter the venue name.');
         return;
       }
-      if (date === todayStr) {
-        const currentHours = new Date().getHours();
-        const currentMins = new Date().getMinutes();
-        const [startHours, startMins] = startTime.split(':').map(Number);
-        if (startHours < currentHours || (startHours === currentHours && startMins <= currentMins)) {
-          setErrorMessage('Event start time cannot be in the past.');
-          return;
-        }
-      }
-
-      if (!venue.trim()) {
-        setErrorMessage('Please enter a venue name.');
+      if (!stateName.trim()) {
+        setErrorMessage('Please select your state.');
         return;
       }
       if (!city.trim()) {
-        setErrorMessage('Please enter a city.');
-        return;
-      }
-      if (!capacity || Number(capacity) <= 0) {
-        setErrorMessage('Please enter a valid total capacity.');
+        setErrorMessage('Please enter the city.');
         return;
       }
       setStep(3);
     } else if (step === 3) {
-      if (!ticketName.trim()) {
-        setErrorMessage('Please enter a ticket name.');
+      if (ticketTypes.length === 0) {
+        setErrorMessage('Please add at least one ticket type.');
         return;
       }
-      if (ticketPrice === '' || Number(ticketPrice) < 0) {
-        setErrorMessage('Please enter a valid ticket price (0 for free events).');
-        return;
-      }
-      if (!ticketQty || Number(ticketQty) <= 0) {
-        setErrorMessage('Please enter a valid ticket quantity.');
-        return;
+      for (let i = 0; i < ticketTypes.length; i++) {
+        const t = ticketTypes[i];
+        if (!t.name.trim()) {
+          setErrorMessage(`Please enter a name for ticket type #${i + 1}.`);
+          return;
+        }
+        if (t.price === '' || Number(t.price) < 0) {
+          setErrorMessage(`Please enter a valid price for ticket type "${t.name}".`);
+          return;
+        }
+        if (!t.quantity || Number(t.quantity) <= 0) {
+          setErrorMessage(`Please enter a valid quantity for ticket type "${t.name}".`);
+          return;
+        }
       }
       setStep(4);
     } else if (step === 4) {
-      setSubmitting(true);
-      setErrorMessage(null);
-      try {
-        const locationString = `${venue.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
-        const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
-
-        // Insert event record
-        const { data, error } = await insforge.database
-          .from('events')
-          .insert([{
-            title: title.trim(),
-            description: description.trim(),
-            image_url: imageUrl,
-            location: locationString,
-            event_date: eventTimestamp,
-            price: Number(ticketPrice),
-            category: category,
-            organizer_id: currentUser.id
-          }]);
-
-        if (error) throw error;
-
-        // Celebrate success!
-        confetti({
-          particleCount: 150,
-          spread: 75,
-          origin: { y: 0.6 }
-        });
-
-        setTimeout(() => {
-          onCreated({
-            id: data?.[0]?.id || `event-${Date.now()}`,
-            title: title.trim(),
-            category,
-            description: description.trim(),
-            date,
-            startTime,
-            venue: venue.trim(),
-            city: city.trim(),
-            capacity,
-            ticketName: ticketName.trim(),
-            ticketPrice,
-            ticketQty,
-            contactPhone: showPhone ? contactPhone : '',
-            showPhone,
-            status: 'live',
-            createdAt: Date.now(),
-          });
-        }, 1500);
-
-      } catch (err: any) {
-        console.error('Failed to publish event:', err);
-        setErrorMessage(err.message || 'Failed to publish event. Please try again.');
-        setSubmitting(false);
-      }
+      await submitEvent('live');
     }
+  };
+
+  const handleSaveAsDraft = async () => {
+    await submitEvent('draft');
   };
 
   return (
@@ -316,7 +327,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <button
@@ -623,13 +634,23 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                 />
               </div>
               <div style={{ flex: 1 }}>
-                <Label>State</Label>
-                <input
-                  placeholder="Lagos State"
-                  value={stateName}
-                  onChange={(e) => setStateName(e.target.value)}
-                  style={INPUT_STYLE}
-                />
+                <Label>State *</Label>
+                <div
+                  onClick={() => setShowStateModal(true)}
+                  style={{
+                    ...INPUT_STYLE,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    height: '45px',
+                  }}
+                >
+                  <span style={{ color: stateName ? '#F0F0FF' : '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {stateName || 'Select State'}
+                  </span>
+                  <ChevronDown size={16} color="#8B8FA8" style={{ flexShrink: 0 }} />
+                </div>
               </div>
             </div>
             <div>
@@ -649,72 +670,134 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
 
-            {/* Ticket type card */}
-            <div
+            {ticketTypes.map((ticket, index) => (
+              <div
+                key={index}
+                style={{
+                  background: '#131629',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '16px',
+                  padding: '14px',
+                  position: 'relative'
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>
+                    Ticket Type {index + 1}: {ticket.name || `Type ${index + 1}`}
+                  </p>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    {ticketTypes.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTicketTypes(prev => prev.filter((_, i) => i !== index));
+                        }}
+                        style={{
+                          background: 'rgba(239,68,68,0.1)',
+                          border: 'none',
+                          borderRadius: '8px',
+                          color: '#EF4444',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          padding: '4px 8px',
+                          cursor: 'pointer'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                    <span
+                      style={{
+                        background: 'rgba(16,185,129,0.1)',
+                        color: '#10B981',
+                        fontSize: '10px',
+                        padding: '3px 8px',
+                        borderRadius: '5px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      Active
+                    </span>
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  <div>
+                    <Label>Ticket Name</Label>
+                    <input
+                      placeholder="e.g. VIP, VVIP, Standard"
+                      value={ticket.name}
+                      onChange={(e) => {
+                        const newName = e.target.value;
+                        setTicketTypes(prev => prev.map((t, i) => i === index ? { ...t, name: newName } : t));
+                      }}
+                      style={INPUT_STYLE}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '10px' }}>
+                    <div style={{ flex: 1 }}>
+                      <Label>Price (₦)</Label>
+                      <input
+                        type="number"
+                        placeholder="5000"
+                        value={ticket.price}
+                        onChange={(e) => {
+                          const newPrice = e.target.value;
+                          setTicketTypes(prev => prev.map((t, i) => i === index ? { ...t, price: newPrice } : t));
+                        }}
+                        style={INPUT_STYLE}
+                      />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <Label>Quantity</Label>
+                      <input
+                        type="number"
+                        placeholder="200"
+                        value={ticket.quantity}
+                        onChange={(e) => {
+                          const newQty = e.target.value;
+                          setTicketTypes(prev => prev.map((t, i) => i === index ? { ...t, quantity: newQty } : t));
+                        }}
+                        style={INPUT_STYLE}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>Description</Label>
+                    <input
+                      placeholder="e.g. General admission / VIP table access"
+                      value={ticket.description}
+                      onChange={(e) => {
+                        const newDesc = e.target.value;
+                        setTicketTypes(prev => prev.map((t, i) => i === index ? { ...t, description: newDesc } : t));
+                      }}
+                      style={INPUT_STYLE}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+
+            <button
+              type="button"
+              onClick={() => {
+                setTicketTypes(prev => [...prev, { name: '', price: '', quantity: '', description: '' }]);
+              }}
               style={{
-                background: '#131629',
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '16px',
-                padding: '14px',
+                width: '100%',
+                background: 'rgba(123,47,190,0.1)',
+                border: '1px dashed rgba(123,47,190,0.4)',
+                borderRadius: '12px',
+                padding: '12px',
+                color: '#A855F7',
+                fontSize: '13px',
+                fontWeight: 600,
+                cursor: 'pointer',
+                fontFamily: 'Space Grotesk, sans-serif'
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Ticket Type 1</p>
-                <span
-                  style={{
-                    background: 'rgba(16,185,129,0.1)',
-                    color: '#10B981',
-                    fontSize: '10px',
-                    padding: '3px 8px',
-                    borderRadius: '5px',
-                    fontWeight: 600,
-                  }}
-                >
-                  Active
-                </span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div>
-                  <Label>Ticket Name</Label>
-                  <input
-                    value={ticketName}
-                    onChange={(e) => setTicketName(e.target.value)}
-                    style={INPUT_STYLE}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '10px' }}>
-                  <div style={{ flex: 1 }}>
-                    <Label>Price (₦)</Label>
-                    <input
-                      type="number"
-                      placeholder="5000"
-                      value={ticketPrice}
-                      onChange={(e) => setTicketPrice(e.target.value)}
-                      style={INPUT_STYLE}
-                    />
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <Label>Quantity</Label>
-                    <input
-                      type="number"
-                      placeholder="200"
-                      value={ticketQty}
-                      onChange={(e) => setTicketQty(e.target.value)}
-                      style={INPUT_STYLE}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <Label>Description</Label>
-                  <input
-                    placeholder="e.g. General admission"
-                    value={ticketDesc}
-                    onChange={(e) => setTicketDesc(e.target.value)}
-                    style={INPUT_STYLE}
-                  />
-                </div>
-              </div>
-            </div>
+              + Add Ticket Type
+            </button>
 
             {/* Contact phone toggle */}
             <div
@@ -851,7 +934,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               { label: 'Venue', value: venue || '(not set)' },
               { label: 'City', value: city || '(not set)' },
               { label: 'Capacity', value: capacity ? `${capacity} attendees` : '(not set)' },
-              { label: 'Ticket', value: ticketPrice ? `${ticketName} • ₦${Number(ticketPrice).toLocaleString()}` : '(not set)' },
+              {
+                label: 'Tickets',
+                value: ticketTypes.length > 0
+                  ? ticketTypes.map(t => `${t.name || 'Standard'} (₦${Number(t.price || 0).toLocaleString()})`).join(', ')
+                  : '(not set)'
+              },
               { label: 'Contact Number', value: showPhone && contactPhone ? `+234 ${contactPhone}` : 'Not shown' },
             ].map(({ label, value }) => (
               <div
@@ -917,12 +1005,118 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           }}
         >
           {submitting
-            ? 'Publishing...'
+            ? 'Saving...'
             : step === 4
             ? '🚀 Publish Event'
             : `Next: ${STEPS[step].label}`}
         </button>
+        {step === 4 && !submitting && (
+          <button
+            onClick={handleSaveAsDraft}
+            disabled={submitting || uploadingImage}
+            style={{
+              width: '100%',
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '14px',
+              padding: '12px',
+              color: '#8B8FA8',
+              fontSize: '14px',
+              fontWeight: 600,
+              fontFamily: 'Space Grotesk, sans-serif',
+              cursor: 'pointer',
+              marginTop: '10px',
+            }}
+          >
+            Save as Draft
+          </button>
+        )}
       </div>
+
+      {showStateModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: '#060A12',
+            zIndex: 1000,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 'calc(20px + env(safe-area-inset-top)) 24px 40px',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+              Select State
+            </h3>
+            <button
+              onClick={() => setShowStateModal(false)}
+              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={16} color="#C4C9E0" />
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#131629',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '12px 16px',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            <Search size={18} color="#8B8FA8" />
+            <input
+              type="text"
+              placeholder="Search state..."
+              value={stateSearchQuery}
+              onChange={(e) => setStateSearchQuery(e.target.value)}
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: '#F0F0FF',
+                fontSize: '14px',
+                fontFamily: 'Inter, sans-serif',
+              }}
+              autoFocus
+            />
+          </div>
+
+          {/* States list */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {NIGERIA_STATES.filter(s => s.name.toLowerCase().includes(stateSearchQuery.toLowerCase())).map((st) => (
+              <div
+                key={st.name}
+                onClick={() => {
+                  setStateName(st.name);
+                  setShowStateModal(false);
+                  setStateSearchQuery('');
+                }}
+                style={{
+                  background: stateName === st.name ? 'rgba(168,85,247,0.12)' : '#131629',
+                  border: stateName === st.name ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '12px',
+                  padding: '14px 16px',
+                  cursor: 'pointer',
+                  color: '#F0F0FF',
+                  fontSize: '14px',
+                  fontWeight: stateName === st.name ? 700 : 500,
+                }}
+              >
+                {st.name}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -162,7 +162,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       <div
         style={{
           textAlign: 'center',
-          padding: '40px 24px 24px',
+          padding: 'calc(40px + env(safe-area-inset-top)) 24px 24px',
         }}
       >
         <div

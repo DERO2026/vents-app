@@ -5,7 +5,6 @@ import { insforge } from '../lib/insforge';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { StateSelectScreen } from './components/StateSelectScreen';
 import { RoleSelectScreen } from './components/RoleSelectScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
@@ -17,6 +16,8 @@ import { OrganizerBottomNav, OrgTab } from './components/OrganizerBottomNav';
 import { NotificationsScreen } from './components/NotificationsScreen';
 import { MyTicketsScreen } from './components/MyTicketsScreen';
 import { SettingsScreen } from './components/SettingsScreen';
+import { PrivacyPolicyScreen } from './components/PrivacyPolicyScreen';
+import { HelpSupportScreen } from './components/HelpSupportScreen';
 import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
@@ -29,6 +30,13 @@ import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
+import { FollowingListScreen } from './components/FollowingListScreen';
+import { AdminDashboardScreen } from './components/AdminDashboardScreen';
+import { CheckinScannerScreen } from './components/CheckinScannerScreen';
+import { ReferralScreen } from './components/ReferralScreen';
+import { TransactionsScreen } from './components/TransactionsScreen';
+
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
@@ -64,8 +72,8 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
     if (this.state.hasError) {
       return (
         <div style={{
-          width: '390px',
-          height: '844px',
+          width: '100%',
+          height: '100%',
           background: '#060A12',
           display: 'flex',
           flexDirection: 'column',
@@ -129,16 +137,39 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('org-dashboard');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean } | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
   const [dbEvents, setDbEvents] = useState<Event[]>([]);
+  const eventsPageRef = useRef(0);
+  const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
+  const [language, setLanguage] = useState<string>(() => localStorage.getItem('vents_language') || 'en');
+  const [resetToken, setResetToken] = useState<string | undefined>(undefined);
+  const [followingFilter, setFollowingFilter] = useState<'following' | 'followers' | 'attendees' | 'all'>('following');
+  const [unreadCount, setUnreadCount] = useState(0);
 
+  const handleLanguageChange = useCallback((lang: string) => {
+    setLanguage(lang);
+    localStorage.setItem('vents_language', lang);
+  }, []);
+
+  const handleSwitchToAttendee = useCallback(() => {
+    // DB role stays 'organizer' — trigger blocks reverting it.
+    // UI mode switches to attendee; isOrganizer flag stays so next switch is instant.
+    setUserRole('attendee');
+    setActiveTab('home');
+    setScreen('home');
+    if (currentUser?.id) {
+      setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
+    }
+  }, [currentUser]);
+
+  const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner'];
   const navigateTo = useCallback((next: Screen) => {
-    if ((next === 'create-event' || next === 'promote-event') && currentUser?.role !== 'organizer') {
+    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'admin' && currentUser?.id !== ROOT_UID) {
       console.warn(`Unauthorized attempt to access ${next} screen`);
       return;
     }
@@ -179,6 +210,43 @@ export default function App() {
           window.history.replaceState({}, document.title, cleanUrl);
         }
 
+        // Intercept password reset tokens
+        // Accept any non-null insforge_status — the exact value depends on the backend version
+        const status = params.get('insforge_status');
+        const type = params.get('insforge_type');
+        const token = params.get('token');
+        if (token && type === 'reset_password' && status !== null) {
+          setResetToken(token);
+          setAuthMode('reset');
+          setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Intercept event deep links: ?event=<eventId>
+        const eventDeepLink = params.get('event');
+        if (eventDeepLink) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+          // Fetch event from DB and navigate (mapDbEventToFrontend is statically imported)
+          insforge.database
+            .from('events')
+            .select('*')
+            .eq('id', eventDeepLink)
+            .maybeSingle()
+            .then(({ data: evtData, error: evtError }) => {
+              if (evtError) {
+                console.error('Failed to load event from deep link:', evtError);
+                return;
+              }
+              if (evtData) {
+                setSelectedEvent(mapDbEventToFrontend(evtData));
+                setScreen('event-details');
+              }
+            })
+            .catch((err) => console.error('Deep link event fetch failed:', err));
+        }
+
         // 2. Fetch user session (Google OAuth exchange is auto-run by SDK on init, so getCurrentUser will automatically await it)
         const { data, error } = await insforge.auth.getCurrentUser();
         
@@ -213,7 +281,9 @@ export default function App() {
           role: profile?.role || 'user',
           username: profile?.username,
           phone_number: profile?.phone_number,
-          state: profile?.state
+          state: profile?.state,
+          avatar_url: profile?.avatar_url,
+          isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser')
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
@@ -235,14 +305,20 @@ export default function App() {
         setAuthLoading(false);
         setScreen('welcome');
       }
-    }, 4000);
+    }, 8000);
     return () => clearTimeout(safetyTimeout);
   }, [authLoading]);
 
-  // Sync userRole Effect
+  // Sync userRole Effect (initialize once on user load)
+  const userLoadedRef = useRef(false);
   useEffect(() => {
-    if (currentUser) {
-      setUserRole(currentUser.role === 'organizer' ? 'organizer' : 'attendee');
+    if (currentUser && !userLoadedRef.current) {
+      // Admin keeps 'attendee' userRole by default — their userRole only changes when they explicitly open Organizer Dashboard
+      setUserRole((currentUser.role === 'admin') ? 'attendee' : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer' : 'attendee');
+      userLoadedRef.current = true;
+    }
+    if (!currentUser) {
+      userLoadedRef.current = false;
     }
   }, [currentUser]);
 
@@ -264,6 +340,21 @@ export default function App() {
       }
     }
   }, [screen, splashMinTimePassed, authLoading, currentUser]);
+
+  // Post-auth redirection when currentUser session is fully loaded in state
+  useEffect(() => {
+    if (currentUser && screen === 'auth') {
+      if (currentUser.role === 'organizer' || currentUser.role === 'admin' || currentUser.isOrganizer) {
+        setUserRole('organizer');
+        setOrgTab('org-dashboard');
+        setScreen('org-dashboard');
+      } else {
+        setUserRole('attendee');
+        setScreen('home');
+        setActiveTab('home');
+      }
+    }
+  }, [currentUser, screen]);
 
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null);
@@ -294,6 +385,29 @@ export default function App() {
       }
     }
     fetchFollows();
+  }, [currentUser]);
+
+  // Fetch user's saved events from database
+  useEffect(() => {
+    async function fetchSavedEvents() {
+      if (!currentUser?.id) {
+        setSavedEvents([]);
+        return;
+      }
+      try {
+        const { data, error } = await insforge.database
+          .from('saved_events')
+          .select('event_id')
+          .eq('user_id', currentUser.id);
+        if (error) throw error;
+        if (data) {
+          setSavedEvents(data.map((item: any) => item.event_id));
+        }
+      } catch (err) {
+        console.error("Failed to fetch saved events:", err);
+      }
+    }
+    fetchSavedEvents();
   }, [currentUser]);
   const [allTickets, setAllTickets] = useState<PurchasedTicket[]>([]);
   const [bookingLoading, setBookingLoading] = useState(false);
@@ -364,7 +478,7 @@ export default function App() {
                 available: 500
               }
             ],
-            organizer_id: dbEvent.organizer_id,
+            following_id: dbEvent.following_id,
             event_date: dbEvent.event_date
           };
 
@@ -390,71 +504,101 @@ export default function App() {
     } catch (err) {
       console.error('Failed to fetch user tickets:', err);
     }
-  }, [currentUser]);
+  }, [currentUser?.id, currentUser?.full_name]);
 
   const lastFetchRef = useRef<number>(0);
-  const fetchEvents = useCallback(async (force = false) => {
-    if (!force && Date.now() - lastFetchRef.current < 5000) {
+  const fetchEvents = useCallback(async (force = false, loadMore = false) => {
+    if (!force && !loadMore && Date.now() - lastFetchRef.current < 5000) {
       return;
     }
     lastFetchRef.current = Date.now();
     setLoadingEvents(true);
     try {
+      const nextPage = loadMore ? eventsPageRef.current + 1 : 0;
+      const start = nextPage * 10;
+      const end = start + 9;
+
       const { data: dbEventsData, error: dbEventsError } = await insforge.database
         .from('events')
-        .select('*');
+        .select('*')
+        .range(start, end);
 
       if (dbEventsError) throw dbEventsError;
 
-      const nowStr = new Date().toISOString();
-      const { data: promotionsData } = await insforge.database
-        .from('event_promotions')
-        .select('*')
-        .eq('status', 'active')
-        .lte('start_date', nowStr)
-        .gte('end_date', nowStr);
-
-      const { data: ticketsData } = await insforge.database
-        .from('tickets')
-        .select('event_id, status');
-
       if (dbEventsData) {
+        const hasMore = dbEventsData.length === 10;
+        setHasMoreEvents(hasMore);
+        eventsPageRef.current = loadMore ? nextPage : 0;
+
+        const eventIds = dbEventsData.map((e: any) => e.id);
         const mapped = dbEventsData.map(mapDbEventToFrontend);
 
-        const bookingsCountMap: Record<string, number> = {};
-        if (ticketsData) {
-          ticketsData.forEach((t: any) => {
-            if (t.status === 'active') {
-              bookingsCountMap[t.event_id] = (bookingsCountMap[t.event_id] || 0) + 1;
-            }
-          });
+        let promotionsData: any[] = [];
+        let ticketsData: any[] = [];
+        let savesData: any[] = [];
+
+        if (eventIds.length > 0) {
+          const nowStr = new Date().toISOString();
+          const { data: promoRes } = await insforge.database
+            .from('event_promotions')
+            .select('*')
+            .eq('status', 'active')
+            .lte('start_date', nowStr)
+            .gte('end_date', nowStr)
+            .in('event_id', eventIds);
+          if (promoRes) promotionsData = promoRes;
+
+          const { data: ticketsRes } = await insforge.database
+            .from('tickets')
+            .select('event_id, status')
+            .in('event_id', eventIds);
+          if (ticketsRes) ticketsData = ticketsRes;
+
+          // Fetch saves count per event for popularity score
+          const { data: savesRes } = await insforge.database
+            .from('saved_events')
+            .select('event_id')
+            .in('event_id', eventIds);
+          if (savesRes) savesData = savesRes;
         }
 
+        const bookingsCountMap: Record<string, number> = {};
+        ticketsData.forEach((t: any) => {
+          if (t.status === 'active') {
+            bookingsCountMap[t.event_id] = (bookingsCountMap[t.event_id] || 0) + 1;
+          }
+        });
+
+        const savesCountMap: Record<string, number> = {};
+        (savesData as any[]).forEach((s: any) => {
+          savesCountMap[s.event_id] = (savesCountMap[s.event_id] || 0) + 1;
+        });
+
         const promotionPlanMap: Record<string, string> = {};
-        if (promotionsData) {
-          promotionsData.forEach((promo: any) => {
-            const currentPlan = promotionPlanMap[promo.event_id];
-            const newPlan = promo.plan_type;
-            if (!currentPlan) {
+        promotionsData.forEach((promo: any) => {
+          const currentPlan = promotionPlanMap[promo.event_id];
+          const newPlan = promo.plan_type;
+          if (!currentPlan) {
+            promotionPlanMap[promo.event_id] = newPlan;
+          } else {
+            const priority: Record<string, number> = { trending: 3, featured: 2, boosted: 1 };
+            if (priority[newPlan] > priority[currentPlan]) {
               promotionPlanMap[promo.event_id] = newPlan;
-            } else {
-              const priority: Record<string, number> = { trending: 3, featured: 2, boosted: 1 };
-              if (priority[newPlan] > priority[currentPlan]) {
-                promotionPlanMap[promo.event_id] = newPlan;
-              }
             }
-          });
-        }
+          }
+        });
 
         const enriched = mapped.map(evt => {
           const promoPlan = promotionPlanMap[evt.id];
           const bookings = bookingsCountMap[evt.id] || 0;
+          const saves = savesCountMap[evt.id] || 0;
           return {
             ...evt,
             isPromoted: !!promoPlan,
             promoPlan: promoPlan || null,
             bookingsCount: bookings,
             attendees: bookings,
+            savesCount: saves,
           };
         });
 
@@ -470,8 +614,11 @@ export default function App() {
             }
           }
 
-          if (a.bookingsCount !== b.bookingsCount) {
-            return b.bookingsCount - a.bookingsCount;
+          if (a.bookingsCount !== b.bookingsCount || (a as any).savesCount !== (b as any).savesCount) {
+            // Popularity score: tickets × 3 + saves × 1
+            const scoreA = (a.bookingsCount || 0) * 3 + ((a as any).savesCount || 0);
+            const scoreB = (b.bookingsCount || 0) * 3 + ((b as any).savesCount || 0);
+            if (scoreA !== scoreB) return scoreB - scoreA;
           }
 
           const rawA = dbEventsData.find((x: any) => x.id === a.id)?.created_at || '';
@@ -479,7 +626,19 @@ export default function App() {
           return new Date(rawB).getTime() - new Date(rawA).getTime();
         });
 
-        setDbEvents(enriched);
+        if (loadMore) {
+          setDbEvents(prev => {
+            const merged = [...prev];
+            enriched.forEach(newEvt => {
+              if (!merged.some(x => x.id === newEvt.id)) {
+                merged.push(newEvt);
+              }
+            });
+            return merged;
+          });
+        } else {
+          setDbEvents(enriched);
+        }
       }
     } catch (err) {
       console.error('Failed to fetch events / rank feed centrally:', err);
@@ -498,6 +657,29 @@ export default function App() {
       fetchEvents();
     }
   }, [screen, fetchEvents]);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!currentUser?.id) {
+      setUnreadCount(0);
+      return;
+    }
+    try {
+      const { count, error } = await insforge.database
+        .from('notifications')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', currentUser.id)
+        .eq('read', false);
+      if (!error && count !== null) {
+        setUnreadCount(count);
+      }
+    } catch (err) {
+      console.error("Failed to fetch unread notifications count:", err);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchUnreadCount();
+  }, [currentUser, fetchUnreadCount]);
 
   useEffect(() => {
     if (currentUser?.id) {
@@ -532,23 +714,14 @@ export default function App() {
     setSelectedTicketQty(1);
     navigateTo('checkout');
   }, [currentUser, allTickets, navigateTo]);
+  // Midnight Neon is always enforced
+  const isDark = true;
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
 
-  const [isDark, setIsDark] = useState<boolean>(() => {
-    const saved = localStorage.getItem('theme_preference');
-    return saved !== null ? saved === 'dark' : true;
-  });
   const [selectedState, setSelectedState] = useState<string>(() => {
     return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
   });
 
-  useEffect(() => {
-    localStorage.setItem('theme_preference', isDark ? 'dark' : 'light');
-  }, [isDark]);
-
-  useEffect(() => {
-    localStorage.setItem('selected_state_preference', selectedState);
-  }, [selectedState]);
   const [pendingSignup, setPendingSignup] = useState(false);
   const [orgEvents, setOrgEvents] = useState<OrganizerEvent[]>([]);
 
@@ -627,15 +800,13 @@ export default function App() {
         if (checkError) throw checkError;
 
         if (!existingTicket) {
-          const { error: insertError } = await insforge.database
-            .from('tickets')
-            .insert([{
-              event_id: ticket.event.id,
-              user_id: currentUser.id,
-              quantity: ticket.quantity,
-              status: 'active'
-            }]);
-          
+          const { error: insertError } = await insforge.database.rpc('purchase_ticket', {
+            p_event_id: ticket.event.id,
+            p_ticket_type: ticket.ticketType?.name ?? 'General',
+            p_quantity: ticket.quantity,
+            p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+            p_payment_status: 'paid',
+          });
           if (insertError) throw insertError;
         }
 
@@ -651,11 +822,44 @@ export default function App() {
     setScreen('payment-success');
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
-  const handleToggleSave = useCallback((eventId: string) => {
+  const handleToggleSave = useCallback(async (eventId: string) => {
+    if (!currentUser) {
+      console.warn("User must be logged in to save events");
+      navigateTo('auth');
+      return;
+    }
+
+    const isSaved = savedEvents.includes(eventId);
+    // Optimistic update
     setSavedEvents((prev) =>
-      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]
+      isSaved ? prev.filter((id) => id !== eventId) : [...prev, eventId]
     );
-  }, []);
+
+    try {
+      if (isSaved) {
+        const { error } = await insforge.database
+          .from('saved_events')
+          .delete()
+          .eq('user_id', currentUser.id)
+          .eq('event_id', eventId);
+        if (error) throw error;
+      } else {
+        const { error } = await insforge.database
+          .from('saved_events')
+          .insert([{
+            user_id: currentUser.id,
+            event_id: eventId
+          }]);
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.error("Failed to toggle save event:", err);
+      // Revert optimistic update
+      setSavedEvents((prev) =>
+        isSaved ? [...prev, eventId] : prev.filter((id) => id !== eventId)
+      );
+    }
+  }, [currentUser, savedEvents]);
 
   const handleToggleFollow = useCallback(async (userId: string) => {
     if (!currentUser) {
@@ -717,18 +921,13 @@ export default function App() {
     navigateTo(target as Screen);
   }, [navigateTo]);
 
-  const handleAuthSuccess = useCallback((userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string }) => {
-    setCurrentUser(userProfile);
+  const handleAuthSuccess = useCallback((userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => {
+    const enriched = {
+      ...userProfile,
+      isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
+    };
+    setCurrentUser(enriched);
     setScreenStack([]);
-    if (userProfile.role === 'organizer') {
-      setUserRole('organizer');
-      setOrgTab('org-dashboard');
-      setScreen('org-dashboard');
-    } else {
-      setUserRole('attendee');
-      setScreen('home');
-      setActiveTab('home');
-    }
   }, []);
 
   const handleSignOut = useCallback(async () => {
@@ -758,11 +957,8 @@ export default function App() {
     <div 
       className="min-h-screen flex items-center justify-center"
       style={{
-        background: isDark
-          ? 'linear-gradient(135deg, #0A0520 0%, #060A14 50%, #100520 100%)'
-          : 'linear-gradient(135deg, #E8E0F0 0%, #F0EDF8 50%, #EAE0F4 100%)',
+        background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
         fontFamily: 'Inter, sans-serif',
-        transition: 'background 0.3s ease',
       }}
     >
       <style>{`
@@ -770,18 +966,13 @@ export default function App() {
       `}</style>
       {/* Phone frame */}
       <div
-        className={`relative overflow-hidden${isDark ? '' : ' light-theme'}`}
+        className="relative overflow-hidden"
         style={{
           width: '390px',
-          height: '844px',
+          height: '100dvh',
           maxWidth: '100vw',
-          maxHeight: '100vh',
-          borderRadius: 'clamp(0px, 4vw, 44px)',
-          boxShadow: isDark
-            ? '0 40px 120px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.08)'
-            : '0 40px 120px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.1)',
-          background: isDark ? '#060A12' : '#F5F3FA',
-          transition: 'background 0.3s ease',
+          maxHeight: '100dvh',
+          background: '#000000',
         }}
       >
         <ErrorBoundary>
@@ -835,25 +1026,16 @@ export default function App() {
               onGetStarted={() => {
                 setPendingSignup(true);
                 setAuthMode('signup');
-                navigateTo('state-select');
+                navigateTo('role-select');
               }}
               onSignIn={() => {
                 setPendingSignup(false);
                 setAuthMode('login');
-                navigateTo('state-select');
+                navigateTo('auth');
               }}
               onPickState={() => {
                 setPendingSignup(true);
-                navigateTo('state-select');
-              }}
-            />
-          )}
-          {screen === 'state-select' && (
-            <StateSelectScreen
-              selectedStateName={selectedState}
-              onContinue={(state) => {
-                setSelectedState(state.name);
-                // Both signup and login paths go through role selection
+                setAuthMode('signup');
                 navigateTo('role-select');
               }}
             />
@@ -861,9 +1043,33 @@ export default function App() {
           {screen === 'role-select' && (
             <RoleSelectScreen
               onBack={goBack}
-              onSelect={(role) => {
-                setUserRole(role);
-                navigateTo('auth');
+              onSelect={async (role) => {
+                if (currentUser) {
+                  // Already logged in — switch mode directly without re-auth
+                  if (role === 'organizer') {
+                    setUserRole('organizer');
+                    setOrgTab('org-dashboard');
+                    setScreen('org-dashboard');
+                    setScreenStack([]);
+                    if (currentUser.id && currentUser.role !== 'admin') {
+                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
+                      localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
+                      try {
+                        await insforge.database.rpc('promote_to_organizer');
+                      } catch (err) {
+                        console.error('Failed to promote to organizer:', err);
+                      }
+                    }
+                  } else {
+                    setUserRole('attendee');
+                    setScreen('home');
+                    setActiveTab('home');
+                    setScreenStack([]);
+                  }
+                } else {
+                  setUserRole(role);
+                  navigateTo('auth');
+                }
               }}
             />
           )}
@@ -874,6 +1080,7 @@ export default function App() {
               selectedState={selectedState}
               onBack={goBack}
               onSuccess={handleAuthSuccess}
+              resetToken={resetToken}
             />
           )}
 
@@ -892,16 +1099,14 @@ export default function App() {
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}
+              currentUser={currentUser}
+              hasMore={hasMoreEvents}
+              onLoadMore={() => fetchEvents(false, true)}
+              unreadNotificationsCount={unreadCount}
             />
           )}
           {screen === 'explore' && (
             <ExploreScreen
-              dbEvents={dbEvents}
-              onEventPress={handleEventPress}
-              savedEvents={savedEvents}
-              onToggleSave={handleToggleSave}
-              following={following}
-              onToggleFollow={handleToggleFollow}
               onUserPress={(user) => {
                 setSelectedUser(user);
                 navigateTo('user-profile');
@@ -913,11 +1118,14 @@ export default function App() {
               savedEventIds={savedEvents}
               onEventPress={handleEventPress}
               onToggleSave={handleToggleSave}
+              dbEvents={dbEvents}
+              onBack={screenStack.length > 0 ? goBack : undefined}
             />
           )}
           {screen === 'profile' && (
             <ProfileScreen
-              currentUser={currentUser}
+              currentUser={currentUser ? { ...currentUser, hasBeenOrganizer: localStorage.getItem(`vents_was_organizer_${currentUser.id}`) === '1' } : null}
+              userRole={userRole}
               onSignOut={handleSignOut}
               tickets={allTickets}
               savedCount={savedEvents.length}
@@ -927,12 +1135,130 @@ export default function App() {
                 navigateTo('payment-success');
               }}
               onNavigate={handleProfileNavigate}
+              onNavigateToFollowingFilter={(filter) => {
+                setFollowingFilter(filter);
+                navigateTo('following-list');
+              }}
+              unreadNotificationsCount={unreadCount}
+              onBecomeOrganizer={async () => {
+                // Existing attendee clicks "Switch to Organizer Mode" — skip the
+                // role-choice screen (that's only for brand-new signups) and go
+                // straight to the organizer dashboard, same path as RoleSelectScreen.
+                setUserRole('organizer');
+                setOrgTab('org-dashboard');
+                setScreen('org-dashboard');
+                setScreenStack([]);
+                if (currentUser?.id && currentUser.role !== 'admin') {
+                  setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
+                  localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
+                  try {
+                    await insforge.database.rpc('promote_to_organizer');
+                  } catch (err) {
+                    console.error('Failed to promote to organizer:', err);
+                  }
+                }
+              }}
+              setActiveView={async (view) => {
+                if (view === 'organizer') {
+                  // Always update local nav state; admin skips DB/badge changes
+                  setUserRole('organizer');
+                  setOrgTab('org-dashboard');
+                  setScreen('org-dashboard');
+                  if (currentUser?.id) {
+                    // Never overwrite role in DB or memory for admin — mode toggle is purely local UI state
+                    if (currentUser.role !== 'admin') {
+                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
+                    }
+                    localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
+                    if (currentUser.role !== 'admin') {
+                      try {
+                        await insforge.database.rpc('promote_to_organizer');
+                      } catch (err) {
+                        console.error('Failed to promote to organizer:', err);
+                        setCurrentUser(prev => prev ? { ...prev, role: 'user' } : null);
+                        setUserRole('attendee');
+                        setScreen('profile');
+                      }
+                    }
+                    // Fetch this organizer's events from DB and populate orgEvents
+                    try {
+                      const { data: dbOrgEvents } = await insforge.database
+                        .from('events')
+                        .select('*')
+                        .eq('organizer_id', currentUser.id);
+                      if (dbOrgEvents && dbOrgEvents.length > 0) {
+                        const mapped: OrganizerEvent[] = (dbOrgEvents as any[]).map((e: any) => ({
+                          id: e.id,
+                          title: e.title || '',
+                          category: e.category || 'Other',
+                          description: e.description || '',
+                          date: e.event_date ? e.event_date.split('T')[0] : '',
+                          startTime: e.event_date ? (e.event_date.includes('T') ? e.event_date.split('T')[1].slice(0, 5) : '') : '',
+                          venue: e.location || '',
+                          city: '',
+                          capacity: '1000',
+                          ticketName: 'Regular',
+                          ticketPrice: String(e.price || '0'),
+                          ticketQty: '1000',
+                          contactPhone: '',
+                          showPhone: false,
+                          status: (e.status === 'live' ? 'approved' : e.status === 'draft' ? 'under_review' : e.status) as any,
+                          createdAt: new Date(e.created_at).getTime(),
+                        }));
+                        setOrgEvents(mapped);
+                      }
+                    } catch (err) {
+                      console.error('Failed to fetch organizer events:', err);
+                    }
+                  }
+                } else {
+                  // Switch back to attendee view — keep DB role as 'organizer' (trigger blocks reverting it)
+                  // The organizer flag in localStorage means they can switch back instantly next time
+                  setUserRole('attendee');
+                  setActiveTab('home');
+                  setScreen('home');
+                  if (currentUser?.id) {
+                    setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
+                  }
+                }
+              }}
+            />
+          )}
+          {screen === 'following-list' && (
+            <FollowingListScreen
+              following={following}
+              onToggleFollow={handleToggleFollow}
+              onBack={goBack}
+              currentUserId={currentUser?.id}
+              initialFilter={followingFilter}
+              onUserPress={(user) => {
+                setSelectedUser(user);
+                navigateTo('user-profile');
+              }}
+            />
+          )}
+          {screen === 'admin-dashboard' && (
+            <AdminDashboardScreen
+              onBack={goBack}
+              currentUser={currentUser}
+            />
+          )}
+
+          {screen === 'checkin-scanner' && (
+            <CheckinScannerScreen
+              onBack={goBack}
+              currentUser={currentUser}
+              selectedEvent={selectedEvent}
             />
           )}
 
           {/* ── UTILITY SCREENS ── */}
           {screen === 'notifications' && (
-            <NotificationsScreen onBack={goBack} />
+            <NotificationsScreen
+              onBack={goBack}
+              currentUser={currentUser}
+              onRefreshUnread={fetchUnreadCount}
+            />
           )}
           {screen === 'my-tickets' && (
             <MyTicketsScreen
@@ -945,13 +1271,27 @@ export default function App() {
             />
           )}
           {screen === 'settings' && (
-            <SettingsScreen
+          <SettingsScreen
               currentUser={currentUser}
               onBack={goBack}
               onSignOut={handleSignOut}
-              isDark={isDark}
-              onToggleDark={() => setIsDark((v) => !v)}
+              onNavigate={navigateTo}
+              isDark={true}
+              onToggleDark={() => {}}
+              onProfileUpdated={(fields) => {
+                setCurrentUser((prev) => prev ? { ...prev, ...fields, isOrganizer: fields.role === 'organizer' || prev.isOrganizer } : null);
+              }}
+              language={language}
+              onLanguageChange={handleLanguageChange}
             />
+          )}
+
+          {screen === 'privacy-policy' && (
+            <PrivacyPolicyScreen onBack={goBack} />
+          )}
+
+          {screen === 'help-support' && (
+            <HelpSupportScreen onBack={goBack} />
           )}
 
           {/* ── EVENT FLOW ── */}
@@ -966,6 +1306,8 @@ export default function App() {
               onBook={() => handleBookEvent(selectedEvent)}
               bookingLoading={bookingLoading}
               onEventPress={handleEventPress}
+              following={following}
+              onToggleFollow={handleToggleFollow}
             />
           )}
           {screen === 'ticket-select' && selectedEvent && (
@@ -1007,8 +1349,19 @@ export default function App() {
           {screen === 'org-dashboard' && (
             <OrganizerDashboard
               currentUser={currentUser}
-              onBack={screenStack.length > 0 ? goBack : () => {}}
+              onBack={handleSwitchToAttendee}
               onNavigate={handleOrgNavigate}
+              setActiveView={(view) => {
+                if (view === 'attendee') {
+                  handleSwitchToAttendee();
+                }
+              }}
+              onScanTickets={(eventId) => {
+                // Find the event and navigate to scanner
+                const evtToScan = dbEvents.find(e => e.id === eventId);
+                if (evtToScan) setSelectedEvent(evtToScan);
+                navigateTo('checkin-scanner');
+              }}
             />
           )}
           {screen === 'create-event' && (
@@ -1054,6 +1407,15 @@ export default function App() {
               initialEventId={promotionEventId}
               onPromoted={() => fetchEvents(true)}
             />
+          )}
+
+          {/* ── REFERRAL ── */}
+          {screen === 'referral' && (
+            <ReferralScreen onBack={goBack} currentUser={currentUser} />
+          )}
+
+          {screen === 'transactions' && (
+            <TransactionsScreen onBack={goBack} />
           )}
 
           {/* ── NIGERIA LIVE MAP ── */}

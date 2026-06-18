@@ -18,14 +18,17 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Hero Image */}
-      <div className="relative" style={{ height: '280px', flexShrink: 0 }}>
+      <div className="relative" style={{ height: 'calc(280px + env(safe-area-inset-top))', flexShrink: 0 }}>
         <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
         <div
           className="absolute inset-0"
           style={{ background: 'linear-gradient(to bottom, rgba(6,10,18,0.3) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,1) 100%)' }}
         />
         {/* Top bar */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-4 pt-12">
+        <div 
+          className="absolute top-0 left-0 right-0 flex items-center justify-between px-4"
+          style={{ paddingTop: 'calc(12px + env(safe-area-inset-top))' }}
+        >
           <button
             onClick={onBack}
             className="w-9 h-9 rounded-full flex items-center justify-center"

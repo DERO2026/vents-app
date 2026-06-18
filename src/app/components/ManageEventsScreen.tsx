@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone, ChevronDown } from 'lucide-react';
-import { EVENTS, formatPrice } from './data';
+import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone } from 'lucide-react';
+import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
 
 interface ManageEventsScreenProps {
@@ -11,26 +11,11 @@ interface ManageEventsScreenProps {
   onPromoteEvent?: (eventId: string) => void;
 }
 
-type EventStatus = 'on-sale' | 'sold-out' | 'draft' | 'past';
-
-const MOCK_EVENTS = EVENTS.slice(0, 4).map((e, i) => ({
-  ...e,
-  eventStatus: (['on-sale', 'on-sale', 'sold-out', 'past'] as EventStatus[])[i],
-  revenue: Math.round(e.attendees * e.price * 0.4),
-}));
-
 const STATUS_STYLE = {
   under_review: { bg: 'rgba(245,158,11,0.12)', color: '#F59E0B', border: 'rgba(245,158,11,0.3)', label: 'Under Review', icon: Clock },
   approved: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', border: 'rgba(16,185,129,0.3)', label: 'Approved ✓', icon: CheckCircle },
   live: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', border: 'rgba(16,185,129,0.3)', label: 'Live', icon: Zap },
   draft: { bg: 'rgba(139,143,168,0.1)', color: '#8B8FA8', border: 'rgba(139,143,168,0.2)', label: 'Draft', icon: Edit2 },
-};
-
-const MOCK_STATUS_STYLE: Record<EventStatus, { bg: string; color: string; label: string }> = {
-  'on-sale': { bg: 'rgba(16,185,129,0.1)', color: '#10B981', label: 'On Sale' },
-  'sold-out': { bg: 'rgba(239,68,68,0.1)', color: '#EF4444', label: 'Sold Out' },
-  draft: { bg: 'rgba(245,158,11,0.1)', color: '#F59E0B', label: 'Draft' },
-  past: { bg: 'rgba(139,143,168,0.1)', color: '#8B8FA8', label: 'Past' },
 };
 
 const CATEGORIES = [
@@ -79,9 +64,6 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
   const [editPhone, setEditPhone] = useState('');
   const [editShowPhone, setEditShowPhone] = useState(false);
 
-  const filteredMock = MOCK_EVENTS.filter(
-    (e) => !query || e.title.toLowerCase().includes(query.toLowerCase())
-  );
   const filteredOrg = orgEvents.filter(
     (e) => !query || e.title.toLowerCase().includes(query.toLowerCase())
   );
@@ -124,7 +106,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
       <style>{`input::placeholder, textarea::placeholder { color: #8B8FA8; }`}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
             onClick={onBack}
@@ -342,58 +324,6 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
           </div>
         )}
 
-        {/* Previous / mock events */}
-        <div>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>
-            PREVIOUS EVENTS
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {filteredMock.map((event) => {
-              const ss = MOCK_STATUS_STYLE[event.eventStatus];
-              const pct = Math.round((event.attendees / event.capacity) * 100);
-              return (
-                <div key={event.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '18px', overflow: 'hidden' }}>
-                  <div style={{ position: 'relative', height: '80px' }}>
-                    <img src={event.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent, rgba(19,22,41,0.9))' }} />
-                    <span style={{ position: 'absolute', top: '10px', right: '12px', background: ss.bg, color: ss.color, fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '6px' }}>
-                      {ss.label}
-                    </span>
-                  </div>
-                  <div style={{ padding: '12px' }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, marginBottom: '6px' }}>{event.title}</p>
-                    <div style={{ display: 'flex', gap: '12px', marginBottom: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Calendar size={11} color="#8B8FA8" />
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.date}</span>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Users size={11} color="#8B8FA8" />
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.attendees.toLocaleString()} / {event.capacity.toLocaleString()}</span>
-                      </div>
-                    </div>
-                    <div style={{ marginBottom: '10px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{pct}% sold</span>
-                        <span style={{ color: '#FFB830', fontSize: '12px', fontWeight: 700 }}>{formatPrice(event.revenue)}</span>
-                      </div>
-                      <div style={{ height: '4px', background: 'rgba(255,255,255,0.06)', borderRadius: '2px' }}>
-                        <div style={{ height: '100%', width: `${pct}%`, borderRadius: '2px', background: event.eventStatus === 'sold-out' ? '#EF4444' : 'linear-gradient(90deg, #7B2FBE, #4F46E5)' }} />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button style={{ flex: 1, background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px', color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Edit</button>
-                      <button onClick={() => onNavigate('attendee-list')} style={{ flex: 1, background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '10px', padding: '8px', color: '#3B82F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
-                        <Users size={11} />Attendees
-                      </button>
-                      <button onClick={() => onNavigate('sales-analytics')} style={{ flex: 1, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Analytics</button>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {/* Edit Modal */}

@@ -51,7 +51,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
-          padding: '20px 16px 14px',
+          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
         <button

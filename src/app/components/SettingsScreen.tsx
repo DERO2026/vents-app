@@ -5,16 +5,21 @@ import {
   ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink,
 } from 'lucide-react';
+import { ImageCropperModal } from './ImageCropperModal';
 
 interface SettingsScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string } | null;
   onBack: () => void;
   onSignOut: () => void;
+  onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
+  onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string }) => void;
+  language?: string;
+  onLanguageChange?: (lang: string) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'language' | '2fa' | 'help';
+type SubScreen = null | 'profile' | 'payment' | 'language' | '2fa' | 'help' | 'change-password';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -127,7 +132,7 @@ function Divider() {
 
 function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
       <button onClick={onBack} style={{ background: '#1A1D2E', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
         <ArrowLeft size={15} color="#C4C9E0" />
       </button>
@@ -138,7 +143,7 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
 
 // ── Sub-screens ──────────────────────────────────────────────────
 
-function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBack: () => void }) {
+function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
   if (!currentUser) {
     return (
       <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
@@ -157,6 +162,46 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
   const [saved, setSaved] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [usernameChecking, setUsernameChecking] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    if (!username.trim()) {
+      setUsernameAvailable(null);
+      return;
+    }
+    const cleanUsername = username.trim().toLowerCase();
+    if (cleanUsername === currentUser?.username?.toLowerCase()) {
+      setUsernameAvailable(true);
+      return;
+    }
+
+    setUsernameChecking(true);
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        const { data, error } = await insforge.database
+          .from('users')
+          .select('id')
+          .eq('username', cleanUsername)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (data) {
+          setUsernameAvailable(false);
+        } else {
+          setUsernameAvailable(true);
+        }
+      } catch (err) {
+        console.error("Failed to check username availability:", err);
+      } finally {
+        setUsernameChecking(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [username, currentUser]);
 
   useEffect(() => {
     async function loadProfile() {
@@ -185,13 +230,21 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
     loadProfile();
   }, [currentUser]);
 
-  const handleUploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser?.id) return;
+    setErrorMessage(null);
+    setCropImageSrc(URL.createObjectURL(file));
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    if (!currentUser?.id) return;
+    setCropImageSrc(null);
     setSaving(true);
     setErrorMessage(null);
     try {
-      const { data, error } = await insforge.storage.from('events').uploadAuto(file);
+      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+      const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
       if (error) throw error;
       if (data?.url) {
         setAvatarUrl(data.url);
@@ -200,6 +253,9 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
           .update({ avatar_url: data.url })
           .eq('id', currentUser.id);
         if (updateError) throw updateError;
+        if (onProfileUpdated) {
+          onProfileUpdated({ avatar_url: data.url });
+        }
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
       }
@@ -215,17 +271,15 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
     setSaving(true);
     setErrorMessage(null);
     try {
-      if (username.trim()) {
-        const { data: existingUser, error: checkError } = await insforge.database
-          .from('users')
-          .select('id')
-          .eq('username', username.trim().toLowerCase())
-          .neq('id', currentUser.id)
-          .maybeSingle();
+      if (usernameAvailable === false) {
+        throw new Error("Username is already taken.");
+      }
 
-        if (checkError) throw checkError;
-        if (existingUser) {
-          throw new Error("Username is already taken.");
+      const cleanPhone = phone.replace(/\s/g, '').trim();
+      if (cleanPhone) {
+        const NIGERIAN_PHONE_REGEX = /^(\+234|0)[789][01]\d{8}$/;
+        if (!NIGERIAN_PHONE_REGEX.test(cleanPhone)) {
+          throw new Error("Please enter a valid Nigerian phone number.");
         }
       }
 
@@ -235,11 +289,19 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
           bio: bio.trim(),
-          phone_number: phone.trim()
+          phone_number: cleanPhone
         })
         .eq('id', currentUser.id);
 
       if (error) throw error;
+      if (onProfileUpdated) {
+        onProfileUpdated({
+          full_name: name.trim(),
+          username: username.trim().toLowerCase(),
+          bio: bio.trim(),
+          phone_number: phone.trim()
+        });
+      }
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
@@ -304,16 +366,71 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              {[
-                { label: 'Full Name', value: name, onChange: setName },
-                { label: 'Username', value: username, onChange: setUsername },
-                { label: 'Phone Number', value: phone, onChange: setPhone },
-              ].map(({ label, value, onChange }) => (
-                <div key={label}>
-                  <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>{label}</p>
-                  <input value={value} onChange={(e) => onChange(e.target.value)} style={inputStyle} />
-                </div>
-              ))}
+              <div>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Full Name</p>
+                <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle} />
+              </div>
+
+              <div>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Username</p>
+                {currentUser?.id === 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832' ? (
+                  <input
+                    value={username}
+                    readOnly
+                    style={{ ...inputStyle, opacity: 0.5, cursor: 'not-allowed' }}
+                  />
+                ) : (
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      style={inputStyle}
+                    />
+                    {usernameChecking && (
+                      <span style={{ position: 'absolute', right: '12px', top: '12px', color: '#A78BFA', fontSize: '12px' }}>
+                        Checking...
+                      </span>
+                    )}
+                  </div>
+                )}
+                {currentUser?.id !== 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832' && username.trim() && username.trim().toLowerCase() !== currentUser?.username?.toLowerCase() && usernameAvailable !== null && !usernameChecking && (
+                  <p style={{
+                    fontSize: '12px',
+                    marginTop: '4px',
+                    color: usernameAvailable ? '#10B981' : '#EF4444'
+                  }}>
+                    {usernameAvailable ? '✓ Username is available' : '✗ Username is already taken'}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Phone Number</p>
+                <input
+                  value={phone}
+                  onChange={(e) => {
+                    // Strip all non-digits, then format as Nigerian number
+                    let raw = e.target.value.replace(/\D/g, '');
+                    // If user typed leading +234, strip the country code prefix for formatting
+                    if (raw.startsWith('234') && raw.length > 3) raw = '0' + raw.slice(3);
+                    // Cap at 11 digits (0XX XXXX XXXX)
+                    raw = raw.slice(0, 11);
+                    // Format: 0XXX XXX XXXX
+                    let formatted = raw;
+                    if (raw.length > 7) formatted = raw.slice(0, 4) + ' ' + raw.slice(4, 7) + ' ' + raw.slice(7);
+                    else if (raw.length > 4) formatted = raw.slice(0, 4) + ' ' + raw.slice(4);
+                    setPhone(formatted);
+                  }}
+                  inputMode="tel"
+                  placeholder="0801 234 5678"
+                  style={inputStyle}
+                />
+                {phone.trim() && !/^(\+234|0)[789][01]\d{8}$/.test(phone.replace(/\s/g, '')) && (
+                  <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
+                    Enter a valid Nigerian number (e.g. 0801 234 5678)
+                  </p>
+                )}
+              </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Bio</p>
                 <textarea
@@ -347,6 +464,14 @@ function ProfileDetailsScreen({ currentUser, onBack }: { currentUser: any; onBac
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
+
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCropComplete={handleCropComplete}
+          onClose={() => setCropImageSrc(null)}
+        />
+      )}
     </div>
   );
 }
@@ -383,8 +508,15 @@ const LANGUAGES = [
   { code: 'zh', name: 'Chinese', native: '中文', flag: '🇨🇳' },
 ];
 
-function LanguageScreen({ onBack }: { onBack: () => void }) {
-  const [selected, setSelected] = useState('en');
+function LanguageScreen({
+  onBack,
+  selectedLanguage,
+  onSelectLanguage
+}: {
+  onBack: () => void;
+  selectedLanguage: string;
+  onSelectLanguage: (lang: string) => void;
+}) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
       <SubHeader title="Language" onBack={onBack} />
@@ -396,14 +528,14 @@ function LanguageScreen({ onBack }: { onBack: () => void }) {
           {LANGUAGES.map((lang) => (
             <button
               key={lang.code}
-              onClick={() => setSelected(lang.code)}
+              onClick={() => onSelectLanguage(lang.code)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: '14px',
                 padding: '14px',
-                background: selected === lang.code ? 'rgba(124,58,237,0.12)' : '#131629',
-                border: selected === lang.code ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.05)',
+                background: selectedLanguage === lang.code ? 'rgba(124,58,237,0.12)' : '#131629',
+                border: selectedLanguage === lang.code ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.05)',
                 borderRadius: '14px',
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -415,7 +547,7 @@ function LanguageScreen({ onBack }: { onBack: () => void }) {
                 <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{lang.name}</p>
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{lang.native}</p>
               </div>
-              {selected === lang.code && (
+              {selectedLanguage === lang.code && (
                 <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <CheckCircle size={14} color="#fff" />
                 </div>
@@ -625,9 +757,139 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
+// ── Change Password Sub-screen ────────────────────────────────────
+function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: string } | null; onBack: () => void }) {
+  const [step, setStep] = useState<'verify' | 'otp'>('verify');
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [otp, setOtp] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleVerify(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!currentUser?.email) { setError('No email on account.'); return; }
+    if (newPassword === oldPassword) { setError('New password must differ from the current password.'); return; }
+    if (newPassword !== confirmPassword) { setError('New passwords do not match.'); return; }
+    if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    setLoading(true);
+    try {
+      // Verify old password via a real sign-in call — never compare against anything cached
+      const { error: verifyErr } = await insforge.auth.signInWithPassword({ email: currentUser.email, password: oldPassword });
+      if (verifyErr) { setError('Current password is incorrect.'); return; }
+      // Send OTP to user's email for the reset step
+      const { error: sendErr } = await insforge.auth.sendResetPasswordEmail({ email: currentUser.email });
+      if (sendErr) throw sendErr;
+      setStep('otp');
+    } catch (err: any) {
+      setError(err?.message || 'Failed to send reset email.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleOtp(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    if (!otp.trim()) { setError('Please enter the OTP from your email.'); return; }
+    setLoading(true);
+    try {
+      const { error: updateErr } = await insforge.auth.resetPassword({ newPassword, otp: otp.trim() });
+      if (updateErr) throw updateErr;
+      setSuccess(true);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to update password. Check your OTP and try again.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '14px',
+    outline: 'none', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, margin: 0 }}>Change Password</h1>
+      </div>
+
+      {success ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', gap: '16px' }}>
+          <CheckCircle size={48} color="#10B981" />
+          <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, textAlign: 'center', margin: 0 }}>Password updated!</p>
+          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>Your password has been changed successfully.</p>
+          <button onClick={onBack} style={{ marginTop: '8px', padding: '12px 32px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+        </div>
+      ) : step === 'verify' ? (
+        <form onSubmit={handleVerify} style={{ padding: '8px 16px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px' }}>
+              <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>CURRENT PASSWORD</label>
+            <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Enter current password" required style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>NEW PASSWORD</label>
+            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 6 characters" required style={inputStyle} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>CONFIRM NEW PASSWORD</label>
+            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Repeat new password" required style={inputStyle} />
+          </div>
+          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+            {loading ? 'Verifying…' : 'Continue'}
+          </button>
+        </form>
+      ) : (
+        <form onSubmit={handleOtp} style={{ padding: '8px 16px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '12px', padding: '14px' }}>
+            <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0 }}>A verification code was sent to <strong style={{ color: '#F0F0FF' }}>{currentUser?.email}</strong>. Enter it below to confirm your new password.</p>
+          </div>
+          {error && (
+            <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px' }}>
+              <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>
+            </div>
+          )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>VERIFICATION CODE</label>
+            <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Enter code from email" required style={{ ...inputStyle, letterSpacing: '0.1em', fontSize: '16px' }} />
+          </div>
+          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+            {loading ? 'Updating…' : 'Update Password'}
+          </button>
+          <button type="button" onClick={() => { setStep('verify'); setError(null); }} style={{ padding: '10px', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '13px', cursor: 'pointer' }}>
+            ← Back
+          </button>
+        </form>
+      )}
+    </div>
+  );
+}
+
 // ── Main Settings Screen ──────────────────────────────────────────
 
-export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggleDark }: SettingsScreenProps) {
+export function SettingsScreen({
+  currentUser,
+  onBack,
+  onSignOut,
+  isDark,
+  onToggleDark,
+  onProfileUpdated,
+  language = 'en',
+  onLanguageChange
+}: SettingsScreenProps) {
   if (!currentUser) {
     return (
       <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
@@ -643,11 +905,20 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
   const [biometrics, setBiometrics] = useState(false);
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
 
-  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
   if (subScreen === 'payment') return <PaymentMethodsScreen onBack={() => setSubScreen(null)} />;
-  if (subScreen === 'language') return <LanguageScreen onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'language') {
+    return (
+      <LanguageScreen
+        onBack={() => setSubScreen(null)}
+        selectedLanguage={language}
+        onSelectLanguage={onLanguageChange || (() => {})}
+      />
+    );
+  }
   if (subScreen === '2fa') return <TwoFAScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
@@ -656,7 +927,7 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
   return (
     <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '20px 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
           style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
@@ -668,10 +939,14 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 40px', scrollbarWidth: 'none' }}>
-        {/* Profile card */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <span style={{ color: '#fff', fontSize: '22px', fontWeight: 700 }}>{initial}</span>
+        {/* Profile card — shows avatar if available */}
+        <div style={{ background: '#0D0D1A', border: '1px solid rgba(168,85,247,0.1)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 0 16px rgba(168,85,247,0.3)' }}>
+            {(currentUser as any)?.avatar_url ? (
+              <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ color: '#fff', fontSize: '22px', fontWeight: 700 }}>{initial}</span>
+            )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>{displayName}</p>
@@ -690,7 +965,14 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
           <Divider />
           <SettingRow icon={CreditCard} label="Payment Methods" onPress={() => setSubScreen('payment')} />
           <Divider />
-          <SettingRow icon={Globe} label="Language" value="English" onPress={() => setSubScreen('language')} />
+          <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
+          <Divider />
+          <SettingRow
+            icon={Globe}
+            label="Language"
+            value={LANGUAGES.find(l => l.code === language)?.name || 'English'}
+            onPress={() => setSubScreen('language')}
+          />
         </Section>
 
         <Section title="NOTIFICATIONS">
@@ -709,16 +991,11 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
           <SettingRow icon={Shield} label="Two-Factor Authentication" onPress={() => setSubScreen('2fa')} />
         </Section>
 
-        <Section title="APPEARANCE">
-          <SettingRow
-            icon={isDark ? Moon : Sun}
-            label={isDark ? 'Dark Mode' : 'Light Mode'}
-            toggle={isDark}
-            onToggle={onToggleDark}
-          />
-        </Section>
+        {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
-        <Section title="SUPPORT">
+        <Section title="SUPPORT & LEGAL">
+          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => onNavigate?.('privacy-policy')} />
+          <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => setSubScreen('help')} />
           <Divider />
           <SettingRow icon={Star} label="Rate VENTS" accent onPress={() => window.open('https://play.google.com/store', '_blank')} />
@@ -730,8 +1007,8 @@ export function SettingsScreen({ currentUser, onBack, onSignOut, isDark, onToggl
           </div>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '11px', marginTop: '20px' }}>
-          VENTS v2.1.0 · Made with ❤️ in Lagos
+        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
+          VENTS v1.1.0 | © VENTS LTD
         </p>
       </div>
     </div>

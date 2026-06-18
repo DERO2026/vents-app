@@ -20,7 +20,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
       }}
     >
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', padding: '20px 20px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
         <button
           onClick={onBack}
           style={{

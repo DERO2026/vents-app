@@ -49,8 +49,8 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Header */}
       <div
-        className="flex items-center gap-3 px-4 pt-14 pb-4"
-        style={{ borderBottom: '1px solid rgba(255,255,255,0.06)' }}
+        className="flex items-center gap-3 px-4 pb-4"
+        style={{ paddingTop: 'calc(14px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}
       >
         <button
           onClick={onBack}

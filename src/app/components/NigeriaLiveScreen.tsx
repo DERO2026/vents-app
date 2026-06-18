@@ -1,4 +1,4 @@
-import { ArrowLeft, Bell, MapPin, ChevronDown } from 'lucide-react';
+import { ArrowLeft, MapPin, ChevronDown } from 'lucide-react';
 
 interface NigeriaLiveScreenProps {
   onBack: () => void;
@@ -209,7 +209,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
           top: 0,
           left: 0,
           right: 0,
-          padding: '16px 20px',
+          padding: 'calc(16px + env(safe-area-inset-top)) 20px 16px 20px',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
@@ -251,40 +251,6 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
           <ChevronDown size={12} color="#8B8FA8" />
         </div>
 
-        <div style={{ position: 'relative' }}>
-          <div
-            style={{
-              background: 'rgba(0,0,0,0.45)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255,255,255,0.1)',
-              borderRadius: '50%',
-              width: '38px',
-              height: '38px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}
-          >
-            <Bell size={17} color="#fff" />
-          </div>
-          <div
-            style={{
-              position: 'absolute',
-              top: '1px',
-              right: '1px',
-              background: '#FF3B30',
-              borderRadius: '50%',
-              width: '16px',
-              height: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1.5px solid #06090D',
-            }}
-          >
-            <span style={{ color: '#fff', fontSize: '8px', fontWeight: 800 }}>7</span>
-          </div>
-        </div>
       </div>
 
       {/* "Nigeria is Alive" — left overlay text */}

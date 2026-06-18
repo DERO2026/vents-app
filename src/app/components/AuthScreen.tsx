@@ -1,15 +1,18 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check } from 'lucide-react';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { insforge } from '../../lib/insforge';
+import { NIGERIA_STATES } from './StateSelectScreen';
+import { ImageCropperModal } from './ImageCropperModal';
 
 interface AuthScreenProps {
   initialMode: AuthMode;
   userRole?: string;
   selectedState?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => void;
+  resetToken?: string;
 }
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -33,7 +36,7 @@ const BTN_PRIMARY: React.CSSProperties = {
   fontWeight: 700,
   fontFamily: 'Space Grotesk, sans-serif',
   cursor: 'pointer',
-  boxShadow: '0 8px 32px rgba(123,47,190,0.4)',
+  boxShadow: '0 8px 32px rgba(123,47,190,0.4), 0 0 0 1px rgba(168,85,247,0.4), 0 0 24px rgba(168,85,247,0.3)',
 };
 
 function isValidEmail(email: string): boolean {
@@ -90,12 +93,17 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [signupState, setSignupState] = useState('');
+  const [role, setRole] = useState<'attendee' | 'organizer' | null>(null);
+  const [showStateDropdown, setShowStateDropdown] = useState(false);
+  const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('');
@@ -107,6 +115,49 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [isVerifying, setIsVerifying] = useState(false);
   const [verificationCode, setVerificationCode] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  const signupFileInputRef = useRef<HTMLInputElement>(null);
+  const [signupAvatarUrl, setSignupAvatarUrl] = useState('');
+  const [signupAvatarKey, setSignupAvatarKey] = useState('');
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const [signupAvatarFile, setSignupAvatarFile] = useState<File | null>(null);
+  const [signupAvatarPreview, setSignupAvatarPreview] = useState('');
+  const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+
+  const handleUploadSignupAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setErrorMessage(null);
+    setCropImageSrc(URL.createObjectURL(file));
+  };
+
+  const handleCropComplete = (croppedBlob: Blob) => {
+    const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+    setSignupAvatarFile(croppedFile);
+    setSignupAvatarPreview(URL.createObjectURL(croppedBlob));
+    setCropImageSrc(null);
+  };
+
+  const uploadAvatarIfPending = async (): Promise<string> => {
+    if (!signupAvatarFile) return signupAvatarUrl;
+    setAvatarUploading(true);
+    try {
+      const { data, error } = await insforge.storage.from('avatars').uploadAuto(signupAvatarFile);
+      if (error) throw error;
+      if (data?.url) {
+        setSignupAvatarUrl(data.url);
+        setSignupAvatarKey(data.key);
+        return data.url;
+      }
+    } catch (err: any) {
+      console.error("Failed to upload avatar:", err);
+      setErrorMessage(err.message || "Failed to upload photo. Proceeding without avatar.");
+    } finally {
+      setAvatarUploading(false);
+    }
+    return '';
+  };
 
   const isEmailOrUsernameValid = (val: string) => {
     if (mode === 'login') {
@@ -123,15 +174,24 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     mode === 'forgot'
       ? email.length > 0
       : mode === 'signup'
-      ? (email.length > 0 && password.length > 0 && username.trim().length > 0 && phone.trim().length > 0 && name.trim().length > 0)
+      ? (email.length > 0 &&
+         password.length > 0 &&
+         confirmPassword.length > 0 &&
+         password === confirmPassword &&
+         username.trim().length > 0 &&
+         phone.trim().length > 0 &&
+         name.trim().length > 0 &&
+         !!signupState &&
+         !!role)
+      : mode === 'reset'
+      ? (password.length > 0 && confirmPassword.length > 0 && password === confirmPassword)
       : (email.length > 0 && password.length > 0)
   );
 
   const handleEmailBlur = () => setEmailTouched(true);
 
-  const fetchProfileAndSucceed = async (userId: string, userEmail: string) => {
-    // Poll public.users to make sure trigger finished inserting profile
-    for (let i = 0; i < 5; i++) {
+  const fetchProfileAndSucceed = async (userId: string, userEmail: string, avatarUrl?: string) => {
+    for (let i = 0; i < 20; i++) {
       const { data: profile } = await insforge.database
         .from('users')
         .select('*')
@@ -139,180 +199,161 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         .maybeSingle();
 
       if (profile) {
-        let finalProfile = profile;
-        const updates: any = {};
-        if (name && profile.full_name !== name) {
-          updates.full_name = name;
-        }
-        if (username.trim() && !profile.username) {
-          updates.username = username.trim().toLowerCase();
-        }
-        if (phone.trim() && !profile.phone_number) {
-          updates.phone_number = phone.trim();
-        }
-        if (selectedState && !profile.state) {
-          updates.state = selectedState;
-        }
+        const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
+        const payload = {
+          full_name: name.trim(),
+          username: username.trim().toLowerCase(),
+          phone_number: phone.trim(),
+          state: (signupState || selectedState || '').trim(),
+          role: strictRole,
+          avatar_url: avatarUrl || signupAvatarUrl
+        };
 
-        if (Object.keys(updates).length > 0) {
-          const { error: updateError } = await insforge.database
-            .from('users')
-            .update(updates)
-            .eq('id', userId);
+        await insforge.database.from('users').update(payload).eq('id', userId);
 
-          if (!updateError) {
-            const { data: updated } = await insforge.database
-              .from('users')
-              .select('*')
-              .eq('id', userId)
-              .maybeSingle();
-            if (updated) {
-              finalProfile = updated;
-            }
-          }
-        }
+        const { data: verifiedProfile } = await insforge.database
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
 
+        const finalProfile = verifiedProfile || profile;
+        
         onSuccess({
           id: userId,
           email: userEmail,
-          full_name: finalProfile.full_name,
-          role: finalProfile.role,
-          username: finalProfile.username,
-          phone_number: finalProfile.phone_number,
-          state: finalProfile.state
+          full_name: finalProfile.full_name || payload.full_name,
+          role: strictRole, 
+          username: finalProfile.username || payload.username,
+          phone_number: finalProfile.phone_number || payload.phone_number,
+          state: finalProfile.state || payload.state,
+          avatar_url: finalProfile.avatar_url || payload.avatar_url,
+          isOrganizer: strictRole === 'organizer'
         });
         return;
       }
       await new Promise(resolve => setTimeout(resolve, 500));
     }
-    // Fallback if trigger is slow
-    onSuccess({
-      id: userId,
-      email: userEmail,
-      full_name: name || userEmail.split('@')[0],
-      role: userRole || 'user',
-      username: username.trim().toLowerCase(),
-      phone_number: phone.trim(),
-      state: selectedState
-    });
+    throw new Error("User profile creation is taking longer than expected. Please try signing in.");
   };
 
   const handleSubmit = async () => {
     setEmailTouched(true);
     setErrorMessage(null);
-    if (!isEmailOrUsernameValid(email)) return;
+    // reset mode doesn't use the email field — skip the email validation gate
+    if (mode !== 'reset' && !isEmailOrUsernameValid(email)) return;
     setLoading(true);
 
     try {
       if (mode === 'forgot') {
-        if (!email.trim() || !isValidEmail(email)) {
-          throw new Error('Please enter a valid email address.');
-        }
-
-        // Verify that the email actually exists in public.users
-        const { data: existingUser, error: checkError } = await insforge.database
-          .from('users')
-          .select('id')
-          .eq('email', email.trim().toLowerCase())
-          .maybeSingle();
-
-        if (checkError) throw checkError;
-        if (!existingUser) {
-          throw new Error('No account found with this email address.');
-        }
-
+        if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
+        const resetRedirect = window.location.hostname === 'localhost'
+          ? 'https://vents-one.vercel.app'
+          : window.location.origin;
         const { error } = await insforge.auth.sendResetPasswordEmail({
           email: email.trim().toLowerCase(),
-          redirectTo: window.location.origin
+          redirectTo: resetRedirect
         });
         if (error) throw error;
         setForgotSent(true);
+
+      } else if (mode === 'reset') {
+        if (!password) throw new Error('Password is required.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+        if (!resetToken) throw new Error('Reset token is missing or invalid. Please request a new link.');
+        
+        const { error } = await insforge.auth.resetPassword({
+          newPassword: password,
+          otp: resetToken
+        });
+        if (error) throw error;
+        
+        setSuccessMessage('Password reset successfully! Please sign in with your new password.');
+        setMode('login');
+        setPassword('');
+        setConfirmPassword('');
       } else if (mode === 'signup') {
-        if (!username.trim()) {
-          throw new Error('Username is required.');
+        if (!name.trim()) throw new Error('Full name is required.');
+        if (!username.trim()) throw new Error('Username is required.');
+        if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
+        if (!phone.trim()) throw new Error('Phone number is required.');
+        const NIGERIAN_PHONE_REGEX = /^(\+234|0)[789][01]\d{8}$/;
+        if (!NIGERIAN_PHONE_REGEX.test(phone.trim())) {
+          throw new Error('Please enter a valid Nigerian phone number.');
         }
-        if (!phone.trim()) {
-          throw new Error('Phone number is required.');
-        }
+        if (!password) throw new Error('Password is required.');
+        if (password !== confirmPassword) throw new Error('Passwords do not match.');
+        if (!signupState && !selectedState) throw new Error('State is required.');
+        if (!role) throw new Error('Role is required.');
 
-        // Check uniqueness of email
-        const { data: existingEmail, error: emailCheckError } = await insforge.database
-          .from('users')
-          .select('id')
-          .eq('email', email.trim().toLowerCase())
-          .maybeSingle();
+        const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
+        const userMetaPayload = {
+          full_name: name.trim(),
+          username: username.trim().toLowerCase(),
+          phone_number: phone.trim(),
+          state: (signupState || selectedState || '').trim(),
+          role: strictRole,
+          avatar_url: signupAvatarUrl
+        };
 
-        if (emailCheckError) throw emailCheckError;
-        if (existingEmail) {
-          throw new Error('Email already exists');
-        }
+        const normalizedEmail = email.trim().toLowerCase();
+        const normalizedPhone = phone.trim();
+        const normalizedUsername = username.trim().toLowerCase();
 
-        // Check uniqueness of phone number
-        const { data: existingPhone, error: phoneCheckError } = await insforge.database
-          .from('users')
-          .select('id')
-          .eq('phone_number', phone.trim())
-          .maybeSingle();
-
-        if (phoneCheckError) throw phoneCheckError;
-        if (existingPhone) {
-          throw new Error('Phone number already exists');
-        }
-
-        // Check uniqueness of username
-        const { data: existingUsername, error: usernameCheckError } = await insforge.database
-          .from('users')
-          .select('id')
-          .eq('username', username.trim().toLowerCase())
-          .maybeSingle();
-
-        if (usernameCheckError) throw usernameCheckError;
-        if (existingUsername) {
-          throw new Error('Username already exists');
-        }
+        const { data: existsResult, error: lookupError } = await insforge.database.rpc('check_user_exists', {
+          p_email: normalizedEmail,
+          p_phone: normalizedPhone,
+          p_username: normalizedUsername,
+        });
+        if (lookupError) throw lookupError;
+        if (existsResult?.email_taken) throw new Error('Email already exists');
+        if (existsResult?.phone_taken) throw new Error('Phone number already exists');
+        if (existsResult?.username_taken) throw new Error('Username already exists');
 
         const { data, error } = await insforge.auth.signUp({
           email,
           password,
-          name: name,
-          role: userRole || 'user',
-          username: username.trim().toLowerCase(),
-          phone_number: phone.trim(),
-          state: selectedState,
-          redirectTo: window.location.origin
+          options: { data: userMetaPayload }
         });
         if (error) throw error;
 
         if (data?.requireEmailVerification) {
           setIsVerifying(true);
         } else if (data?.accessToken && data?.user) {
-          await fetchProfileAndSucceed(data.user.id, data.user.email);
+          const avatarUrl = await uploadAvatarIfPending();
+          await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
         }
+
       } else if (mode === 'login') {
         let loginEmail = email.trim();
         if (!isValidEmail(loginEmail)) {
-          // Resolve username to email
-          const { data: userRecord, error: resolveError } = await insforge.database
-            .from('users')
-            .select('email')
-            .eq('username', loginEmail.toLowerCase())
-            .maybeSingle();
-          
+          // Clear any stale token so anon key is used for this unauthenticated lookup
+          (insforge as any).getHttpClient().userToken = null;
+          const { data: resolvedEmail, error: resolveError } = await insforge.database.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
+          console.log('[auth] resolve_username_to_email:', { resolvedEmail, resolveError });
           if (resolveError) throw resolveError;
-          if (!userRecord || !userRecord.email) {
-            throw new Error('No account found with this username.');
-          }
-          loginEmail = userRecord.email;
+          if (!resolvedEmail) throw new Error('No account found with this username.');
+          loginEmail = resolvedEmail;
         }
 
-        const { data, error } = await insforge.auth.signInWithPassword({
-          email: loginEmail,
-          password
-        });
+        const { data, error } = await insforge.auth.signInWithPassword({ email: loginEmail, password });
         if (error) throw error;
 
         if (data?.user) {
-          await fetchProfileAndSucceed(data.user.id, data.user.email);
+          const { data: profile } = await insforge.database.from('users').select('*').eq('id', data.user.id).maybeSingle();
+          const dbRole = (profile?.role === 'admin') ? 'admin' : (profile?.role === 'organizer' || profile?.role === 'organiser') ? 'organizer' : 'attendee';
+          
+          onSuccess({
+            id: data.user.id,
+            email: data.user.email,
+            full_name: profile?.full_name || data.user.user_metadata?.full_name || data.user.email.split('@')[0],
+            role: dbRole,
+            username: profile?.username || data.user.user_metadata?.username,
+            phone_number: profile?.phone_number || data.user.user_metadata?.phone_number,
+            state: profile?.state || data.user.user_metadata?.state,
+            avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
+            isOrganizer: dbRole === 'organizer'
+          });
         }
       }
     } catch (err: any) {
@@ -334,7 +375,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (error) throw error;
 
       if (data?.user) {
-        await fetchProfileAndSucceed(data.user.id, data.user.email);
+        const avatarUrl = await uploadAvatarIfPending();
+        await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Verification failed. Please check the code and try again.');
@@ -367,6 +409,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         overflowY: 'auto',
         scrollbarWidth: 'none',
         msOverflowStyle: 'none',
+        position: 'relative',
       }}
     >
       <style>{`
@@ -376,7 +419,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       `}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', padding: '20px 20px 0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
         <button
           onClick={() => {
             if (mode === 'forgot') {
@@ -566,14 +609,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 marginBottom: '6px',
               }}
             >
-              {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create account' : 'Reset password'}
+              {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create account' : mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
             </h2>
             <p style={{ color: '#8B8FA8', fontSize: '14px', marginBottom: '28px' }}>
               {mode === 'login'
                 ? 'Sign in to your VENTS account'
                 : mode === 'signup'
                 ? 'Join thousands discovering Nigerian events'
-                : 'Enter your email to receive a reset link'}
+                : mode === 'forgot'
+                ? 'Enter your email to receive a reset link'
+                : 'Enter your new password below'}
             </p>
 
             {errorMessage && (
@@ -594,30 +639,87 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </div>
             )}
 
+            {successMessage && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(16, 185, 129, 0.1)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
+                  borderRadius: '12px',
+                  padding: '12px 14px',
+                  marginBottom: '20px',
+                }}
+              >
+                <Check size={18} color="#10B981" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#10B981', fontSize: '13px', lineHeight: 1.4 }}>{successMessage}</span>
+              </div>
+            )}
+
 
 
             {/* Form fields */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               {mode === 'signup' && (
                 <>
+                  {/* Profile Picture Upload */}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '16px' }}>
+                    <div style={{ width: '70px', height: '70px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '8px', boxShadow: '0 6px 20px rgba(123,47,190,0.3)' }}>
+                      {signupAvatarPreview || signupAvatarUrl ? (
+                        <img src={signupAvatarPreview || signupAvatarUrl} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800 }}>
+                          {name ? name.charAt(0).toUpperCase() : '?'}
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="file"
+                      ref={signupFileInputRef}
+                      onChange={handleUploadSignupAvatar}
+                      style={{ display: 'none' }}
+                      accept="image/*"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => signupFileInputRef.current?.click()}
+                      disabled={avatarUploading}
+                      style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '6px 12px', color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+                    >
+                      {avatarUploading ? 'Uploading...' : 'Upload Photo'}
+                    </button>
+                  </div>
+
                   <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} />
                   <InputRow icon={User} placeholder="Username" value={username} onChange={setUsername} />
                 </>
               )}
-              <div onBlur={handleEmailBlur}>
+              {mode !== 'reset' && (
+                <div onBlur={handleEmailBlur}>
+                  <InputRow
+                    icon={Mail}
+                    placeholder={mode === 'login' ? "Email address or username" : "Email address (e.g. name@gmail.com)"}
+                    value={email}
+                    onChange={(v) => { setEmail(v); if (emailTouched) setEmailTouched(true); setSuccessMessage(null); }}
+                    type={mode === 'login' ? 'text' : 'email'}
+                    error={emailError}
+                  />
+                </div>
+              )}
+              {mode === 'signup' && (
                 <InputRow
-                  icon={Mail}
-                  placeholder={mode === 'login' ? "Email address or username" : "Email address (e.g. name@gmail.com)"}
-                  value={email}
-                  onChange={(v) => { setEmail(v); if (emailTouched) setEmailTouched(true); }}
-                  type={mode === 'login' ? 'text' : 'email'}
-                  error={emailError}
+                  icon={Phone}
+                  placeholder="Phone number"
+                  value={phone}
+                  onChange={setPhone}
+                  type="tel"
                 />
-              </div>
+              )}
               {mode !== 'forgot' && (
                 <InputRow
                   icon={Lock}
-                  placeholder="Password"
+                  placeholder={mode === 'signup' ? "Create password" : mode === 'reset' ? "New password" : "Password"}
                   value={password}
                   onChange={setPassword}
                   type={showPassword ? 'text' : 'password'}
@@ -631,14 +733,87 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   }
                 />
               )}
-              {mode === 'signup' && (
+              {(mode === 'signup' || mode === 'reset') && (
                 <InputRow
-                  icon={Phone}
-                  placeholder="Phone number"
-                  value={phone}
-                  onChange={setPhone}
-                  type="tel"
+                  icon={Lock}
+                  placeholder={mode === 'reset' ? "Confirm new password" : "Confirm password"}
+                  value={confirmPassword}
+                  onChange={setConfirmPassword}
+                  type={showPassword ? 'text' : 'password'}
                 />
+              )}
+              {mode === 'signup' && (
+                <>
+                  
+                  {/* State selector */}
+                  <div
+                    onClick={() => setShowStateDropdown(true)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      background: '#131629',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '14px',
+                      padding: '14px 16px',
+                      gap: '12px',
+                      position: 'relative',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <MapPin size={18} color="#8B8FA8" />
+                    <div
+                      style={{
+                        flex: 1,
+                        color: signupState ? '#F0F0FF' : '#8B8FA8',
+                        fontSize: '14px',
+                        fontFamily: 'Inter, sans-serif',
+                        textAlign: 'left',
+                      }}
+                    >
+                      {signupState || 'Select State'}
+                    </div>
+                    <ChevronDown
+                      size={16}
+                      color="#8B8FA8"
+                      style={{
+                        pointerEvents: 'none',
+                        position: 'absolute',
+                        right: '16px',
+                      }}
+                    />
+                  </div>
+
+                  {/* Role picker */}
+                  <div style={{ marginTop: '4px' }}>
+                    <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                      Select Role
+                    </label>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      {(['attendee', 'organizer'] as const).map((r) => (
+                        <button
+                          key={r}
+                          type="button"
+                          onClick={() => setRole(r)}
+                          style={{
+                            flex: 1,
+                            background: role === r ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
+                            border: role === r ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                            borderRadius: '12px',
+                            padding: '12px',
+                            color: '#fff',
+                            fontSize: '14px',
+                            fontWeight: 700,
+                            cursor: 'pointer',
+                            boxShadow: role === r ? '0 4px 12px rgba(123,47,190,0.3)' : 'none',
+                            transition: 'all 0.2s ease',
+                          }}
+                        >
+                          {r === 'attendee' ? 'Attendee' : 'Organiser'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
               )}
             </div>
 
@@ -678,14 +853,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 ? 'Sign In'
                 : mode === 'signup'
                 ? 'Create Account'
-                : 'Send Reset Link'}
+                : mode === 'forgot'
+                ? 'Send Reset Link'
+                : 'Reset Password'}
             </button>
 
-            {mode !== 'forgot' && (
+            {mode !== 'forgot' && mode !== 'reset' && (
               <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '14px' }}>
                 {mode === 'login' ? "Don't have an account? " : 'Already have an account? '}
                 <button
-                  onClick={() => setMode(mode === 'login' ? 'signup' : 'login')}
+                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setSuccessMessage(null); }}
                   style={{
                     background: 'none',
                     border: 'none',
@@ -701,6 +878,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </p>
             )}
 
+            {mode === 'reset' && (
+              <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '14px' }}>
+                <button
+                  onClick={() => { setMode('login'); setSuccessMessage(null); }}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#A78BFA',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    fontSize: '14px',
+                    fontFamily: 'Inter, sans-serif',
+                  }}
+                >
+                  Back to Sign In
+                </button>
+              </p>
+            )}
+
             {mode === 'signup' && (
               <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '11px', marginTop: '16px', lineHeight: 1.55 }}>
                 By creating an account, you agree to our{' '}
@@ -711,6 +907,109 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           </>
         )}
       </div>
+      
+      {showStateDropdown && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: '#060A12',
+            zIndex: 100,
+            display: 'flex',
+            flexDirection: 'column',
+            padding: 'calc(20px + env(safe-area-inset-top)) 24px 40px',
+          }}
+        >
+          {/* Header */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+              Select State
+            </h3>
+            <button
+              onClick={() => {
+                setShowStateDropdown(false);
+                setStateSearchQuery('');
+              }}
+              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+            >
+              <X size={16} color="#C4C9E0" />
+            </button>
+          </div>
+
+          {/* Search bar */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              background: '#131629',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '12px 16px',
+              gap: '12px',
+              marginBottom: '16px',
+            }}
+          >
+            <Search size={18} color="#8B8FA8" />
+            <input
+              type="text"
+              placeholder="Search state..."
+              value={stateSearchQuery}
+              onChange={(e) => setStateSearchQuery(e.target.value)}
+              style={{
+                flex: 1,
+                background: 'none',
+                border: 'none',
+                outline: 'none',
+                color: '#F0F0FF',
+                fontSize: '14px',
+                fontFamily: 'Inter, sans-serif',
+              }}
+              autoFocus
+            />
+          </div>
+
+          {/* States list */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', scrollbarWidth: 'none' }}>
+            {NIGERIA_STATES.filter(s => s.name.toLowerCase().includes(stateSearchQuery.toLowerCase())).map((st) => {
+              const isSelected = signupState === st.name;
+              return (
+                <div
+                  key={st.name}
+                  onClick={() => {
+                    setSignupState(st.name);
+                    setShowStateDropdown(false);
+                    setStateSearchQuery('');
+                  }}
+                  style={{
+                    background: isSelected ? 'rgba(168,85,247,0.12)' : '#131629',
+                    border: isSelected ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '12px',
+                    padding: '14px 16px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    cursor: 'pointer',
+                    color: '#F0F0FF',
+                    fontSize: '14px',
+                    fontWeight: isSelected ? 700 : 500,
+                  }}
+                >
+                  <span>{st.name}</span>
+                  {isSelected && <Check size={16} color="#A855F7" />}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCropComplete={handleCropComplete}
+          onClose={() => setCropImageSrc(null)}
+        />
+      )}
     </div>
   );
 }

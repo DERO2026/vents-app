@@ -91,7 +91,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
           fontWeight: 500,
         }}
       >
-        Nigeria's Premier Event Platform
+        Discover Nigeria's Best Events
       </p>
 
       {/* Loading dots */}

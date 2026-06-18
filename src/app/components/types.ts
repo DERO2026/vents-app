@@ -63,6 +63,8 @@ export interface UserProfile {
   followers: number;
   following: number;
   interests: string[];
+  avatar_url?: string;
+  isOrganizer?: boolean;
 }
 
 export interface Notification {
@@ -76,9 +78,9 @@ export interface Notification {
 }
 
 export type Screen =
+  | 'referral'
   | 'splash'
   | 'welcome'
-  | 'state-select'
   | 'role-select'
   | 'auth'
   | 'home'
@@ -88,6 +90,8 @@ export type Screen =
   | 'notifications'
   | 'profile'
   | 'settings'
+  | 'privacy-policy'
+  | 'help-support'
   | 'my-tickets'
   | 'ticket-detail'
   | 'event-details'
@@ -101,10 +105,14 @@ export type Screen =
   | 'attendee-list'
   | 'user-profile'
   | 'promote-event'
-  | 'nigeria-live';
+  | 'nigeria-live'
+  | 'following-list'
+  | 'admin-dashboard'
+  | 'checkin-scanner'
+  | 'transactions';
 
 export type TabId = 'home' | 'explore' | 'saved' | 'profile';
-export type AuthMode = 'login' | 'signup' | 'forgot';
+export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
 export type UserRole = 'attendee' | 'organizer';
 
 export type OrgEventStatus = 'under_review' | 'approved' | 'live' | 'draft';

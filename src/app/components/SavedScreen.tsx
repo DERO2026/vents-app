@@ -1,27 +1,40 @@
-import { Bookmark, MapPin, Calendar } from 'lucide-react';
+import { Bookmark, MapPin, Calendar, ArrowLeft } from 'lucide-react';
 import { Event } from './types';
-import { EVENTS, formatPrice } from './data';
+import { formatPrice } from './data';
 
 interface SavedScreenProps {
   savedEventIds: string[];
   onEventPress: (event: Event) => void;
   onToggleSave: (id: string) => void;
+  dbEvents: Event[];
+  onBack?: () => void;
 }
 
-export function SavedScreen({ savedEventIds, onEventPress, onToggleSave }: SavedScreenProps) {
-  const savedEvents = EVENTS.filter((e) => savedEventIds.includes(e.id));
+export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvents, onBack }: SavedScreenProps) {
+  const savedEvents = dbEvents.filter((e) => savedEventIds.includes(e.id));
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Header */}
-      <div className="px-4 pt-5 pb-4">
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-          Saved Events
-        </h1>
+      <div className="px-4 pb-4" style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>
+          {onBack && (
+            <button
+              onClick={onBack}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}
+              aria-label="Go back"
+            >
+              <ArrowLeft size={22} color="#A78BFA" />
+            </button>
+          )}
+          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+            Saved Events
+          </h1>
+        </div>
         <p style={{ color: '#8B8FA8', fontSize: '13px' }}>{savedEvents.length} event{savedEvents.length !== 1 ? 's' : ''} saved</p>
       </div>
 
-      <div className="flex-1 overflow-y-auto pb-24 px-4" style={{ scrollbarWidth: 'none' }}>
+      <div className="flex-1 overflow-y-auto px-4" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
         {savedEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full pb-20">
             <div
