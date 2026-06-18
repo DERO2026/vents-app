@@ -1245,17 +1245,14 @@ export default function App() {
                   setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
                   localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                   localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
-                  try {
-                    await insforge.database.rpc('promote_to_organizer');
-                    // 3.4: Admin-visible log for every new organizer promotion
-                    await insforge.database.from('admin_logs').insert([{
-                      admin_id: currentUser.id,
-                      action: 'organizer_promoted',
-                      target_user_id: currentUser.id,
-                      details: { email: currentUser.email, username: currentUser.username, promoted_at: new Date().toISOString() },
-                    }]);
-                  } catch (err) {
-                    console.error('Failed to promote to organizer:', err);
+                  const { error: promoteErr1 } = await insforge.database.rpc('promote_to_organizer');
+                  if (!promoteErr1 || promoteErr1?.message?.includes('already been set')) {
+                    const { error: logErr1 } = await insforge.database.rpc('log_organizer_promotion' as any, {
+                      p_user_id: currentUser.id,
+                      p_email: currentUser.email || '',
+                      p_username: currentUser.username || '',
+                    });
+                    if (logErr1) console.warn('Organizer log failed:', logErr1.message, logErr1.code);
                   }
                 }
               }}
@@ -1270,20 +1267,20 @@ export default function App() {
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                     if (currentUser.role !== 'admin') {
                       setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
-                      try {
-                        await insforge.database.rpc('promote_to_organizer');
-                        // 3.4: Log organizer promotion for admin review
-                        await insforge.database.from('admin_logs').insert([{
-                          admin_id: currentUser.id,
-                          action: 'organizer_promoted',
-                          target_user_id: currentUser.id,
-                          details: { email: currentUser.email, username: currentUser.username, promoted_at: new Date().toISOString() },
-                        }]);
-                      } catch (err) {
-                        console.error('Failed to promote to organizer:', err);
+                      const { error: promoteErr } = await insforge.database.rpc('promote_to_organizer');
+                      const alreadyOrganizer = promoteErr?.message?.includes('already been set');
+                      if (promoteErr && !alreadyOrganizer) {
+                        console.error('Failed to promote to organizer:', JSON.stringify(promoteErr));
                         setCurrentUser(prev => prev ? { ...prev, role: 'user' } : null);
                         setUserRole('attendee');
                         setScreen('profile');
+                      } else {
+                        const { error: logErr2 } = await insforge.database.rpc('log_organizer_promotion' as any, {
+                          p_user_id: currentUser.id,
+                          p_email: currentUser.email || '',
+                          p_username: currentUser.username || '',
+                        });
+                        if (logErr2) console.warn('Organizer log failed:', logErr2.message, logErr2.code);
                       }
                     }
                     // Fetch this organizer's events from DB and populate orgEvents
