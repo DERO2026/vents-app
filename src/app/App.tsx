@@ -35,6 +35,7 @@ import { AdminDashboardScreen } from './components/AdminDashboardScreen';
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { TransactionsScreen } from './components/TransactionsScreen';
+import { InterestsScreen } from './components/InterestsScreen';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -138,6 +139,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean } | null>(null);
+  const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
@@ -921,13 +923,20 @@ export default function App() {
     navigateTo(target as Screen);
   }, [navigateTo]);
 
-  const handleAuthSuccess = useCallback((userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => {
     const enriched = {
       ...userProfile,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
     setCurrentUser(enriched);
     setScreenStack([]);
+    // Check if new user needs to pick interests
+    try {
+      const { data } = await insforge.database.from('users').select('interests').eq('id', userProfile.id).maybeSingle();
+      if (!data?.interests || data.interests.length === 0) {
+        setShowInterests(true);
+      }
+    } catch { /* ignore — don't block login on interests check failure */ }
   }, []);
 
   const handleSignOut = useCallback(async () => {
@@ -1082,6 +1091,16 @@ export default function App() {
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
             />
+          )}
+
+          {/* ── INTERESTS ONBOARDING (new users) ── */}
+          {showInterests && currentUser && (
+            <div style={{ position: 'fixed', inset: 0, zIndex: 1000, background: '#060A12' }}>
+              <InterestsScreen
+                userId={currentUser.id}
+                onDone={() => setShowInterests(false)}
+              />
+            </div>
           )}
 
           {/* ── ATTENDEE MAIN TABS ── */}

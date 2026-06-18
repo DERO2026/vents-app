@@ -1,9 +1,10 @@
-import { useState, useEffect, memo, useMemo } from 'react';
+import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import { Search, Bell, MapPin, Calendar, X, Filter } from 'lucide-react';
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { VentsLogo } from './VentsLogo';
 import { formatPrice } from './data';
+import { CATEGORIES as CATEGORY_LIST } from './categories';
 
 interface HomeScreenProps {
   onEventPress: (event: Event) => void;
@@ -58,17 +59,7 @@ function useCardCountdown(eventDate?: string): string | null {
   return `${m}m`;
 }
 
-const CATEGORIES = [
-  { id: 'all', label: 'All', icon: '✨' },
-  { id: 'Music', label: 'Music', icon: '🎵' },
-  { id: 'Technology', label: 'Tech', icon: '💻' },
-  { id: 'Food & Drinks', label: 'Food', icon: '🍔' },
-  { id: 'Comedy Shows', label: 'Comedy', icon: '🎤' },
-  { id: 'Arts & Culture', label: 'Arts', icon: '🎨' },
-  { id: 'Sports & Wellness', label: 'Sports', icon: '⚽' },
-  { id: 'Conferences', label: '💼', icon: '💼' },
-  { id: 'Family Events', label: 'Family', icon: '👨‍👩‍👧‍👦' },
-];
+const CATEGORIES = [{ id: 'all', label: 'All', icon: '✨' }, ...CATEGORY_LIST];
 
 export function mapDbEventToFrontend(dbEvent: any): Event {
   const dt = new Date(dbEvent.event_date);
@@ -107,7 +98,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     description: dbEvent.description || '',
     organizer: 'Verified Organizer',
     organizerVerified: true,
-    isFeatured: false,
+    isFeatured: dbEvent.is_featured === true,
     isTrending: false,
     attendees: 150,
     capacity: 1000,
@@ -457,6 +448,99 @@ function HorizontalCardSkeleton() {
   );
 }
 
+// ── Featured Carousel ─────────────────────────────────────────────
+function FeaturedCarousel({
+  events, currentIndex, onIndexChange, onEventPress, isSaved, onToggleSave,
+}: {
+  events: Event[];
+  currentIndex: number;
+  onIndexChange: (i: number) => void;
+  onEventPress: (e: Event) => void;
+  isSaved: string[];
+  onToggleSave: (id: string) => void;
+}) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const advance = useCallback(() => {
+    onIndexChange((prev) => (prev + 1) % events.length);
+  }, [events.length, onIndexChange]);
+
+  useEffect(() => {
+    if (events.length <= 1) return;
+    timerRef.current = setInterval(advance, 4000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [advance, events.length]);
+
+  const event = events[currentIndex % events.length];
+  if (!event) return null;
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between px-4 mb-3">
+        <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+          ⭐ Featured
+        </h3>
+        {events.length > 1 && (
+          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+            {events.map((_, i) => (
+              <button
+                key={i}
+                onClick={() => onIndexChange(i)}
+                style={{
+                  width: i === currentIndex ? '18px' : '6px',
+                  height: '6px',
+                  borderRadius: '3px',
+                  background: i === currentIndex ? '#A78BFA' : 'rgba(255,255,255,0.2)',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                  transition: 'width 0.3s, background 0.3s',
+                }}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+      <div
+        className="px-4"
+        onClick={() => onEventPress(event)}
+        style={{ cursor: 'pointer' }}
+      >
+        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
+          <img
+            src={event.image}
+            alt={event.title}
+            style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block' }}
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+          />
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(6,10,18,0.92) 100%)' }} />
+          <div style={{ position: 'absolute', top: '12px', left: '12px' }}>
+            <span style={{ background: 'rgba(167,139,250,0.9)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px', letterSpacing: '0.05em' }}>⭐ FEATURED</span>
+          </div>
+          <button
+            onClick={(ev) => { ev.stopPropagation(); onToggleSave(event.id); }}
+            style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.4)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          >
+            <span style={{ fontSize: '14px' }}>{isSaved.includes(event.id) ? '🔖' : '🔖'}</span>
+          </button>
+          <div style={{ padding: '12px 14px' }}>
+            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, margin: '0 0 6px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2 }}>{event.title}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+              <span style={{ color: '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                📅 {event.date}
+              </span>
+              <span style={{ color: '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                📍 {event.city}
+              </span>
+              <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 800 }}>{formatPrice(event.price)}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HomeScreen({
   onEventPress,
   savedEvents,
@@ -477,6 +561,7 @@ export function HomeScreen({
   const [activeCategory, setActiveCategory] = useState('all');
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
+  const [featuredIndex, setFeaturedIndex] = useState(0);
 
   // Debounce search query
   useEffect(() => {
@@ -534,6 +619,16 @@ export function HomeScreen({
       return timeB - timeA;
     })
     .slice(0, 5);
+
+  // Featured events (is_featured=true, randomized order)
+  const featuredEvents = useMemo(() => {
+    const arr = dbEvents.filter(e => e.isFeatured);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }, [dbEvents]);
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
@@ -667,6 +762,33 @@ export function HomeScreen({
           </button>
         </div>
 
+        {/* Category filter chips */}
+        <div className="flex gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+          {CATEGORIES.map((cat) => {
+            const active = activeCategory === cat.id;
+            return (
+              <button
+                key={cat.id}
+                onClick={() => setActiveCategory(active ? 'all' : cat.id)}
+                className="flex-shrink-0 flex items-center gap-1 px-3 py-1"
+                style={{
+                  background: active ? 'rgba(167,139,250,0.18)' : '#131629',
+                  border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                  borderRadius: '20px',
+                  fontSize: '11px',
+                  color: active ? '#C4B5FD' : '#8B8FA8',
+                  fontWeight: active ? 700 : 500,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span>{cat.icon}</span>
+                <span>{cat.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Results / Feed sections */}
         {loading ? (
           <>
@@ -711,6 +833,18 @@ export function HomeScreen({
           <>
             {isDefaultState && (
               <>
+                {/* Featured Events Carousel */}
+                {featuredEvents.length > 0 && (
+                  <FeaturedCarousel
+                    events={featuredEvents}
+                    currentIndex={featuredIndex}
+                    onIndexChange={setFeaturedIndex}
+                    onEventPress={onEventPress}
+                    isSaved={savedEvents}
+                    onToggleSave={onToggleSave}
+                  />
+                )}
+
                 {/* Trending Events */}
                 {trendingEvents.length > 0 && (
                   <div className="mb-6">
