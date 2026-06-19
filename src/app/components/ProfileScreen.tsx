@@ -23,7 +23,7 @@ import { insforge } from '../../lib/insforge';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; hasBeenOrganizer?: boolean } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -215,18 +215,27 @@ export function ProfileScreen({
               overflow: 'hidden',
             }}
           >
-            <div
-              style={{
-                position: 'absolute',
-                top: '-40px',
-                right: '-40px',
-                width: '160px',
-                height: '160px',
-                background: 'radial-gradient(circle, rgba(123,47,190,0.25) 0%, transparent 70%)',
-                borderRadius: '50%',
-                pointerEvents: 'none',
-              }}
-            />
+            {!currentUser?.cover_url && (
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '-40px',
+                  right: '-40px',
+                  width: '160px',
+                  height: '160px',
+                  background: 'radial-gradient(circle, rgba(123,47,190,0.25) 0%, transparent 70%)',
+                  borderRadius: '50%',
+                  pointerEvents: 'none',
+                }}
+              />
+            )}
+
+            {currentUser?.cover_url && (
+              <div style={{ margin: '-20px -20px 16px', borderRadius: '20px 20px 0 0', overflow: 'hidden', height: '100px', position: 'relative' }}>
+                <img src={currentUser.cover_url} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0) 50%, rgba(26,13,46,0.85) 100%)' }} />
+              </div>
+            )}
 
             <div className="flex items-center gap-4 mb-4">
               <button

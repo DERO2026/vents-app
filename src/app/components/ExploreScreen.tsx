@@ -27,6 +27,7 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     following: 0,
     interests: dbUser.state ? [dbUser.state] : [],
     avatar_url: dbUser.avatar_url,
+    cover_url: dbUser.cover_url,
     isOrganizer: dbUser.role === 'organizer',
     isVerified: dbUser.is_verified === true,
   };
@@ -49,7 +50,7 @@ export function ExploreScreen({
       try {
         let queryBuilder = insforge.database
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, is_verified, state');
+          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role');
 
         if (userQuery.trim()) {
           const q = `%${userQuery.trim().toLowerCase()}%`;

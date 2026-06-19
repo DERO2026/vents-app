@@ -128,13 +128,22 @@ export function UserProfileScreen({
     >
       {/* Cover + back button */}
       <div style={{ position: 'relative', height: 'calc(140px + env(safe-area-inset-top))', flexShrink: 0 }}>
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            background: `linear-gradient(135deg, ${user.avatarColor}40 0%, rgba(79,70,229,0.25) 60%, #060A12 100%)`,
-          }}
-        />
+        {user.cover_url ? (
+          <img
+            src={user.cover_url}
+            alt="cover"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div
+            style={{
+              width: '100%',
+              height: '100%',
+              background: `linear-gradient(135deg, ${user.avatarColor}40 0%, rgba(79,70,229,0.25) 60%, #060A12 100%)`,
+            }}
+          />
+        )}
+        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0.1) 0%, rgba(6,10,18,0.6) 100%)' }} />
         {/* Back */}
         <button
           onClick={onBack}

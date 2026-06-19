@@ -138,7 +138,7 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -320,6 +320,7 @@ export default function App() {
           phone_number: profile?.phone_number,
           state: profile?.state,
           avatar_url: profile?.avatar_url,
+          cover_url: profile?.cover_url,
           isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser')
         });
       } catch (err: any) {
@@ -867,6 +868,7 @@ export default function App() {
             p_quantity: ticket.quantity,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
             p_payment_status: 'paid',
+            p_use_vents_cents: ticket.useVentsCents ?? false,
           });
           if (insertError) throw insertError;
 

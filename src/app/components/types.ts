@@ -49,6 +49,8 @@ export interface PurchasedTicket {
   purchasedAt: string;
   totalAmount: number;
   holderName: string;
+  useVentsCents?: boolean;
+  vcDiscountNgn?: number;
 }
 
 export interface UserProfile {
@@ -64,6 +66,7 @@ export interface UserProfile {
   following: number;
   interests: string[];
   avatar_url?: string;
+  cover_url?: string;
   isOrganizer?: boolean;
   isVerified?: boolean;
 }
