@@ -44,26 +44,21 @@ export function ExploreScreen({
   const [loadingUsers, setLoadingUsers] = useState(false);
   useEffect(() => {
     if (exploreTab !== 'people') return;
+    if (!userQuery.trim()) {
+      setSearchedUsers([]);
+      return;
+    }
 
     const searchUsers = async () => {
       setLoadingUsers(true);
       try {
-        let queryBuilder = insforge.database
+        const q = `%${userQuery.trim().toLowerCase()}%`;
+        const { data, error } = await insforge.database
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role');
-
-        if (userQuery.trim()) {
-          const q = `%${userQuery.trim().toLowerCase()}%`;
-          queryBuilder = queryBuilder.or(`full_name.ilike.${q},username.ilike.${q}`);
-        } else {
-          queryBuilder = queryBuilder.limit(15);
-        }
-
-        const { data, error } = await queryBuilder;
+          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role')
+          .ilike('username', q);
         if (error) throw error;
-        if (data) {
-          setSearchedUsers(data.map(mapDbUserToUserProfile));
-        }
+        if (data) setSearchedUsers(data.map(mapDbUserToUserProfile));
       } catch (err) {
         console.error("Failed to search users:", err);
       } finally {
@@ -71,10 +66,7 @@ export function ExploreScreen({
       }
     };
 
-    const debounceHandler = setTimeout(() => {
-      searchUsers();
-    }, 300);
-
+    const debounceHandler = setTimeout(searchUsers, 300);
     return () => clearTimeout(debounceHandler);
   }, [userQuery, exploreTab]);
 
@@ -134,7 +126,7 @@ export function ExploreScreen({
                 <input
                   value={userQuery}
                   onChange={(e) => setUserQuery(e.target.value)}
-                  placeholder="Search users by name or @username..."
+                  placeholder="Search by @username..."
                   style={{
                     flex: 1,
                     background: 'transparent',
@@ -153,14 +145,22 @@ export function ExploreScreen({
             </div>
 
             {/* User Results List */}
-            {loadingUsers ? (
+            {!userQuery.trim() ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Search size={28} color="#6B7280" />
+                </div>
+                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>Find people</p>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>Search for someone by username</p>
+              </div>
+            ) : loadingUsers ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', color: '#8B8FA8', fontSize: '14px' }}>
-                Searching users...
+                Searching...
               </div>
             ) : searchedUsers.length === 0 ? (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px', gap: '8px' }}>
                 <User size={36} color="#2A2D3E" />
-                <p style={{ color: '#8B8FA8', fontSize: '14px' }}>No users found</p>
+                <p style={{ color: '#8B8FA8', fontSize: '14px' }}>No users found for "@{userQuery}"</p>
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '0 16px' }}>

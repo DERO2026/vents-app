@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   ArrowLeft,
   Share2,
@@ -17,6 +17,8 @@ import {
   MessageSquarePlus,
   Phone,
   MessageCircle,
+  Minus,
+  Plus,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
@@ -26,7 +28,7 @@ import { insforge } from '../../lib/insforge';
 interface EventDetailsScreenProps {
   event: Event;
   onBack: () => void;
-  onGetTickets: (ticketType: TicketType) => void;
+  onGetTickets: (ticketType: TicketType, qty: number) => void;
   isSaved: boolean;
   onToggleSave: () => void;
   isBooked?: boolean;
@@ -187,6 +189,22 @@ export function EventDetailsScreen({
   const [userReviews, setUserReviews] = useState<Review[]>([]);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
+
+  // Inline ticket quantity selection
+  const ticketTypes = event.ticketTypes || [];
+  const [selectedTicketId, setSelectedTicketId] = useState<string>(ticketTypes[0]?.id ?? '');
+  const [ticketQtys, setTicketQtys] = useState<Record<string, number>>(
+    Object.fromEntries(ticketTypes.map((t) => [t.id, 0]))
+  );
+  const changeTicketQty = useCallback((id: string, delta: number) => {
+    setTicketQtys((prev) => {
+      const max = ticketTypes.find((t) => t.id === id)?.available ?? 10;
+      return { ...prev, [id]: Math.max(0, Math.min(max, (prev[id] ?? 0) + delta)) };
+    });
+  }, [ticketTypes]);
+  const selectedTicket = ticketTypes.find((t) => t.id === selectedTicketId);
+  const selectedQty = ticketQtys[selectedTicketId] ?? 0;
+  const canBook = !isBooked && !!selectedTicket && selectedQty > 0;
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -853,54 +871,58 @@ export function EventDetailsScreen({
         </div>
 
         {/* Ticket Options */}
-        {event.ticketTypes && event.ticketTypes.length > 0 && (
+        {ticketTypes.length > 0 && !isBooked && (
           <div style={{ marginBottom: '24px' }}>
             <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
-              Select Ticket Category
+              Select Tickets
             </span>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {event.ticketTypes.map((t) => (
-                <div
-                  key={t.id}
-                  onClick={() => !isBooked && onGetTickets && onGetTickets(t)}
-                  style={{
-                    background: '#131629',
-                    border: '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '16px',
-                    padding: '14px 16px',
-                    cursor: isBooked ? 'default' : 'pointer',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0', display: 'block' }}>{t.description || 'General Admission'}</p>
-                    <span style={{ color: '#6B7280', fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} tickets left</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                      {formatPrice(t.price)}
-                    </span>
-                    {!isBooked && (
-                      <div style={{
-                        width: '24px',
-                        height: '24px',
-                        borderRadius: '50%',
-                        background: 'rgba(167,139,250,0.1)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: '#A78BFA'
-                      }}>
-                        →
+              {ticketTypes.map((t) => {
+                const isSelected = selectedTicketId === t.id;
+                const qty = ticketQtys[t.id] ?? 0;
+                const soldOut = t.available === 0;
+                return (
+                  <div
+                    key={t.id}
+                    onClick={() => !soldOut && setSelectedTicketId(t.id)}
+                    style={{
+                      background: isSelected ? 'rgba(124,58,237,0.08)' : '#131629',
+                      border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: '16px',
+                      padding: '14px 16px',
+                      cursor: soldOut ? 'not-allowed' : 'pointer',
+                      opacity: soldOut ? 0.5 : 1,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
+                        <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
+                        {!soldOut && <span style={{ color: '#6B7280', fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
+                        {soldOut && <span style={{ color: '#EF4444', fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
+                      </div>
+                      <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginLeft: '8px' }}>
+                        {formatPrice(t.price)}
+                      </span>
+                    </div>
+                    {isSelected && !soldOut && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+                        <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Quantity</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+                          <button onClick={(e) => { e.stopPropagation(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
+                            <Minus size={14} color="#C4C9E0" />
+                          </button>
+                          <span style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center' }}>{qty}</span>
+                          <button onClick={(e) => { e.stopPropagation(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                            <Plus size={14} color="#fff" />
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1314,40 +1336,35 @@ export function EventDetailsScreen({
           </div>
         </div>
         <button
-          onClick={isBooked ? undefined : onBook}
-          disabled={isBooked || bookingLoading}
+          onClick={() => {
+            if (!isBooked && canBook && selectedTicket) {
+              onGetTickets(selectedTicket, selectedQty);
+            }
+          }}
+          disabled={isBooked || !canBook}
           style={{
             flex: 1,
             background: isBooked
               ? 'rgba(16,185,129,0.12)'
-              : bookingLoading
-              ? 'rgba(123,47,190,0.4)'
-              : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+              : canBook
+              ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
+              : '#1A1D2E',
             border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
             borderRadius: '16px',
             padding: '15px',
-            color: isBooked ? '#10B981' : '#fff',
+            color: isBooked ? '#10B981' : canBook ? '#fff' : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: isBooked || bookingLoading ? 'not-allowed' : 'pointer',
-            boxShadow: isBooked || bookingLoading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
+            cursor: isBooked || !canBook ? 'not-allowed' : 'pointer',
+            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
           }}
         >
-          {bookingLoading ? (
-            <>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-              Booking...
-            </>
-          ) : isBooked ? (
-            '✓ You are going'
-          ) : (
-            'Book / RSVP'
-          )}
+          {isBooked ? '✓ You are going' : canBook ? `Book · ${formatPrice(selectedTicket!.price * selectedQty)}` : 'Select tickets above'}
         </button>
       </div>
 

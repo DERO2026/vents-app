@@ -159,13 +159,10 @@ export default function App() {
   }, []);
 
   const handleSwitchToAttendee = useCallback(() => {
-    // DB role stays 'organizer' — trigger blocks reverting it.
-    // UI mode switches to attendee; persist preference so next load respects it.
     setUserRole('attendee');
     setActiveTab('home');
     setScreen('home');
     if (currentUser?.id) {
-      localStorage.setItem(`vents_view_${currentUser.id}`, 'attendee');
       setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
     }
   }, [currentUser]);
@@ -348,21 +345,14 @@ export default function App() {
   }, [authLoading]);
 
   // Sync userRole Effect (initialize once on user load)
-  // Respects a stored view-mode preference so organizers who switched to
-  // attendee view don't get routed back to org-dashboard on every reload.
   const userLoadedRef = useRef(false);
   useEffect(() => {
     if (currentUser && !userLoadedRef.current) {
-      const storedMode = localStorage.getItem(`vents_view_${currentUser.id}`);
-      if (storedMode === 'attendee') {
-        setUserRole('attendee');
-      } else {
-        setUserRole(
-          currentUser.role === 'admin' ? 'attendee'
-          : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer'
-          : 'attendee'
-        );
-      }
+      setUserRole(
+        currentUser.role === 'admin' ? 'attendee'
+        : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer'
+        : 'attendee'
+      );
       userLoadedRef.current = true;
     }
     if (!currentUser) {
@@ -374,10 +364,7 @@ export default function App() {
   useEffect(() => {
     if (screen === 'splash' && splashMinTimePassed && !authLoading) {
       if (currentUser) {
-        const storedMode = currentUser.id
-          ? localStorage.getItem(`vents_view_${currentUser.id}`)
-          : null;
-        if (storedMode === 'attendee' || currentUser.role !== 'organizer') {
+        if (currentUser.role !== 'organizer') {
           setUserRole('attendee');
           setScreen('home');
           setActiveTab('home');
@@ -396,8 +383,7 @@ export default function App() {
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
     if (currentUser && screen === 'auth') {
-      const storedMode = localStorage.getItem(`vents_view_${currentUser.id}`);
-      if ((currentUser.role === 'organizer' || currentUser.role === 'admin' || currentUser.isOrganizer) && storedMode !== 'attendee') {
+      if (currentUser.role === 'organizer' || currentUser.isOrganizer) {
         setUserRole('organizer');
         setOrgTab('home');
         setScreen('home');
@@ -992,7 +978,7 @@ export default function App() {
       return;
     }
     if (target === 'saved') {
-      handleTabChange('saved');
+      navigateTo('saved');
       return;
     }
     navigateTo(target as Screen);
@@ -1041,11 +1027,6 @@ export default function App() {
   // Screens where the bottom nav is visible for both roles
   const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
   const showBottomNav = !!currentUser && navScreens.includes(screen);
-
-  // Organizers who switched to "view as attendee" get a banner to switch back
-  const isOrgViewingAsAttendee =
-    userRole === 'attendee' &&
-    (currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin');
 
   // Determine if the current user is organizer/admin (for nav FAB)
   const isOrganizerOrAdmin =
@@ -1260,7 +1241,6 @@ export default function App() {
                 if (currentUser?.id && currentUser.role !== 'admin') {
                   setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
                   localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                  localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
                   const { error: promoteErr1 } = await insforge.database.rpc('promote_to_organizer');
                   if (!promoteErr1 || promoteErr1?.message?.includes('already been set')) {
                     const { error: logErr1 } = await insforge.database.rpc('log_organizer_promotion' as any, {
@@ -1280,7 +1260,6 @@ export default function App() {
                   setActiveTab('home');
                   setScreen('home');
                   if (currentUser?.id) {
-                    localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                     if (currentUser.role !== 'admin') {
                       setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
@@ -1332,12 +1311,10 @@ export default function App() {
                     }
                   }
                 } else {
-                  // Switch back to attendee view — persist preference so reloads respect it
                   setUserRole('attendee');
                   setActiveTab('home');
                   setScreen('home');
                   if (currentUser?.id) {
-                    localStorage.setItem(`vents_view_${currentUser.id}`, 'attendee');
                     setCurrentUser(prev => prev ? { ...prev, isOrganizer: true } : null);
                   }
                 }
@@ -1419,7 +1396,7 @@ export default function App() {
             <EventDetailsScreen
               event={selectedEvent}
               onBack={goBack}
-              onGetTickets={handleGetTickets}
+              onGetTickets={handleTicketContinue}
               isSaved={savedEvents.includes(selectedEvent.id)}
               onToggleSave={() => handleToggleSave(selectedEvent.id)}
               isBooked={currentUser ? allTickets.some((t) => t.event.id === selectedEvent.id) : false}
@@ -1569,49 +1546,6 @@ export default function App() {
           />
         )}
 
-        {/* Banner for organizers/admins currently viewing as attendee — shown on profile only */}
-        {isOrgViewingAsAttendee && screen === 'profile' && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-              padding: '6px 16px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              zIndex: 100,
-            }}
-          >
-            <span style={{ color: 'rgba(255,255,255,0.85)', fontSize: '12px' }}>
-              👤 Viewing as attendee
-            </span>
-            <button
-              onClick={async () => {
-                setUserRole('organizer');
-                setActiveTab('home');
-                setScreen('home');
-                if (currentUser?.id) {
-                  localStorage.setItem(`vents_view_${currentUser.id}`, 'organizer');
-                }
-              }}
-              style={{
-                background: 'rgba(255,255,255,0.2)',
-                border: '1px solid rgba(255,255,255,0.3)',
-                borderRadius: '8px',
-                padding: '3px 10px',
-                color: '#fff',
-                fontSize: '12px',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              Switch back
-            </button>
-          </div>
-        )}
         </ErrorBoundary>
       </div>
     </div>

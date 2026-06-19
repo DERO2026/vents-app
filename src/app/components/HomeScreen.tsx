@@ -1,10 +1,11 @@
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
-import { Search, Bell, MapPin, Calendar, X, Filter } from 'lucide-react';
+import { Search, Bell, MapPin, Calendar, X, Filter, ChevronDown } from 'lucide-react';
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { VentsLogo } from './VentsLogo';
 import { formatPrice } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
+import { NIGERIA_STATES } from './StateSelectScreen';
 
 interface HomeScreenProps {
   onEventPress: (event: Event) => void;
@@ -70,7 +71,9 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
   
   const parts = (dbEvent.location || '').split(',');
   const venue = (parts[0] || '').trim();
-  const city = (parts[1] || 'Lagos').trim();
+  // Location format from CreateEventScreen: "venue, stateName, city[, address]"
+  const stateFromLocation = parts.length >= 3 ? (parts[1] || '').trim() : '';
+  const city = parts.length >= 3 ? (parts[2] || '').trim() : (parts[1] || 'Lagos').trim();
   
   const categoryIconMap: Record<string, string> = {
     'Music': '🎵',
@@ -94,7 +97,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     venue: venue,
     area: venue,
     city: city,
-    state: city + ' State',
+    state: stateFromLocation || city,
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
     description: dbEvent.description || '',
@@ -599,6 +602,7 @@ export function HomeScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [activeCategory, setActiveCategory] = useState('all');
+  const [stateFilter, setStateFilter] = useState<string>('all');
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -633,6 +637,11 @@ export function HomeScreen({
       activeCategory === 'all' ||
       event.category.toLowerCase() === activeCategory.toLowerCase();
 
+    // State filter
+    const matchState =
+      stateFilter === 'all' ||
+      event.state?.toLowerCase() === stateFilter.toLowerCase();
+
     // Price filter (free vs paid)
     const matchPrice =
       priceFilter === 'all' ||
@@ -643,7 +652,7 @@ export function HomeScreen({
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
-    return matchQuery && matchCategory && matchPrice && matchUpcoming;
+    return matchQuery && matchCategory && matchState && matchPrice && matchUpcoming;
   });
 
   // Trending events (sort by bookingsCount DESC)
@@ -767,6 +776,32 @@ export function HomeScreen({
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginRight: '4px', flexShrink: 0 }}>
             <Filter size={12} color="#8B8FA8" />
             FILTERS:
+          </div>
+
+          {/* State filter */}
+          <div className="flex-shrink-0" style={{ position: 'relative' }}>
+            <select
+              value={stateFilter}
+              onChange={(e) => setStateFilter(e.target.value)}
+              style={{
+                appearance: 'none',
+                background: stateFilter !== 'all' ? 'rgba(167,139,250,0.12)' : '#131629',
+                border: `1px solid ${stateFilter !== 'all' ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                borderRadius: '20px',
+                fontSize: '11px',
+                color: stateFilter !== 'all' ? '#A78BFA' : '#8B8FA8',
+                fontWeight: 600,
+                cursor: 'pointer',
+                padding: '4px 28px 4px 10px',
+                outline: 'none',
+              }}
+            >
+              <option value="all">📍 State: All</option>
+              {NIGERIA_STATES.map((s) => (
+                <option key={s.name} value={s.name}>📍 {s.name}</option>
+              ))}
+            </select>
+            <ChevronDown size={10} color={stateFilter !== 'all' ? '#A78BFA' : '#8B8FA8'} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
           </div>
 
           <button

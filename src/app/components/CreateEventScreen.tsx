@@ -1,9 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
 import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
+import { ImageCropperModal } from './ImageCropperModal';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -74,6 +75,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const [imageUrl, setImageUrl] = useState('');
   const [imageKey, setImageKey] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [cropSrc, setCropSrc] = useState<string | null>(null);
 
   // General states
   const [submitting, setSubmitting] = useState(false);
@@ -138,6 +140,27 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     { num: 4, label: 'Review' },
   ];
 
+  const handleCroppedFlier = useCallback(async (croppedDataUrl: string) => {
+    setCropSrc(null);
+    setUploadingImage(true);
+    setErrorMessage(null);
+    try {
+      const res = await fetch(croppedDataUrl);
+      const blob = await res.blob();
+      const file = new File([blob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const { data, error } = await insforge.storage.from('events').uploadAuto(file);
+      if (error) throw error;
+      if (data?.url) {
+        setImageUrl(data.url);
+        setImageKey(data.key);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Image upload failed. Please try again.');
+    } finally {
+      setUploadingImage(false);
+    }
+  }, []);
+
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (uploadingImage) return;
     const file = e.target.files?.[0];
@@ -152,26 +175,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       return;
     }
 
-    setUploadingImage(true);
-    setErrorMessage(null);
-
-    try {
-      const { data, error } = await insforge.storage
-        .from('events')
-        .uploadAuto(file);
-
-      if (error) throw error;
-
-      if (data?.url) {
-        setImageUrl(data.url);
-        setImageKey(data.key);
-      }
-    } catch (err: any) {
-      console.error('Image upload failed:', err);
-      setErrorMessage(err.message || 'Image upload failed. Please try again.');
-    } finally {
-      setUploadingImage(false);
-    }
+    const reader = new FileReader();
+    reader.onload = () => setCropSrc(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const submitEvent = async (eventStatus: 'live' | 'draft') => {
@@ -442,10 +448,20 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         {step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Image upload */}
+            {cropSrc && (
+              <ImageCropperModal
+                imageSrc={cropSrc}
+                onCropComplete={handleCroppedFlier}
+                onClose={() => setCropSrc(null)}
+                aspect={3 / 4}
+                cropShape="rect"
+                title="Crop Event Flier"
+              />
+            )}
             <div
               onClick={() => { if (!uploadingImage && !submitting) fileInputRef.current?.click(); }}
               style={{
-                height: '140px',
+                height: '260px',
                 background: '#131629',
                 border: imageUrl ? '1px solid rgba(167,139,250,0.4)' : '2px dashed rgba(167,139,250,0.3)',
                 borderRadius: '16px',
