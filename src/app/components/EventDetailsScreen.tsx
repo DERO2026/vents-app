@@ -25,6 +25,11 @@ import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 
+interface EventDetailsScreenExtraProps {
+  currentUserId?: string;
+  onOrganizerPress?: (organizerId: string) => void;
+}
+
 interface EventDetailsScreenProps {
   event: Event;
   onBack: () => void;
@@ -37,6 +42,8 @@ interface EventDetailsScreenProps {
   onEventPress?: (event: Event) => void;
   following: string[];
   onToggleFollow: (userId: string) => void;
+  currentUserId?: string;
+  onOrganizerPress?: (organizerId: string) => void;
 }
 
 function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string): number {
@@ -182,6 +189,8 @@ export function EventDetailsScreen({
   onEventPress,
   following,
   onToggleFollow,
+  currentUserId,
+  onOrganizerPress,
 }: EventDetailsScreenProps) {
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
@@ -194,7 +203,7 @@ export function EventDetailsScreen({
   const ticketTypes = event.ticketTypes || [];
   const [selectedTicketId, setSelectedTicketId] = useState<string>(ticketTypes[0]?.id ?? '');
   const [ticketQtys, setTicketQtys] = useState<Record<string, number>>(
-    Object.fromEntries(ticketTypes.map((t) => [t.id, 0]))
+    Object.fromEntries(ticketTypes.map((t, i) => [t.id, i === 0 ? 1 : 0]))
   );
   const changeTicketQty = useCallback((id: string, delta: number) => {
     setTicketQtys((prev) => {
@@ -293,15 +302,17 @@ export function EventDetailsScreen({
 
     try {
       if (navigator.share) {
-        // Native share sheet — WhatsApp, Messages, Twitter all appear automatically
         await navigator.share({ title: event.title, text, url: deepLink });
       } else {
-        // Desktop fallback: open WhatsApp Web with pre-filled message
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        await navigator.clipboard.writeText(deepLink).catch(() => {
+          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+        });
       }
     } catch {
-      // User cancelled share — silently ignore
+      // User cancelled share
     }
+    // Always copy to clipboard silently so users can paste the link
+    navigator.clipboard.writeText(deepLink).catch(() => {});
     setShared(true);
     setTimeout(() => setShared(false), 2000);
   };
@@ -360,6 +371,7 @@ export function EventDetailsScreen({
           src={event.image}
           alt={event.title}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => { (e.currentTarget as HTMLImageElement).style.background = 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)'; (e.currentTarget as HTMLImageElement).src = ''; }}
         />
         <div
           style={{
@@ -474,15 +486,6 @@ export function EventDetailsScreen({
             {event.title}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Star size={14} fill="#FFB830" color="#FFB830" />
-              <span style={{ color: '#FFB830', fontSize: '14px', fontWeight: 700 }}>
-                {event.rating}
-              </span>
-              <span style={{ color: '#8B8FA8', fontSize: '13px' }}>
-                ({event.reviewCount} reviews)
-              </span>
-            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Users size={13} color="#8B8FA8" />
               <span style={{ color: '#8B8FA8', fontSize: '13px' }}>
@@ -654,6 +657,7 @@ export function EventDetailsScreen({
 
         {/* Organizer */}
         <div
+          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
           style={{
             background: '#131629',
             border: '1px solid rgba(255,255,255,0.06)',
@@ -663,6 +667,7 @@ export function EventDetailsScreen({
             alignItems: 'center',
             gap: '12px',
             marginBottom: '16px',
+            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
           }}
         >
           {organizerProfile?.avatar_url ? (
@@ -703,7 +708,7 @@ export function EventDetailsScreen({
             </span>
           </div>
           <button
-            onClick={() => onToggleFollow && onToggleFollow(event.organizer_id || '')}
+            onClick={(e) => { e.stopPropagation(); onToggleFollow && onToggleFollow(event.organizer_id || ''); }}
             style={{
               marginLeft: 'auto',
               background: isFollowingOrg ? 'rgba(16,185,129,0.1)' : 'rgba(167,139,250,0.1)',
@@ -955,222 +960,34 @@ export function EventDetailsScreen({
           </div>
         )}
 
-        {/* Reviews */}
-        <div style={{ marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Reviews</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Star size={14} fill="#FFB830" color="#FFB830" />
-                <span style={{ color: '#FFB830', fontSize: '14px', fontWeight: 700 }}>{event.rating}</span>
-                <span style={{ color: '#8B8FA8', fontSize: '13px' }}>/ 5</span>
-              </div>
-              {!reviewSubmitted && (
-                <button
-                  onClick={() => setShowReviewForm((v) => !v)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '5px',
-                    background: showReviewForm ? 'rgba(168,85,247,0.2)' : 'rgba(168,85,247,0.1)',
-                    border: '1px solid rgba(168,85,247,0.3)',
-                    borderRadius: '20px',
-                    padding: '5px 12px',
-                    color: '#A855F7',
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  <MessageSquarePlus size={12} />
-                  Write a review
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Write a review form */}
-          {showReviewForm && (
-            <div
+        {/* Reviews — see organizer profile */}
+        {event.organizer_id && onOrganizerPress && (
+          <div style={{ marginBottom: '16px' }}>
+            <button
+              onClick={() => onOrganizerPress(event.organizer_id!)}
               style={{
+                width: '100%',
                 background: '#131629',
-                border: '1.5px solid rgba(168,85,247,0.25)',
-                borderRadius: '16px',
-                padding: '16px',
-                marginBottom: '12px',
+                border: '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '14px',
+                padding: '14px 16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                cursor: 'pointer',
               }}
             >
-              <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, marginBottom: '12px' }}>
-                Your Rating
-              </p>
-              {/* Star picker */}
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '14px' }}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <button
-                    key={star}
-                    onClick={() => setReviewRating(star)}
-                    onMouseEnter={() => setReviewHover(star)}
-                    onMouseLeave={() => setReviewHover(0)}
-                    style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer' }}
-                  >
-                    <Star
-                      size={28}
-                      fill={(reviewHover || reviewRating) >= star ? '#FFB830' : '#2A2D3E'}
-                      color={(reviewHover || reviewRating) >= star ? '#FFB830' : '#2A2D3E'}
-                    />
-                  </button>
-                ))}
-                {reviewRating > 0 && (
-                  <span style={{ color: '#FFB830', fontSize: '13px', alignSelf: 'center', marginLeft: '4px', fontWeight: 600 }}>
-                    {['', 'Poor', 'Fair', 'Good', 'Great', 'Amazing!'][reviewRating]}
-                  </span>
-                )}
-              </div>
-
-              {/* Text input */}
-              <textarea
-                value={reviewText}
-                onChange={(e) => setReviewText(e.target.value)}
-                placeholder="Share your experience at this event..."
-                rows={3}
-                style={{
-                  width: '100%',
-                  background: 'rgba(255,255,255,0.04)',
-                  border: '1px solid rgba(255,255,255,0.1)',
-                  borderRadius: '12px',
-                  padding: '12px',
-                  color: '#F0F0FF',
-                  fontSize: '14px',
-                  lineHeight: 1.55,
-                  resize: 'none',
-                  outline: 'none',
-                  fontFamily: 'inherit',
-                  boxSizing: 'border-box',
-                }}
-              />
-
-              <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
-                <button
-                  onClick={() => { setShowReviewForm(false); setReviewRating(0); setReviewText(''); }}
-                  style={{
-                    flex: 1,
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '12px',
-                    padding: '12px',
-                    color: '#8B8FA8',
-                    fontSize: '14px',
-                    fontWeight: 600,
-                    cursor: 'pointer',
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={submitReview}
-                  disabled={!reviewRating || !reviewText.trim()}
-                  style={{
-                    flex: 2,
-                    background: reviewRating && reviewText.trim()
-                      ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
-                      : 'rgba(123,47,190,0.2)',
-                    border: 'none',
-                    borderRadius: '12px',
-                    padding: '12px',
-                    color: reviewRating && reviewText.trim() ? '#fff' : 'rgba(255,255,255,0.35)',
-                    fontSize: '14px',
-                    fontWeight: 700,
-                    cursor: reviewRating && reviewText.trim() ? 'pointer' : 'not-allowed',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                  }}
-                >
-                  <Send size={14} />
-                  Post Review
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Submitted confirmation */}
-          {reviewSubmitted && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '10px 14px' }}>
-              <CheckCircle size={15} color="#10B981" />
-              <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Your review has been posted!</span>
-            </div>
-          )}
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {allReviews.length === 0 ? (
-              <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '24px 16px', textAlign: 'center' }}>
-                <span style={{ fontSize: '24px', display: 'block', marginBottom: '8px' }}>⭐</span>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', fontWeight: 500 }}>No reviews yet</p>
-                <p style={{ color: '#5C607C', fontSize: '11px', marginTop: '3px' }}>Be the first to write a review!</p>
-              </div>
-            ) : (
-              allReviews.map((review) => (
-                <div
-                  key={review.id}
-                  style={{
-                    background: '#131629',
-                    border: review.id.startsWith('user-') ? '1px solid rgba(168,85,247,0.2)' : '1px solid rgba(255,255,255,0.05)',
-                    borderRadius: '14px',
-                    padding: '14px',
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div
-                        style={{
-                          width: '32px',
-                          height: '32px',
-                          borderRadius: '50%',
-                          background: review.avatar,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '11px',
-                          color: '#fff',
-                          fontWeight: 700,
-                        }}
-                      >
-                        {review.initials}
-                      </div>
-                      <div>
-                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
-                          {review.name}
-                        </span>
-                        {review.id.startsWith('user-') && (
-                          <span style={{ color: '#A855F7', fontSize: '10px', fontWeight: 600, marginLeft: '6px' }}>You</span>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '2px' }}>
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <Star
-                          key={i}
-                          size={11}
-                          fill={i < review.rating ? '#FFB830' : '#2A2D3E'}
-                          color={i < review.rating ? '#FFB830' : '#2A2D3E'}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                  <p style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.55 }}>
-                    {review.text}
-                  </p>
-                  <span style={{ color: '#8B8FA8', fontSize: '11px', display: 'block', marginTop: '6px' }}>
-                    {review.date}
-                  </span>
-                </div>
-              ))
-            )}
+              <Star size={16} color="#FFB830" />
+              <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
+                See organizer reviews
+              </span>
+              <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>View →</span>
+            </button>
           </div>
-          
-          {/* Related Events Section */}
-          <div style={{ marginTop: '24px', marginBottom: '16px' }}>
+        )}
+
+        {/* Related Events Section */}
+        <div style={{ marginTop: '24px', marginBottom: '16px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
               Related Events
             </p>
@@ -1217,7 +1034,6 @@ export function EventDetailsScreen({
             )}
           </div>
         </div>
-      </div>
 
       {/* Map dialog */}
       {showMapDialog && (

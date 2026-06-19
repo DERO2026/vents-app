@@ -102,7 +102,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [signupState, setSignupState] = useState('');
-  const [role, setRole] = useState<'attendee' | 'organizer' | null>(null);
+  const [role, setRole] = useState<'attendee' | 'organizer' | null>(
+    userRole === 'organizer' || userRole === 'organiser' ? 'organizer'
+    : userRole === 'attendee' ? 'attendee'
+    : null
+  );
   const [showStateDropdown, setShowStateDropdown] = useState(false);
   const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
@@ -435,7 +439,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           }
         } catch { /* ignore status check failure — fall through to normal error */ }
       }
-      setErrorMessage(err.message || 'An error occurred during authentication.');
+      // Item 21: Never expose raw DB errors — surface a safe user-facing message
+      const msg = typeof err?.message === 'string' ? err.message : '';
+      const safe = msg.includes('Invalid login') || msg.includes('invalid_credentials') || msg.includes('password')
+        ? 'Incorrect email or password.'
+        : msg.includes('Email not confirmed') || msg.includes('not confirmed')
+        ? 'Please verify your email before logging in.'
+        : msg.includes('rate limit') || msg.includes('Too many')
+        ? 'Too many attempts. Please wait a few minutes and try again.'
+        : 'An error occurred. Please try again.';
+      setErrorMessage(safe);
     } finally {
       setLoading(false);
     }
@@ -1091,8 +1104,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     />
                   </div>
 
-                  {/* Role picker */}
-                  <div style={{ marginTop: '4px' }}>
+                  {/* Role picker — hidden if role was pre-selected from RoleSelectScreen */}
+                  {!userRole && <div style={{ marginTop: '4px' }}>
                     <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                       Select Role
                     </label>
@@ -1120,7 +1133,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </div>}
                 </>
               )}
             </div>

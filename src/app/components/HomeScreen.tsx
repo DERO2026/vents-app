@@ -105,10 +105,10 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     organizerVerified: true,
     isFeatured: dbEvent.is_featured === true,
     isTrending: false,
-    attendees: 150,
-    capacity: 1000,
-    rating: 4.9,
-    reviewCount: 36,
+    attendees: 0,
+    capacity: Number(dbEvent.ticket_goal || dbEvent.capacity || 1000),
+    rating: 0,
+    reviewCount: 0,
     ticketTypes: Array.isArray(dbEvent.ticket_types) && dbEvent.ticket_types.length > 0
       ? dbEvent.ticket_types.map((t: any, idx: number) => ({
           id: t.id || `t_${idx}`,
@@ -159,6 +159,18 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           src={event.image}
           alt={event.title}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => {
+            const el = e.currentTarget as HTMLImageElement;
+            el.style.display = 'none';
+            const parent = el.parentElement;
+            if (parent && !parent.querySelector('.img-fallback')) {
+              const fb = document.createElement('div');
+              fb.className = 'img-fallback';
+              fb.style.cssText = 'width:100%;height:100%;background:linear-gradient(135deg,#1e1040 0%,#0f172a 100%);display:flex;align-items:center;justify-content:center;font-size:28px;';
+              fb.textContent = '🎉';
+              parent.insertBefore(fb, parent.firstChild);
+            }
+          }}
         />
         {/* FOMO tag */}
         {isSelling && (
@@ -321,6 +333,18 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
           src={event.image}
           alt={event.title}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          onError={(e) => {
+            const el = e.currentTarget as HTMLImageElement;
+            el.style.display = 'none';
+            const parent = el.parentElement;
+            if (parent && !parent.querySelector('.img-fallback')) {
+              const fb = document.createElement('div');
+              fb.className = 'img-fallback';
+              fb.style.cssText = 'width:100%;height:100%;background:linear-gradient(135deg,#1e1040 0%,#0f172a 100%);display:flex;align-items:center;justify-content:center;font-size:28px;';
+              fb.textContent = '🎉';
+              parent.insertBefore(fb, parent.firstChild);
+            }
+          }}
         />
         {badgeText && (
           <div

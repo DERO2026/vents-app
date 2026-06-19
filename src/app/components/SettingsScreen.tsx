@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { insforge } from '../../lib/insforge';
+import { sanitize } from '../../lib/sanitize';
 import QRCode from 'qrcode';
 import {
   ArrowLeft, User, Bell, Shield, Moon, Sun, HelpCircle, LogOut,
@@ -330,9 +331,9 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       const { error } = await insforge.database
         .from('users')
         .update({
-          full_name: name.trim(),
-          username: username.trim().toLowerCase(),
-          bio: bio.trim(),
+          full_name: sanitize(name),
+          username: sanitize(username).toLowerCase(),
+          bio: sanitize(bio),
           phone_number: cleanPhone
         })
         .eq('id', currentUser.id);
@@ -340,9 +341,9 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       if (error) throw error;
       if (onProfileUpdated) {
         onProfileUpdated({
-          full_name: name.trim(),
-          username: username.trim().toLowerCase(),
-          bio: bio.trim(),
+          full_name: sanitize(name),
+          username: sanitize(username).toLowerCase(),
+          bio: sanitize(bio),
           phone_number: cleanPhone || phone.trim()
         });
       }

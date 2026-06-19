@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
+import { sanitize } from '../../lib/sanitize';
 import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -190,8 +191,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       const { data, error } = await insforge.database
         .from('events')
         .insert([{
-          title: title.trim(),
-          description: description.trim(),
+          title: sanitize(title),
+          description: sanitize(description),
           image_url: imageUrl,
           location: locationString,
           event_date: eventTimestamp,

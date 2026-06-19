@@ -95,7 +95,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'between',
-          padding: '16px 20px',
+          padding: '8px 16px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           background: '#131629',
         }}
@@ -155,7 +155,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
       {/* Zoom Controls */}
       <div
         style={{
-          padding: '24px 20px',
+          padding: '12px 16px',
           background: '#131629',
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',

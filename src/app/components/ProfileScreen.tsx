@@ -106,13 +106,6 @@ export function ProfileScreen({
 
   const menuItems = [
     {
-      icon: Ticket,
-      label: 'My Events',
-      sublabel: `${tickets.length} event${tickets.length !== 1 ? 's' : ''}`,
-      color: '#A78BFA',
-      screen: 'my-tickets',
-    },
-    {
       icon: Bell,
       label: 'Notifications',
       sublabel: 'Manage alerts',
@@ -128,7 +121,6 @@ export function ProfileScreen({
       screen: 'saved',
     },
     { icon: Receipt, label: 'Transactions', sublabel: 'Last 90 days', color: '#06B6D4', screen: 'transactions' },
-    { icon: Users, label: 'Following', sublabel: `${followingCount} people`, color: '#A855F7', screen: 'following-list' },
     {
       icon: Gift,
       label: 'Invite Friends',

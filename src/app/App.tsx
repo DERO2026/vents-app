@@ -308,6 +308,16 @@ export default function App() {
           .eq('id', sessionUserId)
           .maybeSingle();
 
+        // Item 20: reject suspended users immediately on session restore
+        if (profile?.status === 'suspended') {
+          await insforge.auth.signOut().catch(() => {});
+          sessionStorage.removeItem('vents_rt');
+          setCurrentUser(null);
+          setAuthError('Your account has been suspended. To appeal, contact ventsappltd@gmail.com or WhatsApp +234 9030737368.');
+          setAuthLoading(false);
+          return;
+        }
+
         setCurrentUser({
           id: sessionUserId,
           email: sessionUserEmail || profile?.email || '',
@@ -330,6 +340,36 @@ export default function App() {
     }
     hydrateAuth();
   }, []);
+
+  // Item 4: Load organizer's events from DB on mount/user change
+  useEffect(() => {
+    if (!currentUser?.id || (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.id !== ROOT_UID)) return;
+    insforge.database
+      .from('events')
+      .select('*')
+      .eq('organizer_id', currentUser.id)
+      .then(({ data: dbOrgEvents }) => {
+        if (!dbOrgEvents) return;
+        setOrgEvents((dbOrgEvents as any[]).map((e: any) => ({
+          id: e.id,
+          title: e.title || '',
+          category: e.category || 'Other',
+          description: e.description || '',
+          date: e.event_date ? e.event_date.split('T')[0] : '',
+          startTime: e.event_date ? (e.event_date.includes('T') ? e.event_date.split('T')[1].slice(0, 5) : '') : '',
+          venue: e.location || '',
+          city: '',
+          capacity: String(e.ticket_goal || 1000),
+          ticketName: 'Regular',
+          ticketPrice: String(e.price || '0'),
+          ticketQty: String(e.ticket_goal || 1000),
+          contactPhone: '',
+          showPhone: false,
+          status: (e.status === 'live' ? 'approved' : e.status === 'draft' ? 'under_review' : e.status) as any,
+          createdAt: new Date(e.created_at).getTime(),
+        })));
+      });
+  }, [currentUser?.id, currentUser?.role]);
 
   // Safety Timeout to prevent stuck splash screen on network/auth hang
   useEffect(() => {
@@ -827,12 +867,6 @@ export default function App() {
     navigateTo('ticket-select');
   }, [navigateTo]);
 
-  const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
-    setSelectedTicketType(ticketType);
-    setSelectedTicketQty(qty);
-    navigateTo('checkout');
-  }, [navigateTo]);
-
   const handleCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
     if (currentUser) {
       try {
@@ -882,6 +916,25 @@ export default function App() {
     setScreen('payment-success');
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
+  const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
+    setSelectedTicketType(ticketType);
+    setSelectedTicketQty(qty);
+    if ((ticketType.price ?? 0) * qty === 0) {
+      const freeTicket: PurchasedTicket = {
+        id: `free-${Date.now()}`,
+        event: selectedEvent!,
+        ticketType,
+        quantity: qty,
+        totalPaid: 0,
+        purchaseDate: new Date().toISOString(),
+        status: 'active',
+      };
+      handleCheckoutSuccess(freeTicket);
+      return;
+    }
+    navigateTo('checkout');
+  }, [navigateTo, selectedEvent, handleCheckoutSuccess]);
+
   const handleToggleSave = useCallback(async (eventId: string) => {
     if (!currentUser) {
       console.warn("User must be logged in to save events");
@@ -927,6 +980,7 @@ export default function App() {
       navigateTo('auth');
       return;
     }
+    if (userId === currentUser.id) return;
 
     const isFollowing = following.includes(userId);
     // Optimistically update UI
@@ -1405,6 +1459,15 @@ export default function App() {
               onEventPress={handleEventPress}
               following={following}
               onToggleFollow={handleToggleFollow}
+              currentUserId={currentUser?.id}
+              onOrganizerPress={async (organizerId) => {
+                const { data } = await insforge.database
+                  .from('users')
+                  .select('*')
+                  .eq('id', organizerId)
+                  .maybeSingle();
+                if (data) { setSelectedUser(data as UserProfile); navigateTo('user-profile'); }
+              }}
             />
           )}
           {screen === 'ticket-select' && selectedEvent && (
