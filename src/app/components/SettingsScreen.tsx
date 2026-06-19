@@ -168,6 +168,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [coverCropSrc, setCoverCropSrc] = useState<string | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
@@ -271,14 +272,24 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     }
   };
 
-  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !currentUser?.id) return;
+    if (!file) return;
     if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') setCoverCropSrc(reader.result); };
+    reader.readAsDataURL(file);
+    if (coverInputRef.current) coverInputRef.current.value = '';
+  };
+
+  const handleCoverCropComplete = async (croppedBlob: Blob) => {
+    if (!currentUser?.id) return;
+    setCoverCropSrc(null);
     setSaving(true);
     setErrorMessage(null);
     try {
-      const { data, error } = await insforge.storage.from('avatars').uploadAuto(file);
+      const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
+      const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
       if (error) throw error;
       if (data?.url) {
         setCoverUrl(data.url);
@@ -294,7 +305,6 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       setErrorMessage(err.message || 'Failed to upload cover photo');
     } finally {
       setSaving(false);
-      if (coverInputRef.current) coverInputRef.current.value = '';
     }
   };
 
@@ -523,6 +533,17 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           imageSrc={cropImageSrc}
           onCropComplete={handleCropComplete}
           onClose={() => setCropImageSrc(null)}
+        />
+      )}
+
+      {coverCropSrc && (
+        <ImageCropperModal
+          imageSrc={coverCropSrc}
+          onCropComplete={handleCoverCropComplete}
+          onClose={() => setCoverCropSrc(null)}
+          aspect={16 / 9}
+          cropShape="rect"
+          title="Crop Cover Photo"
         />
       )}
     </div>

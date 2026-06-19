@@ -6,6 +6,9 @@ interface ImageCropperModalProps {
   imageSrc: string;
   onCropComplete: (croppedBlob: Blob) => void;
   onClose: () => void;
+  aspect?: number;
+  cropShape?: 'round' | 'rect';
+  title?: string;
 }
 
 async function getCroppedImg(
@@ -53,7 +56,7 @@ async function getCroppedImg(
   });
 }
 
-export function ImageCropperModal({ imageSrc, onCropComplete, onClose }: ImageCropperModalProps) {
+export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 1, cropShape = 'round', title = 'Crop Photo' }: ImageCropperModalProps) {
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
@@ -112,7 +115,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose }: ImageCr
           <X size={20} />
         </button>
         <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flex: 1, textAlign: 'center' }}>
-          Crop Photo
+          {title}
         </span>
         <button
           onClick={handleSave}
@@ -140,8 +143,8 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose }: ImageCr
           image={imageSrc}
           crop={crop}
           zoom={zoom}
-          aspect={1}
-          cropShape="round"
+          aspect={aspect}
+          cropShape={cropShape}
           showGrid={false}
           onCropChange={setCrop}
           onZoomChange={setZoom}
