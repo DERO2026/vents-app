@@ -227,38 +227,6 @@ export function OrganizerDashboard({
           </div>
         </div>
 
-        <button
-          onClick={() => setActiveView('attendee')}
-          style={{
-            background: 'linear-gradient(135deg, rgba(123, 47, 190, 0.12) 0%, rgba(79, 70, 229, 0.12) 100%)',
-            border: '1px solid rgba(123, 47, 190, 0.3)',
-            borderRadius: '12px',
-            padding: '10px 18px',
-            color: '#FFFFFF',
-            fontFamily: 'Space Grotesk, sans-serif',
-            fontSize: '13px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            boxShadow: '0 4px 15px rgba(123, 47, 190, 0.1)',
-            transition: 'all 0.2s ease',
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.border = '1px solid #7B2FBE';
-            e.currentTarget.style.transform = 'translateY(-1px)';
-            e.currentTarget.style.boxShadow = '0 6px 20px rgba(123, 47, 190, 0.25)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.border = '1px solid rgba(123, 47, 190, 0.3)';
-            e.currentTarget.style.transform = 'translateY(0)';
-            e.currentTarget.style.boxShadow = '0 4px 15px rgba(123, 47, 190, 0.1)';
-          }}
-        >
-          <Sparkles size={14} color="#A855F7" />
-          Switch to Attendee
-        </button>
       </header>
 
       {/* Main Content Area */}

@@ -44,6 +44,7 @@ export function UserProfileScreen({
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
+  const [eventsAttended, setEventsAttended] = useState(0);
   const isVerified = user.is_verified || user.id === ROOT_UID;
   const isOwnProfile = currentUserId === user.id;
 
@@ -51,6 +52,7 @@ export function UserProfileScreen({
     setFollowers(0);
     setEventsCreated(0);
     setAttendees(0);
+    setEventsAttended(0);
   }, [user.id]);
 
   useEffect(() => {
@@ -88,6 +90,15 @@ export function UserProfileScreen({
         } else {
           setAttendees(0);
         }
+
+        // 4. Events this user attended (distinct events from their tickets)
+        const { data: attendedTickets } = await insforge.database
+          .from('tickets')
+          .select('event_id')
+          .eq('user_id', user.id)
+          .eq('status', 'active');
+        const distinctEvents = new Set((attendedTickets || []).map((t: any) => t.event_id));
+        setEventsAttended(distinctEvents.size);
       } catch (err) {
         console.error("Failed to fetch user profile stats:", err);
       }
@@ -276,6 +287,7 @@ export function UserProfileScreen({
         {[
           { label: 'Events', value: String(eventsCreated) },
           { label: 'Followers', value: String(followers + (isFollowing ? 1 : 0)) },
+          { label: 'Attended', value: String(eventsAttended) },
           { label: 'Attendees', value: String(attendees) },
         ].map(({ label, value }, i, arr) => (
           <div

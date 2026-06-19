@@ -262,16 +262,29 @@ export function NotificationsScreen({
                       >
                         {notif.title}
                       </span>
-                      <span
-                        style={{
-                          color: '#8B8FA8',
-                          fontSize: '11px',
-                          flexShrink: 0,
-                          whiteSpace: 'nowrap',
-                        }}
-                      >
-                        {notif.time}
-                      </span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                        {!notif.read && (
+                          <div
+                            style={{
+                              width: '8px',
+                              height: '8px',
+                              borderRadius: '50%',
+                              background: accent,
+                              boxShadow: `0 0 6px ${accent}`,
+                              flexShrink: 0,
+                            }}
+                          />
+                        )}
+                        <span
+                          style={{
+                            color: '#8B8FA8',
+                            fontSize: '11px',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {notif.time}
+                        </span>
+                      </div>
                     </div>
                     <p
                       style={{
@@ -284,21 +297,7 @@ export function NotificationsScreen({
                     </p>
                   </div>
 
-                  {/* Unread dot */}
-                  {!notif.read && (
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: '18px',
-                        right: '14px',
-                        width: '8px',
-                        height: '8px',
-                        borderRadius: '50%',
-                        background: accent,
-                        boxShadow: `0 0 6px ${accent}`,
-                      }}
-                    />
-                  )}
+                  {/* Unread dot moved inline with timestamp above */}
                 </div>
               );
             })}

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, X, MapPin, User, MessageCircle } from 'lucide-react';
+import { Search, X, MapPin, User, MessageCircle, CheckCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 
@@ -27,7 +27,8 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     following: 0,
     interests: dbUser.state ? [dbUser.state] : [],
     avatar_url: dbUser.avatar_url,
-    isOrganizer: dbUser.role === 'organizer'
+    isOrganizer: dbUser.role === 'organizer',
+    isVerified: dbUser.is_verified === true,
   };
 }
 
@@ -203,6 +204,9 @@ export function ExploreScreen({
                         <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }} className="truncate">
                           {user.name}
                         </span>
+                        {user.isVerified && (
+                          <CheckCircle size={13} fill="#4F46E5" color="#fff" />
+                        )}
                         {user.isOrganizer && (
                           <span style={{ background: 'rgba(167,139,250,0.15)', color: '#A78BFA', fontSize: '8px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
                             CREATOR

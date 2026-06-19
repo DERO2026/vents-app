@@ -34,7 +34,17 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'logs' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'system';
+
+interface EventRow {
+  id: string;
+  title: string | null;
+  organizer_id: string | null;
+  hidden_by_admin: boolean;
+  hidden_at: string | null;
+  created_at: string;
+  status: string | null;
+}
 
 // ─── Confirm Modal ─────────────────────────────────────────────────────────────
 function ConfirmModal({
@@ -111,6 +121,8 @@ export function AdminDashboardScreen({
   const [tab, setTab] = useState<Tab>('users');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
+  const [events, setEvents] = useState<EventRow[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
@@ -192,6 +204,44 @@ export function AdminDashboardScreen({
     loadLogs();
   }, [tab, loadLogs, currentUser, isRoot]);
 
+  const loadEvents = useCallback(async () => {
+    setEventsLoading(true);
+    try {
+      const { data, error } = await insforge.database
+        .from('events')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status')
+        .order('created_at', { ascending: false })
+        .limit(50);
+      if (error) throw error;
+      setEvents(data || []);
+    } catch (err: any) {
+      flash(false, err?.message || 'Failed to load events.');
+    } finally { setEventsLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'events') return;
+    loadEvents();
+  }, [tab, loadEvents, currentUser, isRoot]);
+
+  const handleHideEvent = async (eventId: string) => {
+    try {
+      const { error } = await insforge.database.rpc('admin_hide_event', { p_event_id: eventId });
+      if (error) throw error;
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: true, hidden_at: new Date().toISOString() } : e));
+      flash(true, 'Event hidden from public feeds.');
+    } catch (err: any) { flash(false, err?.message || 'Failed to hide event.'); }
+  };
+
+  const handleReinstateEvent = async (eventId: string) => {
+    try {
+      const { error } = await insforge.database.rpc('admin_reinstate_event', { p_event_id: eventId });
+      if (error) throw error;
+      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: false, hidden_at: null } : e));
+      flash(true, 'Event reinstated.');
+    } catch (err: any) { flash(false, err?.message || 'Failed to reinstate event.'); }
+  };
+
   // ── Flash ────────────────────────────────────────────────────────────────────
   const flash = (ok: boolean, msg: string) => {
     if (ok) setSuccessMessage(msg); else setErrorMessage(msg);
@@ -200,11 +250,12 @@ export function AdminDashboardScreen({
 
   // ── User actions ─────────────────────────────────────────────────────────────
   const handleRoleChange = async (userId: string, newRole: string) => {
+    if (userId === ROOT_UID) { flash(false, 'Root admin role cannot be changed.'); return; }
+    if (!['attendee', 'organizer'].includes(newRole)) { flash(false, 'Invalid role.'); return; }
     setBusyId(userId);
     try {
-      const { error } = await insforge.database.from('users').update({ role: newRole }).eq('id', userId);
+      const { error } = await insforge.database.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'change_role', userId, { new_role: newRole });
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
       flash(true, 'Role updated.');
     } catch (err: any) {
@@ -431,6 +482,7 @@ export function AdminDashboardScreen({
 
   const tabs = [
     { key: 'users' as Tab, label: 'Users', icon: <Users size={14} /> },
+    { key: 'events' as Tab, label: 'Events', icon: <Shield size={14} /> },
     { key: 'logs' as Tab, label: 'Audit Log', icon: <ClipboardList size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Zap size={14} /> }] : []),
   ];
@@ -667,6 +719,42 @@ export function AdminDashboardScreen({
             )}
           </div>
         </>
+      )}
+
+      {/* ════════════════ EVENTS TAB ══════════════════════════════════════ */}
+      {tab === 'events' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{events.length} events loaded</span>
+            <button onClick={loadEvents} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A78BFA', fontSize: '12px' }}>Refresh</button>
+          </div>
+          {eventsLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading events…</div>
+          ) : events.length === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No events found.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {events.map(ev => (
+                <div key={ev.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {ev.title || '(Untitled)'}
+                    </span>
+                    <span style={{ color: '#555C7A', fontSize: '11px' }}>
+                      {ev.hidden_by_admin ? '🚫 Hidden' : '✅ Visible'} · {new Date(ev.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => ev.hidden_by_admin ? handleReinstateEvent(ev.id) : setConfirmModal({ title: 'Hide Event?', message: `Hide "${ev.title || 'this event'}" from all public feeds? You can reinstate it later.`, confirmLabel: 'Hide', danger: true, onConfirm: () => { setConfirmModal(null); handleHideEvent(ev.id); } })}
+                    style={{ background: ev.hidden_by_admin ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${ev.hidden_by_admin ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '6px 12px', color: ev.hidden_by_admin ? '#10B981' : '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                  >
+                    {ev.hidden_by_admin ? 'Reinstate' : 'Hide'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ════════════════ AUDIT LOG TAB ════════════════════════════════════ */}

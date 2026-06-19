@@ -163,15 +163,36 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
             >
               <Ticket size={32} color="#2A2D3E" />
             </div>
-            <div style={{ textAlign: 'center' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 600, marginBottom: '6px' }}>
-                {activeTab === 'upcoming' ? 'No upcoming events' : 'No past events'}
-              </p>
-              <p style={{ color: '#8B8FA8', fontSize: '13px' }}>
+            <div style={{ textAlign: 'center', padding: '0 16px' }}>
+              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
                 {activeTab === 'upcoming'
-                  ? 'Find amazing events and book your first one!'
-                  : 'Events from past bookings will appear here.'}
+                  ? "Seems like you haven't reserved any ticket yet, we are here to help!"
+                  : 'Your expired tickets will appear here!'}
               </p>
+              {activeTab === 'past' && (
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '16px' }}>
+                  Please come back later or start exploring events now!
+                </p>
+              )}
+              <button
+                onClick={() => {
+                  // Signal parent to switch to home tab
+                  onBack();
+                }}
+                style={{
+                  marginTop: activeTab === 'upcoming' ? '12px' : '0',
+                  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                  border: 'none',
+                  borderRadius: '12px',
+                  padding: '10px 24px',
+                  color: '#fff',
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Explore events
+              </button>
             </div>
           </div>
         ) : (

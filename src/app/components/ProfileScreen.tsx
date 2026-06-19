@@ -297,47 +297,47 @@ export function ProfileScreen({
               </div>
             </div>
 
-            {/* Followers/Following stats hidden until marketplace activity exists */}
-            <div className="grid grid-cols-2 gap-2">
+            {/* Stats tab bar: Events | Saved | Followers | Following */}
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
               {[
                 {
                   label: isOrganizer ? 'My Events' : 'Events',
-                  value: String(isOrganizer ? eventsCreated : tickets.length),
-                  onClick: () => {
-                    if (isOrganizer) {
-                      onNavigate('manage-events');
-                    } else {
-                      onNavigate('my-tickets');
-                    }
-                  }
+                  value: isOrganizer ? eventsCreated : tickets.length,
+                  onClick: () => isOrganizer ? onNavigate('manage-events') : onNavigate('my-tickets'),
                 },
                 {
                   label: 'Saved',
-                  value: String(savedCount),
-                  onClick: () => onNavigate('saved')
+                  value: savedCount,
+                  onClick: () => onNavigate('saved'),
+                },
+                {
+                  label: 'Followers',
+                  value: followers,
+                  onClick: () => onNavigateToFollowingFilter?.('followers'),
+                },
+                {
+                  label: 'Following',
+                  value: followingCount,
+                  onClick: () => onNavigateToFollowingFilter?.('following'),
                 },
               ].map((stat) => (
                 <div
                   key={stat.label}
                   onClick={stat.onClick}
-                  className="text-center p-3"
                   style={{
+                    flex: '1 0 0',
+                    minWidth: '72px',
+                    textAlign: 'center',
+                    padding: '10px 6px',
                     background: 'rgba(255,255,255,0.05)',
                     borderRadius: '12px',
-                    cursor: 'pointer'
+                    cursor: 'pointer',
                   }}
                 >
-                  <p
-                    style={{
-                      color: '#F0F0FF',
-                      fontSize: '20px',
-                      fontWeight: 800,
-                      fontFamily: 'Space Grotesk, sans-serif',
-                    }}
-                  >
+                  <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
                     {stat.value}
                   </p>
-                  <p style={{ color: '#8B8FA8', fontSize: '10px', marginTop: '1px' }}>
+                  <p style={{ color: '#8B8FA8', fontSize: '10px', marginTop: '2px', margin: 0 }}>
                     {stat.label}
                   </p>
                 </div>

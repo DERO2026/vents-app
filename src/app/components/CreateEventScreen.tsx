@@ -147,8 +147,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       e.target.value = '';
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMessage('Image file must be under 10MB');
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMessage('Image file must be under 15MB');
       return;
     }
 
@@ -417,7 +417,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '4px 16px 120px',
+          padding: `4px 16px ${step === 4 ? '200px' : '120px'}`,
           scrollbarWidth: 'none',
         }}
       >
@@ -514,7 +514,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                     <Camera size={20} color="#A78BFA" />
                   </div>
                   <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Upload Cover Image *</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>JPG, PNG or GIF · Max 10MB</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>JPG, PNG or GIF · Max 15MB</p>
                 </>
               )}
             </div>

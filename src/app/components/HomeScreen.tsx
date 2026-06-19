@@ -472,16 +472,40 @@ function FeaturedCarousel({
   onToggleSave: (id: string) => void;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const touchStartX = useRef<number | null>(null);
 
   const advance = useCallback(() => {
     onIndexChange((prev) => (prev + 1) % events.length);
   }, [events.length, onIndexChange]);
+
+  const resetTimer = useCallback(() => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (events.length <= 1) return;
+    timerRef.current = setInterval(advance, 4000);
+  }, [advance, events.length]);
 
   useEffect(() => {
     if (events.length <= 1) return;
     timerRef.current = setInterval(advance, 4000);
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [advance, events.length]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(dx) < 40) return;
+    if (dx < 0) {
+      onIndexChange((prev) => (prev + 1) % events.length);
+    } else {
+      onIndexChange((prev) => (prev - 1 + events.length) % events.length);
+    }
+    resetTimer();
+  };
 
   const event = events[currentIndex % events.length];
   if (!event) return null;
@@ -516,6 +540,8 @@ function FeaturedCarousel({
       <div
         className="px-4"
         onClick={() => onEventPress(event)}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
         <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>

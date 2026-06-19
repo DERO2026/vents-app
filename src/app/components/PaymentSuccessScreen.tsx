@@ -108,10 +108,11 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   };
 
   const handleShare = async () => {
-    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nBooking ID: ${ticket.ticketId}`;
+    const eventUrl = `https://vents-one.vercel.app/?event=${ticket.event.id}`;
+    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nBooking ID: ${ticket.ticketId}\n${eventUrl}`;
     if (navigator.share) {
       try {
-        await navigator.share({ title: 'My VENTS Ticket', text });
+        await navigator.share({ title: 'My VENTS Ticket', text, url: eventUrl });
       } catch {
         // user cancelled
       }

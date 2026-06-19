@@ -676,7 +676,7 @@ export function EventDetailsScreen({
               <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>
                 {organizerProfile?.full_name || event.organizer}
               </span>
-              {event.organizerVerified && (
+              {(event.organizerVerified || organizerProfile?.is_verified) && (
                 <CheckCircle size={14} fill="#4F46E5" color="#fff" />
               )}
             </div>

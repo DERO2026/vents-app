@@ -159,11 +159,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [bio, setBio] = useState('');
   const [phone, setPhone] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
@@ -222,6 +224,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           setBio(data.bio || '');
           setPhone(data.phone_number || '');
           setAvatarUrl(data.avatar_url || '');
+          setCoverUrl(data.cover_url || '');
         }
       } catch (err) {
         console.error("Failed to load profile:", err);
@@ -265,6 +268,33 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       setErrorMessage(err.message || "Failed to upload photo");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleCoverUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !currentUser?.id) return;
+    if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      const { data, error } = await insforge.storage.from('avatars').uploadAuto(file);
+      if (error) throw error;
+      if (data?.url) {
+        setCoverUrl(data.url);
+        const { error: updateError } = await insforge.database
+          .from('users')
+          .update({ cover_url: data.url })
+          .eq('id', currentUser.id);
+        if (updateError) throw updateError;
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2500);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to upload cover photo');
+    } finally {
+      setSaving(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
     }
   };
 
@@ -336,6 +366,27 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>Loading profile details...</div>
         ) : (
           <>
+            {/* Cover Photo */}
+            <div style={{ marginBottom: '20px' }}>
+              <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Cover Photo</label>
+              <div
+                onClick={() => coverInputRef.current?.click()}
+                style={{ width: '100%', height: '100px', borderRadius: '14px', background: coverUrl ? 'none' : '#131629', border: coverUrl ? 'none' : '2px dashed rgba(255,255,255,0.12)', overflow: 'hidden', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                {coverUrl ? (
+                  <img src={coverUrl} alt="Cover" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                ) : (
+                  <span style={{ color: '#555C7A', fontSize: '13px' }}>Tap to upload cover photo</span>
+                )}
+                {coverUrl && (
+                  <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ color: '#fff', fontSize: '12px', fontWeight: 600 }}>Change Cover</span>
+                  </div>
+                )}
+              </div>
+              <input ref={coverInputRef} type="file" accept="image/*" onChange={handleCoverUpload} style={{ display: 'none' }} />
+            </div>
+
             {/* Avatar */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '28px' }}>
               <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', marginBottom: '12px', boxShadow: '0 8px 24px rgba(123,47,190,0.4)' }}>

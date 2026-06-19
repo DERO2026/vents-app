@@ -574,6 +574,7 @@ export default function App() {
       const { data: dbEventsData, error: dbEventsError } = await insforge.database
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name)')
+        .eq('hidden_by_admin', false)
         .range(start, end);
 
       if (dbEventsError) throw dbEventsError;
@@ -1566,8 +1567,8 @@ export default function App() {
           />
         )}
 
-        {/* Banner for organizers/admins currently viewing as attendee */}
-        {isOrgViewingAsAttendee && navScreens.includes(screen) && (
+        {/* Banner for organizers/admins currently viewing as attendee — shown on profile only */}
+        {isOrgViewingAsAttendee && screen === 'profile' && (
           <div
             style={{
               position: 'absolute',

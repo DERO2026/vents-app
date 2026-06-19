@@ -291,6 +291,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       } else if (mode === 'signup') {
         if (!name.trim()) throw new Error('Full name is required.');
         if (!username.trim()) throw new Error('Username is required.');
+        if (username.trim().length < 3) throw new Error('Username must be at least 3 characters.');
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
         const rawDigits = phone.replace(/\D/g, '');
@@ -414,6 +415,26 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         }
       }
     } catch (err: any) {
+      // On login failure, check if the account is suspended/deleted so we can
+      // show the ban screen instead of a generic "Invalid credentials" message.
+      if (mode === 'login') {
+        try {
+          let checkEmail = email.trim();
+          if (!isValidEmail(checkEmail)) {
+            // Try to resolve username to email for the status check
+            const { data: resolved } = await insforge.database.rpc('resolve_username_to_email', { p_username: checkEmail.toLowerCase() });
+            if (resolved) checkEmail = resolved;
+          }
+          if (checkEmail && isValidEmail(checkEmail)) {
+            const { data: statusRows } = await insforge.database.rpc('get_account_status', { p_email: checkEmail });
+            const row = Array.isArray(statusRows) ? statusRows[0] : statusRows;
+            if (row?.status === 'suspended' || row?.status === 'deleted') {
+              setBanInfo({ status: row.status, until: row.banned_until ?? null });
+              return;
+            }
+          }
+        } catch { /* ignore status check failure — fall through to normal error */ }
+      }
       setErrorMessage(err.message || 'An error occurred during authentication.');
     } finally {
       setLoading(false);

@@ -65,6 +65,7 @@ export interface UserProfile {
   interests: string[];
   avatar_url?: string;
   isOrganizer?: boolean;
+  isVerified?: boolean;
 }
 
 export interface Notification {
