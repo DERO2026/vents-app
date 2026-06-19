@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star } from 'lucide-react';
+import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag } from 'lucide-react';
 import { UserProfile } from './types';
-import { EVENTS, formatPrice } from './data';
+import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
 import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
+import { ReportModal } from './ReportModal';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -54,12 +55,26 @@ export function UserProfileScreen({
   const [avgRating, setAvgRating] = useState(0);
   const isVerified = user.is_verified || user.id === ROOT_UID;
   const isOwnProfile = currentUserId === user.id;
+  const [showReport, setShowReport] = useState(false);
+  const [userEvents, setUserEvents] = useState<any[]>([]);
 
   useEffect(() => {
     setFollowers(0);
     setEventsCreated(0);
     setAttendees(0);
     setEventsAttended(0);
+  }, [user.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    insforge.database
+      .from('events')
+      .select('id, title, date, cover_url, category, price, status')
+      .eq('organizer_id', user.id)
+      .eq('status', 'published')
+      .order('date', { ascending: false })
+      .limit(6)
+      .then(({ data }) => setUserEvents(data || []));
   }, [user.id]);
 
   useEffect(() => {
@@ -148,13 +163,6 @@ export function UserProfileScreen({
       setReviewSubmitting(false);
     }
   };
-
-  const userEvents = EVENTS.filter((e) =>
-    user.interests.some((i) =>
-      e.category.toLowerCase().includes(i.toLowerCase()) ||
-      i.toLowerCase().includes(e.category.toLowerCase())
-    )
-  ).slice(0, 3);
 
   return (
     <div
@@ -272,6 +280,25 @@ export function UserProfileScreen({
             {isFollowing ? 'Following' : 'Follow'}
           </span>
         </button>
+        {!isOwnProfile && currentUserId && (
+          <button
+            onClick={() => setShowReport(true)}
+            title="Report user"
+            style={{
+              background: 'rgba(255,255,255,0.06)',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '50%',
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <Flag size={16} color="#8B8FA8" />
+          </button>
+        )}
       </div>
 
       {/* Name + username */}
@@ -430,7 +457,7 @@ export function UserProfileScreen({
               marginBottom: '12px',
             }}
           >
-            Events {user.name.split(' ')[0]} might attend
+            Events by {user.name.split(' ')[0]}
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {userEvents.map((event) => (
@@ -448,7 +475,7 @@ export function UserProfileScreen({
                 }}
               >
                 <img
-                  src={event.image}
+                  src={event.cover_url || event.image || ''}
                   alt={event.title}
                   style={{
                     width: '64px',
@@ -488,11 +515,6 @@ export function UserProfileScreen({
                     <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.date}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
-                    <Star size={11} fill="#FFB830" color="#FFB830" />
-                    <span style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600 }}>
-                      {event.rating}
-                    </span>
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>·</span>
                     <span style={{ color: '#FFB830', fontSize: '12px', fontWeight: 700 }}>
                       {formatPrice(event.price)}
                     </span>
@@ -570,6 +592,15 @@ export function UserProfileScreen({
             ))
           )}
         </div>
+      )}
+      {showReport && currentUserId && (
+        <ReportModal
+          reporterId={currentUserId}
+          targetType="user"
+          targetId={user.id}
+          targetName={user.name || user.username}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   );

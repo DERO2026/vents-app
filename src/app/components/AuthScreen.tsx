@@ -352,7 +352,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           // Clear any stale token so anon key is used for this unauthenticated lookup
           (insforge as any).getHttpClient().userToken = null;
           const { data: resolvedEmail, error: resolveError } = await insforge.database.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
-          console.log('[auth] resolve_username_to_email:', { resolvedEmail, resolveError });
           if (resolveError) throw resolveError;
           if (!resolvedEmail) throw new Error('No account found with this username.');
           loginEmail = resolvedEmail;
@@ -1178,6 +1177,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 ? 'Send Reset Link'
                 : 'Reset Password'}
             </button>
+
+            {mode === 'signup' && (
+              <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '12px', marginTop: '-12px', marginBottom: '10px', lineHeight: 1.5 }}>
+                You must be at least 13 years old to use Vents.<br />
+                By signing up you confirm you are at least 13 years old and agree to our{' '}
+                <a href="/terms" target="_blank" style={{ color: '#A78BFA', textDecoration: 'none' }}>Terms of Use</a>
+                {' '}and{' '}
+                <a href="/privacy" target="_blank" style={{ color: '#A78BFA', textDecoration: 'none' }}>Privacy Policy</a>.
+              </p>
+            )}
 
             {mode !== 'forgot' && mode !== 'reset' && (
               <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '14px' }}>

@@ -22,7 +22,7 @@ interface SettingsScreenProps {
   onLanguageChange?: (lang: string) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'language' | '2fa' | 'help' | 'change-password';
+type SubScreen = null | 'profile' | 'payment' | 'language' | '2fa' | 'help' | 'change-password' | 'delete-account';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -1155,6 +1155,7 @@ export function SettingsScreen({
   if (subScreen === '2fa') return <TwoFAScreen onBack={() => setSubScreen(null)} currentUser={currentUser} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
@@ -1230,22 +1231,142 @@ export function SettingsScreen({
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
         <Section title="SUPPORT & LEGAL">
-          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => onNavigate?.('privacy-policy')} />
+          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('/privacy', '_blank')} />
+          <Divider />
+          <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('/terms', '_blank')} />
           <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => setSubScreen('help')} />
           <Divider />
           <SettingRow icon={Star} label="Rate VENTS" accent onPress={() => window.open('https://play.google.com/store', '_blank')} />
         </Section>
 
-        <div style={{ marginTop: '8px' }}>
+        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ background: '#131629', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
+          </div>
+          <div style={{ background: '#131629', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '16px', padding: '0 14px' }}>
+            <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
           </div>
         </div>
 
         <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
           VENTS v1.1.0 | © VENTS LTD
         </p>
+      </div>
+    </div>
+  );
+}
+
+function DeleteAccountScreen({
+  currentUser,
+  onBack,
+  onDeleted,
+}: {
+  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  onBack: () => void;
+  onDeleted: () => void;
+}) {
+  const [confirmText, setConfirmText] = useState('');
+  const [step, setStep] = useState<'warn' | 'confirm' | 'done'>('warn');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (confirmText !== 'DELETE') return;
+    setLoading(true);
+    setError(null);
+    try {
+      const { error: rpcErr } = await insforge.database.rpc('delete_own_account' as any);
+      if (rpcErr) throw rpcErr;
+      setStep('done');
+      setTimeout(() => onDeleted(), 3000);
+    } catch (err: any) {
+      setError('Account deletion failed. Please try again or contact ventsappltd@gmail.com.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (step === 'done') {
+    return (
+      <div style={{ background: '#060A12', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
+        <span style={{ fontSize: '48px', marginBottom: '20px' }}>✓</span>
+        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '12px' }}>Account Deleted</p>
+        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '16px' }}>
+          Your personal data has been anonymized and your account has been closed.
+        </p>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6 }}>
+          If this was a mistake, contact us:<br />
+          <strong style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</strong><br />
+          WhatsApp: <strong style={{ color: '#A78BFA' }}>+234 9030737368</strong>
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ background: '#060A12', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#8B8FA8', cursor: 'pointer', padding: '4px' }}>
+          <ArrowLeft size={20} />
+        </button>
+        <span style={{ color: '#EF4444', fontSize: '16px', fontWeight: 700 }}>Delete Account</span>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
+        {step === 'warn' && (
+          <>
+            <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '20px', marginBottom: '20px' }}>
+              <p style={{ color: '#EF4444', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>⚠️ This cannot be undone</p>
+              <p style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.6 }}>Deleting your account will permanently:</p>
+              <ul style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.8, marginTop: '8px', paddingLeft: '20px' }}>
+                <li>Anonymize your name, email, username, and profile photo</li>
+                <li>Remove your bio, phone number, and cover photo</li>
+                <li>Cancel any pending ticket reservations</li>
+                <li>Block future sign-up with this email address</li>
+              </ul>
+            </div>
+            <div style={{ background: 'rgba(16,185,129,0.06)', border: '1px solid rgba(16,185,129,0.15)', borderRadius: '16px', padding: '16px', marginBottom: '24px' }}>
+              <p style={{ color: '#10B981', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>What is kept:</p>
+              <ul style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.8, paddingLeft: '20px' }}>
+                <li>Ticket purchase history (required by Nigerian law for 7 years)</li>
+                <li>Reviews you have written</li>
+              </ul>
+            </div>
+            <button onClick={() => setStep('confirm')} style={{ width: '100%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '14px', padding: '14px', color: '#EF4444', fontSize: '15px', fontWeight: 700, cursor: 'pointer', marginBottom: '8px' }}>
+              I understand, continue
+            </button>
+            <button onClick={onBack} style={{ width: '100%', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', padding: '10px' }}>
+              Cancel
+            </button>
+          </>
+        )}
+
+        {step === 'confirm' && (
+          <>
+            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '8px' }}>Type DELETE to confirm</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', lineHeight: 1.5 }}>
+              Type the word <strong style={{ color: '#EF4444' }}>DELETE</strong> in capital letters to permanently delete your account.
+            </p>
+            <input
+              value={confirmText}
+              onChange={(e) => setConfirmText(e.target.value)}
+              placeholder="Type DELETE here"
+              style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: confirmText === 'DELETE' ? '1px solid #EF4444' : '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '14px', color: '#F0F0FF', fontSize: '16px', fontWeight: 700, outline: 'none', boxSizing: 'border-box', letterSpacing: '2px', fontFamily: 'inherit', marginBottom: '16px' }}
+            />
+            {error && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{error}</p>}
+            <button
+              onClick={handleDelete}
+              disabled={confirmText !== 'DELETE' || loading}
+              style={{ width: '100%', background: confirmText === 'DELETE' ? '#EF4444' : 'rgba(239,68,68,0.15)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: confirmText === 'DELETE' ? 'pointer' : 'not-allowed', opacity: loading ? 0.7 : 1, marginBottom: '8px' }}
+            >
+              {loading ? 'Deleting...' : 'Permanently Delete My Account'}
+            </button>
+            <button onClick={() => setStep('warn')} style={{ width: '100%', background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', padding: '10px' }}>
+              Go back
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

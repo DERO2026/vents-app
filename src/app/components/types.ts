@@ -39,6 +39,7 @@ export interface Event {
   organizer_id?: string;
   created_at?: string;
   event_date?: string;
+  is_18_plus?: boolean;
 }
 
 export interface PurchasedTicket {

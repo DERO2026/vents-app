@@ -19,11 +19,13 @@ import {
   MessageCircle,
   Minus,
   Plus,
+  Flag,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
+import { ReportModal } from './ReportModal';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -223,6 +225,7 @@ export function EventDetailsScreen({
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [shared, setShared] = useState(false);
+  const [showReport, setShowReport] = useState(false);
 
   // 1. Static metadata (organizer profile and related events) - fetch once per event
   useEffect(() => {
@@ -449,6 +452,25 @@ export function EventDetailsScreen({
                 color={isSaved ? '#EF4444' : '#fff'}
               />
             </button>
+            {currentUserId && (
+              <button
+                onClick={() => setShowReport(true)}
+                style={{
+                  background: 'rgba(0,0,0,0.45)',
+                  backdropFilter: 'blur(10px)',
+                  border: '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: '50%',
+                  width: '38px',
+                  height: '38px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <Flag size={17} color="#fff" />
+              </button>
+            )}
           </div>
         </div>
 
@@ -484,6 +506,9 @@ export function EventDetailsScreen({
             }}
           >
             {event.title}
+            {(event as any).is_18_plus && (
+              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: '#EF4444', fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
+            )}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1207,6 +1232,15 @@ export function EventDetailsScreen({
           <CheckCircle size={14} color="#fff" />
           Link copied to clipboard!
         </div>
+      )}
+      {showReport && currentUserId && (
+        <ReportModal
+          reporterId={currentUserId}
+          targetType="event"
+          targetId={event.id}
+          targetName={event.title}
+          onClose={() => setShowReport(false)}
+        />
       )}
     </div>
   );

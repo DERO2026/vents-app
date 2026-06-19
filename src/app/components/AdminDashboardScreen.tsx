@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, Shield, UserCheck, AlertCircle,
   UserX, Trash2, RefreshCw, ClipboardList, Users,
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
-  Copy, CheckCircle, BadgeCheck, Megaphone, Swords,
+  Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag,
 } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 
@@ -34,7 +34,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'system';
 
 interface EventRow {
   id: string;
@@ -126,6 +126,8 @@ export function AdminDashboardScreen({
   const [searchQuery, setSearchQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [reports, setReports] = useState<any[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -223,6 +225,25 @@ export function AdminDashboardScreen({
     if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'events') return;
     loadEvents();
   }, [tab, loadEvents, currentUser, isRoot]);
+
+  useEffect(() => {
+    if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'reports') return;
+    setReportsLoading(true);
+    insforge.database
+      .from('reports')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(100)
+      .then(({ data, error }) => {
+        if (!error) setReports(data || []);
+        setReportsLoading(false);
+      });
+  }, [tab, currentUser, isRoot]);
+
+  const handleUpdateReport = async (id: string, status: string) => {
+    const { error } = await insforge.database.from('reports').update({ status }).eq('id', id);
+    if (!error) setReports(prev => prev.map(r => r.id === id ? { ...r, status } : r));
+  };
 
   const handleHideEvent = async (eventId: string) => {
     try {
@@ -484,6 +505,7 @@ export function AdminDashboardScreen({
     { key: 'users' as Tab, label: 'Users', icon: <Users size={14} /> },
     { key: 'events' as Tab, label: 'Events', icon: <Shield size={14} /> },
     { key: 'logs' as Tab, label: 'Audit Log', icon: <ClipboardList size={14} /> },
+    { key: 'reports' as Tab, label: 'Reports', icon: <Flag size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Zap size={14} /> }] : []),
   ];
 
@@ -788,6 +810,45 @@ export function AdminDashboardScreen({
                     <p style={{ color: '#555C7A', fontSize: '10px', margin: 0 }}>
                       Target: {log.target_user_id || '—'} · Admin: {log.admin_id?.slice(0, 8)}…
                     </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════ REPORTS TAB ══════════════════════════════════════ */}
+      {tab === 'reports' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px' }}>
+          {reportsLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading reports…</div>
+          ) : reports.length === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No reports yet.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {reports.map(r => {
+                const statusColor = r.status === 'pending' ? '#F59E0B' : r.status === 'actioned' ? '#EF4444' : r.status === 'dismissed' ? '#6B7280' : '#10B981';
+                return (
+                  <div key={r.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                      <div>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: statusColor, background: `${statusColor}20`, padding: '2px 8px', borderRadius: '6px' }}>{r.status}</span>
+                        <span style={{ fontSize: '11px', color: '#A78BFA', marginLeft: '8px', background: 'rgba(167,139,250,0.12)', padding: '2px 8px', borderRadius: '6px' }}>{r.target_type}</span>
+                      </div>
+                      <span style={{ color: '#555C7A', fontSize: '10px' }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 600, margin: '0 0 4px' }}>{r.reason}</p>
+                    {r.details && <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 6px' }}>{r.details}</p>}
+                    <p style={{ color: '#555C7A', fontSize: '10px', margin: '0 0 10px' }}>
+                      Target: {r.target_id?.slice(0, 8)}… · Reporter: {r.reporter_id?.slice(0, 8)}…
+                    </p>
+                    {r.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button onClick={() => handleUpdateReport(r.id, 'actioned')} style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Action</button>
+                        <button onClick={() => handleUpdateReport(r.id, 'dismissed')} style={{ flex: 1, background: 'rgba(107,114,128,0.1)', border: '1px solid rgba(107,114,128,0.3)', borderRadius: '10px', padding: '8px', color: '#9CA3AF', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Dismiss</button>
+                      </div>
+                    )}
                   </div>
                 );
               })}

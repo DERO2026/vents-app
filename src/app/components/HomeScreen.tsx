@@ -128,7 +128,8 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
         ],
     organizer_id: dbEvent.organizer_id,
     created_at: dbEvent.created_at,
-    event_date: dbEvent.event_date
+    event_date: dbEvent.event_date,
+    is_18_plus: dbEvent.is_18_plus === true,
   };
 }
 
@@ -274,6 +275,9 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
             {formatPrice(event.price)}
           </span>
+          {event.is_18_plus && (
+            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700 }}>18+</span>
+          )}
         </div>
       </div>
     </div>

@@ -36,6 +36,8 @@ import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { TransactionsScreen } from './components/TransactionsScreen';
 import { InterestsScreen } from './components/InterestsScreen';
+import { PrivacyScreen } from './components/PrivacyScreen';
+import { TermsScreen } from './components/TermsScreen';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -133,6 +135,11 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export default function App() {
+  // Serve public legal pages without the app shell
+  const pathname = window.location.pathname;
+  if (pathname === '/privacy') return <PrivacyScreen />;
+  if (pathname === '/terms') return <TermsScreen />;
+
   const [screen, setScreen] = useState<Screen>('splash');
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');

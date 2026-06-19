@@ -71,6 +71,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   ]);
   const [contactPhone, setContactPhone] = useState('');
   const [showPhone, setShowPhone] = useState(false);
+  const [is18Plus, setIs18Plus] = useState(false);
   
   // Image states
   const [imageUrl, setImageUrl] = useState('');
@@ -200,6 +201,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           category: category,
           organizer_id: currentUser.id,
           status: eventStatus,
+          is_18_plus: is18Plus,
           ticket_types: ticketTypes.map((t, idx) => ({
             id: `t_${idx}`,
             name: t.name.trim(),
@@ -903,6 +905,39 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                     Only visible to attendees who have purchased a ticket for this event.
                   </p>
                 </div>
+              )}
+            </div>
+
+            {/* 18+ toggle */}
+            <div
+              style={{
+                background: '#131629',
+                border: is18Plus ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.06)',
+                borderRadius: '14px',
+                padding: '14px',
+              }}
+            >
+              <div
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+                onClick={() => setIs18Plus((v) => !v)}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: is18Plus ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <span style={{ fontSize: '16px' }}>🔞</span>
+                  </div>
+                  <div>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>18+ Event</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Mark this event as adults only</p>
+                  </div>
+                </div>
+                <div style={{ width: '44px', height: '24px', borderRadius: '12px', background: is18Plus ? '#EF4444' : '#2A2D3E', position: 'relative', transition: 'background 0.2s' }}>
+                  <div style={{ position: 'absolute', top: '3px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: is18Plus ? '23px' : '3px' }} />
+                </div>
+              </div>
+              {is18Plus && (
+                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '8px', lineHeight: 1.4 }}>
+                  You are marking this as an 18+ event. Attendees are responsible for verifying their own age. Vents does not verify ages.
+                </p>
               )}
             </div>
           </div>
