@@ -309,6 +309,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!signupState && !selectedState) throw new Error('State is required.');
         if (!role) throw new Error('Role is required.');
 
+        // Block re-signup with a previously deleted email
+        const { data: deletedRow } = await insforge.database
+          .from('deleted_emails')
+          .select('email')
+          .eq('email', email.trim().toLowerCase())
+          .maybeSingle();
+        if (deletedRow) {
+          throw new Error('This email address was used on a deleted account and cannot be re-registered. Contact ventsappltd@gmail.com if you believe this is an error.');
+        }
+
         const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
         const userMetaPayload = {
           full_name: name.trim(),
