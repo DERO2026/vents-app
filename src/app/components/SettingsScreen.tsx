@@ -1258,10 +1258,6 @@ export function SettingsScreen({
 
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
-        <Section title="MESSAGES">
-          <SettingRow icon={MessageCircle} label="Inbox" onPress={() => onNavigate?.('inbox')} />
-        </Section>
-
         <Section title="SUPPORT & LEGAL">
           <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('/privacy', '_blank')} />
           <Divider />

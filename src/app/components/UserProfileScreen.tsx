@@ -238,17 +238,22 @@ export function UserProfileScreen({
             width: '72px',
             height: '72px',
             borderRadius: '20px',
-            background: user.avatarColor,
+            background: user.avatar_url ? 'transparent' : user.avatarColor,
             border: '3px solid #060A12',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             boxShadow: `0 6px 24px ${user.avatarColor}60`,
+            overflow: 'hidden',
           }}
         >
-          <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>
-            {user.avatarInitials}
-          </span>
+          {user.avatar_url ? (
+            <img src={user.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          ) : (
+            <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>
+              {user.avatarInitials}
+            </span>
+          )}
         </div>
 
         <button
