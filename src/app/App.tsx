@@ -1101,7 +1101,7 @@ export default function App() {
     currentUser?.id === ROOT_UID;
 
   return (
-    <div 
+    <div
       className="min-h-screen flex items-center justify-center"
       style={{
         background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
@@ -1110,16 +1110,20 @@ export default function App() {
     >
       <style>{`
         .light-theme { color-scheme: light; }
-        .phone-frame { height: 100dvh; height: 100svh; max-height: 100dvh; max-height: 100svh; }
+        .phone-frame {
+          position: fixed;
+          top: 0;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 390px;
+          max-width: 100vw;
+          height: 100%;
+        }
       `}</style>
       {/* Phone frame */}
       <div
         className="phone-frame relative overflow-hidden"
-        style={{
-          width: '390px',
-          maxWidth: '100vw',
-          background: '#000000',
-        }}
+        style={{ background: '#000000' }}
       >
         <ErrorBoundary>
           {authError && (

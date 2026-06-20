@@ -149,10 +149,20 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     try {
       const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const { data, error } = await insforge.storage.from('events').uploadAuto(file);
-      if (error) throw error;
-      if (data?.url) {
-        setImageUrl(data.url);
-        setImageKey(data.key);
+      if (error) {
+        const msg = error.message || '';
+        if (msg.includes('permission') || msg.includes('403') || msg.includes('401') || msg.includes('Unauthorized')) {
+          throw new Error('Session expired. Please sign out and sign back in, then try again.');
+        }
+        throw error;
+      }
+      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(data.key)}` : null);
+      const key = data?.key ?? null;
+      if (url) {
+        setImageUrl(url);
+        if (key) setImageKey(key);
+      } else {
+        throw new Error('Upload succeeded but no URL was returned. Please try again.');
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Image upload failed. Please try again.');

@@ -80,9 +80,9 @@ export function BottomNav({ activeTab, onTabChange, onFabPress, isOrganizer = fa
         background: isOrganizer ? 'rgba(10,11,20,0.97)' : 'rgba(10,11,20,0.95)',
         backdropFilter: 'blur(20px)',
         borderTop: isOrganizer ? '1px solid rgba(168,85,247,0.2)' : '1px solid rgba(255,255,255,0.08)',
-        paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+        paddingBottom: 'env(safe-area-inset-bottom)',
       }}
-      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pt-2 z-50"
+      className="absolute bottom-0 left-0 right-0 flex items-center justify-around px-2 pt-2 pb-3 z-50"
     >
       {/* Render first 2 tabs */}
       {tabs.slice(0, 2).map(renderTab)}

@@ -252,16 +252,23 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     try {
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
       const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
-      if (error) throw error;
-      if (data?.url) {
-        setAvatarUrl(data.url);
+      if (error) {
+        const msg = error.message || '';
+        if (msg.includes('permission') || msg.includes('403') || msg.includes('401')) {
+          throw new Error('Session expired. Please sign out and sign back in.');
+        }
+        throw error;
+      }
+      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(data.key)}` : null);
+      if (url) {
+        setAvatarUrl(url);
         const { error: updateError } = await insforge.database
           .from('users')
-          .update({ avatar_url: data.url })
+          .update({ avatar_url: url })
           .eq('id', currentUser.id);
         if (updateError) throw updateError;
         if (onProfileUpdated) {
-          onProfileUpdated({ avatar_url: data.url });
+          onProfileUpdated({ avatar_url: url });
         }
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
@@ -291,12 +298,19 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     try {
       const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
       const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
-      if (error) throw error;
-      if (data?.url) {
-        setCoverUrl(data.url);
+      if (error) {
+        const msg = error.message || '';
+        if (msg.includes('permission') || msg.includes('403') || msg.includes('401')) {
+          throw new Error('Session expired. Please sign out and sign back in.');
+        }
+        throw error;
+      }
+      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(data.key)}` : null);
+      if (url) {
+        setCoverUrl(url);
         const { error: updateError } = await insforge.database
           .from('users')
-          .update({ cover_url: data.url })
+          .update({ cover_url: url })
           .eq('id', currentUser.id);
         if (updateError) throw updateError;
         setSaved(true);
