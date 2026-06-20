@@ -221,7 +221,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
       { day: 'Sun', revenue: 0 }
     ],
     ticketTypes: [
-      { name: 'Regular', value: 100, color: '#7B2FBE' },
+      { name: 'No sales yet', value: 100, color: '#374151' },
       { name: 'VIP', value: 0, color: '#A855F7' },
       { name: 'VVIP', value: 0, color: '#D946EF' }
     ],
@@ -274,6 +274,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
         const dailySales: Record<string, number> = {
           'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
         };
+        const typeCount: Record<string, number> = {};
 
         if (tickets) {
           tickets.forEach((t: any) => {
@@ -282,6 +283,9 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
             const rev = price * qty;
             totalRev += rev;
             totalQty += qty;
+
+            const typeName: string = t.ticket_type || 'Regular';
+            typeCount[typeName] = (typeCount[typeName] || 0) + qty;
 
             const date = new Date(t.created_at);
             const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -292,6 +296,15 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
             }
           });
         }
+
+        const TYPE_COLORS = ['#7B2FBE', '#A855F7', '#D946EF', '#EC4899', '#6366F1'];
+        const computedTypes = Object.keys(typeCount).length > 0
+          ? Object.entries(typeCount).map(([name, count], i) => ({
+              name,
+              value: totalQty > 0 ? Math.round((count / totalQty) * 100) : 0,
+              color: TYPE_COLORS[i % TYPE_COLORS.length],
+            }))
+          : [{ name: 'No sales yet', value: 100, color: '#374151' }];
 
         const daily = Object.keys(dailyRevenue).map(day => ({
           day,
@@ -310,11 +323,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
           totalRevenue: totalRev,
           totalSales: totalQty,
           daily,
-          ticketTypes: [
-            { name: 'Regular', value: 100, color: '#7B2FBE' },
-            { name: 'VIP', value: 0, color: '#A855F7' },
-            { name: 'VVIP', value: 0, color: '#D946EF' }
-          ],
+          ticketTypes: computedTypes,
           conversion
         });
       } catch (err) {
