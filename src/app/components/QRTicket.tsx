@@ -314,7 +314,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                     border: '1px solid rgba(255,255,255,0.07)',
                   }}
                 >
-                  <QRCodeDisplay value={ticket.ticketId} size={170} />
+                  <QRCodeDisplay value={JSON.stringify({ ticketId: ticket.ticketId, eventId: (ticket as any).eventId, userId: (ticket as any).userId, v: 1 })} size={170} />
                 </div>
                 <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                   {ticket.ticketId}

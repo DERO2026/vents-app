@@ -58,6 +58,21 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
   const joinedCount = referrals.filter((r) => r.status === 'joined').length;
   const canInviteMore = referrals.length < MAX_REFERRALS;
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
+
+  async function handleCancelInvite(id: string) {
+    setCancellingId(id);
+    try {
+      await insforge.database.from('referrals').delete().eq('id', id);
+      setReferrals((prev) => prev.filter((r) => r.id !== id));
+    } catch (err: any) {
+      setSendError(err?.message || 'Could not cancel invite.');
+    } finally {
+      setCancellingId(null);
+      setConfirmCancel(null);
+    }
+  }
 
   async function handleSendInvite() {
     if (!currentUser?.id) return;
@@ -205,25 +220,42 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <div>
             <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '8px' }}>YOUR INVITES</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {/* Cancel confirmation overlay */}
+              {confirmCancel && (
+                <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '24px' }}>
+                  <div style={{ background: '#131629', borderRadius: '20px', padding: '24px', maxWidth: '320px', width: '100%', border: '1px solid rgba(239,68,68,0.2)' }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '8px' }}>Cancel invite?</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px' }}>This slot will not be returned. The invite will be removed.</p>
+                    <div style={{ display: 'flex', gap: '10px' }}>
+                      <button onClick={() => setConfirmCancel(null)} style={{ flex: 1, background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: '#8B8FA8', cursor: 'pointer', fontSize: '13px' }}>Keep</button>
+                      <button onClick={() => handleCancelInvite(confirmCancel)} disabled={!!cancellingId} style={{ flex: 1, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '10px', color: '#EF4444', cursor: 'pointer', fontSize: '13px', fontWeight: 700 }}>
+                        {cancellingId ? '...' : 'Cancel Invite'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               {referrals.map((ref) => (
-                <div key={ref.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div>
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500 }}>{ref.invitee_email}</p>
+                <div key={ref.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ref.invitee_email}</p>
                     <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '2px' }}>
                       {new Date(ref.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </p>
                   </div>
-                  <span style={{
-                    background: ref.status === 'joined' ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)',
-                    color: ref.status === 'joined' ? '#10B981' : '#F59E0B',
-                    border: `1px solid ${ref.status === 'joined' ? 'rgba(16,185,129,0.25)' : 'rgba(245,158,11,0.25)'}`,
-                    borderRadius: '8px',
-                    padding: '3px 10px',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                  }}>
-                    {ref.status === 'joined' ? `+${CENTS_PER_REFERRAL} VC` : 'Pending'}
-                  </span>
+                  {ref.status === 'pending' ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <span style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', padding: '3px 10px', fontSize: '11px', fontWeight: 700 }}>Pending</span>
+                      <button
+                        onClick={() => setConfirmCancel(ref.id)}
+                        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '3px 8px', color: '#EF4444', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
+                      >Cancel</button>
+                    </div>
+                  ) : (
+                    <span style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', padding: '3px 10px', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>
+                      +{CENTS_PER_REFERRAL} VC
+                    </span>
+                  )}
                 </div>
               ))}
             </div>

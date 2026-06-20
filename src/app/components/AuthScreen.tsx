@@ -1249,13 +1249,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </p>
             )}
 
-            {mode === 'signup' && (
-              <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '11px', marginTop: '16px', lineHeight: 1.55 }}>
-                By creating an account, you agree to our{' '}
-                <span style={{ color: '#A78BFA' }}>Terms of Service</span> and{' '}
-                <span style={{ color: '#A78BFA' }}>Privacy Policy</span>
-              </p>
-            )}
           </>
         )}
       </div>

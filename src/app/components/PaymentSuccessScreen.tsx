@@ -3,6 +3,7 @@ import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket } from 'l
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
+import QRCodeLib from 'qrcode';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -10,74 +11,17 @@ interface PaymentSuccessScreenProps {
   onGoHome: () => void;
 }
 
-function generateQRMatrix(seed: string, size = 21): boolean[][] {
-  const hash = (str: string) => {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) {
-      h ^= str.charCodeAt(i);
-      h = (h * 16777619) >>> 0;
-    }
-    return h;
-  };
-
-  const matrix: boolean[][] = Array.from({ length: size }, () => Array(size).fill(false));
-
-  const setFinder = (row: number, col: number) => {
-    for (let r = 0; r < 7; r++) {
-      for (let c = 0; c < 7; c++) {
-        const inOuter = r === 0 || r === 6 || c === 0 || c === 6;
-        const inInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-        matrix[row + r][col + c] = inOuter || inInner;
-      }
-    }
-  };
-
-  setFinder(0, 0);
-  setFinder(0, size - 7);
-  setFinder(size - 7, 0);
-
-  for (let i = 8; i < size - 8; i++) {
-    matrix[6][i] = i % 2 === 0;
-    matrix[i][6] = i % 2 === 0;
-  }
-
-  const h = hash(seed);
-  for (let r = 0; r < size; r++) {
-    for (let c = 0; c < size; c++) {
-      if (r < 9 && c < 9) continue;
-      if (r < 9 && c > size - 9) continue;
-      if (r > size - 9 && c < 9) continue;
-      if (r === 6 || c === 6) continue;
-      const bit = (hash(seed + r + ',' + c + h) % 2) === 0;
-      matrix[r][c] = bit;
-    }
-  }
-  return matrix;
-}
-
 function QRCode({ value, size = 160 }: { value: string; size?: number }) {
-  const matrix = generateQRMatrix(value, 21);
-  const cellSize = size / 21;
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <rect width={size} height={size} fill="#fff" />
-      {matrix.map((row, r) =>
-        row.map((cell, c) =>
-          cell ? (
-            <rect
-              key={`${r}-${c}`}
-              x={c * cellSize}
-              y={r * cellSize}
-              width={cellSize}
-              height={cellSize}
-              fill="#0A0A0F"
-            />
-          ) : null
-        )
-      )}
-    </svg>
-  );
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    if (!canvasRef.current) return;
+    QRCodeLib.toCanvas(canvasRef.current, value, {
+      width: size,
+      margin: 1,
+      color: { dark: '#0A0A0F', light: '#ffffff' },
+    });
+  }, [value, size]);
+  return <canvas ref={canvasRef} style={{ display: 'block', borderRadius: '8px' }} />;
 }
 
 export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: PaymentSuccessScreenProps) {
@@ -314,7 +258,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   boxShadow: '0 0 40px rgba(168,85,247,0.2)',
                 }}
               >
-                <QRCode value={ticket.ticketId} size={140} />
+                <QRCode value={JSON.stringify({ ticketId: ticket.ticketId, eventId: (ticket as any).eventId, userId: (ticket as any).userId, v: 1 })} size={140} />
               </div>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                 {ticket.ticketId}

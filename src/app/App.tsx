@@ -8,7 +8,7 @@ import { WelcomeScreen } from './components/WelcomeScreen';
 import { RoleSelectScreen } from './components/RoleSelectScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
-import { ExploreScreen } from './components/ExploreScreen';
+import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { BottomNav } from './components/BottomNav';
@@ -1469,11 +1469,11 @@ export default function App() {
               currentUserId={currentUser?.id}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
-                  .from('users')
-                  .select('*')
+                  .from('public_profiles')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, bio')
                   .eq('id', organizerId)
                   .maybeSingle();
-                if (data) { setSelectedUser(data as UserProfile); navigateTo('user-profile'); }
+                if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
               }}
             />
           )}

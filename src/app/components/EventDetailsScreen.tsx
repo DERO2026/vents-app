@@ -20,6 +20,7 @@ import {
   Minus,
   Plus,
   Flag,
+  CalendarPlus,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
@@ -528,7 +529,7 @@ export function EventDetailsScreen({
               label: 'Date',
               value: event.date.replace(/^[A-Za-z]+, /, ''),
             },
-            { icon: Clock, label: 'Time', value: `${event.time} – ${event.endTime}` },
+            { icon: Clock, label: 'Time', value: event.endTime ? `${event.time} – ${event.endTime}` : (event.time || 'TBC') },
           ].map(({ icon: Icon, label, value }) => (
             <div
               key={label}
@@ -614,6 +615,44 @@ export function EventDetailsScreen({
             <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600 }}>View Map</span>
           </button>
         </div>
+
+        {/* Add to Calendar */}
+        {(() => {
+          const eventDateRaw = (event as any).event_date || event.date;
+          if (!eventDateRaw) return null;
+          const dtStart = new Date(eventDateRaw);
+          if (isNaN(dtStart.getTime())) return null;
+          const dtEnd = (event as any).end_time
+            ? (() => {
+                const [h, m] = ((event as any).end_time as string).split(':').map(Number);
+                const d = new Date(dtStart);
+                d.setHours(h, m || 0, 0, 0);
+                return d;
+              })()
+            : new Date(dtStart.getTime() + 2 * 60 * 60 * 1000);
+          const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+          const icsContent = [
+            'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VENTS//EN',
+            'BEGIN:VEVENT',
+            `DTSTART:${fmt(dtStart)}`,
+            `DTEND:${fmt(dtEnd)}`,
+            `SUMMARY:${(event.title || '').replace(/,/g, '\\,')}`,
+            `LOCATION:${(event.venue || '').replace(/,/g, '\\,')}`,
+            `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n').replace(/,/g, '\\,')}`,
+            'END:VEVENT', 'END:VCALENDAR',
+          ].join('\r\n');
+          const blob = new Blob([icsContent], { type: 'text/calendar' });
+          const url = URL.createObjectURL(blob);
+          return (
+            <button
+              onClick={() => { const a = document.createElement('a'); a.href = url; a.download = `${event.title || 'event'}.ics`; a.click(); }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '14px', padding: '12px', cursor: 'pointer', marginBottom: '16px' }}
+            >
+              <CalendarPlus size={16} color="#10B981" />
+              <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Add to Calendar</span>
+            </button>
+          );
+        })()}
 
         {/* Countdown */}
         {countdown && (

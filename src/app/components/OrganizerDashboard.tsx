@@ -42,11 +42,12 @@ export function OrganizerDashboard({
       if (!currentUser?.id) return;
       setLoading(true);
       try {
-        // 1. Fetch events created by the organizer
+        // 1. Fetch events created by the organizer — organizers always see their own events
+        //    regardless of hidden_by_admin (that flag only hides from public feeds)
         const { data: eventsData, error: eventsError } = await insforge.database
           .from('events')
           .select('*')
-          .eq('following_id', currentUser.id)
+          .eq('organizer_id', currentUser.id)
           .order('created_at', { ascending: false });
 
         if (eventsError) throw eventsError;
@@ -54,36 +55,33 @@ export function OrganizerDashboard({
         if (eventsData) {
           setOrgEvents(eventsData);
 
-          // 2. Fetch follows count where following_id = currentUser.id
+          // 2. Fetch followers count (rows where following_id = currentUser.id)
           const { count: followersCount, error: followsError } = await insforge.database
             .from('follows')
-            .select('following_id', { count: 'exact', head: true })
+            .select('id', { count: 'exact', head: true })
             .eq('following_id', currentUser.id);
 
           if (!followsError && followersCount !== null) {
             setFollowers(followersCount);
           }
 
-          // 3. Fetch tickets for these events to compute revenue and tickets sold
+          // 3. Real revenue = SUM(amount) and tickets sold = COUNT where payment_status='paid'
           if (eventsData.length > 0) {
             const eventIds = eventsData.map((e: any) => e.id);
             const { data: ticketsData, error: ticketsError } = await insforge.database
               .from('tickets')
-              .select('*')
+              .select('id, event_id, quantity, amount, payment_status')
               .in('event_id', eventIds)
-              .eq('status', 'active');
+              .eq('payment_status', 'paid');
 
             if (!ticketsError && ticketsData) {
               let totalTickets = 0;
               let totalRev = 0;
-              // Build per-event sold counts for the chart
               const soldByEvent: Record<string, number> = {};
               ticketsData.forEach((ticket: any) => {
-                const event = eventsData.find((e: any) => e.id === ticket.event_id);
-                const price = Number(event?.price || 0);
-                totalTickets += ticket.quantity;
-                totalRev += ticket.quantity * price;
-                soldByEvent[ticket.event_id] = (soldByEvent[ticket.event_id] || 0) + ticket.quantity;
+                totalTickets += Number(ticket.quantity) || 1;
+                totalRev += Number(ticket.amount) || 0;
+                soldByEvent[ticket.event_id] = (soldByEvent[ticket.event_id] || 0) + (Number(ticket.quantity) || 1);
               });
               setTicketsSold(totalTickets);
               setRevenue(totalRev);

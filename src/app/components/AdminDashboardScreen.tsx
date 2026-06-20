@@ -128,6 +128,7 @@ export function AdminDashboardScreen({
   const [logsLoading, setLogsLoading] = useState(false);
   const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [eventSearch, setEventSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -746,17 +747,32 @@ export function AdminDashboardScreen({
       {/* ════════════════ EVENTS TAB ══════════════════════════════════════ */}
       {tab === 'events' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-            <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{events.length} events loaded</span>
-            <button onClick={loadEvents} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#A78BFA', fontSize: '12px' }}>Refresh</button>
+          {/* Event search bar */}
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', gap: '10px' }}>
+              <Search size={15} color="#8B8FA8" />
+              <input
+                type="text"
+                placeholder="Search events by title…"
+                value={eventSearch}
+                onChange={e => setEventSearch(e.target.value)}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '13px' }}
+              />
+            </div>
+            <button onClick={loadEvents} style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
+              <RefreshCw size={15} />
+            </button>
           </div>
+          <span style={{ color: '#8B8FA8', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
+            {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).length} events
+          </span>
           {eventsLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading events…</div>
           ) : events.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No events found.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {events.map(ev => (
+              {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).map(ev => (
                 <div key={ev.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

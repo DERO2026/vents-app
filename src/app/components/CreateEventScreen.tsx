@@ -197,6 +197,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           image_url: imageUrl,
           location: locationString,
           event_date: eventTimestamp,
+          start_time: startTime || null,
+          end_time: endTime || null,
           price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
           category: category,
           organizer_id: currentUser.id,

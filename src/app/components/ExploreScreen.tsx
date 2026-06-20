@@ -75,7 +75,7 @@ export function ExploreScreen({
         <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
           Explore
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Discover events and creators in Nigeria</p>
+        <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Search for people by @username</p>
       </div>
 
 
