@@ -1578,7 +1578,7 @@ export default function App() {
             <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} />
           )}
           {screen === 'attendee-list' && (
-            <AttendeeListScreen onBack={goBack} />
+            <AttendeeListScreen onBack={goBack} eventId={selectedEvent?.id} eventTitle={selectedEvent?.title} />
           )}
           {screen === 'promote-event' && (
             <PromoteEventScreen

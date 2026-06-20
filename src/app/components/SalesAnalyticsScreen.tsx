@@ -393,8 +393,8 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
             {/* Top stats */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
               {[
-                { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'Dynamic total', color: '#10B981' },
-                { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Booked quantity', color: '#A855F7' },
+                { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: '#10B981' },
+                { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: '#A855F7' },
               ].map(({ label, value, sub, color }) => (
                 <div
                   key={label}

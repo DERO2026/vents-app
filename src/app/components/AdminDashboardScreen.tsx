@@ -541,16 +541,16 @@ export function AdminDashboardScreen({
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.04)', flexShrink: 0, overflowX: 'auto', scrollbarWidth: 'none' }}>
         {tabs.map(t => (
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
             style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              padding: '12px', background: 'none', border: 'none', cursor: 'pointer',
+              flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              padding: '12px 16px', background: 'none', border: 'none', cursor: 'pointer',
               color: tab === t.key ? (t.key === 'system' ? '#A855F7' : '#A78BFA') : '#8B8FA8',
-              fontSize: '13px', fontWeight: 600,
+              fontSize: '13px', fontWeight: 600, whiteSpace: 'nowrap',
               borderBottom: tab === t.key ? `2px solid ${t.key === 'system' ? '#A855F7' : '#A78BFA'}` : '2px solid transparent',
               transition: 'all 0.2s',
             }}
