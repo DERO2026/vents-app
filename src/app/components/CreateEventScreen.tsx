@@ -142,14 +142,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     { num: 4, label: 'Review' },
   ];
 
-  const handleCroppedFlier = useCallback(async (croppedDataUrl: string) => {
+  const handleCroppedFlier = useCallback(async (croppedBlob: Blob) => {
     setCropSrc(null);
     setUploadingImage(true);
     setErrorMessage(null);
     try {
-      const res = await fetch(croppedDataUrl);
-      const blob = await res.blob();
-      const file = new File([blob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const { data, error } = await insforge.storage.from('events').uploadAuto(file);
       if (error) throw error;
       if (data?.url) {
@@ -460,7 +458,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                 onClose={() => setCropSrc(null)}
                 aspect={3 / 4}
                 cropShape="rect"
-                title="Crop Event Flier"
+                title="Upload Event Flyer"
               />
             )}
             <div
