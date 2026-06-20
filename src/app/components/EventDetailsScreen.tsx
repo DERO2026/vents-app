@@ -200,6 +200,7 @@ export function EventDetailsScreen({
 }: EventDetailsScreenProps) {
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
+  const [flyerFullScreen, setFlyerFullScreen] = useState(false);
   const isFollowingOrg = Array.isArray(following) && following.includes(event.organizer_id || '');
   const [userReviews, setUserReviews] = useState<Review[]>([]);
   const [reviewRating, setReviewRating] = useState(0);
@@ -372,14 +373,28 @@ export function EventDetailsScreen({
         scrollbarWidth: 'none',
       }}
     >
+      {/* Full-screen flyer lightbox */}
+      {flyerFullScreen && (
+        <div
+          onClick={() => setFlyerFullScreen(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <img src={event.image} alt={event.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+          <span style={{ position: 'absolute', top: '20px', right: '20px', color: '#fff', fontSize: '13px', background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '4px 10px' }}>Tap to close</span>
+        </div>
+      )}
+
       {/* Hero */}
-      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0 }}>
+      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, cursor: 'zoom-in' }} onClick={() => setFlyerFullScreen(true)}>
         <img
           src={event.image}
           alt={event.title}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           onError={(e) => { (e.currentTarget as HTMLImageElement).style.background = 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)'; (e.currentTarget as HTMLImageElement).src = ''; }}
         />
+        <div style={{ position: 'absolute', bottom: '70px', right: '12px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '3px 8px' }}>
+          <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>
+        </div>
         <div
           style={{
             position: 'absolute',

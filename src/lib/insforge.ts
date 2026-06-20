@@ -17,6 +17,36 @@ export function clearRefreshToken() {
   try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
 }
 
+/**
+ * Returns the current authenticated access token, refreshing if necessary.
+ * Safe to call before any storage upload — works after a page refresh.
+ */
+export async function getAuthToken(): Promise<string> {
+  // 1. Try the SDK's official accessor first
+  const direct = insforge.auth.getAccessToken?.();
+  if (direct) return direct;
+
+  // 2. Fall back to the HTTP client's in-memory token
+  const hc = (insforge as any).getHttpClient?.();
+  if (hc?.userToken) return hc.userToken as string;
+
+  // 3. Attempt a silent refresh via the SDK (uses the stored refresh token)
+  try {
+    const { data } = await insforge.auth.refreshSession?.() ?? { data: null };
+    const t = (data as any)?.accessToken || (data as any)?.access_token || (data as any)?.session?.accessToken;
+    if (t) {
+      if (hc) hc.userToken = t;
+      return t as string;
+    }
+    // After refreshSession, the SDK should have updated getAccessToken()
+    const after = insforge.auth.getAccessToken?.();
+    if (after) return after;
+    if (hc?.userToken) return hc.userToken as string;
+  } catch { /* fall through */ }
+
+  throw new Error('Session expired. Please sign out and sign back in, then try again.');
+}
+
 if (typeof window !== 'undefined') {
   localStorage.removeItem('vents_auth_session');
 

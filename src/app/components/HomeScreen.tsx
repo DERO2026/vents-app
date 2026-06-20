@@ -140,7 +140,6 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
   onToggleSave: (id: string) => void;
 }) {
   const isSelling = (event.bookingsCount ?? 0) > 50;
-  const fomoColors = ['#EC4899', '#A855F7', '#00E5FF'];
   const countdown = useCardCountdown(event.event_date);
 
   return (
@@ -159,6 +158,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         <img
           src={event.image}
           alt={event.title}
+          loading="lazy"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           onError={(e) => {
             const el = e.currentTarget as HTMLImageElement;
@@ -179,14 +179,6 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>🔥 Selling Fast!</span>
           </div>
         )}
-        {/* Overlapping attendee avatars */}
-        <div style={{ position: 'absolute', top: '8px', right: '30px', display: 'flex' }}>
-          {fomoColors.map((c, i) => (
-            <div key={i} style={{ width: '18px', height: '18px', borderRadius: '50%', background: c, border: '1.5px solid #000', marginLeft: i > 0 ? '-6px' : '0', fontSize: '7px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
-              {String.fromCharCode(65 + i)}
-            </div>
-          ))}
-        </div>
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -336,6 +328,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         <img
           src={event.image}
           alt={event.title}
+          loading="lazy"
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           onError={(e) => {
             const el = e.currentTarget as HTMLImageElement;

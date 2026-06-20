@@ -554,10 +554,10 @@ export default function App() {
             organizerVerified: true,
             isFeatured: false,
             isTrending: false,
-            attendees: 150,
-            capacity: 1000,
-            rating: 4.9,
-            reviewCount: 36,
+            attendees: dbEvent.attendee_count ?? 0,
+            capacity: dbEvent.ticket_goal ?? 0,
+            rating: 0,
+            reviewCount: 0,
             ticketTypes: [
               {
                 id: 't1',
@@ -607,11 +607,23 @@ export default function App() {
       const start = nextPage * 10;
       const end = start + 9;
 
-      const { data: dbEventsData, error: dbEventsError } = await insforge.database
+      // Calculate user's age for 18+ filtering
+      const userDob = (currentUser as any)?.date_of_birth;
+      const userAgeYears = userDob
+        ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        : 99;
+
+      let eventsQuery = insforge.database
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name)')
-        .eq('hidden_by_admin', false)
-        .range(start, end);
+        .eq('hidden_by_admin', false);
+
+      // Hide 18+ events from underage users
+      if (userAgeYears < 18) {
+        eventsQuery = (eventsQuery as any).eq('is_18_plus', false);
+      }
+
+      const { data: dbEventsData, error: dbEventsError } = await eventsQuery.range(start, end);
 
       if (dbEventsError) throw dbEventsError;
 
@@ -776,6 +788,22 @@ export default function App() {
   useEffect(() => {
     fetchUnreadCount();
   }, [currentUser, fetchUnreadCount]);
+
+  // Realtime: subscribe to user channel for badge updates
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = `user:${currentUser.id}`;
+    let subscribed = false;
+    insforge.realtime.connect().then(() => {
+      insforge.realtime.subscribe(channel).then(() => { subscribed = true; });
+    }).catch(() => {});
+    const onNotif = () => fetchUnreadCount();
+    insforge.realtime.on('new_notification', onNotif);
+    return () => {
+      insforge.realtime.off?.('new_notification', onNotif);
+      if (subscribed) insforge.realtime.unsubscribe(channel);
+    };
+  }, [currentUser?.id, fetchUnreadCount]);
 
   useEffect(() => {
     if (currentUser?.id) {

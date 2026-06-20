@@ -1,4 +1,14 @@
+import { useEffect } from 'react';
+
 export function TermsScreen() {
+  useEffect(() => {
+    const els = [document.documentElement, document.body, document.getElementById('root')].filter(Boolean) as HTMLElement[];
+    const prev = els.map(el => ({ overflow: el.style.overflow, position: el.style.position, inset: el.style.inset, height: el.style.height }));
+    els.forEach(el => { el.style.overflow = 'auto'; el.style.position = 'static'; el.style.inset = ''; el.style.height = 'auto'; });
+    return () => {
+      els.forEach((el, i) => { el.style.overflow = prev[i].overflow; el.style.position = prev[i].position; el.style.inset = prev[i].inset; el.style.height = prev[i].height; });
+    };
+  }, []);
   return (
     <div style={{ background: '#07080F', minHeight: '100vh', color: '#C4C9E0', fontFamily: 'Inter, sans-serif', padding: '40px 20px 80px', maxWidth: '680px', margin: '0 auto', lineHeight: 1.7 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>

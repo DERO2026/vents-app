@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { X, ChevronLeft, ChevronRight, Plus, Upload, Loader } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 
 interface Highlight {
   id: string;
@@ -49,9 +49,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      const hc = (insforge as any).getHttpClient?.();
-      const token: string | null = hc?.userToken ?? null;
-      if (!token) throw new Error('Session expired. Please sign in again.');
+      const token = await getAuthToken();
       const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
       const formData = new FormData();
       formData.append('file', file);

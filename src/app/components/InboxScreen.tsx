@@ -30,7 +30,8 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
           .from('direct_messages')
           .select('id, sender_id, recipient_id, body, created_at, read_at')
           .or(`sender_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(200);
 
         if (!msgs || msgs.length === 0) { setLoading(false); return; }
 
@@ -38,10 +39,13 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
           m.sender_id === currentUser.id ? m.recipient_id : m.sender_id
         ))];
 
-        const { data: profiles } = await insforge.database
-          .from('public_profiles')
-          .select('id, full_name, username, avatar_url')
-          .in('id', otherIds as string[]);
+        // Fetch profiles in parallel (not sequentially after msgs)
+        const [{ data: profiles }] = await Promise.all([
+          insforge.database
+            .from('public_profiles')
+            .select('id, full_name, username, avatar_url')
+            .in('id', otherIds as string[]),
+        ]);
 
         const profileMap: Record<string, any> = {};
         (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });

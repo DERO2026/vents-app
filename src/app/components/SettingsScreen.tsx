@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import QRCode from 'qrcode';
 import {
@@ -250,9 +250,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const hc = (insforge as any).getHttpClient?.();
-      const token: string | null = hc?.userToken ?? null;
-      if (!token) throw new Error('Session expired. Please sign out and sign back in.');
+      const token = await getAuthToken();
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
@@ -303,9 +301,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const hc = (insforge as any).getHttpClient?.();
-      const token: string | null = hc?.userToken ?? null;
-      if (!token) throw new Error('Session expired. Please sign out and sign back in.');
+      const token = await getAuthToken();
       const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
@@ -597,18 +593,11 @@ function PaymentMethodsScreen({ onBack }: { onBack: () => void }) {
 }
 
 const LANGUAGES = [
-  { code: 'en', name: 'English', native: 'English', flag: '🇬🇧' },
-  { code: 'yo', name: 'Yoruba', native: 'Yorùbá', flag: '🇳🇬' },
-  { code: 'ha', name: 'Hausa', native: 'Hausa', flag: '🇳🇬' },
-  { code: 'ig', name: 'Igbo', native: 'Igbo', flag: '🇳🇬' },
-  { code: 'fr', name: 'French', native: 'Français', flag: '🇫🇷' },
-  { code: 'pt', name: 'Portuguese', native: 'Português', flag: '🇵🇹' },
-  { code: 'ar', name: 'Arabic', native: 'العربية', flag: '🇸🇦' },
-  { code: 'sw', name: 'Swahili', native: 'Kiswahili', flag: '🇰🇪' },
-  { code: 'zu', name: 'Zulu', native: 'isiZulu', flag: '🇿🇦' },
-  { code: 'de', name: 'German', native: 'Deutsch', flag: '🇩🇪' },
-  { code: 'es', name: 'Spanish', native: 'Español', flag: '🇪🇸' },
-  { code: 'zh', name: 'Chinese', native: '中文', flag: '🇨🇳' },
+  { code: 'en',     name: 'English',         native: 'English',       flag: '🇬🇧', available: true },
+  { code: 'pcm',    name: 'Pidgin English',  native: 'Nigerian Pidgin', flag: '🇳🇬', available: true },
+  { code: 'yo',     name: 'Yoruba',          native: 'Yorùbá',        flag: '🇳🇬', available: false },
+  { code: 'ig',     name: 'Igbo',            native: 'Igbo',          flag: '🇳🇬', available: false },
+  { code: 'ha',     name: 'Hausa',           native: 'Hausa',         flag: '🇳🇬', available: false },
 ];
 
 function LanguageScreen({
@@ -631,7 +620,7 @@ function LanguageScreen({
           {LANGUAGES.map((lang) => (
             <button
               key={lang.code}
-              onClick={() => onSelectLanguage(lang.code)}
+              onClick={() => lang.available && onSelectLanguage(lang.code)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -640,15 +629,16 @@ function LanguageScreen({
                 background: selectedLanguage === lang.code ? 'rgba(124,58,237,0.12)' : '#131629',
                 border: selectedLanguage === lang.code ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.05)',
                 borderRadius: '14px',
-                cursor: 'pointer',
+                cursor: lang.available ? 'pointer' : 'default',
                 textAlign: 'left',
                 width: '100%',
+                opacity: lang.available ? 1 : 0.55,
               }}
             >
               <span style={{ fontSize: '24px' }}>{lang.flag}</span>
               <div style={{ flex: 1 }}>
                 <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{lang.name}</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{lang.native}</p>
+                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{lang.available ? lang.native : 'Coming soon'}</p>
               </div>
               {selectedLanguage === lang.code && (
                 <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

@@ -1,11 +1,12 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { OrganizerEvent } from './types';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
+import { CATEGORIES as CATEGORY_LIST } from './categories';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -15,10 +16,30 @@ interface CreateEventScreenProps {
 
 type Step = 1 | 2 | 3 | 4;
 
-const CATEGORIES = [
-  'Music', 'Technology', 'Food & Drinks', 'Comedy Shows',
-  'Arts & Culture', 'Sports & Wellness', 'Conferences', 'Family Events',
-];
+const CATEGORIES = CATEGORY_LIST.map(c => c.id);
+
+const NIGERIA_CITIES: Record<string, string[]> = {
+  'Lagos': ['Lagos Island', 'Lagos Mainland', 'Ikeja', 'Lekki', 'Victoria Island', 'Ajah', 'Ikorodu', 'Surulere', 'Yaba', 'Badagry'],
+  'Abuja': ['Garki', 'Maitama', 'Wuse', 'Asokoro', 'Gwagwalada', 'Kubwa', 'Bwari', 'Kuje', 'Abaji'],
+  'Rivers': ['Port Harcourt', 'Obio-Akpor', 'Eleme', 'Bonny', 'Okrika', 'Oyigbo', 'Degema'],
+  'Kano': ['Kano Municipal', 'Fagge', 'Gwale', 'Tarauni', 'Ungogo', 'Nassarawa', 'Kumbotso'],
+  'Oyo': ['Ibadan', 'Ogbomosho', 'Oyo', 'Iseyin', 'Saki', 'Eruwa', 'Fiditi'],
+  'Anambra': ['Awka', 'Onitsha', 'Nnewi', 'Ekwulobia', 'Aguata', 'Ogidi', 'Nkpor'],
+  'Delta': ['Warri', 'Asaba', 'Ughelli', 'Sapele', 'Agbor', 'Abraka', 'Kwale'],
+  'Enugu': ['Enugu', 'Nsukka', 'Agbani', 'Oji River', 'Udi', 'Awgu'],
+  'Imo': ['Owerri', 'Orlu', 'Okigwe', 'Mbaise', 'Oguta', 'Nkwerre'],
+  'Ogun': ['Abeokuta', 'Sagamu', 'Ijebu-Ode', 'Ota', 'Ifo', 'Ilaro'],
+  'Kaduna': ['Kaduna', 'Zaria', 'Kafanchan', 'Soba', 'Jema\'a', 'Lere'],
+  'Cross River': ['Calabar', 'Ikom', 'Ogoja', 'Obudu', 'Akamkpa'],
+  'Akwa Ibom': ['Uyo', 'Eket', 'Ikot Ekpene', 'Abak', 'Oron'],
+  'Edo': ['Benin City', 'Auchi', 'Ekpoma', 'Uromi', 'Igarra'],
+  'Osun': ['Osogbo', 'Ile-Ife', 'Ilesa', 'Ede', 'Iwo'],
+  'Kwara': ['Ilorin', 'Offa', 'Erin-Ile', 'Omu-Aran', 'Patigi'],
+  'Bayelsa': ['Yenagoa', 'Sagbama', 'Ogbia', 'Kolokuma', 'Ekeremor'],
+  'Plateau': ['Jos', 'Bukuru', 'Pankshin', 'Shendam', 'Wase'],
+  'Borno': ['Maiduguri', 'Biu', 'Gwoza', 'Dikwa', 'Monguno'],
+  'Sokoto': ['Sokoto', 'Wurno', 'Gwadabawa', 'Binji', 'Tambuwal'],
+};
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
@@ -44,7 +65,8 @@ function Label({ children }: { children: React.ReactNode }) {
 export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEventScreenProps) {
   const [step, setStep] = useState<Step>(1);
   const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+  const category = selectedCategories[0] || ''; // backward compat for single-value fields
   const [description, setDescription] = useState('');
   
   // Venue / Date states
@@ -147,11 +169,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setUploadingImage(true);
     setErrorMessage(null);
     try {
-      const hc = (insforge as any).getHttpClient?.();
-      const token: string | null = hc?.userToken ?? null;
-      if (!token) {
-        throw new Error('Session expired. Please sign out and sign back in, then try again.');
-      }
+      const token = await getAuthToken();
       const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', file);
@@ -215,7 +233,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           start_time: startTime || null,
           end_time: endTime || null,
           price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
-          category: category,
+          category: selectedCategories[0] || '',
+          categories: selectedCategories,
           organizer_id: currentUser.id,
           status: eventStatus,
           is_18_plus: is18Plus,
@@ -275,8 +294,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         setErrorMessage('Please enter an event title.');
         return;
       }
-      if (!category) {
-        setErrorMessage('Please select a category.');
+      if (selectedCategories.length === 0) {
+        setErrorMessage('Please select at least one category.');
         return;
       }
       setStep(2);
@@ -574,27 +593,38 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             </div>
 
             <div>
-              <Label>Category *</Label>
+              <Label>Categories * (up to 5)</Label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    onClick={() => setCategory(cat)}
-                    style={{
-                      background: category === cat ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
-                      border: category === cat ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '20px',
-                      padding: '7px 14px',
-                      color: category === cat ? '#fff' : '#8B8FA8',
-                      fontSize: '12px',
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {cat}
-                  </button>
-                ))}
+                {CATEGORIES.map((cat) => {
+                  const sel = selectedCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategories(prev =>
+                        sel ? prev.filter(c => c !== cat)
+                            : prev.length < 5 ? [...prev, cat] : prev
+                      )}
+                      style={{
+                        background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
+                        border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '20px',
+                        padding: '7px 14px',
+                        color: sel ? '#fff' : '#8B8FA8',
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
               </div>
+              {selectedCategories.length > 0 && (
+                <p style={{ fontSize: '11px', color: '#8B8FA8', marginTop: '6px' }}>
+                  Selected: {selectedCategories.join(', ')}
+                </p>
+              )}
             </div>
 
             <div>
@@ -660,14 +690,27 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               />
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, position: 'relative' }}>
                 <Label>City *</Label>
-                <input
-                  placeholder="Lagos"
-                  value={city}
-                  onChange={(e) => setCity(e.target.value)}
-                  style={INPUT_STYLE}
-                />
+                {stateName && NIGERIA_CITIES[stateName] ? (
+                  <select
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    style={{ ...INPUT_STYLE, appearance: 'none', height: '45px', cursor: 'pointer' }}
+                  >
+                    <option value="">Select city</option>
+                    {NIGERIA_CITIES[stateName].map(c => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    placeholder={stateName ? 'Enter city' : 'Select state first'}
+                    value={city}
+                    onChange={(e) => setCity(e.target.value)}
+                    style={INPUT_STYLE}
+                  />
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <Label>State *</Label>
