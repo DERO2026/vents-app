@@ -147,23 +147,30 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setUploadingImage(true);
     setErrorMessage(null);
     try {
+      const hc = (insforge as any).getHttpClient?.();
+      const token: string | null = hc?.userToken ?? null;
+      if (!token) {
+        throw new Error('Session expired. Please sign out and sign back in, then try again.');
+      }
       const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      const { data, error } = await insforge.storage.from('events').uploadAuto(file);
-      if (error) {
-        const msg = error.message || '';
-        if (msg.includes('permission') || msg.includes('403') || msg.includes('401') || msg.includes('Unauthorized')) {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(
+        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      );
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) {
           throw new Error('Session expired. Please sign out and sign back in, then try again.');
         }
-        throw error;
+        throw new Error(`Upload failed (${res.status}). Please try again.`);
       }
-      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(data.key)}` : null);
-      const key = data?.key ?? null;
-      if (url) {
-        setImageUrl(url);
-        if (key) setImageKey(key);
-      } else {
-        throw new Error('Upload succeeded but no URL was returned. Please try again.');
-      }
+      const data = await res.json();
+      const key: string | null = data?.key ?? null;
+      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(key)}` : null);
+      if (!url) throw new Error('Upload succeeded but no URL was returned. Please try again.');
+      setImageUrl(url);
+      if (key) setImageKey(key);
     } catch (err: any) {
       setErrorMessage(err.message || 'Image upload failed. Please try again.');
     } finally {

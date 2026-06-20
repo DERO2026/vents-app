@@ -250,16 +250,23 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
+      const hc = (insforge as any).getHttpClient?.();
+      const token: string | null = hc?.userToken ?? null;
+      if (!token) throw new Error('Session expired. Please sign out and sign back in.');
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
-      const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
-      if (error) {
-        const msg = error.message || '';
-        if (msg.includes('permission') || msg.includes('403') || msg.includes('401')) {
-          throw new Error('Session expired. Please sign out and sign back in.');
-        }
-        throw error;
+      const formData = new FormData();
+      formData.append('file', croppedFile);
+      const res = await fetch(
+        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      );
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
+        throw new Error(`Upload failed (${res.status}). Please try again.`);
       }
-      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(data.key)}` : null);
+      const data = await res.json();
+      const key: string | null = data?.key ?? null;
+      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
       if (url) {
         setAvatarUrl(url);
         const { error: updateError } = await insforge.database
@@ -296,16 +303,23 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
+      const hc = (insforge as any).getHttpClient?.();
+      const token: string | null = hc?.userToken ?? null;
+      if (!token) throw new Error('Session expired. Please sign out and sign back in.');
       const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
-      const { data, error } = await insforge.storage.from('avatars').uploadAuto(croppedFile);
-      if (error) {
-        const msg = error.message || '';
-        if (msg.includes('permission') || msg.includes('403') || msg.includes('401')) {
-          throw new Error('Session expired. Please sign out and sign back in.');
-        }
-        throw error;
+      const formData = new FormData();
+      formData.append('file', croppedFile);
+      const res = await fetch(
+        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      );
+      if (!res.ok) {
+        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
+        throw new Error(`Upload failed (${res.status}). Please try again.`);
       }
-      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(data.key)}` : null);
+      const data = await res.json();
+      const key: string | null = data?.key ?? null;
+      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
       if (url) {
         setCoverUrl(url);
         const { error: updateError } = await insforge.database
