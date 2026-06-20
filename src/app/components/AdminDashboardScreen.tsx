@@ -144,6 +144,17 @@ export function AdminDashboardScreen({
   const [vcSearching, setVcSearching] = useState(false);
   const [vcSelectedUser, setVcSelectedUser] = useState<any | null>(null);
 
+  // Prize draw management state
+  const [drawMonth, setDrawMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [drawEntries, setDrawEntries] = useState<any[]>([]);
+  const [drawWinners, setDrawWinners] = useState<any[]>([]);
+  const [drawLoading, setDrawLoading] = useState(false);
+  const [pickWinnerUserId, setPickWinnerUserId] = useState('');
+  const [pickWinnerPrize, setPickWinnerPrize] = useState('');
+  const [pickWinnerBusy, setPickWinnerBusy] = useState(false);
+  const [drawMsg, setDrawMsg] = useState<string | null>(null);
+  const [deliverBusy, setDeliverBusy] = useState<string | null>(null);
+
   // Stats tab state
   const [stats, setStats] = useState<any | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -162,6 +173,60 @@ export function AdminDashboardScreen({
       .limit(100)
       .then(({ data }) => { setVcTxns(data || []); setVcLoading(false); });
   }, [tab]);
+
+  const loadDrawData = async (month: string) => {
+    setDrawLoading(true); setDrawMsg(null);
+    try {
+      const [entriesRes, winnersRes] = await Promise.all([
+        insforge.database
+          .from('prize_draw_entries')
+          .select('id, user_id, draw_month, entry_number, vc_spent, created_at')
+          .eq('draw_month', month)
+          .order('created_at', { ascending: false })
+          .limit(100),
+        insforge.database
+          .from('prize_draw_winners')
+          .select('id, user_id, draw_month, prize_description, drawn_at, delivered')
+          .order('drawn_at', { ascending: false })
+          .limit(20),
+      ]);
+      setDrawEntries(entriesRes.data || []);
+      setDrawWinners(winnersRes.data || []);
+    } catch { /* ignore */ }
+    finally { setDrawLoading(false); }
+  };
+
+  useEffect(() => { if (tab === 'vc') loadDrawData(drawMonth); }, [tab, drawMonth]);
+
+  const handlePickWinner = async () => {
+    if (!pickWinnerUserId.trim() || !pickWinnerPrize.trim()) {
+      setDrawMsg('Enter a user ID and prize description.'); return;
+    }
+    setPickWinnerBusy(true); setDrawMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('admin_pick_draw_winner' as any, {
+        p_month: drawMonth,
+        p_user_id: pickWinnerUserId.trim(),
+        p_prize_description: pickWinnerPrize.trim(),
+      });
+      if (error) throw error;
+      setDrawMsg(`✓ Winner picked for ${drawMonth}`);
+      setPickWinnerUserId(''); setPickWinnerPrize('');
+      loadDrawData(drawMonth);
+    } catch (e: any) { setDrawMsg('Error: ' + (e?.message || 'unknown')); }
+    finally { setPickWinnerBusy(false); }
+  };
+
+  const handleMarkDelivered = async (month: string) => {
+    setDeliverBusy(month); setDrawMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('admin_mark_winner_delivered' as any, { p_draw_month: month });
+      if (error) throw error;
+      setDrawMsg(`✓ Marked ${month} as delivered`);
+      loadDrawData(drawMonth);
+    } catch (e: any) { setDrawMsg('Error: ' + (e?.message || 'unknown')); }
+    finally { setDeliverBusy(null); }
+  };
 
   useEffect(() => {
     if (tab !== 'stats') return;
@@ -1126,6 +1191,92 @@ export function AdminDashboardScreen({
             >
               {vcTransferBusy ? 'Transferring…' : 'Credit VC to User'}
             </button>
+          </div>
+
+          {/* ── Prize Draw Management ── */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              Prize Draw Management
+            </div>
+
+            {/* Month selector */}
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <input
+                type="month"
+                value={drawMonth}
+                onChange={e => setDrawMonth(e.target.value)}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+              <button onClick={() => loadDrawData(drawMonth)} style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '10px', padding: '10px 14px', color: '#A78BFA', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
+                {drawLoading ? '…' : 'Load'}
+              </button>
+            </div>
+
+            {/* This month's entries */}
+            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Entries for {drawMonth} ({drawEntries.length})</div>
+            {drawEntries.length === 0 && !drawLoading && (
+              <div style={{ color: '#555C7A', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>No entries yet</div>
+            )}
+            {drawEntries.slice(0, 20).map(e => (
+              <div key={e.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ color: '#C4C9E0', fontSize: '12px', fontFamily: 'monospace' }}>{e.user_id?.slice(0, 12)}…</div>
+                  <div style={{ color: '#555C7A', fontSize: '11px' }}>Entry #{e.entry_number} · {e.vc_spent} VC</div>
+                </div>
+                <div style={{ color: '#555C7A', fontSize: '11px' }}>{new Date(e.created_at).toLocaleDateString()}</div>
+              </div>
+            ))}
+
+            {/* Pick winner */}
+            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>Pick Winner for {drawMonth}</div>
+            <input
+              placeholder="Winner User ID"
+              value={pickWinnerUserId}
+              onChange={e => setPickWinnerUserId(e.target.value)}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'monospace' }}
+            />
+            <input
+              placeholder="Prize description (e.g. ₦50,000 gift card)"
+              value={pickWinnerPrize}
+              onChange={e => setPickWinnerPrize(e.target.value)}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            {drawMsg && <div style={{ color: drawMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{drawMsg}</div>}
+            <button
+              onClick={handlePickWinner}
+              disabled={pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()}
+              style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: (pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()) ? 'not-allowed' : 'pointer', opacity: (pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()) ? 0.5 : 1 }}
+            >
+              {pickWinnerBusy ? 'Saving…' : 'Pick Winner'}
+            </button>
+
+            {/* Past winners */}
+            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>Past Winners</div>
+            {drawWinners.length === 0 ? (
+              <div style={{ color: '#555C7A', fontSize: '12px', textAlign: 'center', padding: '8px 0' }}>No winners yet</div>
+            ) : drawWinners.map(w => (
+              <div key={w.id} style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${w.delivered ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{w.draw_month}</div>
+                    <div style={{ color: '#C4C9E0', fontSize: '11px' }}>{w.prize_description}</div>
+                    <div style={{ color: '#555C7A', fontSize: '11px', fontFamily: 'monospace' }}>User: {w.user_id?.slice(0, 12)}…</div>
+                  </div>
+                  <div style={{ padding: '3px 8px', borderRadius: '6px', background: w.delivered ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: w.delivered ? '#10B981' : '#F59E0B', fontSize: '10px', fontWeight: 700 }}>
+                    {w.delivered ? 'DELIVERED' : 'PENDING'}
+                  </div>
+                </div>
+                {!w.delivered && (
+                  <button
+                    onClick={() => handleMarkDelivered(w.draw_month)}
+                    disabled={deliverBusy === w.draw_month}
+                    style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}
+                  >
+                    {deliverBusy === w.draw_month ? '…' : 'Mark as Delivered'}
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
 
         </div>

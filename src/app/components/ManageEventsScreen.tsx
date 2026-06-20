@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
+import { insforge } from '../../lib/insforge';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -81,6 +82,25 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
     setEditTicketPrice(event.ticketPrice);
     setEditPhone(event.contactPhone);
     setEditShowPhone(event.showPhone);
+  }
+
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishMsg, setPublishMsg] = useState<string | null>(null);
+
+  async function handlePublishDraft(event: OrganizerEvent) {
+    setPublishingId(event.id); setPublishMsg(null);
+    try {
+      const { error } = await insforge.database
+        .from('events')
+        .update({ status: 'under_review' })
+        .eq('id', event.id);
+      if (error) throw error;
+      onEditEvent(event.id, { status: 'under_review' });
+      setPublishMsg('Submitted for review!');
+      setTimeout(() => setPublishMsg(null), 3000);
+    } catch (e: any) {
+      setPublishMsg('Error: ' + (e?.message || 'unknown'));
+    } finally { setPublishingId(null); }
   }
 
   function saveEdit() {
@@ -232,6 +252,20 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                             Event is within 3 days — editing is locked
                           </span>
                         </div>
+                      )}
+
+                      {/* Publish Draft Button */}
+                      {event.status === 'draft' && (
+                        <>
+                          {publishMsg && <div style={{ color: publishMsg.startsWith('Error') ? '#EF4444' : '#10B981', fontSize: '12px', marginBottom: '8px' }}>{publishMsg}</div>}
+                          <button
+                            onClick={() => handlePublishDraft(event)}
+                            disabled={publishingId === event.id}
+                            style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: publishingId === event.id ? 'not-allowed' : 'pointer', opacity: publishingId === event.id ? 0.6 : 1, marginBottom: '10px' }}
+                          >
+                            {publishingId === event.id ? 'Submitting…' : '🚀 Publish Draft'}
+                          </button>
+                        </>
                       )}
 
                       {/* Promote Event Button */}
