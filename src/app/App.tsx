@@ -40,6 +40,8 @@ import { TransactionsScreen } from './components/TransactionsScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacyScreen } from './components/PrivacyScreen';
 import { TermsScreen } from './components/TermsScreen';
+import { HelpPage } from './components/HelpPage';
+import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -141,6 +143,7 @@ export default function App() {
   const pathname = window.location.pathname;
   if (pathname === '/privacy') return <PrivacyScreen />;
   if (pathname === '/terms') return <TermsScreen />;
+  if (pathname === '/help') return <HelpPage />;
 
   const [screen, setScreen] = useState<Screen>('splash');
   const [activeTab, setActiveTab] = useState<TabId>('home');
@@ -1491,6 +1494,10 @@ export default function App() {
 
           {screen === 'help-support' && (
             <HelpSupportScreen onBack={goBack} />
+          )}
+
+          {screen === 'privacy-security' && (
+            <PrivacySecurityScreen currentUser={currentUser} onBack={goBack} />
           )}
 
           {/* ── EVENT FLOW ── */}

@@ -1244,6 +1244,8 @@ export function SettingsScreen({
           <SettingRow icon={Shield} label="Biometric Login" toggle={biometrics} onToggle={setBiometrics} />
           <Divider />
           <SettingRow icon={Shield} label="Two-Factor Authentication" onPress={() => setSubScreen('2fa')} />
+          <Divider />
+          <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
         </Section>
 
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}

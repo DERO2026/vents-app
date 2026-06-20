@@ -97,6 +97,7 @@ export type Screen =
   | 'settings'
   | 'privacy-policy'
   | 'help-support'
+  | 'privacy-security'
   | 'my-tickets'
   | 'ticket-detail'
   | 'event-details'

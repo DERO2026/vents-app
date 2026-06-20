@@ -34,7 +34,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'system';
 
 interface EventRow {
   id: string;
@@ -139,6 +139,18 @@ export function AdminDashboardScreen({
   const [vcTransfer, setVcTransfer] = useState({ userId: '', amount: '', reason: '' });
   const [vcTransferBusy, setVcTransferBusy] = useState(false);
   const [vcMsg, setVcMsg] = useState<string | null>(null);
+  const [vcSearch, setVcSearch] = useState('');
+  const [vcSearchResults, setVcSearchResults] = useState<any[]>([]);
+  const [vcSearching, setVcSearching] = useState(false);
+  const [vcSelectedUser, setVcSelectedUser] = useState<any | null>(null);
+
+  // Stats tab state
+  const [stats, setStats] = useState<any | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  // Organizer Verification tab state
+  const [pendingOrgs, setPendingOrgs] = useState<any[]>([]);
+  const [pendingOrgsLoading, setPendingOrgsLoading] = useState(false);
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -151,24 +163,80 @@ export function AdminDashboardScreen({
       .then(({ data }) => { setVcTxns(data || []); setVcLoading(false); });
   }, [tab]);
 
+  useEffect(() => {
+    if (tab !== 'stats') return;
+    setStatsLoading(true);
+    Promise.all([
+      insforge.database.from('users').select('id', { count: 'exact', head: true }),
+      insforge.database.from('events').select('id', { count: 'exact', head: true }),
+      insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
+      insforge.database.from('vc_transactions').select('amount').eq('type', 'credit').eq('status', 'active'),
+    ]).then(([uRes, eRes, tRes, vcRes]) => {
+      const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+      setStats({ users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal });
+      setStatsLoading(false);
+    }).catch(() => setStatsLoading(false));
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== 'verify') return;
+    setPendingOrgsLoading(true);
+    insforge.database
+      .from('users')
+      .select('id, full_name, username, email, state, created_at, is_verified')
+      .eq('role', 'organizer')
+      .eq('is_verified', false)
+      .order('created_at', { ascending: false })
+      .limit(50)
+      .then(({ data }) => { setPendingOrgs(data || []); setPendingOrgsLoading(false); });
+  }, [tab]);
+
+  const handleVcUserSearch = async () => {
+    const q = vcSearch.trim();
+    if (!q) return;
+    setVcSearching(true);
+    try {
+      const like = `%${q.toLowerCase()}%`;
+      const { data } = await insforge.database
+        .from('users')
+        .select('id, full_name, username, email, avatar_url')
+        .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like},id.eq.${q}`)
+        .limit(5);
+      setVcSearchResults(data || []);
+    } catch { setVcSearchResults([]); }
+    finally { setVcSearching(false); }
+  };
+
   const vcTotalCirculation = vcTxns
     .filter(t => t.type === 'credit' && t.status === 'active')
     .reduce((s, t) => s + Number(t.amount), 0);
 
   const handleVcAdminTransfer = async () => {
-    if (!vcTransfer.userId.trim() || !vcTransfer.amount || Number(vcTransfer.amount) <= 0) {
+    const uid = vcTransfer.userId.trim();
+    if (!uid || !vcTransfer.amount || Number(vcTransfer.amount) <= 0) {
       setVcMsg('Enter a user ID and a positive amount.'); return;
+    }
+    if (!vcTransfer.reason.trim()) {
+      setVcMsg('A reason is required for admin transfers.'); return;
     }
     setVcTransferBusy(true); setVcMsg(null);
     try {
       const { error } = await insforge.database.rpc('admin_credit_vents_cents' as any, {
-        p_user_id: vcTransfer.userId.trim(),
+        p_user_id: uid,
         p_amount: Number(vcTransfer.amount),
-        p_reason: vcTransfer.reason || 'Admin transfer',
+        p_reason: vcTransfer.reason.trim(),
       });
       if (error) throw error;
-      setVcMsg(`✓ ${vcTransfer.amount} VC credited to ${vcTransfer.userId.slice(0, 8)}…`);
+      await writeAuditLog(currentUser.id, 'admin_vc_transfer', uid, {
+        amount: Number(vcTransfer.amount),
+        reason: vcTransfer.reason.trim(),
+        recipient: vcSelectedUser?.username || uid.slice(0, 8),
+      });
+      setVcMsg(`✓ ${vcTransfer.amount} VC credited to ${vcSelectedUser?.username || uid.slice(0, 8)}…`);
       setVcTransfer({ userId: '', amount: '', reason: '' });
+      setVcSelectedUser(null);
+      setVcSearch('');
+      setVcSearchResults([]);
     } catch (e: any) {
       setVcMsg(e.message || 'Transfer failed.');
     } finally {
@@ -551,7 +619,9 @@ export function AdminDashboardScreen({
     { key: 'logs' as Tab, label: 'Audit Log', icon: <ClipboardList size={14} /> },
     { key: 'reports' as Tab, label: 'Reports', icon: <Flag size={14} /> },
     { key: 'vc' as Tab, label: 'VC', icon: <Swords size={14} /> },
-    ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Zap size={14} /> }] : []),
+    { key: 'stats' as Tab, label: 'Stats', icon: <Zap size={14} /> },
+    { key: 'verify' as Tab, label: 'Verify', icon: <BadgeCheck size={14} /> },
+    ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -978,12 +1048,62 @@ export function AdminDashboardScreen({
           {/* Admin Transfer */}
           <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>Admin Transfer</div>
-            <input
-              placeholder="User ID (UUID)"
-              value={vcTransfer.userId}
-              onChange={e => setVcTransfer(v => ({ ...v, userId: e.target.value }))}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
-            />
+
+            {/* User search */}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                placeholder="Search by name, @username, email, or UUID"
+                value={vcSearch}
+                onChange={e => setVcSearch(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleVcUserSearch()}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+              <button onClick={handleVcUserSearch} disabled={vcSearching} style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '10px', padding: '0 12px', color: '#A78BFA', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
+                {vcSearching ? '…' : 'Find'}
+              </button>
+            </div>
+
+            {/* Search results */}
+            {vcSearchResults.length > 0 && (
+              <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+                {vcSearchResults.map(u => (
+                  <button
+                    key={u.id}
+                    onClick={() => { setVcSelectedUser(u); setVcTransfer(v => ({ ...v, userId: u.id })); setVcSearchResults([]); setVcSearch(''); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', textAlign: 'left' }}
+                  >
+                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {u.avatar_url
+                        ? <img src={u.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                        : <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(u.full_name || u.username || '?')[0].toUpperCase()}</span>
+                      }
+                    </div>
+                    <div>
+                      <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{u.full_name || u.username || 'Unknown'}</div>
+                      <div style={{ color: '#8B8FA8', fontSize: '11px' }}>@{u.username} · {u.email}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Selected user preview */}
+            {vcSelectedUser && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', padding: '10px 12px' }}>
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {vcSelectedUser.avatar_url
+                    ? <img src={vcSelectedUser.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
+                    : <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(vcSelectedUser.full_name || vcSelectedUser.username || '?')[0].toUpperCase()}</span>
+                  }
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>✓ {vcSelectedUser.full_name || vcSelectedUser.username}</div>
+                  <div style={{ color: '#8B8FA8', fontSize: '11px', fontFamily: 'monospace' }}>{vcSelectedUser.id}</div>
+                </div>
+                <button onClick={() => { setVcSelectedUser(null); setVcTransfer(v => ({ ...v, userId: '' })); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8B8FA8', fontSize: '16px', padding: '2px' }}>×</button>
+              </div>
+            )}
+
             <input
               placeholder="Amount (VC)"
               type="number"
@@ -993,21 +1113,101 @@ export function AdminDashboardScreen({
               style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
             />
             <input
-              placeholder="Reason (optional)"
+              placeholder="Reason (required)"
               value={vcTransfer.reason}
               onChange={e => setVcTransfer(v => ({ ...v, reason: e.target.value }))}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${vcTransfer.reason.trim() ? 'rgba(255,255,255,0.1)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
             />
             {vcMsg && <div style={{ color: vcMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{vcMsg}</div>}
             <button
               onClick={handleVcAdminTransfer}
-              disabled={vcTransferBusy}
-              style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: vcTransferBusy ? 'not-allowed' : 'pointer', opacity: vcTransferBusy ? 0.6 : 1 }}
+              disabled={vcTransferBusy || !vcTransfer.userId || !vcTransfer.reason.trim()}
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: (vcTransferBusy || !vcTransfer.userId || !vcTransfer.reason.trim()) ? 'not-allowed' : 'pointer', opacity: (vcTransferBusy || !vcTransfer.userId || !vcTransfer.reason.trim()) ? 0.5 : 1 }}
             >
               {vcTransferBusy ? 'Transferring…' : 'Credit VC to User'}
             </button>
           </div>
 
+        </div>
+      )}
+
+      {/* ════════════════ APP STATS TAB ══════════════════════════════════ */}
+      {tab === 'stats' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          {statsLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading stats…</div>
+          ) : stats ? (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                {[
+                  { label: 'Total Users', value: stats.users.toLocaleString(), color: '#3B82F6' },
+                  { label: 'Total Events', value: stats.events.toLocaleString(), color: '#A78BFA' },
+                  { label: 'Paid Tickets', value: stats.tickets.toLocaleString(), color: '#10B981' },
+                  { label: 'Active VC', value: stats.vc.toLocaleString(), color: '#F59E0B' },
+                ].map(card => (
+                  <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '16px' }}>
+                    <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
+                    <div style={{ color: card.color, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                  </div>
+                ))}
+              </div>
+              <p style={{ color: '#555C7A', fontSize: '11px', textAlign: 'center', marginTop: '8px' }}>Live counts from database. Refresh tab to update.</p>
+            </>
+          ) : (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No data.</div>
+          )}
+        </div>
+      )}
+
+      {/* ════════════════ ORGANIZER VERIFICATION TAB ══════════════════════ */}
+      {tab === 'verify' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>{pendingOrgs.length} unverified organizer{pendingOrgs.length !== 1 ? 's' : ''}</p>
+          {pendingOrgsLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
+          ) : pendingOrgs.length === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>All organizers verified ✓</div>
+          ) : pendingOrgs.map(u => (
+            <div key={u.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.full_name || 'No Name'}</div>
+                  <div style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username || 'no_username'} · {u.state || 'No state'}</div>
+                  <div style={{ color: '#555C7A', fontSize: '11px' }}>{u.email}</div>
+                </div>
+                <span style={{ fontSize: '10px', color: '#F59E0B', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>UNVERIFIED</span>
+              </div>
+              <div style={{ color: '#555C7A', fontSize: '10px' }}>Joined {new Date(u.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={async () => {
+                    const { error } = await insforge.database.from('users').update({ is_verified: true }).eq('id', u.id);
+                    if (!error) {
+                      await writeAuditLog(currentUser.id, 'verify_organizer', u.id, { username: u.username, email: u.email });
+                      setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
+                      flash(true, `@${u.username} verified ✓`);
+                    } else flash(false, error.message);
+                  }}
+                  style={{ flex: 1, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '10px', padding: '8px', color: '#3B82F6', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <BadgeCheck size={13} style={{ display: 'inline', marginRight: '6px' }} />Verify
+                </button>
+                <button
+                  onClick={async () => {
+                    const { error } = await insforge.database.from('users').update({ role: 'attendee' }).eq('id', u.id);
+                    if (!error) {
+                      await writeAuditLog(currentUser.id, 'reject_organizer', u.id, { username: u.username });
+                      setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
+                      flash(false, `@${u.username} demoted to attendee.`);
+                    } else flash(false, error.message);
+                  }}
+                  style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Reject
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
