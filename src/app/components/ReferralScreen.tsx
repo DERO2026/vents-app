@@ -27,7 +27,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [copied, setCopied] = useState(false);
 
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
-  const referralLink = `https://vents-one.vercel.app/?ref=${referralCode}`;
+  const referralLink = `https://getvents.com/?ref=${referralCode}`;
 
   useEffect(() => {
     if (!currentUser?.id) return;
