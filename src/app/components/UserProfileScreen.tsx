@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag } from 'lucide-react';
+import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
@@ -15,6 +15,7 @@ interface UserProfileScreenProps {
   onBack: () => void;
   onEventPress?: (event: import('./types').Event) => void;
   currentUserId?: string;
+  onMessage?: (userId: string) => void;
 }
 
 const INTEREST_COLORS: Record<string, string> = {
@@ -39,6 +40,7 @@ export function UserProfileScreen({
   onBack,
   onEventPress,
   currentUserId,
+  onMessage,
 }: UserProfileScreenProps) {
   const [highlightData, setHighlightData] = useState<{ items: any[]; startIndex: number } | null>(null);
   const [highlightRefresh, setHighlightRefresh] = useState(0);
@@ -280,6 +282,25 @@ export function UserProfileScreen({
             {isFollowing ? 'Following' : 'Follow'}
           </span>
         </button>
+        {!isOwnProfile && onMessage && currentUserId && (
+          <button
+            onClick={() => onMessage(user.id)}
+            title="Send message"
+            style={{
+              background: 'rgba(167,139,250,0.1)',
+              border: '1px solid rgba(167,139,250,0.25)',
+              borderRadius: '50%',
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <MessageCircle size={16} color="#A78BFA" />
+          </button>
+        )}
         {!isOwnProfile && currentUserId && (
           <button
             onClick={() => setShowReport(true)}

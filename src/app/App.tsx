@@ -18,6 +18,8 @@ import { MyTicketsScreen } from './components/MyTicketsScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { PrivacyPolicyScreen } from './components/PrivacyPolicyScreen';
 import { HelpSupportScreen } from './components/HelpSupportScreen';
+import { InboxScreen } from './components/InboxScreen';
+import { ConversationScreen } from './components/ConversationScreen';
 import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
@@ -811,6 +813,9 @@ export default function App() {
   // Midnight Neon is always enforced
   const isDark = true;
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
+  const [conversationUser, setConversationUser] = useState<{ id: string; name: string; avatarUrl?: string } | null>(null);
+  const [conversationEventId, setConversationEventId] = useState<string | undefined>(undefined);
+  const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
 
   const [selectedState, setSelectedState] = useState<string>(() => {
     return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
@@ -1475,6 +1480,21 @@ export default function App() {
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
               }}
+              onMessageOrganizer={async (organizerId, eventId, eventTitle) => {
+                const { data } = await insforge.database
+                  .from('public_profiles')
+                  .select('id, full_name, username, avatar_url')
+                  .eq('id', organizerId)
+                  .maybeSingle();
+                setConversationUser({
+                  id: organizerId,
+                  name: data?.full_name || data?.username || 'Organizer',
+                  avatarUrl: data?.avatar_url,
+                });
+                setConversationEventId(eventId);
+                setConversationEventTitle(eventTitle);
+                navigateTo('conversation');
+              }}
             />
           )}
           {screen === 'ticket-select' && selectedEvent && (
@@ -1581,6 +1601,29 @@ export default function App() {
             <TransactionsScreen onBack={goBack} />
           )}
 
+          {/* ── INBOX ── */}
+          {screen === 'inbox' && currentUser && (
+            <InboxScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              onOpenConversation={(other) => {
+                setConversationUser(other);
+                navigateTo('conversation');
+              }}
+            />
+          )}
+
+          {/* ── CONVERSATION ── */}
+          {screen === 'conversation' && currentUser && conversationUser && (
+            <ConversationScreen
+              currentUser={currentUser}
+              otherUser={conversationUser}
+              eventId={conversationEventId}
+              eventTitle={conversationEventTitle}
+              onBack={goBack}
+            />
+          )}
+
           {/* ── NIGERIA LIVE MAP ── */}
           {screen === 'nigeria-live' && (
             <NigeriaLiveScreen onBack={goBack} />
@@ -1594,6 +1637,17 @@ export default function App() {
               onToggleFollow={() => handleToggleFollow(selectedUser.id)}
               onBack={goBack}
               onEventPress={handleEventPress}
+              currentUserId={currentUser?.id}
+              onMessage={(userId) => {
+                setConversationUser({
+                  id: userId,
+                  name: selectedUser.name,
+                  avatarUrl: selectedUser.avatar,
+                });
+                setConversationEventId(undefined);
+                setConversationEventTitle(undefined);
+                navigateTo('conversation');
+              }}
             />
           )}
               </>

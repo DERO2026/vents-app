@@ -114,7 +114,9 @@ export type Screen =
   | 'following-list'
   | 'admin-dashboard'
   | 'checkin-scanner'
-  | 'transactions';
+  | 'transactions'
+  | 'inbox'
+  | 'conversation';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

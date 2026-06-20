@@ -31,6 +31,7 @@ import { ReportModal } from './ReportModal';
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
   onOrganizerPress?: (organizerId: string) => void;
+  onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
 }
 
 interface EventDetailsScreenProps {
@@ -47,6 +48,7 @@ interface EventDetailsScreenProps {
   onToggleFollow: (userId: string) => void;
   currentUserId?: string;
   onOrganizerPress?: (organizerId: string) => void;
+  onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
 }
 
 function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string): number {
@@ -194,6 +196,7 @@ export function EventDetailsScreen({
   onToggleFollow,
   currentUserId,
   onOrganizerPress,
+  onMessageOrganizer,
 }: EventDetailsScreenProps) {
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
@@ -1024,29 +1027,41 @@ export function EventDetailsScreen({
           </div>
         )}
 
-        {/* Reviews — see organizer profile */}
-        {event.organizer_id && onOrganizerPress && (
-          <div style={{ marginBottom: '16px' }}>
-            <button
-              onClick={() => onOrganizerPress(event.organizer_id!)}
-              style={{
-                width: '100%',
-                background: '#131629',
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '14px',
-                padding: '14px 16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                cursor: 'pointer',
-              }}
-            >
-              <Star size={16} color="#FFB830" />
-              <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
-                See organizer reviews
-              </span>
-              <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>View →</span>
-            </button>
+        {/* Organizer actions */}
+        {event.organizer_id && (onOrganizerPress || onMessageOrganizer) && (
+          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {onOrganizerPress && (
+              <button
+                onClick={() => onOrganizerPress(event.organizer_id!)}
+                style={{
+                  width: '100%', background: '#131629',
+                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px',
+                  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                }}
+              >
+                <Star size={16} color="#FFB830" />
+                <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
+                  See organizer reviews
+                </span>
+                <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>View →</span>
+              </button>
+            )}
+            {onMessageOrganizer && currentUserId && currentUserId !== event.organizer_id && (
+              <button
+                onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}
+                style={{
+                  width: '100%', background: '#131629',
+                  border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px',
+                  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
+                }}
+              >
+                <MessageCircle size={16} color="#A78BFA" />
+                <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
+                  Message organizer
+                </span>
+                <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Chat →</span>
+              </button>
+            )}
           </div>
         )}
 

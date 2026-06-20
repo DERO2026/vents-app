@@ -3,7 +3,7 @@ import { insforge } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import QRCode from 'qrcode';
 import {
-  ArrowLeft, User, Bell, Shield, Moon, Sun, HelpCircle, LogOut,
+  ArrowLeft, User, Bell, Shield, Moon, Sun, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, ShieldCheck, Copy,
 } from 'lucide-react';
@@ -1229,6 +1229,10 @@ export function SettingsScreen({
         </Section>
 
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
+
+        <Section title="MESSAGES">
+          <SettingRow icon={MessageCircle} label="Inbox" onPress={() => onNavigate?.('inbox')} />
+        </Section>
 
         <Section title="SUPPORT & LEGAL">
           <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('/privacy', '_blank')} />
