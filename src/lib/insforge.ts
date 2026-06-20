@@ -30,7 +30,31 @@ export async function getAuthToken(): Promise<string> {
   const hc = (insforge as any).getHttpClient?.();
   if (hc?.userToken) return hc.userToken as string;
 
-  // 3. Attempt a silent refresh via the SDK (uses the stored refresh token)
+  // 3. Try manual refresh using the stored refresh token (most reliable after page reload)
+  const storedRt = sessionStorage.getItem(SESSION_KEY);
+  if (storedRt && hc) {
+    try {
+      const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
+      const refreshRes = await fetch(`${baseUrl}/api/auth/refresh?client_type=mobile`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: storedRt, refresh_token: storedRt }),
+      });
+      if (refreshRes.ok) {
+        const refreshJson = await refreshRes.json();
+        if (refreshJson.accessToken) {
+          hc.userToken = refreshJson.accessToken;
+          if (refreshJson.refreshToken) {
+            hc.refreshToken = refreshJson.refreshToken;
+            sessionStorage.setItem(SESSION_KEY, refreshJson.refreshToken);
+          }
+          return refreshJson.accessToken as string;
+        }
+      }
+    } catch { /* fall through */ }
+  }
+
+  // 4. Attempt a silent refresh via the SDK (uses httpOnly cookie on production)
   try {
     const { data } = await insforge.auth.refreshSession?.() ?? { data: null };
     const t = (data as any)?.accessToken || (data as any)?.access_token || (data as any)?.session?.accessToken;
@@ -38,7 +62,6 @@ export async function getAuthToken(): Promise<string> {
       if (hc) hc.userToken = t;
       return t as string;
     }
-    // After refreshSession, the SDK should have updated getAccessToken()
     const after = insforge.auth.getAccessToken?.();
     if (after) return after;
     if (hc?.userToken) return hc.userToken as string;

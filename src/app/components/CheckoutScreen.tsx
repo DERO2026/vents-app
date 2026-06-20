@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, CreditCard, Building2, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X, Eye, EyeOff, CheckCircle, Search, Coins } from 'lucide-react';
+import { useState } from 'react';
+import { ArrowLeft, CreditCard, Building2, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X, Eye, EyeOff, CheckCircle, Search } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
-import { insforge } from '../../lib/insforge';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -161,39 +160,10 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
   const [promoApplied, setPromoApplied] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Vents Cents
-  const [vcBalance, setVcBalance] = useState(0);
-  const [useVentsCents, setUseVentsCents] = useState(false);
-  const [vcLoading, setVcLoading] = useState(true);
-
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
   const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
-
-  // VC discount calculation (mirrors server-side logic, display-only)
-  const VC_NAIRA_PER_1000 = 500;
-  const VC_MIN_PRICE = 500;
-  const VC_MAX_PCT = 50;
-  const vcEligible = subtotal >= VC_MIN_PRICE && vcBalance > 0;
-  const maxVcDiscountNgn = Math.floor(subtotal * VC_MAX_PCT / 100);
-  const maxVcToUse = Math.floor(maxVcDiscountNgn / VC_NAIRA_PER_1000 * 1000);
-  const vcToUse = Math.min(vcBalance, maxVcToUse);
-  const vcDiscountNgn = useVentsCents && vcEligible ? Math.floor(vcToUse / 1000 * VC_NAIRA_PER_1000) : 0;
-
-  const total = Math.max(0, subtotal + serviceFee - discount - vcDiscountNgn);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { data } = await insforge.database.rpc('get_my_vc_balance');
-        setVcBalance((data as any)?.spendable ?? 0);
-      } catch {
-        setVcBalance(0);
-      } finally {
-        setVcLoading(false);
-      }
-    })();
-  }, []);
+  const total = Math.max(0, subtotal + serviceFee - discount);
 
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
@@ -235,8 +205,6 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
             purchasedAt: new Date().toISOString(),
             totalAmount: total,
             holderName: name.trim() || 'Guest',
-            useVentsCents: useVentsCents && vcEligible,
-            vcDiscountNgn,
           };
           onSuccess(ticket);
         },
@@ -258,8 +226,6 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
           purchasedAt: new Date().toISOString(),
           totalAmount: total,
           holderName: name.trim() || 'Guest',
-          useVentsCents: useVentsCents && vcEligible,
-          vcDiscountNgn,
         };
         onSuccess(ticket);
       }, 1500);
@@ -613,52 +579,6 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
           )}
         </div>
 
-        {/* Vents Cents toggle */}
-        {!vcLoading && vcEligible && (
-          <div
-            style={{
-              background: useVentsCents ? 'rgba(167,139,250,0.08)' : '#131629',
-              border: `1px solid ${useVentsCents ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.06)'}`,
-              borderRadius: '16px',
-              padding: '14px',
-              marginBottom: '16px',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '12px',
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-            onClick={() => setUseVentsCents((v) => !v)}
-          >
-            <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: useVentsCents ? 'rgba(167,139,250,0.2)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Coins size={18} color={useVentsCents ? '#A78BFA' : '#8B8FA8'} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>
-                Use Vents Cents
-              </p>
-              <p style={{ color: useVentsCents ? '#A78BFA' : '#8B8FA8', fontSize: '11px' }}>
-                {vcToUse.toLocaleString()} VC available — saves {formatPrice(Math.floor(vcToUse / 1000 * VC_NAIRA_PER_1000))}
-              </p>
-            </div>
-            {/* Toggle pill */}
-            <div style={{
-              width: '44px', height: '24px', borderRadius: '12px',
-              background: useVentsCents ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(255,255,255,0.12)',
-              position: 'relative', transition: 'background 0.2s ease', flexShrink: 0,
-            }}>
-              <div style={{
-                position: 'absolute', top: '3px',
-                left: useVentsCents ? '23px' : '3px',
-                width: '18px', height: '18px', borderRadius: '50%',
-                background: '#fff',
-                transition: 'left 0.2s ease',
-                boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-              }} />
-            </div>
-          </div>
-        )}
-
         {/* Promo code */}
         <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <Tag size={16} color="#8B8FA8" />
@@ -696,12 +616,6 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#10B981', fontSize: '13px' }}>Promo (10% off)</span>
                 <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
-              </div>
-            )}
-            {useVentsCents && vcDiscountNgn > 0 && (
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#A78BFA', fontSize: '13px' }}>Vents Cents ({vcToUse.toLocaleString()} VC)</span>
-                <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>-{formatPrice(vcDiscountNgn)}</span>
               </div>
             )}
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '4px 0' }} />

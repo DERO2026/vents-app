@@ -931,7 +931,6 @@ export default function App() {
             p_quantity: ticket.quantity,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
             p_payment_status: 'paid',
-            p_use_vents_cents: ticket.useVentsCents ?? false,
           });
           if (insertError) throw insertError;
 

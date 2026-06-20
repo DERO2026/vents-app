@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin } from 'lucide-react';
+import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { UserProfile } from './types';
 
@@ -31,9 +31,16 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [uploadingImg, setUploadingImg] = useState(false);
   const [swipeStartX, setSwipeStartX] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [playingId, setPlayingId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
@@ -101,6 +108,75 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       await load();
     });
   }, [currentUser.id, otherUser.id, eventId]);
+
+  const startRecording = useCallback(async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
+      audioChunksRef.current = [];
+      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+      mr.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        if (blob.size < 1000) return; // ignore accidental taps
+        setUploadingImg(true);
+        try {
+          const token = await getAuthToken();
+          const ext = mr.mimeType.includes('ogg') ? 'ogg' : 'webm';
+          const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mr.mimeType });
+          const formData = new FormData();
+          formData.append('file', file);
+          const res = await fetch(
+            `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
+            { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+          );
+          if (!res.ok) throw new Error('Upload failed');
+          const data = await res.json();
+          const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);
+          if (!url) throw new Error('No URL');
+          await insforge.database.from('direct_messages').insert({
+            sender_id: currentUser.id, recipient_id: otherUser.id,
+            event_id: eventId || null, body: '', image_url: url, media_type: 'audio',
+          });
+          await load();
+        } catch (e) { console.error('Voice send failed', e); }
+        finally { setUploadingImg(false); }
+      };
+      mr.start();
+      mediaRecorderRef.current = mr;
+      setRecording(true);
+      setRecordingSeconds(0);
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds(s => {
+          if (s >= 59) { stopRecording(); return 60; }
+          return s + 1;
+        });
+      }, 1000);
+    } catch (e) { console.error('Mic access denied', e); }
+  }, [currentUser.id, otherUser.id, eventId]);
+
+  const stopRecording = useCallback(() => {
+    if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      mediaRecorderRef.current.stop();
+    }
+    setRecording(false);
+    setRecordingSeconds(0);
+  }, []);
+
+  const toggleAudio = useCallback((id: string, url: string) => {
+    if (playingId === id) {
+      audioRef.current?.pause();
+      setPlayingId(null);
+    } else {
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+      const a = new Audio(url);
+      a.onended = () => setPlayingId(null);
+      a.play().catch(() => {});
+      audioRef.current = a;
+      setPlayingId(id);
+    }
+  }, [playingId]);
 
   const deleteMessage = useCallback(async (id: string) => {
     await insforge.database.from('direct_messages').update({ deleted_by_sender: true }).eq('id', id).eq('sender_id', currentUser.id);
@@ -176,6 +252,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         setSwipeStartX(null);
       }}
     >
+      <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
       {/* Image lightbox */}
       {lightboxUrl && (
         <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -249,6 +326,21 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
               }}>
                 {isDeleted ? (
                   <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, fontStyle: 'italic' }}>This message was deleted</p>
+                ) : m.media_type === 'audio' && m.image_url ? (
+                  <button
+                    onClick={() => toggleAudio(m.id, m.image_url!)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+                  >
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {playingId === m.id ? <Pause size={14} color="#fff" /> : <Play size={14} color={isMine ? '#fff' : '#A78BFA'} />}
+                    </div>
+                    <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                      {[3,5,7,4,6,5,3].map((h, i) => (
+                        <div key={i} style={{ width: '3px', height: `${h * 2}px`, borderRadius: '2px', background: isMine ? 'rgba(255,255,255,0.6)' : '#A78BFA', opacity: playingId === m.id ? 1 : 0.5 }} />
+                      ))}
+                    </div>
+                    <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#8B8FA8', fontSize: '11px' }}>Voice</span>
+                  </button>
                 ) : m.image_url ? (
                   <img
                     src={m.image_url} alt="Sent image"
@@ -286,39 +378,62 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         borderTop: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', gap: '8px', alignItems: 'flex-end', flexShrink: 0,
       }}>
-        <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
-          <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
-        </button>
-        <button onClick={sendLocation} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
-          <MapPin size={20} color="#8B8FA8" />
-        </button>
-        <textarea
-          value={body}
-          onChange={e => setBody(e.target.value)}
-          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-          placeholder="Type a message…"
-          rows={1}
-          style={{
-            flex: 1, background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '20px', padding: '10px 14px',
-            color: '#F0F0FF', fontSize: '14px', resize: 'none',
-            outline: 'none', fontFamily: 'inherit', lineHeight: 1.4,
-            maxHeight: '120px', overflowY: 'auto', scrollbarWidth: 'none',
-          }}
-        />
-        <button
-          onClick={sendMessage}
-          disabled={!body.trim() || sending}
-          style={{
-            width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-            background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E',
-            border: 'none', cursor: body.trim() ? 'pointer' : 'not-allowed',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            transition: 'background 0.2s',
-          }}
-        >
-          <Send size={16} color={body.trim() ? '#fff' : '#555C7A'} />
-        </button>
+        {recording ? (
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '20px', padding: '10px 14px' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#EF4444', animation: 'pulse 1s infinite' }} />
+            <span style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600 }}>Recording {recordingSeconds}s / 60s</span>
+            <button onClick={stopRecording} style={{ marginLeft: 'auto', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <Square size={12} /> Send
+            </button>
+          </div>
+        ) : (
+          <>
+            <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+              <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
+            </button>
+            <button onClick={sendLocation} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+              <MapPin size={20} color="#8B8FA8" />
+            </button>
+            <button
+              onMouseDown={startRecording} onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}
+              title="Hold to record voice message"
+            >
+              <Mic size={20} color="#8B8FA8" />
+            </button>
+          </>
+        )}
+        {!recording && (
+          <>
+            <textarea
+              value={body}
+              onChange={e => setBody(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
+              placeholder="Type a message…"
+              rows={1}
+              style={{
+                flex: 1, background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '20px', padding: '10px 14px',
+                color: '#F0F0FF', fontSize: '14px', resize: 'none',
+                outline: 'none', fontFamily: 'inherit', lineHeight: 1.4,
+                maxHeight: '120px', overflowY: 'auto', scrollbarWidth: 'none',
+              }}
+            />
+            <button
+              onClick={sendMessage}
+              disabled={!body.trim() || sending}
+              style={{
+                width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
+                background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E',
+                border: 'none', cursor: body.trim() ? 'pointer' : 'not-allowed',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                transition: 'background 0.2s',
+              }}
+            >
+              <Send size={16} color={body.trim() ? '#fff' : '#555C7A'} />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

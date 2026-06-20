@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, Check, Gift, Users, Coins } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Gift, Users, Coins, Trophy, Star, Zap, Crown } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 
 const MAX_REFERRALS = 5;
-const CENTS_PER_REFERRAL = 500; // Vents Cents earned per joined friend
+const CENTS_PER_REFERRAL = 300;
 
 interface ReferralScreenProps {
   onBack: () => void;
-  currentUser: { id: string; email: string; full_name: string | null } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role?: string } | null;
 }
 
 interface ReferralRow {
@@ -15,6 +15,30 @@ interface ReferralRow {
   invitee_email: string;
   status: 'pending' | 'joined';
   created_at: string;
+}
+
+interface Winner {
+  id: string;
+  draw_month: string;
+  prize_description: string;
+  drawn_at: string;
+  delivered: boolean;
+  users?: { full_name: string; username: string; avatar_url?: string };
+}
+
+const BADGE_CONFIG = [
+  { type: 'bronze', label: 'Bronze', cost: 300, color: '#CD7F32', emoji: '🥉' },
+  { type: 'silver', label: 'Silver', cost: 800, color: '#C0C0C0', emoji: '🥈' },
+  { type: 'gold', label: 'Gold', cost: 2000, color: '#FFD700', emoji: '🥇' },
+] as const;
+
+function monthCountdown(): string {
+  const now = new Date();
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const diff = end.getTime() - now.getTime();
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hrs = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  return `${days}d ${hrs}h`;
 }
 
 export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
@@ -25,30 +49,51 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
+
+  // Prize draw state
+  const [drawEntries, setDrawEntries] = useState(0);
+  const [drawBusy, setDrawBusy] = useState(false);
+  const [drawMsg, setDrawMsg] = useState<string | null>(null);
+  const [winners, setWinners] = useState<Winner[]>([]);
+
+  // Badge state
+  const [currentBadge, setCurrentBadge] = useState<string | null>(null);
+  const [badgeBusy, setBadgeBusy] = useState(false);
+  const [badgeMsg, setBadgeMsg] = useState<string | null>(null);
+
+  // Featured in People state
+  const [featuredBusy, setFeaturedBusy] = useState(false);
+  const [featuredMsg, setFeaturedMsg] = useState<string | null>(null);
+  const [featuredUntil, setFeaturedUntil] = useState<string | null>(null);
 
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
   const referralLink = `https://getvents.com/?ref=${referralCode}`;
+  const currentMonth = new Date().toISOString().slice(0, 7);
 
   useEffect(() => {
     if (!currentUser?.id) return;
     async function load() {
       setLoading(true);
       try {
-        const { data: refs } = await insforge.database
-          .from('referrals')
-          .select('*')
-          .eq('referrer_id', currentUser!.id)
-          .order('created_at', { ascending: false });
-        if (refs) setReferrals(refs);
-
-        const { data: wallet } = await insforge.database
-          .from('vents_wallets')
-          .select('balance')
-          .eq('user_id', currentUser!.id)
-          .maybeSingle();
-        if (wallet) setBalance(wallet.balance ?? 0);
+        const [refsRes, walletRes, userRes, entriesRes, winnersRes] = await Promise.all([
+          insforge.database.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
+          insforge.database.rpc('get_my_vc_balance' as any),
+          insforge.database.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
+          insforge.database.from('prize_draw_entries').select('id').eq('user_id', currentUser!.id).eq('draw_month', currentMonth),
+          insforge.database.from('prize_draw_winners').select('*, users(full_name, username, avatar_url)').order('drawn_at', { ascending: false }).limit(3),
+        ]);
+        if (refsRes.data) setReferrals(refsRes.data);
+        setBalance((walletRes.data as any)?.spendable ?? 0);
+        if (userRes.data) {
+          setCurrentBadge(userRes.data.vc_badge ?? null);
+          setFeaturedUntil(userRes.data.vc_featured_until ?? null);
+        }
+        setDrawEntries(entriesRes.data?.length ?? 0);
+        if (winnersRes.data) setWinners(winnersRes.data as Winner[]);
       } catch (err) {
-        console.error('Failed to load referral data:', err);
+        console.error('Failed to load VC data:', err);
       } finally {
         setLoading(false);
       }
@@ -58,8 +103,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
   const joinedCount = referrals.filter((r) => r.status === 'joined').length;
   const canInviteMore = referrals.length < MAX_REFERRALS;
-  const [cancellingId, setCancellingId] = useState<string | null>(null);
-  const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
 
   async function handleCancelInvite(id: string) {
     setCancellingId(id);
@@ -77,81 +120,96 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   async function handleSendInvite() {
     if (!currentUser?.id) return;
     const email = inviteEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-      setSendError('Enter a valid email address.');
-      return;
-    }
-    if (!canInviteMore) {
-      setSendError(`You've reached the ${MAX_REFERRALS}-invite limit.`);
-      return;
-    }
-    if (referrals.some((r) => r.invitee_email === email)) {
-      setSendError('You already invited this person.');
-      return;
-    }
-    setSending(true);
-    setSendError('');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { setSendError('Enter a valid email address.'); return; }
+    if (!canInviteMore) { setSendError(`You've reached the ${MAX_REFERRALS}-invite limit.`); return; }
+    if (referrals.some((r) => r.invitee_email === email)) { setSendError('You already invited this person.'); return; }
+    setSending(true); setSendError('');
     try {
-      // Hash the email for dedup (using a simple hex hash via SubtleCrypto)
       let emailHash = '';
       try {
-        const normalized = email.trim().toLowerCase();
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
         emailHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch { /* ignore — hash is optional */ }
-
-      // Generate a simple device fingerprint
-      const fp = [navigator.userAgent, navigator.language, screen.width, screen.height, navigator.hardwareConcurrency].join('|');
-      let fpHash = '';
+      } catch { /* ignore */ }
+      const fp = [navigator.userAgent, navigator.language, screen.width, screen.height].join('|');
+      let fpHash = fp.slice(0, 64);
       try {
         const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fp));
         fpHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch { fpHash = fp.slice(0, 64); }
-
+      } catch { /* ignore */ }
       const { data: result, error } = await insforge.database.rpc('create_referral' as any, {
-        p_invitee_email: email.trim().toLowerCase(),
-        p_email_hash: emailHash,
-        p_fingerprint: fpHash,
+        p_invitee_email: email, p_email_hash: emailHash, p_fingerprint: fpHash,
       });
       if (error) throw error;
       if (result === 'limit_reached') { setSendError('You have reached the maximum referral limit.'); return; }
       if (result === 'velocity_cap') { setSendError('You can only send 3 invites per 24 hours.'); return; }
       if (result === 'already_referred') { setSendError('This email has already been invited by someone else.'); return; }
-      if (result === 'unauthorized') { setSendError('Session expired. Please sign out and back in.'); return; }
-
-      setReferrals((prev) => [
-        { id: Date.now().toString(), invitee_email: email, status: 'pending', created_at: new Date().toISOString() },
-        ...prev,
-      ]);
+      setReferrals((prev) => [{ id: Date.now().toString(), invitee_email: email, status: 'pending', created_at: new Date().toISOString() }, ...prev]);
       setInviteEmail('');
     } catch (err: any) {
       setSendError(err?.message || 'Failed to send invite. Try again.');
-    } finally {
-      setSending(false);
-    }
+    } finally { setSending(false); }
+  }
+
+  async function handleEnterDraw() {
+    if (drawEntries >= 3) { setDrawMsg('You have used all 3 entries for this month.'); return; }
+    if (balance < 500) { setDrawMsg('You need at least 500 VC to enter.'); return; }
+    setDrawBusy(true); setDrawMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('enter_prize_draw' as any, { p_month: currentMonth });
+      if (error) throw error;
+      setDrawEntries((prev) => prev + 1);
+      setBalance((prev) => prev - 500);
+      setDrawMsg(`Entry ${drawEntries + 1}/3 confirmed!`);
+    } catch (err: any) {
+      setDrawMsg(err?.message || 'Entry failed. Try again.');
+    } finally { setDrawBusy(false); }
+  }
+
+  async function handlePurchaseBadge(type: 'bronze' | 'silver' | 'gold', cost: number) {
+    setBadgeBusy(true); setBadgeMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('purchase_badge' as any, { p_badge_type: type });
+      if (error) throw error;
+      setCurrentBadge(type);
+      setBalance((prev) => prev - cost);
+      setBadgeMsg(`${type.charAt(0).toUpperCase() + type.slice(1)} badge activated!`);
+    } catch (err: any) {
+      setBadgeMsg(err?.message || 'Purchase failed.');
+    } finally { setBadgeBusy(false); }
+  }
+
+  async function handleFeaturedInPeople() {
+    setFeaturedBusy(true); setFeaturedMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('feature_in_people_vc' as any);
+      if (error) throw error;
+      setBalance((prev) => prev - 1500);
+      const newUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
+      setFeaturedUntil(newUntil);
+      setFeaturedMsg('You are now featured in People for 3 days!');
+    } catch (err: any) {
+      setFeaturedMsg(err?.message || 'Purchase failed.');
+    } finally { setFeaturedBusy(false); }
   }
 
   function copyLink() {
-    navigator.clipboard.writeText(referralLink).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(referralLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }
+
+  const isFeaturedActive = featuredUntil ? new Date(featuredUntil) > new Date() : false;
 
   return (
     <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <style>{`input::placeholder{color:#555C7A;} .vc-scroll::-webkit-scrollbar{display:none;}`}</style>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-        <button
-          onClick={onBack}
-          style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-        >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Invite Friends</h1>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Vents Cents</h1>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
+      <div className="vc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 16px', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
 
         {/* Balance card */}
         <div style={{ background: 'linear-gradient(135deg, #1A0D2E, #0D1429)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '20px', padding: '20px', marginBottom: '20px', position: 'relative', overflow: 'hidden' }}>
@@ -159,91 +217,205 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <Coins size={22} color="#FFB830" />
             <span style={{ color: '#C4C9E0', fontSize: '14px', fontWeight: 600 }}>Vents Cents Balance</span>
+            {currentBadge && (
+              <span style={{ marginLeft: 'auto', fontSize: '16px' }}>
+                {BADGE_CONFIG.find(b => b.type === currentBadge)?.emoji}
+              </span>
+            )}
           </div>
           <p style={{ color: '#FFB830', fontSize: '36px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-            {balance.toLocaleString()}
-            <span style={{ fontSize: '16px', color: '#8B8FA8', marginLeft: '6px' }}>VC</span>
+            {balance.toLocaleString()}<span style={{ fontSize: '16px', color: '#8B8FA8', marginLeft: '6px' }}>VC</span>
           </p>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px' }}>
-            Use Vents Cents for in-app discounts on tickets.
-          </p>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px' }}>Earn by inviting friends, buying tickets, and completing your profile.</p>
           <div style={{ background: 'rgba(255,184,48,0.07)', border: '1px solid rgba(255,184,48,0.15)', borderRadius: '8px', padding: '8px 10px', marginTop: '10px' }}>
             <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600 }}>⚠ Vents Cents are not withdrawable or convertible to cash.</p>
           </div>
         </div>
 
-        {/* Progress */}
+        {/* ─── PRIZE DRAW ─── */}
+        <div style={{ background: '#131629', border: '1px solid rgba(255,184,48,0.2)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <Trophy size={18} color="#FFB830" />
+            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Monthly Prize Draw</span>
+            <span style={{ marginLeft: 'auto', color: '#8B8FA8', fontSize: '11px' }}>Draw in {monthCountdown()}</span>
+          </div>
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+            {[1,2,3].map(n => (
+              <div key={n} style={{ flex: 1, height: '6px', borderRadius: '3px', background: drawEntries >= n ? '#FFB830' : 'rgba(255,255,255,0.07)' }} />
+            ))}
+          </div>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>
+            <span style={{ color: '#FFB830', fontWeight: 700 }}>{drawEntries}/3</span> entries this month · 500 VC each
+          </p>
+          <button
+            onClick={handleEnterDraw}
+            disabled={drawBusy || drawEntries >= 3 || balance < 500}
+            style={{
+              width: '100%', background: drawEntries >= 3 ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #B8860B, #FFB830)',
+              border: 'none', borderRadius: '12px', padding: '12px',
+              color: drawEntries >= 3 ? '#555C7A' : '#000',
+              fontSize: '14px', fontWeight: 700, cursor: drawEntries >= 3 || balance < 500 ? 'not-allowed' : 'pointer',
+            }}
+          >
+            {drawBusy ? 'Entering…' : drawEntries >= 3 ? 'All entries used' : `Enter Draw · 500 VC`}
+          </button>
+          {drawMsg && <p style={{ color: drawMsg.includes('confirmed') ? '#10B981' : '#EF4444', fontSize: '12px', marginTop: '8px', textAlign: 'center' }}>{drawMsg}</p>}
+
+          {/* Past winners */}
+          {winners.length > 0 && (
+            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '8px' }}>PAST WINNERS</p>
+              {winners.map(w => (
+                <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,184,48,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <Trophy size={14} color="#FFB830" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{(w.users as any)?.username || (w.users as any)?.full_name || 'Anonymous'}</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{w.draw_month} · {w.prize_description}</p>
+                  </div>
+                  {w.delivered && <span style={{ color: '#10B981', fontSize: '10px', fontWeight: 700, background: 'rgba(16,185,129,0.1)', borderRadius: '6px', padding: '2px 8px' }}>Delivered</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ─── BADGES ─── */}
+        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <Star size={18} color="#A78BFA" />
+            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Profile Badges</span>
+          </div>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Badges show on your profile and in search results.</p>
+          {badgeMsg && <p style={{ color: badgeMsg.includes('activated') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{badgeMsg}</p>}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {BADGE_CONFIG.map(({ type, label, cost, color, emoji }) => {
+              const owned = currentBadge === type;
+              const lowerTier = (type === 'silver' && currentBadge === 'gold') || (type === 'bronze' && currentBadge && currentBadge !== 'bronze');
+              return (
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: owned ? `rgba(${color === '#CD7F32' ? '205,127,50' : color === '#C0C0C0' ? '192,192,192' : '255,215,0'},0.08)` : 'rgba(255,255,255,0.02)', border: `1px solid ${owned ? color + '40' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px' }}>
+                  <span style={{ fontSize: '24px' }}>{emoji}</span>
+                  <div style={{ flex: 1 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{label} Badge</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{cost.toLocaleString()} VC</p>
+                  </div>
+                  {owned ? (
+                    <span style={{ color, fontSize: '12px', fontWeight: 700 }}>Active</span>
+                  ) : lowerTier ? (
+                    <span style={{ color: '#555C7A', fontSize: '11px' }}>Owned higher</span>
+                  ) : (
+                    <button
+                      onClick={() => handlePurchaseBadge(type, cost)}
+                      disabled={badgeBusy || balance < cost}
+                      style={{ background: balance >= cost ? `linear-gradient(135deg, ${color}, ${color}bb)` : 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '8px', padding: '7px 14px', color: balance >= cost ? '#000' : '#555C7A', fontSize: '12px', fontWeight: 700, cursor: balance >= cost && !badgeBusy ? 'pointer' : 'not-allowed' }}
+                    >
+                      {badgeBusy ? '…' : 'Buy'}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* ─── FEATURED IN PEOPLE ─── */}
+        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+            <Zap size={18} color="#60A5FA" />
+            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Featured in People</span>
+          </div>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Appear at the top of the People section in Explore for 3 days.</p>
+          {isFeaturedActive && (
+            <div style={{ background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.2)', borderRadius: '8px', padding: '8px 12px', marginBottom: '10px' }}>
+              <p style={{ color: '#60A5FA', fontSize: '12px', fontWeight: 600 }}>Active until {new Date(featuredUntil!).toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+            </div>
+          )}
+          {featuredMsg && <p style={{ color: featuredMsg.includes('now') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{featuredMsg}</p>}
+          <button
+            onClick={handleFeaturedInPeople}
+            disabled={featuredBusy || balance < 1500}
+            style={{
+              width: '100%', background: balance >= 1500 ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)',
+              border: 'none', borderRadius: '12px', padding: '12px',
+              color: balance >= 1500 ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700,
+              cursor: balance >= 1500 && !featuredBusy ? 'pointer' : 'not-allowed',
+            }}
+          >
+            {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · 1,500 VC`}
+          </button>
+        </div>
+
+        {/* ─── EARN VC GUIDE ─── */}
+        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>HOW TO EARN VENTS CENTS</p>
+          {[
+            { label: 'Invite a friend (you)', amount: '+300 VC', icon: '👥' },
+            { label: 'Friend joins (them)', amount: '+150 VC', icon: '🎉' },
+            { label: 'Buy a ticket', amount: '+50 VC', icon: '🎟️' },
+            { label: 'Leave a review', amount: '+25 VC', icon: '⭐' },
+            { label: 'Complete profile', amount: '+100 VC', icon: '✅' },
+          ].map(item => (
+            <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span>{item.icon}</span>
+                <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{item.label}</span>
+              </div>
+              <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700 }}>{item.amount}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ─── REFERRAL SECTION ─── */}
         <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={16} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Referral Progress</span>
+              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Invite Friends</span>
             </div>
             <span style={{ color: '#A855F7', fontSize: '13px', fontWeight: 700 }}>{joinedCount} / {MAX_REFERRALS} joined</span>
           </div>
-          <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px' }}>
+          <div style={{ height: '6px', background: 'rgba(255,255,255,0.06)', borderRadius: '3px', marginBottom: '8px' }}>
             <div style={{ height: '100%', width: `${(joinedCount / MAX_REFERRALS) * 100}%`, background: 'linear-gradient(90deg, #7B2FBE, #A855F7)', borderRadius: '3px', transition: 'width 0.4s ease' }} />
           </div>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '8px' }}>
-            Earn <span style={{ color: '#FFB830', fontWeight: 700 }}>{CENTS_PER_REFERRAL} VC</span> for each friend who joins. Up to {MAX_REFERRALS} invites total.
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '14px' }}>
+            You get <span style={{ color: '#FFB830', fontWeight: 700 }}>{CENTS_PER_REFERRAL} VC</span> · friend gets <span style={{ color: '#FFB830', fontWeight: 700 }}>150 VC</span>
           </p>
-        </div>
 
-        {/* Copy link */}
-        <div style={{ marginBottom: '20px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '8px' }}>YOUR REFERRAL LINK</p>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <div style={{ flex: 1, background: '#131629', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '11px 14px', color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {/* Copy link */}
+          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '6px' }}>YOUR REFERRAL LINK</p>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+            <div style={{ flex: 1, background: '#0D0F1E', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 12px', color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {referralLink}
             </div>
-            <button
-              onClick={copyLink}
-              style={{ background: copied ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.12)', border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.3)'}`, borderRadius: '12px', padding: '11px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: copied ? '#10B981' : '#A855F7', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}
-            >
+            <button onClick={copyLink} style={{ background: copied ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.12)', border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.3)'}`, borderRadius: '10px', padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: copied ? '#10B981' : '#A855F7', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>
               {copied ? <Check size={14} /> : <Copy size={14} />}
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
+
+          {/* Send by email */}
+          {canInviteMore && (
+            <>
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '6px' }}>INVITE BY EMAIL ({MAX_REFERRALS - referrals.length} left)</p>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                <input type="email" value={inviteEmail} onChange={(e) => { setInviteEmail(e.target.value); setSendError(''); }} placeholder="friend@example.com"
+                  style={{ flex: 1, background: '#0D0F1E', border: `1px solid ${sendError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.07)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
+                <button onClick={handleSendInvite} disabled={sending || !inviteEmail.trim()}
+                  style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '10px', padding: '10px 16px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1, flexShrink: 0 }}>
+                  {sending ? '...' : 'Invite'}
+                </button>
+              </div>
+              {sendError && <p style={{ color: '#EF4444', fontSize: '12px' }}>{sendError}</p>}
+            </>
+          )}
         </div>
 
-        {/* Send by email */}
-        {canInviteMore && (
-          <div style={{ marginBottom: '20px' }}>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '8px' }}>INVITE BY EMAIL ({MAX_REFERRALS - referrals.length} left)</p>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input
-                type="email"
-                value={inviteEmail}
-                onChange={(e) => { setInviteEmail(e.target.value); setSendError(''); }}
-                placeholder="friend@example.com"
-                style={{ flex: 1, background: '#131629', border: `1px solid ${sendError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.07)'}`, borderRadius: '12px', padding: '11px 14px', color: '#F0F0FF', fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif' }}
-              />
-              <button
-                onClick={handleSendInvite}
-                disabled={sending || !inviteEmail.trim()}
-                style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '11px 18px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1, flexShrink: 0 }}
-              >
-                {sending ? '...' : 'Invite'}
-              </button>
-            </div>
-            {sendError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px' }}>{sendError}</p>}
-          </div>
-        )}
-
         {/* Invite list */}
-        {loading ? (
-          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', paddingTop: '20px' }}>Loading...</p>
-        ) : referrals.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <Gift size={40} color="#2A2D3E" />
-            <p style={{ color: '#8B8FA8', fontSize: '14px', marginTop: '10px' }}>No invites sent yet.</p>
-            <p style={{ color: '#555C7A', fontSize: '12px', marginTop: '4px' }}>Invite up to {MAX_REFERRALS} friends and earn Vents Cents when they join.</p>
-          </div>
-        ) : (
+        {!loading && referrals.length > 0 && (
           <div>
             <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '8px' }}>YOUR INVITES</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {/* Cancel confirmation overlay */}
               {confirmCancel && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '24px' }}>
                   <div style={{ background: '#131629', borderRadius: '20px', padding: '24px', maxWidth: '320px', width: '100%', border: '1px solid rgba(239,68,68,0.2)' }}>
@@ -262,22 +434,15 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
                 <div key={ref.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ref.invitee_email}</p>
-                    <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '2px' }}>
-                      {new Date(ref.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </p>
+                    <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '2px' }}>{new Date(ref.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
                   </div>
                   {ref.status === 'pending' ? (
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                       <span style={{ background: 'rgba(245,158,11,0.1)', color: '#F59E0B', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', padding: '3px 10px', fontSize: '11px', fontWeight: 700 }}>Pending</span>
-                      <button
-                        onClick={() => setConfirmCancel(ref.id)}
-                        style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '3px 8px', color: '#EF4444', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}
-                      >Cancel</button>
+                      <button onClick={() => setConfirmCancel(ref.id)} style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '3px 8px', color: '#EF4444', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                     </div>
                   ) : (
-                    <span style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', padding: '3px 10px', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>
-                      +{CENTS_PER_REFERRAL} VC
-                    </span>
+                    <span style={{ background: 'rgba(16,185,129,0.1)', color: '#10B981', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '8px', padding: '3px 10px', fontSize: '11px', fontWeight: 700, flexShrink: 0 }}>+{CENTS_PER_REFERRAL} VC</span>
                   )}
                 </div>
               ))}
