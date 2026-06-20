@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, X, MapPin, User, MessageCircle, CheckCircle } from 'lucide-react';
+import { Search, X, MapPin, User, CheckCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 
@@ -36,14 +36,12 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
 export function ExploreScreen({
   onUserPress,
 }: ExploreScreenProps) {
-  const [exploreTab, setExploreTab] = useState<'people' | 'inbox'>('people');
 
   // User Search state
   const [userQuery, setUserQuery] = useState('');
   const [searchedUsers, setSearchedUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   useEffect(() => {
-    if (exploreTab !== 'people') return;
     if (!userQuery.trim()) {
       setSearchedUsers([]);
       return;
@@ -68,7 +66,7 @@ export function ExploreScreen({
 
     const debounceHandler = setTimeout(searchUsers, 300);
     return () => clearTimeout(debounceHandler);
-  }, [userQuery, exploreTab]);
+  }, [userQuery]);
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
@@ -80,36 +78,9 @@ export function ExploreScreen({
         <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Discover events and creators in Nigeria</p>
       </div>
 
-      {/* Segment Selector */}
-      <div style={{ padding: '0 16px 12px', display: 'flex', gap: '8px', flexShrink: 0 }}>
-        {(['people', 'inbox'] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setExploreTab(tab)}
-            style={{
-              flex: 1,
-              padding: '8px 0',
-              borderRadius: '12px',
-              border: 'none',
-              background: exploreTab === tab ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
-              color: '#fff',
-              fontSize: '13px',
-              fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif',
-              cursor: 'pointer',
-              boxShadow: exploreTab === tab ? '0 4px 12px rgba(123,47,190,0.2)' : 'none',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {tab === 'people' ? '👥 People' : '💬 Inbox'}
-          </button>
-        ))}
-      </div>
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
-        {exploreTab === 'people' ? (
-          /* ── People Tab: search attendees & organizers ── */
           <div>
             {/* User Search Bar */}
             <div className="px-4 mb-4">
@@ -229,20 +200,6 @@ export function ExploreScreen({
               </div>
             )}
           </div>
-        ) : (
-          /* ── Inbox Tab: coming-soon state ── */
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 32px', gap: '16px', textAlign: 'center' }}>
-            <div style={{ width: '72px', height: '72px', borderRadius: '24px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <MessageCircle size={32} color="#A855F7" />
-            </div>
-            <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
-              Messaging is coming soon
-            </p>
-            <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, margin: 0 }}>
-              Direct messaging between attendees and creators is on the way. Stay tuned.
-            </p>
-          </div>
-        )}
       </div>
 
     </div>

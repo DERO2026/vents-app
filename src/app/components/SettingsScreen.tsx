@@ -1236,8 +1236,6 @@ export function SettingsScreen({
           <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('/terms', '_blank')} />
           <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => setSubScreen('help')} />
-          <Divider />
-          <SettingRow icon={Star} label="Rate VENTS" accent onPress={() => window.open('https://play.google.com/store', '_blank')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
