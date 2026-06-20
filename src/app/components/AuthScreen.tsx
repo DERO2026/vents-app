@@ -319,6 +319,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           throw new Error('This email address was used on a deleted account and cannot be re-registered. Contact ventsappltd@gmail.com if you believe this is an error.');
         }
 
+        // Block re-signup with a previously deleted phone number
+        if (normalizedPhone) {
+          const { data: deletedPhoneRow } = await insforge.database
+            .from('deleted_phones')
+            .select('phone')
+            .eq('phone', normalizedPhone)
+            .maybeSingle();
+          if (deletedPhoneRow) {
+            throw new Error('This phone number was used on a deleted account and cannot be re-registered. Contact ventsappltd@gmail.com if you believe this is an error.');
+          }
+        }
+
         const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
         const userMetaPayload = {
           full_name: name.trim(),
