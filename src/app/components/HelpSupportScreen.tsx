@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, ChevronDown, ChevronUp, Mail, MessageCircle } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronUp, Mail, MessageCircle, Phone } from 'lucide-react';
 
 interface HelpSupportScreenProps {
   onBack: () => void;
@@ -40,7 +40,7 @@ const FAQS = [
   },
   {
     q: 'How do I delete my account?',
-    a: 'Email ventsappltd@gmail.com from your registered email address and request account deletion. Under Nigeria\'s Data Protection Act you have the right to this, and we\'ll action it within a reasonable period.',
+    a: 'Go to Profile → Settings → scroll to the bottom → tap "Delete Account." You\'ll be asked to confirm. Your data is anonymised immediately and you cannot reverse this. If you have trouble, email ventsappltd@gmail.com.',
   },
 ];
 
@@ -91,6 +91,15 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
           >
             <Mail size={16} color="#A78BFA" />
             ventsappltd@gmail.com
+          </a>
+          <a
+            href="https://wa.me/2348000000000"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#22C55E', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}
+          >
+            <Phone size={16} color="#22C55E" />
+            WhatsApp Support
           </a>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8B8FA8', fontSize: '12px' }}>
             <MessageCircle size={14} color="#8B8FA8" />

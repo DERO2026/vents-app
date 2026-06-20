@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Minus, Plus, CheckCircle } from 'lucide-react';
+import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 
@@ -12,6 +12,7 @@ interface TicketSelectScreenProps {
 export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectScreenProps) {
   const ticketTypes = event.ticketTypes || [];
   const [selectedId, setSelectedId] = useState(ticketTypes[0]?.id ?? '');
+  const [flyerOpen, setFlyerOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>(
     Object.fromEntries(ticketTypes.map((t) => [t.id, 0]))
   );
@@ -45,20 +46,72 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
         scrollbarWidth: 'none',
       }}
     >
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '12px',
-          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
-        }}
-      >
+      {/* Full-screen flyer lightbox */}
+      {flyerOpen && (
+        <div
+          onClick={() => setFlyerOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 1000,
+            background: 'rgba(0,0,0,0.95)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+        >
+          <img
+            src={event.image}
+            alt={event.title}
+            style={{ maxWidth: '100%', maxHeight: '100%', borderRadius: '12px', objectFit: 'contain' }}
+          />
+          <button
+            onClick={() => setFlyerOpen(false)}
+            style={{
+              position: 'absolute',
+              top: 'calc(16px + env(safe-area-inset-top))',
+              right: '16px',
+              background: 'rgba(255,255,255,0.12)',
+              border: 'none',
+              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              color: '#fff',
+              fontSize: '18px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Full-width hero flyer */}
+      <div style={{ position: 'relative', flexShrink: 0 }}>
+        <img
+          src={event.image}
+          alt={event.title}
+          style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block' }}
+        />
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'linear-gradient(to bottom, rgba(6,10,18,0.55) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,0.85) 100%)',
+        }} />
+        {/* Back button */}
         <button
           onClick={onBack}
           style={{
-            background: '#131629',
-            border: '1px solid rgba(255,255,255,0.08)',
+            position: 'absolute',
+            top: 'calc(14px + env(safe-area-inset-top))',
+            left: '16px',
+            background: 'rgba(6,10,18,0.6)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.12)',
             borderRadius: '50%',
             width: '36px',
             height: '36px',
@@ -68,52 +121,52 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color="#F0F0FF" />
         </button>
-        <div>
-          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>Select Tickets</h1>
-          <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{event.title}</p>
+        {/* Tap to expand */}
+        <button
+          onClick={() => setFlyerOpen(true)}
+          style={{
+            position: 'absolute',
+            top: 'calc(14px + env(safe-area-inset-top))',
+            right: '16px',
+            background: 'rgba(6,10,18,0.6)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255,255,255,0.12)',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+          }}
+        >
+          <Maximize2 size={14} color="#F0F0FF" />
+        </button>
+        {/* Event info overlay */}
+        <div style={{ position: 'absolute', bottom: '12px', left: '16px', right: '16px' }}>
+          <span
+            style={{
+              color: '#A78BFA',
+              fontSize: '10px',
+              fontWeight: 600,
+              background: 'rgba(167,139,250,0.2)',
+              backdropFilter: 'blur(4px)',
+              padding: '2px 8px',
+              borderRadius: '4px',
+              display: 'inline-block',
+              marginBottom: '4px',
+            }}
+          >
+            {event.category}
+          </span>
+          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0, lineHeight: 1.2 }}>{event.title}</h1>
+          <p style={{ color: 'rgba(240,240,255,0.7)', fontSize: '12px', margin: '3px 0 0' }}>{event.date} · {event.venue}</p>
         </div>
       </div>
 
-      <div style={{ flex: 1, padding: '4px 16px 140px' }}>
-        {/* Event mini card */}
-        <div
-          style={{
-            background: '#131629',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '16px',
-            display: 'flex',
-            overflow: 'hidden',
-            marginBottom: '20px',
-          }}
-        >
-          <img
-            src={event.image}
-            alt={event.title}
-            style={{ width: '80px', height: '80px', objectFit: 'cover', flexShrink: 0 }}
-          />
-          <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-            <span
-              style={{
-                color: '#A78BFA',
-                fontSize: '10px',
-                fontWeight: 600,
-                background: 'rgba(167,139,250,0.12)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                alignSelf: 'flex-start',
-                marginBottom: '4px',
-              }}
-            >
-              {event.category}
-            </span>
-            <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{event.title}</span>
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-              {event.date} · {event.venue}
-            </span>
-          </div>
-        </div>
+      <div style={{ flex: 1, padding: '16px 16px 140px' }}>
 
         {/* Ticket types */}
         <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '12px' }}>
