@@ -140,6 +140,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [banInfo, setBanInfo] = useState<null | { status: 'suspended' | 'deleted'; until: string | null }>(null);
 
 
+  const [dob, setDob] = useState('');
+  const [dobError, setDobError] = useState<string | null>(null);
+
   const signupFileInputRef = useRef<HTMLInputElement>(null);
   const [signupAvatarUrl, setSignupAvatarUrl] = useState('');
   const [signupAvatarKey, setSignupAvatarKey] = useState('');
@@ -205,7 +208,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
          phone.trim().length > 0 &&
          name.trim().length > 0 &&
          !!signupState &&
-         !!role)
+         !!role &&
+         !!dob && !dobError)
       : mode === 'reset'
       ? (password.length > 0 && confirmPassword.length > 0 && password === confirmPassword)
       : (email.length > 0 && password.length > 0)
@@ -223,7 +227,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
       if (profile) {
         const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
-        const payload = {
+        const payload: Record<string, any> = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
           phone_number: phone.trim(),
@@ -231,6 +235,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           role: strictRole,
           avatar_url: avatarUrl || signupAvatarUrl
         };
+        if (dob) payload.date_of_birth = dob;
 
         await insforge.database.from('users').update(payload).eq('id', userId);
 
@@ -308,6 +313,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         if (!signupState && !selectedState) throw new Error('State is required.');
         if (!role) throw new Error('Role is required.');
+        if (!dob) throw new Error('Date of birth is required.');
+        const dobDate = new Date(dob);
+        const ageDiff = Date.now() - dobDate.getTime();
+        const ageYears = Math.floor(ageDiff / (365.25 * 24 * 60 * 60 * 1000));
+        if (ageYears < 13) throw new Error('You must be at least 13 years old to create an account.');
 
         // Block re-signup with a previously deleted email
         const { data: deletedRow } = await insforge.database
@@ -1057,6 +1067,37 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   }}
                   type="tel"
                 />
+              )}
+              {mode === 'signup' && (
+                <div>
+                  <label style={{ display: 'block', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.04em' }}>
+                    DATE OF BIRTH
+                  </label>
+                  <input
+                    type="date"
+                    value={dob}
+                    max={new Date(Date.now() - 13 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setDob(v);
+                      if (v) {
+                        const age = Math.floor((Date.now() - new Date(v).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
+                        setDobError(age < 13 ? 'You must be at least 13 years old.' : null);
+                      } else {
+                        setDobError(null);
+                      }
+                    }}
+                    style={{
+                      width: '100%', background: '#131629',
+                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: '14px', padding: '14px 16px',
+                      color: dob ? '#F0F0FF' : '#8B8FA8', fontSize: '14px',
+                      outline: 'none', boxSizing: 'border-box',
+                      colorScheme: 'dark',
+                    }}
+                  />
+                  {dobError && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>{dobError}</p>}
+                </div>
               )}
               {mode !== 'forgot' && (
                 <InputRow

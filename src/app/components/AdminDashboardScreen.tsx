@@ -34,7 +34,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'system';
 
 interface EventRow {
   id: string;
@@ -132,6 +132,49 @@ export function AdminDashboardScreen({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // VC Dashboard state
+  const [vcTxns, setVcTxns] = useState<any[]>([]);
+  const [vcLoading, setVcLoading] = useState(false);
+  const [vcTransfer, setVcTransfer] = useState({ userId: '', amount: '', reason: '' });
+  const [vcTransferBusy, setVcTransferBusy] = useState(false);
+  const [vcMsg, setVcMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tab !== 'vc') return;
+    setVcLoading(true);
+    insforge.database
+      .from('vc_transactions')
+      .select('id, user_id, amount, type, status, reference_id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100)
+      .then(({ data }) => { setVcTxns(data || []); setVcLoading(false); });
+  }, [tab]);
+
+  const vcTotalCirculation = vcTxns
+    .filter(t => t.type === 'credit' && t.status === 'active')
+    .reduce((s, t) => s + Number(t.amount), 0);
+
+  const handleVcAdminTransfer = async () => {
+    if (!vcTransfer.userId.trim() || !vcTransfer.amount || Number(vcTransfer.amount) <= 0) {
+      setVcMsg('Enter a user ID and a positive amount.'); return;
+    }
+    setVcTransferBusy(true); setVcMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('admin_credit_vents_cents' as any, {
+        p_user_id: vcTransfer.userId.trim(),
+        p_amount: Number(vcTransfer.amount),
+        p_reason: vcTransfer.reason || 'Admin transfer',
+      });
+      if (error) throw error;
+      setVcMsg(`✓ ${vcTransfer.amount} VC credited to ${vcTransfer.userId.slice(0, 8)}…`);
+      setVcTransfer({ userId: '', amount: '', reason: '' });
+    } catch (e: any) {
+      setVcMsg(e.message || 'Transfer failed.');
+    } finally {
+      setVcTransferBusy(false);
+    }
+  };
 
   // System Controller state
   const [maintenanceMode, setMaintenanceMode] = useState(false);
@@ -507,6 +550,7 @@ export function AdminDashboardScreen({
     { key: 'events' as Tab, label: 'Events', icon: <Shield size={14} /> },
     { key: 'logs' as Tab, label: 'Audit Log', icon: <ClipboardList size={14} /> },
     { key: 'reports' as Tab, label: 'Reports', icon: <Flag size={14} /> },
+    { key: 'vc' as Tab, label: 'VC', icon: <Swords size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Zap size={14} /> }] : []),
   ];
 
@@ -870,6 +914,100 @@ export function AdminDashboardScreen({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {/* ════════════════ VENTS CENTS DASHBOARD ══════════════════════════ */}
+      {tab === 'vc' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+
+          {/* Overview cards */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            {[
+              { label: 'VC in Circulation', value: vcTotalCirculation.toLocaleString() },
+              { label: 'Total Transactions', value: vcTxns.length.toString() },
+              { label: 'Credits', value: vcTxns.filter(t => t.type === 'credit').length.toString() },
+              { label: 'Debits', value: vcTxns.filter(t => t.type === 'debit').length.toString() },
+            ].map(card => (
+              <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+                <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
+                <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* VC Transactions log */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Transactions (last 100)</div>
+            {vcLoading ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
+            ) : vcTxns.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>No transactions yet.</div>
+            ) : (
+              <div style={{ maxHeight: '280px', overflowY: 'auto' }}>
+                {vcTxns.map(txn => (
+                  <div key={txn.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                    <div>
+                      <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{txn.type.toUpperCase()} — {txn.status}</div>
+                      <div style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>{txn.user_id?.slice(0, 12)}… · {new Date(txn.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <div style={{ color: txn.type === 'credit' ? '#10B981' : '#EF4444', fontSize: '14px', fontWeight: 700 }}>
+                      {txn.type === 'credit' ? '+' : '-'}{Number(txn.amount).toLocaleString()} VC
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* VC Purchases */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Purchases</div>
+            <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+              {vcTxns.filter(t => t.type === 'credit' && t.reference_id?.startsWith('purchase')).length === 0 ? (
+                <div style={{ padding: '20px 16px', color: '#8B8FA8', fontSize: '12px' }}>No purchase records with reference prefix "purchase".</div>
+              ) : vcTxns.filter(t => t.type === 'credit' && t.reference_id?.startsWith('purchase')).map(txn => (
+                <div key={txn.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
+                  <div style={{ color: '#F0F0FF', fontSize: '12px' }}>{txn.user_id?.slice(0, 12)}…</div>
+                  <div style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>+{Number(txn.amount).toLocaleString()} VC</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Admin Transfer */}
+          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>Admin Transfer</div>
+            <input
+              placeholder="User ID (UUID)"
+              value={vcTransfer.userId}
+              onChange={e => setVcTransfer(v => ({ ...v, userId: e.target.value }))}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <input
+              placeholder="Amount (VC)"
+              type="number"
+              min="1"
+              value={vcTransfer.amount}
+              onChange={e => setVcTransfer(v => ({ ...v, amount: e.target.value }))}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <input
+              placeholder="Reason (optional)"
+              value={vcTransfer.reason}
+              onChange={e => setVcTransfer(v => ({ ...v, reason: e.target.value }))}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            {vcMsg && <div style={{ color: vcMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{vcMsg}</div>}
+            <button
+              onClick={handleVcAdminTransfer}
+              disabled={vcTransferBusy}
+              style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: vcTransferBusy ? 'not-allowed' : 'pointer', opacity: vcTransferBusy ? 0.6 : 1 }}
+            >
+              {vcTransferBusy ? 'Transferring…' : 'Credit VC to User'}
+            </button>
+          </div>
+
         </div>
       )}
 

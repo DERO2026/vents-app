@@ -49,15 +49,21 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
   const handleUpload = async (file: File) => {
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop() || 'jpg';
-      const key = `${userId}/${Date.now()}.${ext}`;
+      const hc = (insforge as any).getHttpClient?.();
+      const token: string | null = hc?.userToken ?? null;
+      if (!token) throw new Error('Session expired. Please sign in again.');
       const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
-
-      const { url, key: savedKey, error: uploadError } = await insforge.storage
-        .from('highlights')
-        .uploadAuto(key, file, { upsert: false });
-
-      if (uploadError) throw uploadError;
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(
+        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/highlights/objects`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      );
+      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+      const data = await res.json();
+      const key: string | null = data?.key ?? null;
+      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/highlights/objects/${encodeURIComponent(key)}` : null);
+      if (!url) throw new Error('No URL returned from upload');
 
       await insforge.database.from('highlights').insert([{
         user_id: userId,

@@ -1272,6 +1272,11 @@ export default function App() {
                 setSelectedUser(user);
                 navigateTo('user-profile');
               }}
+              currentUserId={currentUser?.id}
+              onOpenConversation={(userId, userName, avatarUrl) => {
+                setConversationUser({ id: userId, name: userName, avatarUrl });
+                navigateTo('conversation');
+              }}
             />
           )}
           {screen === 'saved' && (
@@ -1543,10 +1548,15 @@ export default function App() {
                 }
               }}
               onScanTickets={(eventId) => {
-                // Find the event and navigate to scanner
                 const evtToScan = dbEvents.find(e => e.id === eventId);
                 if (evtToScan) setSelectedEvent(evtToScan);
                 navigateTo('checkin-scanner');
+              }}
+              onEventPress={(event) => {
+                // Navigate to event management / analytics for this event
+                const mapped = dbEvents.find(e => e.id === event.id);
+                if (mapped) setSelectedEvent(mapped);
+                navigateTo('event-details');
               }}
             />
           )}

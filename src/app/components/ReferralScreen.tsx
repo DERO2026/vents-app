@@ -92,10 +92,33 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     setSending(true);
     setSendError('');
     try {
-      const { error } = await insforge.database
-        .from('referrals')
-        .insert([{ referrer_id: currentUser.id, invitee_email: email, status: 'pending' }]);
+      // Hash the email for dedup (using a simple hex hash via SubtleCrypto)
+      let emailHash = '';
+      try {
+        const normalized = email.trim().toLowerCase();
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(normalized));
+        emailHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch { /* ignore — hash is optional */ }
+
+      // Generate a simple device fingerprint
+      const fp = [navigator.userAgent, navigator.language, screen.width, screen.height, navigator.hardwareConcurrency].join('|');
+      let fpHash = '';
+      try {
+        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fp));
+        fpHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+      } catch { fpHash = fp.slice(0, 64); }
+
+      const { data: result, error } = await insforge.database.rpc('create_referral' as any, {
+        p_invitee_email: email.trim().toLowerCase(),
+        p_email_hash: emailHash,
+        p_fingerprint: fpHash,
+      });
       if (error) throw error;
+      if (result === 'limit_reached') { setSendError('You have reached the maximum referral limit.'); return; }
+      if (result === 'velocity_cap') { setSendError('You can only send 3 invites per 24 hours.'); return; }
+      if (result === 'already_referred') { setSendError('This email has already been invited by someone else.'); return; }
+      if (result === 'unauthorized') { setSendError('Session expired. Please sign out and back in.'); return; }
+
       setReferrals((prev) => [
         { id: Date.now().toString(), invitee_email: email, status: 'pending', created_at: new Date().toISOString() },
         ...prev,

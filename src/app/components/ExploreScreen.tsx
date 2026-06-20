@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Search, X, MapPin, User, CheckCircle } from 'lucide-react';
+import { Search, X, MapPin, User, CheckCircle, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
+  currentUserId?: string;
+  onOpenConversation?: (userId: string, userName: string, avatarUrl?: string) => void;
 }
 
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
@@ -35,7 +37,50 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
 
 export function ExploreScreen({
   onUserPress,
+  currentUserId,
+  onOpenConversation,
 }: ExploreScreenProps) {
+
+  const [activeTab, setActiveTab] = useState<'people' | 'chats'>('people');
+
+  // Chats state
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loadingChats, setLoadingChats] = useState(false);
+
+  useEffect(() => {
+    if (activeTab !== 'chats' || !currentUserId) return;
+    setLoadingChats(true);
+    insforge.database
+      .from('direct_messages')
+      .select('id, sender_id, recipient_id, body, created_at, read_at')
+      .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
+      .order('created_at', { ascending: false })
+      .limit(200)
+      .then(async ({ data, error }) => {
+        if (error || !data) { setLoadingChats(false); return; }
+        // Group by conversation partner
+        const seen = new Map<string, any>();
+        for (const msg of data) {
+          const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
+          if (!seen.has(partnerId)) seen.set(partnerId, msg);
+        }
+        // Fetch partner profiles
+        const partnerIds = [...seen.keys()];
+        if (partnerIds.length === 0) { setConversations([]); setLoadingChats(false); return; }
+        const { data: profiles } = await insforge.database
+          .from('public_profiles')
+          .select('id, full_name, username, avatar_url')
+          .in('id', partnerIds);
+        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+        const convos = partnerIds.map(pid => ({
+          partnerId: pid,
+          lastMsg: seen.get(pid),
+          profile: profileMap.get(pid) || null,
+        }));
+        setConversations(convos);
+        setLoadingChats(false);
+      });
+  }, [activeTab, currentUserId]);
 
   // User Search state
   const [userQuery, setUserQuery] = useState('');
@@ -68,19 +113,103 @@ export function ExploreScreen({
     return () => clearTimeout(debounceHandler);
   }, [userQuery]);
 
+  const timeAgo = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  };
+
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
       {/* Header */}
-      <div className="px-4 pb-3" style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))', flexShrink: 0 }}>
+      <div className="px-4 pb-0" style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))', flexShrink: 0 }}>
         <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
           Explore
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Search for people by @username</p>
+      </div>
+
+      {/* Tab bar */}
+      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, padding: '0 16px' }}>
+        {(['people', 'chats'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              padding: '10px 16px 12px',
+              color: activeTab === tab ? '#F0F0FF' : '#8B8FA8',
+              fontSize: '14px', fontWeight: 600,
+              position: 'relative',
+            }}
+          >
+            {tab === 'people' ? 'People' : 'Chats'}
+            {activeTab === tab && (
+              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)', borderRadius: '2px' }} />
+            )}
+          </button>
+        ))}
       </div>
 
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
+
+        {/* ── Chats tab ── */}
+        {activeTab === 'chats' && (
+          <div style={{ padding: '12px 16px' }}>
+            {!currentUserId ? (
+              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '14px' }}>Sign in to see your chats.</p>
+            ) : loadingChats ? (
+              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '14px' }}>Loading...</p>
+            ) : conversations.length === 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
+                <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MessageCircle size={28} color="#6B7280" />
+                </div>
+                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>No conversations yet</p>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>Message an organizer or attendee to start</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {conversations.map(({ partnerId, lastMsg, profile }) => {
+                  const name = profile?.full_name || profile?.username || 'User';
+                  const username = profile?.username || '';
+                  const avatarUrl = profile?.avatar_url;
+                  const initial = name[0]?.toUpperCase() || 'U';
+                  const isUnread = !lastMsg.read_at && lastMsg.sender_id !== currentUserId;
+                  return (
+                    <div
+                      key={partnerId}
+                      onClick={() => onOpenConversation?.(partnerId, name, avatarUrl)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '14px', cursor: 'pointer', background: isUnread ? 'rgba(167,139,250,0.06)' : 'transparent' }}
+                    >
+                      <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                        {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: isUnread ? 700 : 500 }}>{name}</span>
+                          <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{timeAgo(lastMsg.created_at)}</span>
+                        </div>
+                        <span style={{ color: isUnread ? '#C4C9E0' : '#8B8FA8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
+                        </span>
+                      </div>
+                      {isUnread && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#A855F7', flexShrink: 0 }} />}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── People tab ── */}
+        {activeTab === 'people' && (
           <div>
             {/* User Search Bar */}
             <div className="px-4 mb-4">
@@ -200,6 +329,7 @@ export function ExploreScreen({
               </div>
             )}
           </div>
+        )}
       </div>
 
     </div>

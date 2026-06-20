@@ -20,6 +20,7 @@ interface OrganizerDashboardProps {
   onNavigate?: (screen: string) => void;
   setActiveView: (view: 'attendee' | 'organizer') => void;
   onScanTickets?: (eventId: string) => void;
+  onEventPress?: (event: any) => void;
 }
 
 export function OrganizerDashboard({
@@ -28,6 +29,7 @@ export function OrganizerDashboard({
   onNavigate = () => {},
   setActiveView = () => {},
   onScanTickets,
+  onEventPress,
 }: OrganizerDashboardProps) {
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
@@ -540,6 +542,7 @@ export function OrganizerDashboard({
                   return (
                     <div
                       key={event.id}
+                      onClick={() => onEventPress?.(event)}
                       style={{
                         background: '#131629',
                         border: '1px solid rgba(255,255,255,0.06)',
@@ -548,6 +551,7 @@ export function OrganizerDashboard({
                         display: 'flex',
                         gap: '16px',
                         alignItems: 'center',
+                        cursor: onEventPress ? 'pointer' : 'default',
                       }}
                     >
                       <img

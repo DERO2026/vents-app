@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
 import {
   Settings,
   Bell,
@@ -54,6 +55,8 @@ export function ProfileScreen({
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
+  const [highlightData, setHighlightData] = useState<{ items: any[]; startIndex: number } | null>(null);
+  const [highlightRefresh, setHighlightRefresh] = useState(0);
 
   useEffect(() => {
     async function fetchStats() {
@@ -343,6 +346,24 @@ export function ProfileScreen({
           </div>
         </div>
 
+        {/* Highlights strip — own profile */}
+        {currentUser?.id && (
+          <div style={{ marginBottom: '4px' }}>
+            <HighlightsStrip
+              userId={currentUser.id}
+              isOwnProfile={true}
+              onHighlightClick={(items, startIndex) => setHighlightData({ items, startIndex })}
+              refreshTrigger={highlightRefresh}
+            />
+          </div>
+        )}
+        {highlightData && (
+          <HighlightsModal
+            highlights={highlightData.items}
+            startIndex={highlightData.startIndex}
+            onClose={() => { setHighlightData(null); setHighlightRefresh(r => r + 1); }}
+          />
+        )}
 
         {/* Recent ticket */}
         {tickets.length > 0 && (
