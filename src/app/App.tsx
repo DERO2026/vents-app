@@ -1110,15 +1110,14 @@ export default function App() {
     >
       <style>{`
         .light-theme { color-scheme: light; }
+        .phone-frame { height: 100dvh; height: 100svh; max-height: 100dvh; max-height: 100svh; }
       `}</style>
       {/* Phone frame */}
       <div
-        className="relative overflow-hidden"
+        className="phone-frame relative overflow-hidden"
         style={{
           width: '390px',
-          height: '100dvh',
           maxWidth: '100vw',
-          maxHeight: '100dvh',
           background: '#000000',
         }}
       >
@@ -1475,7 +1474,7 @@ export default function App() {
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, bio')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role')
                   .eq('id', organizerId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
