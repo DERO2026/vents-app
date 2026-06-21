@@ -274,14 +274,29 @@ export default function App() {
             if (refreshRes.ok) {
               const refreshJson = await refreshRes.json();
               const at = refreshJson.accessToken || refreshJson.access_token;
-              if (at) hc.userToken = at;
+              if (at) {
+                hc.userToken = at;
+                // Try user info from refresh response first, then via direct API call
+                sessionUserId = refreshJson.user?.id || null;
+                sessionUserEmail = refreshJson.user?.email || null;
+                if (!sessionUserId) {
+                  try {
+                    const userRes = await fetch(`${baseUrl}/api/auth/user`, {
+                      headers: { Authorization: `Bearer ${at}` },
+                    });
+                    if (userRes.ok) {
+                      const ud = await userRes.json();
+                      sessionUserId = ud.user?.id || ud.id || null;
+                      sessionUserEmail = ud.user?.email || ud.email || null;
+                    }
+                  } catch { /* ignore */ }
+                }
+              }
               const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
               if (newRt) {
                 hc.refreshToken = newRt;
                 sessionStorage.setItem('vents_rt', newRt);
               }
-              sessionUserId = refreshJson.user?.id || null;
-              sessionUserEmail = refreshJson.user?.email || null;
             } else {
               sessionStorage.removeItem('vents_rt');
             }
@@ -622,7 +637,8 @@ export default function App() {
       let eventsQuery = insforge.database
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name)')
-        .eq('hidden_by_admin', false);
+        .eq('hidden_by_admin', false)
+        .gt('event_date', new Date().toISOString());
 
       // Hide 18+ events from underage users
       if (userAgeYears < 18) {

@@ -59,11 +59,16 @@ export function ExploreScreen({
       .limit(200)
       .then(async ({ data, error }) => {
         if (error || !data) { setLoadingChats(false); return; }
-        // Group by conversation partner
+        // Group by conversation partner, track unread counts
         const seen = new Map<string, any>();
+        const unreadCounts = new Map<string, number>();
         for (const msg of data) {
           const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
           if (!seen.has(partnerId)) seen.set(partnerId, msg);
+          // Count unread: messages sent TO me (not from me) with no read_at
+          if (msg.sender_id !== currentUserId && !msg.read_at) {
+            unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
+          }
         }
         // Fetch partner profiles
         const partnerIds = [...seen.keys()];
@@ -77,6 +82,7 @@ export function ExploreScreen({
           partnerId: pid,
           lastMsg: seen.get(pid),
           profile: profileMap.get(pid) || null,
+          unreadCount: unreadCounts.get(pid) || 0,
         }));
         setConversations(convos);
         setLoadingChats(false);
@@ -190,12 +196,12 @@ export function ExploreScreen({
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {conversations.map(({ partnerId, lastMsg, profile }) => {
+                {conversations.map(({ partnerId, lastMsg, profile, unreadCount }: any) => {
                   const name = profile?.full_name || profile?.username || 'User';
                   const username = profile?.username || '';
                   const avatarUrl = profile?.avatar_url;
                   const initial = name[0]?.toUpperCase() || 'U';
-                  const isUnread = !lastMsg.read_at && lastMsg.sender_id !== currentUserId;
+                  const isUnread = unreadCount > 0;
                   return (
                     <div
                       key={partnerId}
@@ -214,7 +220,11 @@ export function ExploreScreen({
                           {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
                         </span>
                       </div>
-                      {isUnread && <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#A855F7', flexShrink: 0 }} />}
+                      {isUnread && (
+                        <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 5px' }}>
+                          <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                        </div>
+                      )}
                     </div>
                   );
                 })}

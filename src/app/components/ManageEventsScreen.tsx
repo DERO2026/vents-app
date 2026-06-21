@@ -3,6 +3,7 @@ import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clo
 import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
+import { CATEGORIES as CATEGORY_LIST } from './categories';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -19,10 +20,7 @@ const STATUS_STYLE = {
   draft: { bg: 'rgba(139,143,168,0.1)', color: '#8B8FA8', border: 'rgba(139,143,168,0.2)', label: 'Draft', icon: Edit2 },
 };
 
-const CATEGORIES = [
-  'Music', 'Technology', 'Food & Drinks', 'Comedy Shows',
-  'Arts & Culture', 'Sports & Wellness', 'Conferences', 'Family Events',
-];
+const CATEGORIES = CATEGORY_LIST.map(c => c.id);
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
@@ -54,7 +52,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
 
   // Edit form state
   const [editTitle, setEditTitle] = useState('');
-  const [editCategory, setEditCategory] = useState('');
+  const [editCategories, setEditCategories] = useState<string[]>([]);
   const [editDescription, setEditDescription] = useState('');
   const [editDate, setEditDate] = useState('');
   const [editTime, setEditTime] = useState('');
@@ -72,7 +70,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
   function openEdit(event: OrganizerEvent) {
     setEditingEvent(event);
     setEditTitle(event.title);
-    setEditCategory(event.category);
+    setEditCategories((event as any).categories?.length ? (event as any).categories : (event.category ? [event.category] : []));
     setEditDescription(event.description);
     setEditDate(event.date);
     setEditTime(event.startTime);
@@ -107,7 +105,8 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
     if (!editingEvent) return;
     onEditEvent(editingEvent.id, {
       title: editTitle,
-      category: editCategory,
+      category: editCategories[0] || '',
+      ...(editCategories.length > 0 ? { categories: editCategories } as any : {}),
       description: editDescription,
       date: editDate,
       startTime: editTime,
@@ -364,15 +363,18 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Category</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {CATEGORIES.map((cat) => (
-                    <button
-                      key={cat}
-                      onClick={() => setEditCategory(cat)}
-                      style={{ background: editCategory === cat ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: editCategory === cat ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '5px 12px', color: editCategory === cat ? '#fff' : '#8B8FA8', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}
-                    >
-                      {cat}
-                    </button>
-                  ))}
+                  {CATEGORIES.map((cat) => {
+                    const sel = editCategories.includes(cat);
+                    return (
+                      <button
+                        key={cat}
+                        onClick={() => setEditCategories(prev => sel ? prev.filter(c => c !== cat) : [...prev, cat])}
+                        style={{ background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '5px 12px', color: sel ? '#fff' : '#8B8FA8', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}
+                      >
+                        {cat}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
               <div>

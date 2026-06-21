@@ -71,10 +71,11 @@ export function UserProfileScreen({
     if (!user?.id) return;
     insforge.database
       .from('events')
-      .select('id, title, date, cover_url, category, price, status')
+      .select('id, title, event_date, cover_url, category, price, status')
       .eq('organizer_id', user.id)
-      .in('status', ['live', 'published', 'under_review'])
-      .order('date', { ascending: false })
+      .in('status', ['live', 'published'])
+      .gt('event_date', new Date().toISOString())
+      .order('event_date', { ascending: true })
       .limit(6)
       .then(({ data }) => setUserEvents(data || []));
   }, [user.id]);
@@ -557,7 +558,7 @@ export function UserProfileScreen({
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <Calendar size={11} color="#8B8FA8" />
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.date}</span>
+                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.event_date ? new Date(event.event_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : event.date}</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
                     <span style={{ color: '#FFB830', fontSize: '12px', fontWeight: 700 }}>
