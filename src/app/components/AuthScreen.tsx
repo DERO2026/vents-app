@@ -478,6 +478,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               setBanInfo({ status: row.status, until: row.banned_until ?? null });
               return;
             }
+            // No row means the email doesn't exist in the system at all
+            const noAccount = Array.isArray(statusRows) ? statusRows.length === 0 : !statusRows;
+            if (noAccount) {
+              setErrorMessage('No account found with that email or username.');
+              return;
+            }
           }
         } catch { /* ignore status check failure — fall through to normal error */ }
       }
