@@ -290,10 +290,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setErrorMessage(null);
 
     if (step === 1) {
-      if (!imageUrl) {
-        setErrorMessage('Please upload a cover image for your event.');
-        return;
-      }
       if (!title.trim()) {
         setErrorMessage('Please enter an event title.');
         return;
