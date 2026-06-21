@@ -251,6 +251,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
+      console.log('[SettingsScreen] handleCropComplete (avatar) token prefix:', token.slice(0, 20));
       const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
@@ -258,6 +259,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
+      console.log('[SettingsScreen] avatar upload response status:', res.status);
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
         throw new Error(`Upload failed (${res.status}). Please try again.`);
@@ -302,6 +304,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
+      console.log('[SettingsScreen] handleCoverCropComplete (cover) token prefix:', token.slice(0, 20));
       const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
@@ -309,6 +312,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
+      console.log('[SettingsScreen] cover upload response status:', res.status);
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
         throw new Error(`Upload failed (${res.status}). Please try again.`);

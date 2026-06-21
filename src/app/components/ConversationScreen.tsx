@@ -76,12 +76,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setUploadingImg(true);
     try {
       const token = await getAuthToken();
+      console.log('[ConversationScreen] sendImageMessage token prefix:', token.slice(0, 20));
       const formData = new FormData();
       formData.append('file', new File([file], `dm-${Date.now()}.${file.name.split('.').pop()}`, { type: file.type }));
       const res = await fetch(
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
+      console.log('[ConversationScreen] upload response status:', res.status);
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
       const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);

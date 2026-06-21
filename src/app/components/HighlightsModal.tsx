@@ -50,6 +50,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
     setUploading(true);
     try {
       const token = await getAuthToken();
+      console.log('[HighlightsModal] handleUpload token prefix:', token.slice(0, 20));
       const mediaType = file.type.startsWith('video/') ? 'video' : 'image';
       const formData = new FormData();
       formData.append('file', file);
@@ -57,6 +58,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/highlights/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
+      console.log('[HighlightsModal] upload response status:', res.status);
       if (!res.ok) throw new Error(`Upload failed (${res.status})`);
       const data = await res.json();
       const key: string | null = data?.key ?? null;
