@@ -71,7 +71,7 @@ export function UserProfileScreen({
     if (!user?.id) return;
     insforge.database
       .from('events')
-      .select('id, title, event_date, cover_url, category, price, status')
+      .select('id, title, event_date, image_url, category, price, status')
       .eq('organizer_id', user.id)
       .in('status', ['live', 'published'])
       .gt('event_date', new Date().toISOString())
@@ -521,7 +521,7 @@ export function UserProfileScreen({
                 }}
               >
                 <img
-                  src={event.cover_url || event.image || ''}
+                  src={event.image_url || event.image || ''}
                   alt={event.title}
                   style={{
                     width: '64px',
