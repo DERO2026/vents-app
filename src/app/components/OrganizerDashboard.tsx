@@ -538,7 +538,7 @@ export function OrganizerDashboard({
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {displayEvents.map((event) => {
-                  const dateStr = new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  const dateStr = event.event_date ? new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
                   return (
                     <div
                       key={event.id}

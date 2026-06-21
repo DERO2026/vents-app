@@ -732,7 +732,7 @@ export function EventDetailsScreen({
               {realAttendeeCount.toLocaleString()} attending
             </span>
             <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-              {event.capacity.toLocaleString()} total capacity
+              {(event.capacity ?? 0).toLocaleString()} total capacity
             </span>
           </div>
         </div>

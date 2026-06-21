@@ -65,9 +65,9 @@ function useCardCountdown(eventDate?: string): string | null {
 const CATEGORIES = [{ id: 'all', label: 'All', icon: '✨' }, ...CATEGORY_LIST];
 
 export function mapDbEventToFrontend(dbEvent: any): Event {
-  const dt = new Date(dbEvent.event_date);
-  const dateStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const dt = dbEvent.event_date ? new Date(dbEvent.event_date) : null;
+  const dateStr = dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const timeStr = dt ? dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
   
   const parts = (dbEvent.location || '').split(',');
   const venue = (parts[0] || '').trim();
@@ -676,8 +676,14 @@ export function HomeScreen({
     return matchQuery && matchCategory && matchState && matchPrice && matchUpcoming;
   });
 
+  const todayStart = new Date(new Date().toISOString().split('T')[0]);
+  const upcomingDbEvents = dbEvents.filter(e => {
+    const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
+    return d && d >= todayStart;
+  });
+
   // Trending events (sort by bookingsCount DESC)
-  const trendingEvents = [...dbEvents]
+  const trendingEvents = [...upcomingDbEvents]
     .sort((a, b) => (b.bookingsCount || 0) - (a.bookingsCount || 0))
     .slice(0, 5);
 
@@ -690,9 +696,14 @@ export function HomeScreen({
     })
     .slice(0, 5);
 
-  // Featured events (is_featured=true, randomized order)
+  // Featured events (is_featured=true, upcoming only, randomized order)
   const featuredEvents = useMemo(() => {
-    const arr = dbEvents.filter(e => e.isFeatured);
+    const start = new Date(new Date().toISOString().split('T')[0]);
+    const arr = dbEvents.filter(e => {
+      if (!e.isFeatured) return false;
+      const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
+      return d && d >= start;
+    });
     for (let i = arr.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [arr[i], arr[j]] = [arr[j], arr[i]];

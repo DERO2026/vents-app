@@ -538,9 +538,9 @@ export default function App() {
           .filter((t: any) => t.events)
           .map((t: any) => {
             const dbEvent = t.events;
-            const dt = new Date(dbEvent.event_date);
-          const dateStr = dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-          const timeStr = dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            const dt = dbEvent.event_date ? new Date(dbEvent.event_date) : null;
+          const dateStr = dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+          const timeStr = dt ? dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
           const parts = (dbEvent.location || '').split(',');
           const venue = (parts[0] || '').trim();
           const city = (parts[1] || 'Lagos').trim();
@@ -638,7 +638,8 @@ export default function App() {
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name)')
         .eq('hidden_by_admin', false)
-        .gt('event_date', new Date().toISOString());
+        .gte('event_date', new Date().toISOString().split('T')[0])
+        .in('status', ['live', 'published']);
 
       // Hide 18+ events from underage users
       if (userAgeYears < 18) {
