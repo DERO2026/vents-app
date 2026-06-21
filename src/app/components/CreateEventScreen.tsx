@@ -222,6 +222,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
 
+      // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
+      await getAuthToken();
+
       const { data, error } = await insforge.database
         .from('events')
         .insert([{
