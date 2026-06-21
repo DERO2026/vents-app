@@ -371,6 +371,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         });
         if (error) throw error;
 
+        // Persist refresh token immediately after signup so session survives reload.
+        // The SDK sets hc.refreshToken internally — also check data for it.
+        {
+          const signupRt = (data as any)?.refreshToken || (data as any)?.refresh_token;
+          const hcNow = (insforge as any).getHttpClient?.();
+          const rtToSave = signupRt || hcNow?.refreshToken;
+          if (rtToSave) saveRefreshToken(rtToSave);
+        }
+
         if (data?.requireEmailVerification) {
           setIsVerifying(true);
         } else if (data?.accessToken && data?.user) {
@@ -400,15 +409,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!loginRes.ok || loginJson.error) {
           throw new Error(loginJson.message || loginJson.error || 'Invalid email or password.');
         }
-        // Save refresh token for session persistence across reloads
-        if (loginJson.refreshToken) {
-          const hc = (insforge as any).getHttpClient?.();
-          if (hc) hc.refreshToken = loginJson.refreshToken;
-          saveRefreshToken(loginJson.refreshToken);
+        // Save refresh token for session persistence across reloads.
+        // API may return camelCase OR snake_case — check both.
+        const rt = loginJson.refreshToken || loginJson.refresh_token;
+        const hc = (insforge as any).getHttpClient?.();
+        if (rt) {
+          if (hc) hc.refreshToken = rt;
+          saveRefreshToken(rt);
         }
-        if (loginJson.accessToken) {
-          const hc = (insforge as any).getHttpClient?.();
-          if (hc) hc.userToken = loginJson.accessToken;
+        if (loginJson.accessToken || loginJson.access_token) {
+          const at = loginJson.accessToken || loginJson.access_token;
+          if (hc) hc.userToken = at;
         }
         const data = loginJson;
         const error = null;

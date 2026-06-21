@@ -24,18 +24,15 @@ export function clearRefreshToken() {
 export async function getAuthToken(): Promise<string> {
   const hc = (insforge as any).getHttpClient?.();
 
-  // Step 1: SDK official accessor
+  // 1. Try the SDK's official accessor first
   const direct = insforge.auth.getAccessToken?.();
-  console.log('[getAuthToken] Step 1 getAccessToken:', direct ? direct.slice(0, 20) + '…' : null);
   if (direct) return direct;
 
-  // Step 2: HTTP client in-memory token
-  console.log('[getAuthToken] Step 2 hc.userToken:', hc?.userToken ? (hc.userToken as string).slice(0, 20) + '…' : null);
+  // 2. Fall back to the HTTP client's in-memory token
   if (hc?.userToken) return hc.userToken as string;
 
-  // Step 3: Manual refresh using stored refresh token
+  // 3. Try manual refresh using the stored refresh token (most reliable after page reload)
   const storedRt = sessionStorage.getItem(SESSION_KEY);
-  console.log('[getAuthToken] Step 3 storedRt present:', !!storedRt, 'hc present:', !!hc);
   if (storedRt && hc) {
     try {
       const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
@@ -44,27 +41,26 @@ export async function getAuthToken(): Promise<string> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ refreshToken: storedRt, refresh_token: storedRt }),
       });
-      console.log('[getAuthToken] Step 3 refresh response status:', refreshRes.status);
       if (refreshRes.ok) {
         const refreshJson = await refreshRes.json();
-        console.log('[getAuthToken] Step 3 refreshJson.accessToken:', refreshJson.accessToken ? refreshJson.accessToken.slice(0, 20) + '…' : null);
-        if (refreshJson.accessToken) {
-          hc.userToken = refreshJson.accessToken;
-          if (refreshJson.refreshToken) {
-            hc.refreshToken = refreshJson.refreshToken;
-            sessionStorage.setItem(SESSION_KEY, refreshJson.refreshToken);
+        const at = refreshJson.accessToken || refreshJson.access_token;
+        if (at) {
+          hc.userToken = at;
+          const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
+          if (newRt) {
+            hc.refreshToken = newRt;
+            sessionStorage.setItem(SESSION_KEY, newRt);
           }
-          return refreshJson.accessToken as string;
+          return at as string;
         }
       }
-    } catch (e) { console.log('[getAuthToken] Step 3 error:', e); }
+    } catch { /* fall through */ }
   }
 
-  // Step 4: Silent refresh via SDK
+  // 4. Attempt a silent refresh via the SDK (uses httpOnly cookie on production)
   try {
     const { data } = await insforge.auth.refreshSession?.() ?? { data: null };
     const t = (data as any)?.accessToken || (data as any)?.access_token || (data as any)?.session?.accessToken;
-    console.log('[getAuthToken] Step 4 refreshSession token:', t ? (t as string).slice(0, 20) + '…' : null);
     if (t) {
       if (hc) hc.userToken = t;
       return t as string;
@@ -72,9 +68,8 @@ export async function getAuthToken(): Promise<string> {
     const after = insforge.auth.getAccessToken?.();
     if (after) return after;
     if (hc?.userToken) return hc.userToken as string;
-  } catch (e) { console.log('[getAuthToken] Step 4 error:', e); }
+  } catch { /* fall through */ }
 
-  console.log('[getAuthToken] ALL STEPS FAILED — throwing');
   throw new Error('Session expired. Please sign out and sign back in, then try again.');
 }
 

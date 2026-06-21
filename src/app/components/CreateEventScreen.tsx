@@ -170,7 +170,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      console.log('[CreateEventScreen] handleCroppedFlier token prefix:', token.slice(0, 20));
       const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', file);
@@ -178,7 +177,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
-      console.log('[CreateEventScreen] upload response status:', res.status);
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
           throw new Error('Session expired. Please sign out and sign back in, then try again.');

@@ -273,10 +273,12 @@ export default function App() {
             });
             if (refreshRes.ok) {
               const refreshJson = await refreshRes.json();
-              if (refreshJson.accessToken) hc.userToken = refreshJson.accessToken;
-              if (refreshJson.refreshToken) {
-                hc.refreshToken = refreshJson.refreshToken;
-                sessionStorage.setItem('vents_rt', refreshJson.refreshToken);
+              const at = refreshJson.accessToken || refreshJson.access_token;
+              if (at) hc.userToken = at;
+              const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
+              if (newRt) {
+                hc.refreshToken = newRt;
+                sessionStorage.setItem('vents_rt', newRt);
               }
               sessionUserId = refreshJson.user?.id || null;
               sessionUserEmail = refreshJson.user?.email || null;
