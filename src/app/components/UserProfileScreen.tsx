@@ -73,7 +73,7 @@ export function UserProfileScreen({
       .from('events')
       .select('id, title, date, cover_url, category, price, status')
       .eq('organizer_id', user.id)
-      .eq('status', 'published')
+      .in('status', ['live', 'published', 'under_review'])
       .order('date', { ascending: false })
       .limit(6)
       .then(({ data }) => setUserEvents(data || []));
@@ -345,9 +345,28 @@ export function UserProfileScreen({
             <BadgeCheck size={18} color="#3B82F6" title="Verified" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
           )}
         </div>
-        <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 500 }}>
-          @{user.username}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+          <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 500 }}>
+            @{user.username}
+          </span>
+          {user.vc_badge && (() => {
+            const badgeMap: Record<string, { label: string; gradient: string; color: string }> = {
+              bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
+              silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
+              gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
+              platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
+              elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
+              legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+            };
+            const b = badgeMap[user.vc_badge!.toLowerCase()];
+            if (!b) return null;
+            return (
+              <span style={{ background: b.gradient, borderRadius: '20px', padding: '2px 10px', fontSize: '11px', fontWeight: 700, color: b.color, whiteSpace: 'nowrap' }}>
+                {b.label}
+              </span>
+            );
+          })()}
+        </div>
       </div>
 
       {/* Bio */}

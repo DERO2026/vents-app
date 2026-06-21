@@ -268,32 +268,6 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                         </>
                       )}
 
-                      {/* Promote Event Button */}
-                      {event.status === 'live' && (
-                        <button
-                          onClick={() => onPromoteEvent && onPromoteEvent(event.id)}
-                          style={{
-                            width: '100%',
-                            background: 'linear-gradient(135deg, rgba(168,85,247,0.15) 0%, rgba(79,70,229,0.1) 100%)',
-                            border: '1px solid rgba(168,85,247,0.35)',
-                            borderRadius: '10px',
-                            padding: '9px',
-                            color: '#A855F7',
-                            fontSize: '12px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            gap: '6px',
-                            marginBottom: '10px',
-                            transition: 'all 0.2s',
-                          }}
-                        >
-                          <Zap size={13} color="#A855F7" />
-                          Promote Event & Boost Visibility 🚀
-                        </button>
-                      )}
 
                       {/* Actions */}
                       <div style={{ display: 'flex', gap: '8px' }}>

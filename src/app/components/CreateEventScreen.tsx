@@ -245,7 +245,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             quantity: Number(t.quantity),
             description: t.description.trim()
           }))
-        }]);
+        }])
+        .select('id');
 
       if (error) throw error;
 
@@ -255,7 +256,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
 
       setTimeout(() => {
         onCreated({
-          id: data?.[0]?.id || `event-${Date.now()}`,
+          id: data?.[0]?.id || (() => { throw new Error('Event created but no ID returned from DB'); })(),
           title: title.trim(),
           category,
           description: description.trim(),

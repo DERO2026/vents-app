@@ -70,6 +70,7 @@ export interface UserProfile {
   cover_url?: string;
   isOrganizer?: boolean;
   isVerified?: boolean;
+  vc_badge?: string;
 }
 
 export interface Notification {

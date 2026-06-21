@@ -150,7 +150,7 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -340,7 +340,8 @@ export default function App() {
           state: profile?.state,
           avatar_url: profile?.avatar_url,
           cover_url: profile?.cover_url,
-          isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser')
+          isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser'),
+          vc_badge: profile?.vc_badge
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
@@ -1517,7 +1518,7 @@ export default function App() {
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
                   .eq('id', organizerId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }

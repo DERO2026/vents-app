@@ -470,15 +470,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           }
         } catch { /* ignore status check failure — fall through to normal error */ }
       }
-      // Item 21: Never expose raw DB errors — surface a safe user-facing message
-      const msg = typeof err?.message === 'string' ? err.message : '';
-      const safe = msg.includes('Invalid login') || msg.includes('invalid_credentials') || msg.includes('password')
-        ? 'Incorrect email or password.'
-        : msg.includes('Email not confirmed') || msg.includes('not confirmed')
+      // Specific, user-friendly error messages
+      const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
+        (typeof err?.error_description === 'string' ? err.error_description : '');
+      const msgL = msg.toLowerCase();
+      const safe = msgL.includes('user not found') || msgL.includes('no user') || msgL.includes('not registered') || msgL.includes('does not exist')
+        ? 'No account found with that email or username.'
+        : msgL.includes('invalid password') || msgL.includes('wrong password') || msgL.includes('incorrect password')
+        ? 'Incorrect password. Please try again.'
+        : msgL.includes('invalid login') || msgL.includes('invalid_credentials') || msgL.includes('invalid credentials')
+        ? 'Incorrect password. Please try again.'
+        : msgL.includes('email not confirmed') || msgL.includes('not confirmed')
         ? 'Please verify your email before logging in.'
-        : msg.includes('rate limit') || msg.includes('Too many')
+        : msgL.includes('rate limit') || msgL.includes('too many')
         ? 'Too many attempts. Please wait a few minutes and try again.'
-        : 'An error occurred. Please try again.';
+        : msgL.includes('network') || msgL.includes('fetch')
+        ? 'Network error. Check your connection and try again.'
+        : 'Incorrect email/username or password.';
       setErrorMessage(safe);
     } finally {
       setLoading(false);

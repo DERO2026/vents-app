@@ -27,11 +27,12 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     eventsAttended: 0,
     followers: 0,
     following: 0,
-    interests: dbUser.state ? [dbUser.state] : [],
+    interests: Array.isArray(dbUser.interests) ? dbUser.interests : [],
     avatar_url: dbUser.avatar_url,
     cover_url: dbUser.cover_url,
     isOrganizer: dbUser.role === 'organizer',
     isVerified: dbUser.is_verified === true,
+    vc_badge: dbUser.vc_badge || undefined,
   };
 }
 
@@ -87,7 +88,7 @@ export function ExploreScreen({
   useEffect(() => {
     insforge.database
       .from('public_profiles')
-      .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role')
+      .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
       .eq('is_verified', true)
       .eq('role', 'organizer')
       .limit(5)
@@ -112,7 +113,7 @@ export function ExploreScreen({
         const q = `%${userQuery.trim().toLowerCase()}%`;
         const { data, error } = await insforge.database
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role')
+          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
           .ilike('username', q);
         if (error) throw error;
         if (data) setSearchedUsers(data.map(mapDbUserToUserProfile));

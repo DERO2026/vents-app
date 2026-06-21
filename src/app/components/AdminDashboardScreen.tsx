@@ -180,13 +180,13 @@ export function AdminDashboardScreen({
       const [entriesRes, winnersRes] = await Promise.all([
         insforge.database
           .from('prize_draw_entries')
-          .select('id, user_id, draw_month, entry_number, vc_spent, created_at')
+          .select('id, user_id, draw_month, entry_number, vc_spent, created_at, users(username, full_name)')
           .eq('draw_month', month)
           .order('created_at', { ascending: false })
           .limit(100),
         insforge.database
           .from('prize_draw_winners')
-          .select('id, user_id, draw_month, prize_description, drawn_at, delivered')
+          .select('id, user_id, draw_month, prize_description, drawn_at, delivered, users(username, full_name)')
           .order('drawn_at', { ascending: false })
           .limit(20),
       ]);
@@ -261,12 +261,19 @@ export function AdminDashboardScreen({
     if (!q) return;
     setVcSearching(true);
     try {
-      const like = `%${q.toLowerCase()}%`;
-      const { data } = await insforge.database
-        .from('users')
-        .select('id, full_name, username, email, avatar_url')
-        .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like},id.eq.${q}`)
-        .limit(5);
+      const like = `%${q}%`;
+      const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      let query = insforge.database
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url')
+        .or(`full_name.ilike.${like},username.ilike.${like}`);
+      if (uuidRe.test(q)) {
+        query = insforge.database
+          .from('public_profiles')
+          .select('id, full_name, username, avatar_url')
+          .or(`full_name.ilike.${like},username.ilike.${like},id.eq.${q}`);
+      }
+      const { data } = await query.limit(8);
       setVcSearchResults(data || []);
     } catch { setVcSearchResults([]); }
     finally { setVcSearching(false); }
@@ -1220,7 +1227,7 @@ export function AdminDashboardScreen({
             {drawEntries.slice(0, 20).map(e => (
               <div key={e.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <div style={{ color: '#C4C9E0', fontSize: '12px', fontFamily: 'monospace' }}>{e.user_id?.slice(0, 12)}…</div>
+                  <div style={{ color: '#C4C9E0', fontSize: '12px' }}>{(e as any).users?.username || (e as any).users?.full_name || e.user_id?.slice(0, 12)}</div>
                   <div style={{ color: '#555C7A', fontSize: '11px' }}>Entry #{e.entry_number} · {e.vc_spent} VC</div>
                 </div>
                 <div style={{ color: '#555C7A', fontSize: '11px' }}>{new Date(e.created_at).toLocaleDateString()}</div>
@@ -1260,7 +1267,7 @@ export function AdminDashboardScreen({
                   <div>
                     <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{w.draw_month}</div>
                     <div style={{ color: '#C4C9E0', fontSize: '11px' }}>{w.prize_description}</div>
-                    <div style={{ color: '#555C7A', fontSize: '11px', fontFamily: 'monospace' }}>User: {w.user_id?.slice(0, 12)}…</div>
+                    <div style={{ color: '#555C7A', fontSize: '11px' }}>User: {(w as any).users?.username || (w as any).users?.full_name || w.user_id?.slice(0, 12)}</div>
                   </div>
                   <div style={{ padding: '3px 8px', borderRadius: '6px', background: w.delivered ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: w.delivered ? '#10B981' : '#F59E0B', fontSize: '10px', fontWeight: 700 }}>
                     {w.delivered ? 'DELIVERED' : 'PENDING'}

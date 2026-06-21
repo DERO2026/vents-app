@@ -24,7 +24,7 @@ import { insforge } from '../../lib/insforge';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -281,7 +281,7 @@ export function ProfileScreen({
                   <MapPin size={12} color="#8B8FA8" />
                   <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{currentUser?.state || 'Lagos'}, Nigeria</span>
                 </div>
-                <div className="flex items-center gap-1 mt-1">
+                <div className="flex items-center gap-1 mt-1" style={{ flexWrap: 'wrap', gap: '6px' }}>
                   <div
                     style={{
                       background: badgeGradient,
@@ -297,6 +297,23 @@ export function ProfileScreen({
                       {roleLabel}
                     </span>
                   </div>
+                  {currentUser?.vc_badge && (() => {
+                    const badgeMap: Record<string, { label: string; gradient: string; color: string }> = {
+                      bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
+                      silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
+                      gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
+                      platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
+                      elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
+                      legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+                    };
+                    const b = badgeMap[currentUser.vc_badge!.toLowerCase()];
+                    if (!b) return null;
+                    return (
+                      <span style={{ background: b.gradient, borderRadius: '5px', padding: '2px 7px', fontSize: '10px', fontWeight: 700, color: b.color }}>
+                        {b.label}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

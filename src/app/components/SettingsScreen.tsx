@@ -972,7 +972,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
               {articles.filter((a) => a.category === cat).map((article, i, arr) => (
                 <div key={article.title}>
                   <button
-                    onClick={() => window.open('https://help.vents.ng', '_blank')}
+                    onClick={() => window.open('mailto:ventsappltd@gmail.com', '_blank')}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -999,7 +999,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
         <div style={{ textAlign: 'center', marginTop: '8px' }}>
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px' }}>Need more help?</p>
           <button
-            onClick={() => window.open('https://help.vents.ng', '_blank')}
+            onClick={() => window.open('mailto:ventsappltd@gmail.com', '_blank')}
             style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '12px', padding: '10px 20px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <ExternalLink size={14} />
