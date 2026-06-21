@@ -276,7 +276,7 @@ export function ExploreScreen({
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.fullName}</span>
+                        <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.name}</span>
                         {u.isVerified && <CheckCircle size={12} color="#A78BFA" />}
                       </div>
                       <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
