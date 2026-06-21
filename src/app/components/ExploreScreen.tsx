@@ -226,36 +226,6 @@ export function ExploreScreen({
         {/* ── People tab ── */}
         {activeTab === 'people' && (
           <div>
-            {/* Suggested accounts */}
-            {suggested.length > 0 && (
-              <div style={{ padding: '0 16px 12px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>Suggested</p>
-                {suggested.map(u => (
-                  <div
-                    key={u.id}
-                    onClick={() => onUserPress(u)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-                  >
-                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {u.avatar_url
-                        ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <span style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{u.avatarInitials}</span>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.fullName}</span>
-                        {u.isVerified && <CheckCircle size={12} color="#A78BFA" />}
-                      </div>
-                      <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
-                    </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); onUserPress(u); }}
-                      style={{ background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '20px', padding: '6px 14px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                    >Follow</button>
-                  </div>
-                ))}
-              </div>
-            )}
             {/* User Search Bar */}
             <div className="px-4 mb-4">
               <div
@@ -288,6 +258,37 @@ export function ExploreScreen({
                 )}
               </div>
             </div>
+
+            {/* Suggested accounts (shown when not searching) */}
+            {!userQuery.trim() && suggested.length > 0 && (
+              <div style={{ padding: '0 16px 12px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>Suggested</p>
+                {suggested.map(u => (
+                  <div
+                    key={u.id}
+                    onClick={() => onUserPress(u)}
+                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
+                  >
+                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {u.avatar_url
+                        ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <span style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{u.avatarInitials}</span>}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.fullName}</span>
+                        {u.isVerified && <CheckCircle size={12} color="#A78BFA" />}
+                      </div>
+                      <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                    </div>
+                    <button
+                      onClick={e => { e.stopPropagation(); onUserPress(u); }}
+                      style={{ background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '20px', padding: '6px 14px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                    >Follow</button>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* User Results List */}
             {!userQuery.trim() ? (
