@@ -28,6 +28,7 @@ import { OrganizerDashboard } from './components/OrganizerDashboard';
 import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
+import { WalletScreen } from './components/WalletScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
@@ -642,7 +643,7 @@ export default function App() {
 
       let eventsQuery = insforge.database
         .from('events')
-        .select('*, users!events_organizer_id_fkey(username, full_name)')
+        .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
         .eq('hidden_by_admin', false)
         .gte('event_date', new Date().toISOString().split('T')[0])
         .in('status', ['live', 'published']);
@@ -667,6 +668,7 @@ export default function App() {
           return mapDbEventToFrontend({
             ...e,
             organizer_name: orgUser?.username || orgUser?.full_name || null,
+            organizer_vc_badge: orgUser?.vc_badge || null,
           });
         });
 
@@ -870,7 +872,7 @@ export default function App() {
   // Midnight Neon is always enforced
   const isDark = true;
   const [selectedUser, setSelectedUser] = useState<UserProfile | null>(null);
-  const [conversationUser, setConversationUser] = useState<{ id: string; name: string; avatarUrl?: string } | null>(null);
+  const [conversationUser, setConversationUser] = useState<{ id: string; name: string; avatarUrl?: string; vc_badge?: string } | null>(null);
   const [conversationEventId, setConversationEventId] = useState<string | undefined>(undefined);
   const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
 
@@ -1329,8 +1331,8 @@ export default function App() {
                 navigateTo('user-profile');
               }}
               currentUserId={currentUser?.id}
-              onOpenConversation={(userId, userName, avatarUrl) => {
-                setConversationUser({ id: userId, name: userName, avatarUrl });
+              onOpenConversation={(userId, userName, avatarUrl, vcBadge) => {
+                setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
                 navigateTo('conversation');
               }}
             />
@@ -1684,6 +1686,11 @@ export default function App() {
                 navigateTo('conversation');
               }}
             />
+          )}
+
+          {/* ── WALLET ── */}
+          {screen === 'wallet' && (
+            <WalletScreen currentUser={currentUser} onBack={goBack} />
           )}
 
           {/* ── CONVERSATION ── */}

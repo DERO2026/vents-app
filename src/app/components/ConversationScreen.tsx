@@ -5,7 +5,7 @@ import { UserProfile } from './types';
 
 interface ConversationScreenProps {
   currentUser: UserProfile;
-  otherUser: { id: string; name: string; avatarUrl?: string };
+  otherUser: { id: string; name: string; avatarUrl?: string; vc_badge?: string };
   eventId?: string;
   eventTitle?: string;
   onBack: () => void;
@@ -291,7 +291,21 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           }
         </div>
         <div>
-          <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{otherUser.name}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{otherUser.name}</p>
+            {otherUser.vc_badge && (() => {
+              const bm: Record<string, { label: string; gradient: string; color: string }> = {
+                bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
+                silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
+                gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
+                platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
+                elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
+                legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+              };
+              const b = bm[otherUser.vc_badge];
+              return b ? <span style={{ background: b.gradient, color: b.color, fontSize: '8px', fontWeight: 700, borderRadius: '4px', padding: '1px 5px', whiteSpace: 'nowrap' }}>{b.label}</span> : null;
+            })()}
+          </div>
           {eventTitle && <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }}>Re: {eventTitle}</p>}
         </div>
       </div>
@@ -395,7 +409,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
               <MapPin size={20} color="#8B8FA8" />
             </button>
             <button
-              onMouseDown={startRecording} onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
+              onMouseDown={startRecording}
+              onMouseUp={stopRecording}
+              onMouseLeave={stopRecording}
+              onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
+              onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
               style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}
               title="Hold to record voice message"
             >

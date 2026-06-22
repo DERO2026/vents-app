@@ -3,7 +3,7 @@ import {
   ArrowLeft, Search, Shield, UserCheck, AlertCircle,
   UserX, Trash2, RefreshCw, ClipboardList, Users,
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
-  Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag,
+  Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
 } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 
@@ -34,7 +34,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system';
 
 interface EventRow {
   id: string;
@@ -106,6 +106,112 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <CheckCircle size={12} /> : <Copy size={12} />}
     </button>
+  );
+}
+
+// ─── Payouts tab ───────────────────────────────────────────────────────────────
+function PayoutsTab() {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+  const load = async () => {
+    setLoading(true);
+    let q = insforge.database
+      .from('organizer_withdrawal_requests')
+      .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (statusFilter === 'pending') q = q.eq('status', 'pending');
+    const { data } = await q;
+    setRequests(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { load(); }, [statusFilter]);
+
+  const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected' | 'paid', note?: string) => {
+    setActionLoading(id);
+    try {
+      await insforge.database
+        .from('organizer_withdrawal_requests')
+        .update({ status, admin_note: note || null, updated_at: new Date().toISOString() })
+        .eq('id', id);
+      await load();
+    } catch (e: any) {
+      alert(e.message || 'Action failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
+
+  const statusColor: Record<string, string> = {
+    pending: '#F59E0B', approved: '#60A5FA', paid: '#10B981', rejected: '#EF4444',
+  };
+
+  return (
+    <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+        {(['pending', 'all'] as const).map(f => (
+          <button key={f} onClick={() => setStatusFilter(f)}
+            style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: statusFilter === f ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: statusFilter === f ? '#A855F7' : '#8B8FA8' }}>
+            {f === 'pending' ? 'Pending' : 'All'}
+          </button>
+        ))}
+      </div>
+
+      {loading ? (
+        <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
+      ) : requests.length === 0 ? (
+        <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No {statusFilter === 'pending' ? 'pending ' : ''}withdrawal requests</p>
+      ) : (
+        requests.map((r: any) => {
+          const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
+          const bank = r.organizer_bank_accounts;
+          return (
+            <div key={r.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{org?.username || org?.full_name || r.organizer_id.slice(0,8)}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{org?.email}</p>
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 700, color: statusColor[r.status] || '#8B8FA8', background: `${statusColor[r.status]}22`, borderRadius: '6px', padding: '3px 8px' }}>{r.status.toUpperCase()}</span>
+              </div>
+              <p style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#A855F7' }}>{fmt(r.amount_kobo)}</p>
+              {bank && (
+                <p style={{ margin: 0, fontSize: '12px', color: '#8B8FA8' }}>{bank.bank_name} · {bank.account_number} · {bank.account_name}</p>
+              )}
+              <p style={{ margin: 0, fontSize: '11px', color: '#6B7280' }}>{new Date(r.created_at).toLocaleString('en-NG')}</p>
+              {r.status === 'pending' && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    onClick={() => handleUpdateStatus(r.id, 'approved')}
+                    disabled={actionLoading === r.id}
+                    style={{ flex: 1, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: '10px', padding: '8px', color: '#60A5FA', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+                    Approve
+                  </button>
+                  <button
+                    onClick={() => handleUpdateStatus(r.id, 'paid')}
+                    disabled={actionLoading === r.id}
+                    style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+                    Mark Paid
+                  </button>
+                  <button
+                    onClick={() => handleUpdateStatus(r.id, 'rejected')}
+                    disabled={actionLoading === r.id}
+                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+                    Reject
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
+    </div>
   );
 }
 
@@ -693,6 +799,7 @@ export function AdminDashboardScreen({
     { key: 'vc' as Tab, label: 'VC', icon: <Swords size={14} /> },
     { key: 'stats' as Tab, label: 'Stats', icon: <Zap size={14} /> },
     { key: 'verify' as Tab, label: 'Verify', icon: <BadgeCheck size={14} /> },
+    { key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
@@ -1368,6 +1475,9 @@ export function AdminDashboardScreen({
           ))}
         </div>
       )}
+
+      {/* ════════════════ PAYOUTS TAB ════════════════════════════════════ */}
+      {tab === 'payouts' && <PayoutsTab />}
 
       {/* ════════════════ SYSTEM CONTROLLER TAB (ROOT ONLY) ═══════════════ */}
       {tab === 'system' && isRoot && (

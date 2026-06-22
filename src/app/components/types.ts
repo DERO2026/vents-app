@@ -23,6 +23,7 @@ export interface Event {
   description: string;
   organizer: string;
   organizerVerified?: boolean;
+  organizerVcBadge?: string | null;
   isFeatured: boolean;
   isTrending: boolean;
   attendees: number;
@@ -118,7 +119,8 @@ export type Screen =
   | 'checkin-scanner'
   | 'transactions'
   | 'inbox'
-  | 'conversation';
+  | 'conversation'
+  | 'wallet';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

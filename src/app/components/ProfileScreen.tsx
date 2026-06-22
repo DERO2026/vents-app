@@ -16,6 +16,7 @@ import {
   Gift,
   Camera,
   Receipt,
+  Wallet,
 } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
@@ -504,6 +505,25 @@ export function ProfileScreen({
             })}
           </div>
         </div>
+
+        {/* Organizer Wallet */}
+        {(isOrganizer || isAdmin) && (
+          <div className="px-4 mb-3">
+            <button
+              onClick={() => onNavigate('wallet')}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(79,70,229,0.15), rgba(168,85,247,0.1))',
+                borderRadius: '14px',
+                border: '1px solid rgba(168,85,247,0.3)',
+                cursor: 'pointer',
+              }}
+            >
+              <Wallet size={16} color="#A855F7" />
+              <span style={{ color: '#A855F7', fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
+            </button>
+          </div>
+        )}
 
         {/* Admin Dashboard (ROOT_UID only) */}
         {isAdmin && (

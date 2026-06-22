@@ -26,6 +26,28 @@ interface HomeScreenProps {
   unreadNotificationsCount?: number;
 }
 
+const VC_BADGE_MAP: Record<string, { label: string; gradient: string; color: string }> = {
+  bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
+  silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
+  gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
+  platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
+  elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
+  legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+};
+
+function VcBadgeInline({ badge }: { badge: string }) {
+  const b = VC_BADGE_MAP[badge];
+  if (!b) return null;
+  return (
+    <span style={{
+      background: b.gradient, color: b.color, fontSize: '8px', fontWeight: 700,
+      borderRadius: '4px', padding: '1px 5px', letterSpacing: '0.03em', whiteSpace: 'nowrap',
+    }}>
+      {b.label}
+    </span>
+  );
+}
+
 function useCardCountdown(eventDate?: string): string | null {
   const target = useMemo(() => {
     if (!eventDate) return NaN;
@@ -102,6 +124,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
     description: dbEvent.description || '',
     organizer: dbEvent.organizer_name || dbEvent.organizer_username || 'Verified Organizer',
+    organizerVcBadge: dbEvent.organizer_vc_badge || null,
     organizerVerified: true,
     isFeatured: dbEvent.is_featured === true,
     isTrending: false,
@@ -252,8 +275,9 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           </span>
         </div>
         {event.organizer && event.organizer !== 'Verified Organizer' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
+            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
           </div>
         )}
         {countdown && (
@@ -436,8 +460,9 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
           </span>
         </div>
         {event.organizer && event.organizer !== 'Verified Organizer' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
+            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
           </div>
         )}
         {countdown && (

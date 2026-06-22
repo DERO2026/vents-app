@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, ChevronLeft, ChevronRight, Plus, Upload, Loader } from 'lucide-react';
+import { X, ChevronLeft, ChevronRight, Plus, Loader } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 
 interface Highlight {
@@ -23,6 +23,9 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [pendingName, setPendingName] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadHighlights = async () => {
@@ -46,7 +49,16 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
     loadHighlights();
   }, [userId, refreshTrigger]);
 
-  const handleUpload = async (file: File) => {
+  const handleFileSelect = (file: File) => {
+    setPendingFile(file);
+    setPendingName('');
+  };
+
+  const handleUploadConfirm = async () => {
+    if (!pendingFile) return;
+    const file = pendingFile;
+    const name = pendingName.trim();
+    setPendingFile(null);
     setUploading(true);
     try {
       const token = await getAuthToken();
@@ -67,7 +79,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
         user_id: userId,
         media_url: url,
         media_type: mediaType,
-        caption: null,
+        caption: name || null,
       }]);
 
       await loadHighlights();
@@ -79,15 +91,50 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
     }
   };
 
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!window.confirm('Delete this highlight?')) return;
+    setDeletingId(id);
+    try {
+      await insforge.database.from('highlights').delete().eq('id', id);
+      setHighlights(prev => prev.filter(h => h.id !== id));
+    } catch (err: any) {
+      console.error('Failed to delete highlight:', err);
+      alert('Failed to delete highlight.');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   if (loading && highlights.length === 0) return null;
   if (highlights.length === 0 && !isOwnProfile) return null;
 
   return (
     <div style={{ padding: '0 0 16px' }}>
+      {/* Name prompt modal */}
+      {pendingFile && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 24px' }}>
+          <div style={{ background: '#1a1f2e', borderRadius: '16px', padding: '24px', width: '100%', maxWidth: '320px' }}>
+            <p style={{ color: '#fff', fontWeight: 700, fontSize: '16px', margin: '0 0 16px', textAlign: 'center' }}>Name your highlight</p>
+            <input
+              autoFocus
+              placeholder="e.g. Summer Vibes"
+              value={pendingName}
+              onChange={e => setPendingName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleUploadConfirm(); if (e.key === 'Escape') setPendingFile(null); }}
+              maxLength={30}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '12px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '16px' }}
+            />
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setPendingFile(null)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '12px', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', fontWeight: 600 }}>Cancel</button>
+              <button onClick={handleUploadConfirm} style={{ flex: 1, background: 'linear-gradient(135deg,#A855F7,#EC4899)', border: 'none', borderRadius: '10px', padding: '12px', color: '#fff', fontSize: '14px', cursor: 'pointer', fontWeight: 600 }}>Add</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px 12px' }}>
-        <span style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-          Highlights
-        </span>
+        <span style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Highlights</span>
         {isOwnProfile && highlights.length > 0 && (
           <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{highlights.length} highlight{highlights.length !== 1 ? 's' : ''}</span>
         )}
@@ -103,7 +150,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
               style={{
                 width: '64px', height: '64px', borderRadius: '50%', border: '2px dashed rgba(168,85,247,0.5)',
                 background: 'rgba(168,85,247,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                cursor: 'pointer', flexShrink: 0, position: 'relative',
+                cursor: 'pointer', flexShrink: 0,
               }}
             >
               {uploading ? <Loader size={22} color="#A855F7" style={{ animation: 'spin 1s linear infinite' }} /> : <Plus size={22} color="#A855F7" />}
@@ -114,7 +161,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
               type="file"
               accept="image/*,video/*"
               style={{ display: 'none' }}
-              onChange={e => { const f = e.target.files?.[0]; if (f) handleUpload(f); e.target.value = ''; }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); e.target.value = ''; }}
             />
           </div>
         )}
@@ -123,9 +170,25 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
         {highlights.map((h, idx) => (
           <div
             key={h.id}
-            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0, cursor: 'pointer' }}
+            style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flexShrink: 0, cursor: 'pointer', position: 'relative' }}
             onClick={() => onHighlightClick(highlights, idx)}
           >
+            {/* Delete X button — own profile only */}
+            {isOwnProfile && (
+              <button
+                onClick={e => handleDelete(h.id, e)}
+                disabled={deletingId === h.id}
+                style={{
+                  position: 'absolute', top: '-4px', right: '-4px', zIndex: 2,
+                  width: '20px', height: '20px', borderRadius: '50%',
+                  background: deletingId === h.id ? '#555' : '#EF4444',
+                  border: '2px solid #000', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', padding: 0,
+                }}
+              >
+                <X size={10} color="#fff" />
+              </button>
+            )}
             <div style={{
               width: '64px', height: '64px', borderRadius: '50%', padding: '2px',
               background: 'linear-gradient(135deg, #A855F7, #EC4899, #F97316)',
@@ -135,7 +198,7 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
                 {h.media_type === 'video' ? (
                   <video src={h.media_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : (
-                  <img src={h.media_url} alt="Highlight" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={h.media_url} alt={h.caption || 'Highlight'} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
               </div>
             </div>
@@ -188,10 +251,7 @@ export function HighlightsModal({
 
   return (
     <div
-      style={{
-        position: 'fixed', inset: 0, background: '#000', zIndex: 9999,
-        display: 'flex', flexDirection: 'column',
-      }}
+      style={{ position: 'fixed', inset: 0, background: '#000', zIndex: 9999, display: 'flex', flexDirection: 'column' }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -201,6 +261,13 @@ export function HighlightsModal({
           <div key={i} style={{ flex: 1, height: '2px', borderRadius: '2px', background: i <= current ? '#fff' : 'rgba(255,255,255,0.3)', transition: 'background 0.3s' }} />
         ))}
       </div>
+
+      {/* Caption / name in header */}
+      {h.caption && (
+        <div style={{ position: 'absolute', top: 'calc(28px + env(safe-area-inset-top))', left: '16px', right: '52px', zIndex: 11 }}>
+          <span style={{ color: '#fff', fontSize: '14px', fontWeight: 600, textShadow: '0 1px 8px rgba(0,0,0,0.8)' }}>{h.caption}</span>
+        </div>
+      )}
 
       {/* Close */}
       <button
@@ -213,31 +280,11 @@ export function HighlightsModal({
       {/* Media */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         {h.media_type === 'video' ? (
-          <video
-            key={h.id}
-            src={h.media_url}
-            autoPlay
-            loop
-            muted
-            playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          />
+          <video key={h.id} src={h.media_url} autoPlay loop muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         ) : (
-          <img
-            key={h.id}
-            src={h.media_url}
-            alt="Highlight"
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-          />
+          <img key={h.id} src={h.media_url} alt={h.caption || 'Highlight'} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         )}
       </div>
-
-      {/* Caption */}
-      {h.caption && (
-        <div style={{ position: 'absolute', bottom: 'calc(60px + env(safe-area-inset-bottom))', left: '16px', right: '16px' }}>
-          <p style={{ color: '#fff', fontSize: '14px', textAlign: 'center', textShadow: '0 1px 8px rgba(0,0,0,0.8)', margin: 0 }}>{h.caption}</p>
-        </div>
-      )}
 
       {/* Navigation arrows */}
       {current > 0 && (
