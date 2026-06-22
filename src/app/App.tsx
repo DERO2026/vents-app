@@ -266,11 +266,15 @@ export default function App() {
         if (storedRt && hc && !hc.userToken) {
           try {
             const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
+            const refreshAbort = new AbortController();
+            const refreshAbortTimer = setTimeout(() => refreshAbort.abort(), 12000);
             const refreshRes = await fetch(`${baseUrl}/api/auth/refresh?client_type=mobile`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ refreshToken: storedRt, refresh_token: storedRt }),
+              signal: refreshAbort.signal,
             });
+            clearTimeout(refreshAbortTimer);
             if (refreshRes.ok) {
               const refreshJson = await refreshRes.json();
               const at = refreshJson.accessToken || refreshJson.access_token;
@@ -300,7 +304,9 @@ export default function App() {
             } else {
               sessionStorage.removeItem('vents_rt');
             }
-          } catch { /* ignore — fall through to normal getCurrentUser */ }
+          } catch (refreshErr: any) {
+            console.warn('Auth refresh token exchange failed:', refreshErr?.name === 'AbortError' ? 'timed out after 12s' : refreshErr?.message || refreshErr);
+          }
         }
 
         // If we got the user from the manual refresh, skip SDK call
@@ -405,12 +411,12 @@ export default function App() {
   useEffect(() => {
     const safetyTimeout = setTimeout(() => {
       if (authLoading) {
-        console.warn("Auth hydration safety timeout triggered. Forcing welcome screen.");
+        console.warn("Auth hydration safety timeout (15s) triggered. Forcing welcome screen. Check network or InsForge backend latency.");
         setCurrentUser(null);
         setAuthLoading(false);
         setScreen('welcome');
       }
-    }, 8000);
+    }, 15000);
     return () => clearTimeout(safetyTimeout);
   }, [authLoading]);
 
