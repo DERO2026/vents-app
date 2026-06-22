@@ -141,7 +141,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <Wallet size={18} color="rgba(255,255,255,0.7)" />
               <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>Available Balance</span>
             </div>
-            <p style={{ fontSize: '36px', fontWeight: 800, margin: '0 0 16px', color: '#fff' }}>{fmt(balance)}</p>
+            <p style={{ fontSize: `clamp(20px, ${Math.max(20, 36 - Math.max(0, fmt(balance).length - 10) * 2)}px, 36px)`, fontWeight: 800, margin: '0 0 16px', color: '#fff', wordBreak: 'break-all' }}>{fmt(balance)}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <TrendingUp size={14} color="rgba(255,255,255,0.6)" />
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>

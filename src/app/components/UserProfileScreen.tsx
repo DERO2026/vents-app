@@ -42,7 +42,7 @@ export function UserProfileScreen({
   currentUserId,
   onMessage,
 }: UserProfileScreenProps) {
-  const [highlightData, setHighlightData] = useState<{ items: any[]; startIndex: number } | null>(null);
+  const [highlightData, setHighlightData] = useState<{ groups: any[]; startGroupIndex: number } | null>(null);
   const [highlightRefresh, setHighlightRefresh] = useState(0);
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
@@ -442,14 +442,14 @@ export function UserProfileScreen({
       <HighlightsStrip
         userId={user.id}
         isOwnProfile={isOwnProfile}
-        onHighlightClick={(items, startIndex) => setHighlightData({ items, startIndex })}
+        onHighlightClick={(groups, startGroupIndex) => setHighlightData({ groups, startGroupIndex })}
         refreshTrigger={highlightRefresh}
       />
 
       {highlightData && (
         <HighlightsModal
-          highlights={highlightData.items}
-          startIndex={highlightData.startIndex}
+          groups={highlightData.groups}
+          startGroupIndex={highlightData.startGroupIndex}
           onClose={() => setHighlightData(null)}
         />
       )}

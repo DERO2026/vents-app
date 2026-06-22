@@ -26,11 +26,17 @@ interface Winner {
   users?: { full_name: string; username: string; avatar_url?: string };
 }
 
-const BADGE_CONFIG = [
-  { type: 'bronze', label: 'Bronze', cost: 300, color: '#CD7F32', emoji: '🥉' },
-  { type: 'silver', label: 'Silver', cost: 800, color: '#C0C0C0', emoji: '🥈' },
-  { type: 'gold', label: 'Gold', cost: 2000, color: '#FFD700', emoji: '🥇' },
-] as const;
+const BADGE_TIERS = ['bronze', 'silver', 'gold', 'platinum', 'elite', 'legend'] as const;
+type BadgeTier = typeof BADGE_TIERS[number];
+
+const BADGE_CONFIG: { type: BadgeTier; label: string; cost: number; color: string; emoji: string }[] = [
+  { type: 'bronze',   label: 'Bronze',   cost: 300,   color: '#CD7F32', emoji: '🥉' },
+  { type: 'silver',   label: 'Silver',   cost: 800,   color: '#C0C0C0', emoji: '🥈' },
+  { type: 'gold',     label: 'Gold',     cost: 2000,  color: '#FFD700', emoji: '🥇' },
+  { type: 'platinum', label: 'Platinum', cost: 5000,  color: '#818CF8', emoji: '💎' },
+  { type: 'elite',    label: 'Elite',    cost: 12000, color: '#A855F7', emoji: '⚡' },
+  { type: 'legend',   label: 'Legend',   cost: 25000, color: '#EC4899', emoji: '👑' },
+];
 
 function monthCountdown(): string {
   const now = new Date();
@@ -165,7 +171,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     } finally { setDrawBusy(false); }
   }
 
-  async function handlePurchaseBadge(type: 'bronze' | 'silver' | 'gold', cost: number) {
+  async function handlePurchaseBadge(type: BadgeTier, cost: number) {
     setBadgeBusy(true); setBadgeMsg(null);
     try {
       const { error } = await insforge.database.rpc('purchase_badge' as any, { p_badge_type: type });
@@ -292,9 +298,11 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {BADGE_CONFIG.map(({ type, label, cost, color, emoji }) => {
               const owned = currentBadge === type;
-              const lowerTier = (type === 'silver' && currentBadge === 'gold') || (type === 'bronze' && currentBadge && currentBadge !== 'bronze');
+              const currentRank = currentBadge ? BADGE_TIERS.indexOf(currentBadge as BadgeTier) : -1;
+              const thisRank = BADGE_TIERS.indexOf(type);
+              const lowerTier = currentRank > thisRank;
               return (
-                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: owned ? `rgba(${color === '#CD7F32' ? '205,127,50' : color === '#C0C0C0' ? '192,192,192' : '255,215,0'},0.08)` : 'rgba(255,255,255,0.02)', border: `1px solid ${owned ? color + '40' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px' }}>
+                <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: owned ? `${color}14` : 'rgba(255,255,255,0.02)', border: `1px solid ${owned ? color + '40' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px' }}>
                   <span style={{ fontSize: '24px' }}>{emoji}</span>
                   <div style={{ flex: 1 }}>
                     <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{label} Badge</p>

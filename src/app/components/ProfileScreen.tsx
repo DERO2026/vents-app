@@ -56,7 +56,7 @@ export function ProfileScreen({
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
-  const [highlightData, setHighlightData] = useState<{ items: any[]; startIndex: number } | null>(null);
+  const [highlightData, setHighlightData] = useState<{ groups: any[]; startGroupIndex: number } | null>(null);
   const [highlightRefresh, setHighlightRefresh] = useState(0);
 
   useEffect(() => {
@@ -370,15 +370,15 @@ export function ProfileScreen({
             <HighlightsStrip
               userId={currentUser.id}
               isOwnProfile={true}
-              onHighlightClick={(items, startIndex) => setHighlightData({ items, startIndex })}
+              onHighlightClick={(groups, startGroupIndex) => setHighlightData({ groups, startGroupIndex })}
               refreshTrigger={highlightRefresh}
             />
           </div>
         )}
         {highlightData && (
           <HighlightsModal
-            highlights={highlightData.items}
-            startIndex={highlightData.startIndex}
+            groups={highlightData.groups}
+            startGroupIndex={highlightData.startGroupIndex}
             onClose={() => { setHighlightData(null); setHighlightRefresh(r => r + 1); }}
           />
         )}

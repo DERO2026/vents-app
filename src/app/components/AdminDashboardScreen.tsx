@@ -112,9 +112,11 @@ function CopyButton({ text }: { text: string }) {
 // ─── Payouts tab ───────────────────────────────────────────────────────────────
 function PayoutsTab() {
   const [requests, setRequests] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
 
   const load = async () => {
     setLoading(true);
@@ -124,8 +126,16 @@ function PayoutsTab() {
       .order('created_at', { ascending: false })
       .limit(50);
     if (statusFilter === 'pending') q = q.eq('status', 'pending');
-    const { data } = await q;
-    setRequests(data || []);
+    const [{ data: reqs }, { data: wals }] = await Promise.all([
+      q,
+      insforge.database
+        .from('organizer_wallets')
+        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, users!organizer_wallets_organizer_id_fkey(username, full_name)')
+        .order('balance_kobo', { ascending: false })
+        .limit(100),
+    ]);
+    setRequests(reqs || []);
+    setWallets(wals || []);
     setLoading(false);
   };
 
@@ -152,19 +162,58 @@ function PayoutsTab() {
     pending: '#F59E0B', approved: '#60A5FA', paid: '#10B981', rejected: '#EF4444',
   };
 
+  const totalPending = requests.filter(r => r.status === 'pending').reduce((s: number, r: any) => s + r.amount_kobo, 0);
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {/* Total pending banner */}
+      {totalPending > 0 && (
+        <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '4px' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#F59E0B' }}>Total pending payout</p>
+          <p style={{ margin: '2px 0 0', fontSize: '20px', fontWeight: 800, color: '#F59E0B' }}>{fmt(totalPending)}</p>
+        </div>
+      )}
+
+      {/* Section tabs */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-        {(['pending', 'all'] as const).map(f => (
-          <button key={f} onClick={() => setStatusFilter(f)}
-            style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: statusFilter === f ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: statusFilter === f ? '#A855F7' : '#8B8FA8' }}>
-            {f === 'pending' ? 'Pending' : 'All'}
+        {(['requests', 'wallets'] as const).map(s => (
+          <button key={s} onClick={() => setActiveSection(s)}
+            style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: activeSection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: activeSection === s ? '#A855F7' : '#8B8FA8' }}>
+            {s === 'requests' ? 'Requests' : 'All Wallets'}
           </button>
         ))}
+        {activeSection === 'requests' && (
+          <>
+            {(['pending', 'all'] as const).map(f => (
+              <button key={f} onClick={() => setStatusFilter(f)}
+                style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: statusFilter === f ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', color: statusFilter === f ? '#60A5FA' : '#6B7280' }}>
+                {f === 'pending' ? 'Pending' : 'All'}
+              </button>
+            ))}
+          </>
+        )}
       </div>
 
       {loading ? (
         <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
+      ) : activeSection === 'wallets' ? (
+        wallets.length === 0 ? (
+          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No organizer wallets yet</p>
+        ) : (
+          wallets.map((w: any) => {
+            const u = w['users!organizer_wallets_organizer_id_fkey'];
+            return (
+              <div key={w.organizer_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{u?.username || u?.full_name || w.organizer_id.slice(0, 8)}</p>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '12px', color: '#A78BFA' }}>Balance: <strong>{fmt(w.balance_kobo)}</strong></span>
+                  <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Earned: {fmt(w.total_earned_kobo)}</span>
+                  <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Withdrawn: {fmt(w.total_withdrawn_kobo ?? 0)}</span>
+                </div>
+              </div>
+            );
+          })
+        )
       ) : requests.length === 0 ? (
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No {statusFilter === 'pending' ? 'pending ' : ''}withdrawal requests</p>
       ) : (

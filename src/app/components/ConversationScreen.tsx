@@ -17,6 +17,7 @@ interface DM {
   body: string;
   image_url?: string | null;
   media_type?: string | null;
+  duration_seconds?: number | null;
   deleted_by_sender?: boolean;
   created_at: string;
   read_at?: string | null;
@@ -41,6 +42,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recordingSecondsRef = useRef(0);
 
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
@@ -134,9 +136,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           const data = await res.json();
           const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);
           if (!url) throw new Error('No URL');
+          const durSec = recordingSecondsRef.current > 0 ? recordingSecondsRef.current : null;
           await insforge.database.from('direct_messages').insert({
             sender_id: currentUser.id, recipient_id: otherUser.id,
             event_id: eventId || null, body: '', image_url: url, media_type: 'audio',
+            duration_seconds: durSec,
           });
           await load();
         } catch (e) { console.error('Voice send failed', e); }
@@ -146,10 +150,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       mediaRecorderRef.current = mr;
       setRecording(true);
       setRecordingSeconds(0);
+      recordingSecondsRef.current = 0;
       recordingTimerRef.current = setInterval(() => {
         setRecordingSeconds(s => {
-          if (s >= 59) { stopRecording(); return 60; }
-          return s + 1;
+          const next = s >= 59 ? 60 : s + 1;
+          recordingSecondsRef.current = next;
+          if (next >= 60) stopRecording();
+          return next;
         });
       }, 1000);
     } catch (e) { console.error('Mic access denied', e); }
@@ -164,17 +171,27 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setRecordingSeconds(0);
   }, []);
 
-  const toggleAudio = useCallback((id: string, url: string) => {
+  const toggleAudio = useCallback(async (id: string, url: string) => {
     if (playingId === id) {
       audioRef.current?.pause();
       setPlayingId(null);
-    } else {
-      if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
-      const a = new Audio(url);
-      a.onended = () => setPlayingId(null);
-      a.play().catch(() => {});
+      return;
+    }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+    setPlayingId(id);
+    try {
+      const token = await getAuthToken();
+      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!resp.ok) throw new Error('fetch failed');
+      const blob = await resp.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = new Audio(blobUrl);
+      a.onended = () => { setPlayingId(null); URL.revokeObjectURL(blobUrl); };
       audioRef.current = a;
-      setPlayingId(id);
+      await a.play();
+    } catch (e) {
+      console.error('Audio play failed', e);
+      setPlayingId(null);
     }
   }, [playingId]);
 
@@ -188,7 +205,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     try {
       const { data } = await insforge.database
         .from('direct_messages')
-        .select('id, sender_id, body, image_url, media_type, deleted_by_sender, created_at, read_at')
+        .select('id, sender_id, body, image_url, media_type, duration_seconds, deleted_by_sender, created_at, read_at')
         .or(
           `and(sender_id.eq.${currentUser.id},recipient_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},recipient_id.eq.${currentUser.id})`
         )
@@ -348,12 +365,28 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {playingId === m.id ? <Pause size={14} color="#fff" /> : <Play size={14} color={isMine ? '#fff' : '#A78BFA'} />}
                     </div>
-                    <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
-                      {[3,5,7,4,6,5,3].map((h, i) => (
-                        <div key={i} style={{ width: '3px', height: `${h * 2}px`, borderRadius: '2px', background: isMine ? 'rgba(255,255,255,0.6)' : '#A78BFA', opacity: playingId === m.id ? 1 : 0.5 }} />
-                      ))}
-                    </div>
-                    <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#8B8FA8', fontSize: '11px' }}>Voice</span>
+                    {(() => {
+                      const dur = m.duration_seconds ?? 5;
+                      const barW = Math.min(120, Math.max(24, (dur / 60) * 120));
+                      const mins = Math.floor(dur / 60);
+                      const secs = dur % 60;
+                      const label = `${mins}:${secs.toString().padStart(2, '0')}`;
+                      const barCount = Math.max(3, Math.min(12, Math.round(barW / 10)));
+                      const heights = Array.from({ length: barCount }, (_, i) => {
+                        const t = i / (barCount - 1);
+                        return 4 + Math.round(Math.sin(t * Math.PI) * 8);
+                      });
+                      return (
+                        <>
+                          <div style={{ display: 'flex', gap: '2px', alignItems: 'center', width: `${barW}px` }}>
+                            {heights.map((h, i) => (
+                              <div key={i} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: isMine ? 'rgba(255,255,255,0.6)' : '#A78BFA', opacity: playingId === m.id ? 1 : 0.5 }} />
+                            ))}
+                          </div>
+                          <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#8B8FA8', fontSize: '11px', flexShrink: 0 }}>{label}</span>
+                        </>
+                      );
+                    })()}
                   </button>
                 ) : m.image_url ? (
                   <img
