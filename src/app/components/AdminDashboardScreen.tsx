@@ -130,7 +130,7 @@ function PayoutsTab() {
       q,
       insforge.database
         .from('organizer_wallets')
-        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, users!organizer_wallets_organizer_id_fkey(username, full_name)')
+        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, users(username, full_name)')
         .order('balance_kobo', { ascending: false })
         .limit(100),
     ]);
@@ -201,7 +201,7 @@ function PayoutsTab() {
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No organizer wallets yet</p>
         ) : (
           wallets.map((w: any) => {
-            const u = w['users!organizer_wallets_organizer_id_fkey'];
+            const u = w.users;
             return (
               <div key={w.organizer_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                 <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{u?.username || u?.full_name || w.organizer_id.slice(0, 8)}</p>

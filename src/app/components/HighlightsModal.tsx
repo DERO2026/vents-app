@@ -94,18 +94,25 @@ export function HighlightsStrip({ userId, isOwnProfile, onHighlightClick, refres
   }, [userId, refreshTrigger]);
 
   const uploadFiles = async (files: File[], groupId: string, startOrder: number) => {
+    const MAX_VIDEO_MB = 50;
     const token = await getAuthToken();
     const results: { url: string; mediaType: 'image' | 'video'; order: number }[] = [];
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
       const mediaType: 'image' | 'video' = file.type.startsWith('video/') ? 'video' : 'image';
+      if (mediaType === 'video' && file.size > MAX_VIDEO_MB * 1024 * 1024) {
+        throw new Error(`Video too large (max ${MAX_VIDEO_MB}MB). Please trim or compress the video.`);
+      }
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch(
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/highlights/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
       );
-      if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        throw new Error(`Upload failed (${res.status})${errText ? ': ' + errText.slice(0, 80) : ''}`);
+      }
       const data = await res.json();
       const url: string = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/highlights/objects/${encodeURIComponent(data.key)}` : null);
       if (!url) throw new Error('No URL returned from upload');

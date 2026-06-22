@@ -35,6 +35,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [recording, setRecording] = useState(false);
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [playingId, setPlayingId] = useState<string | null>(null);
+  const [voiceToast, setVoiceToast] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -42,7 +44,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const recordingSecondsRef = useRef(0);
+  const durationMsRef = useRef(0);
 
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
@@ -98,68 +100,100 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [currentUser.id, otherUser.id, eventId]);
 
   const sendLocation = useCallback(async () => {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(async pos => {
-      const { latitude, longitude } = pos.coords;
-      const mapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
-      await insforge.database.from('direct_messages').insert({
-        sender_id: currentUser.id, recipient_id: otherUser.id,
-        event_id: eventId || null,
-        body: `📍 Location: ${mapsUrl}`,
-      });
-      await load();
-    });
+    if (!navigator.geolocation) {
+      setVoiceToast('Location not available on this device');
+      setTimeout(() => setVoiceToast(null), 3000);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        await insforge.database.from('direct_messages').insert({
+          sender_id: currentUser.id, recipient_id: otherUser.id,
+          event_id: eventId || null,
+          body: JSON.stringify({ lat, lng, label: 'Current Location' }),
+          media_type: 'location',
+        });
+        await load();
+      },
+      () => {
+        setVoiceToast('Location permission denied');
+        setTimeout(() => setVoiceToast(null), 3000);
+      }
+    );
   }, [currentUser.id, otherUser.id, eventId]);
 
   const startRecording = useCallback(async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setVoiceToast('Voice messages are not supported on your current browser. Please use Chrome or update your browser.');
+      setTimeout(() => setVoiceToast(null), 5000);
+      return;
+    }
+    let stream: MediaStream;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : 'audio/webm' });
-      audioChunksRef.current = [];
-      mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
-      mr.onstop = async () => {
-        stream.getTracks().forEach(t => t.stop());
-        const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' });
-        if (blob.size < 1000) return; // ignore accidental taps
-        setUploadingImg(true);
-        try {
-          const token = await getAuthToken();
-          const ext = mr.mimeType.includes('ogg') ? 'ogg' : 'webm';
-          const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mr.mimeType });
-          const formData = new FormData();
-          formData.append('file', file);
-          const res = await fetch(
-            `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
-            { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-          );
-          if (!res.ok) throw new Error('Upload failed');
-          const data = await res.json();
-          const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);
-          if (!url) throw new Error('No URL');
-          const durSec = recordingSecondsRef.current > 0 ? recordingSecondsRef.current : null;
-          await insforge.database.from('direct_messages').insert({
-            sender_id: currentUser.id, recipient_id: otherUser.id,
-            event_id: eventId || null, body: '', image_url: url, media_type: 'audio',
-            duration_seconds: durSec,
-          });
-          await load();
-        } catch (e) { console.error('Voice send failed', e); }
-        finally { setUploadingImg(false); }
-      };
-      mr.start();
-      mediaRecorderRef.current = mr;
-      setRecording(true);
-      setRecordingSeconds(0);
-      recordingSecondsRef.current = 0;
-      recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds(s => {
-          const next = s >= 59 ? 60 : s + 1;
-          recordingSecondsRef.current = next;
-          if (next >= 60) stopRecording();
-          return next;
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      setVoiceToast('Microphone permission denied. Please allow mic access and try again.');
+      setTimeout(() => setVoiceToast(null), 4000);
+      return;
+    }
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+      ? 'audio/webm'
+      : '';
+    let mr: MediaRecorder;
+    try {
+      mr = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
+      mr = new MediaRecorder(stream);
+    }
+    audioChunksRef.current = [];
+    durationMsRef.current = 0;
+    mr.ondataavailable = e => { if (e.data.size > 0) audioChunksRef.current.push(e.data); };
+    mr.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop());
+      const blob = new Blob(audioChunksRef.current, { type: mr.mimeType || 'audio/webm' });
+      if (blob.size < 500) return;
+      setUploadingImg(true);
+      try {
+        const token = await getAuthToken();
+        const ext = mr.mimeType?.includes('ogg') ? 'ogg' : 'webm';
+        const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mr.mimeType || 'audio/webm' });
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(
+          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        );
+        if (!res.ok) throw new Error('Upload failed');
+        const data = await res.json();
+        const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);
+        if (!url) throw new Error('No URL');
+        const durSec = Math.max(1, Math.round(durationMsRef.current / 1000));
+        await insforge.database.from('direct_messages').insert({
+          sender_id: currentUser.id, recipient_id: otherUser.id,
+          event_id: eventId || null, body: '', image_url: url, media_type: 'audio',
+          duration_seconds: durSec,
         });
-      }, 1000);
-    } catch (e) { console.error('Mic access denied', e); }
+        await load();
+      } catch (e) {
+        console.error('Voice send failed', e);
+        setVoiceToast('Failed to send voice message');
+        setTimeout(() => setVoiceToast(null), 3000);
+      } finally { setUploadingImg(false); }
+    };
+    mr.start(100);
+    mediaRecorderRef.current = mr;
+    setRecording(true);
+    setRecordingSeconds(0);
+    durationMsRef.current = 0;
+    recordingTimerRef.current = setInterval(() => {
+      durationMsRef.current += 100;
+      const secs = Math.floor(durationMsRef.current / 1000);
+      setRecordingSeconds(secs);
+      if (secs >= 60) stopRecording();
+    }, 100);
   }, [currentUser.id, otherUser.id, eventId]);
 
   const stopRecording = useCallback(() => {
@@ -171,7 +205,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setRecordingSeconds(0);
   }, []);
 
-  const toggleAudio = useCallback(async (id: string, url: string) => {
+  // toggleAudio: create Audio element synchronously (iOS user-gesture requirement),
+  // then fetch blob async and set src. play() called after src set.
+  const toggleAudio = useCallback((id: string, url: string) => {
+    setAudioError(null);
     if (playingId === id) {
       audioRef.current?.pause();
       setPlayingId(null);
@@ -179,20 +216,26 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     }
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     setPlayingId(id);
-    try {
-      const token = await getAuthToken();
-      const resp = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-      if (!resp.ok) throw new Error('fetch failed');
-      const blob = await resp.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      const a = new Audio(blobUrl);
-      a.onended = () => { setPlayingId(null); URL.revokeObjectURL(blobUrl); };
-      audioRef.current = a;
-      await a.play();
-    } catch (e) {
-      console.error('Audio play failed', e);
-      setPlayingId(null);
-    }
+    // Fetch blob with auth, then play
+    getAuthToken()
+      .then(token => fetch(url, { headers: { Authorization: `Bearer ${token}` } }))
+      .then(resp => {
+        if (!resp.ok) throw new Error('fetch failed');
+        return resp.blob();
+      })
+      .then(blob => {
+        const blobUrl = URL.createObjectURL(blob);
+        const a = new Audio(blobUrl);
+        a.onended = () => { setPlayingId(null); URL.revokeObjectURL(blobUrl); };
+        audioRef.current = a;
+        return a.play();
+      })
+      .catch(e => {
+        console.error('Audio play failed', e);
+        setPlayingId(null);
+        setAudioError('Could not play audio');
+        setTimeout(() => setAudioError(null), 3000);
+      });
   }, [playingId]);
 
   const deleteMessage = useCallback(async (id: string) => {
@@ -270,6 +313,12 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       }}
     >
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
+      {/* Toast / error banners */}
+      {(voiceToast || audioError) && (
+        <div style={{ position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)', background: '#1A1D2E', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '12px', padding: '10px 16px', zIndex: 9999, maxWidth: '320px', textAlign: 'center' }}>
+          <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{voiceToast || audioError}</p>
+        </div>
+      )}
       {/* Image lightbox */}
       {lightboxUrl && (
         <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -338,8 +387,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         ) : messages.map((m) => {
           const isMine = m.sender_id === currentUser.id;
           const isDeleted = m.deleted_by_sender;
-          const isLocationMsg = m.body?.startsWith('📍 Location: ');
-          const locationUrl = isLocationMsg ? m.body.replace('📍 Location: ', '') : null;
+          let locationData: { lat: number; lng: number; label: string } | null = null;
+          if (m.media_type === 'location') {
+            try { locationData = JSON.parse(m.body); } catch { locationData = null; }
+          }
           return (
             <div
               key={m.id}
@@ -352,7 +403,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 maxWidth: '75%',
                 background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
                 borderRadius: isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
-                padding: m.image_url && !isDeleted ? '4px' : '10px 14px',
+                padding: (m.image_url && !isDeleted) || (m.media_type === 'location' && !isDeleted) ? '8px' : '10px 14px',
                 border: isMine && !isDeleted ? 'none' : '1px solid rgba(255,255,255,0.06)',
               }}>
                 {isDeleted ? (
@@ -360,28 +411,21 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 ) : m.media_type === 'audio' && m.image_url ? (
                   <button
                     onClick={() => toggleAudio(m.id, m.image_url!)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0' }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', minWidth: '140px' }}
                   >
                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       {playingId === m.id ? <Pause size={14} color="#fff" /> : <Play size={14} color={isMine ? '#fff' : '#A78BFA'} />}
                     </div>
                     {(() => {
-                      const dur = m.duration_seconds ?? 5;
-                      const barW = Math.min(120, Math.max(24, (dur / 60) * 120));
+                      const dur = m.duration_seconds ?? 1;
+                      const pct = Math.min((dur / 60) * 100, 100);
                       const mins = Math.floor(dur / 60);
                       const secs = dur % 60;
                       const label = `${mins}:${secs.toString().padStart(2, '0')}`;
-                      const barCount = Math.max(3, Math.min(12, Math.round(barW / 10)));
-                      const heights = Array.from({ length: barCount }, (_, i) => {
-                        const t = i / (barCount - 1);
-                        return 4 + Math.round(Math.sin(t * Math.PI) * 8);
-                      });
                       return (
                         <>
-                          <div style={{ display: 'flex', gap: '2px', alignItems: 'center', width: `${barW}px` }}>
-                            {heights.map((h, i) => (
-                              <div key={i} style={{ flex: 1, height: `${h}px`, borderRadius: '2px', background: isMine ? 'rgba(255,255,255,0.6)' : '#A78BFA', opacity: playingId === m.id ? 1 : 0.5 }} />
-                            ))}
+                          <div style={{ flex: 1, height: '4px', background: isMine ? 'rgba(255,255,255,0.2)' : 'rgba(167,139,250,0.2)', borderRadius: '2px', overflow: 'hidden', minWidth: '60px' }}>
+                            <div style={{ width: `${pct}%`, height: '100%', background: isMine ? '#fff' : '#A78BFA', borderRadius: '2px', opacity: playingId === m.id ? 1 : 0.7 }} />
                           </div>
                           <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#8B8FA8', fontSize: '11px', flexShrink: 0 }}>{label}</span>
                         </>
@@ -394,10 +438,31 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                     onClick={() => setLightboxUrl(m.image_url!)}
                     style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '14px', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
                   />
-                ) : locationUrl ? (
-                  <a href={locationUrl} target="_blank" rel="noreferrer" style={{ color: '#A78BFA', fontSize: '13px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <MapPin size={14} /> View location
-                  </a>
+                ) : locationData ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ borderRadius: '10px', overflow: 'hidden', width: '200px', height: '110px', background: '#1a2035' }}>
+                      <iframe
+                        title="map"
+                        src={`https://www.openstreetmap.org/export/embed.html?bbox=${locationData.lng - 0.01},${locationData.lat - 0.01},${locationData.lng + 0.01},${locationData.lat + 0.01}&layer=mapnik&marker=${locationData.lat},${locationData.lng}`}
+                        style={{ width: '100%', height: '100%', border: 'none', pointerEvents: 'none' }}
+                        loading="lazy"
+                      />
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', justifyContent: 'space-between' }}>
+                      <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <MapPin size={12} /> {locationData.label}
+                      </span>
+                      <a
+                        href={/iphone|ipad|ipod/i.test(navigator.userAgent)
+                          ? `maps://maps.apple.com/?q=${locationData.lat},${locationData.lng}`
+                          : `https://maps.google.com/?q=${locationData.lat},${locationData.lng}`}
+                        target="_blank" rel="noreferrer"
+                        style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, textDecoration: 'none', background: 'rgba(167,139,250,0.15)', padding: '3px 8px', borderRadius: '6px' }}
+                      >
+                        Open ↗
+                      </a>
+                    </div>
+                  </div>
                 ) : (
                   <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0, lineHeight: 1.45, wordBreak: 'break-word' }}>{m.body}</p>
                 )}
@@ -428,7 +493,9 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         {recording ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '20px', padding: '10px 14px' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#EF4444', animation: 'pulse 1s infinite' }} />
-            <span style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600 }}>Recording {recordingSeconds}s / 60s</span>
+            <span style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600 }}>
+              {`${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')}`} / 1:00
+            </span>
             <button onClick={stopRecording} style={{ marginLeft: 'auto', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Square size={12} /> Send
             </button>
