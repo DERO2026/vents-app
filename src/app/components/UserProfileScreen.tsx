@@ -457,6 +457,7 @@ export function UserProfileScreen({
       {/* Interests section below */}
 
       {/* Interests */}
+      {user.interests?.length > 0 && (
       <div style={{ padding: '0 16px', marginBottom: '20px' }}>
         <p
           style={{
@@ -491,6 +492,7 @@ export function UserProfileScreen({
           })}
         </div>
       </div>
+      )}
 
       {/* Events they'd like */}
       {userEvents.length > 0 && (

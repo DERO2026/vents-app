@@ -44,6 +44,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCacheRef = useRef<Record<string, HTMLAudioElement>>({});
   const durationMsRef = useRef(0);
 
   useEffect(() => {
@@ -205,8 +206,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setRecordingSeconds(0);
   }, []);
 
-  // toggleAudio: create Audio element synchronously (iOS user-gesture requirement),
-  // then fetch blob async and set src. play() called after src set.
+  // toggleAudio: storage URLs redirect 302 → CDN signed URL, no auth header needed.
+  // Cache Audio elements per message id so repeated taps don't re-fetch.
   const toggleAudio = useCallback((id: string, url: string) => {
     setAudioError(null);
     if (playingId === id) {
@@ -216,26 +217,19 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     }
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
     setPlayingId(id);
-    // Fetch blob with auth, then play
-    getAuthToken()
-      .then(token => fetch(url, { headers: { Authorization: `Bearer ${token}` } }))
-      .then(resp => {
-        if (!resp.ok) throw new Error('fetch failed');
-        return resp.blob();
-      })
-      .then(blob => {
-        const blobUrl = URL.createObjectURL(blob);
-        const a = new Audio(blobUrl);
-        a.onended = () => { setPlayingId(null); URL.revokeObjectURL(blobUrl); };
-        audioRef.current = a;
-        return a.play();
-      })
-      .catch(e => {
-        console.error('Audio play failed', e);
-        setPlayingId(null);
-        setAudioError('Could not play audio');
-        setTimeout(() => setAudioError(null), 3000);
-      });
+    let a = audioCacheRef.current[id];
+    if (!a) {
+      a = new Audio(url);
+      a.onended = () => setPlayingId(null);
+      audioCacheRef.current[id] = a;
+    }
+    audioRef.current = a;
+    a.play().catch(e => {
+      console.error('Audio play failed', e);
+      setPlayingId(null);
+      setAudioError('Could not play audio');
+      setTimeout(() => setAudioError(null), 3000);
+    });
   }, [playingId]);
 
   const deleteMessage = useCallback(async (id: string) => {
