@@ -126,16 +126,29 @@ function PayoutsTab() {
       .order('created_at', { ascending: false })
       .limit(50);
     if (statusFilter === 'pending') q = q.eq('status', 'pending');
-    const [{ data: reqs }, { data: wals }] = await Promise.all([
+    const [{ data: reqs }, { data: walsRaw }] = await Promise.all([
       q,
       insforge.database
         .from('organizer_wallets')
-        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo, users(username, full_name)')
+        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo')
         .order('balance_kobo', { ascending: false })
         .limit(100),
     ]);
+    // organizer_wallets FK points to auth.users — PostgREST can't embed it.
+    // Look up usernames from public.users separately.
+    let wals = walsRaw || [];
+    if (wals.length > 0) {
+      const ids = wals.map((w: any) => w.organizer_id);
+      const { data: userRows } = await insforge.database
+        .from('users')
+        .select('id, username, full_name')
+        .in('id', ids);
+      const userMap: Record<string, any> = {};
+      (userRows || []).forEach((u: any) => { userMap[u.id] = u; });
+      wals = wals.map((w: any) => ({ ...w, users: userMap[w.organizer_id] || null }));
+    }
     setRequests(reqs || []);
-    setWallets(wals || []);
+    setWallets(wals);
     setLoading(false);
   };
 
