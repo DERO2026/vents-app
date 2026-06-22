@@ -127,7 +127,7 @@ export function ProfileScreen({
     { icon: Receipt, label: 'Transactions', sublabel: 'Last 90 days', color: '#06B6D4', screen: 'transactions' },
     {
       icon: Gift,
-      label: 'Invite Friends',
+      label: 'Vents Cents',
       sublabel: 'Earn Vents Cents',
       color: '#FFB830',
       screen: 'referral',

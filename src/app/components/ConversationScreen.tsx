@@ -14,6 +14,7 @@ interface ConversationScreenProps {
 interface DM {
   id: string;
   sender_id: string;
+  recipient_id: string;
   body: string;
   image_url?: string | null;
   media_type?: string | null;
@@ -21,6 +22,33 @@ interface DM {
   deleted_by_sender?: boolean;
   created_at: string;
   read_at?: string | null;
+}
+
+async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<File> {
+  if (!file.type.startsWith('image/')) return file;
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      if (Math.max(width, height) > maxPx) {
+        const ratio = maxPx / Math.max(width, height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => resolve(blob ? new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }) : file),
+        'image/jpeg', quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
 }
 
 export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack }: ConversationScreenProps) {
@@ -81,8 +109,9 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setUploadingImg(true);
     try {
       const token = await getAuthToken();
+      const compressed = await compressImage(file);
       const formData = new FormData();
-      formData.append('file', new File([file], `dm-${Date.now()}.${file.name.split('.').pop()}`, { type: file.type }));
+      formData.append('file', new File([compressed], `dm-${Date.now()}.jpg`, { type: compressed.type }));
       const res = await fetch(
         `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
         { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
@@ -242,18 +271,18 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     try {
       const { data } = await insforge.database
         .from('direct_messages')
-        .select('id, sender_id, body, image_url, media_type, duration_seconds, deleted_by_sender, created_at, read_at')
+        .select('id, sender_id, recipient_id, body, image_url, media_type, duration_seconds, deleted_by_sender, created_at, read_at')
         .or(
           `and(sender_id.eq.${currentUser.id},recipient_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},recipient_id.eq.${currentUser.id})`
         )
         .order('created_at', { ascending: true })
-        .limit(100);
+        .limit(50);
 
       setMessages((data as DM[]) || []);
 
       // Mark unread incoming messages as read
       const unread = (data || []).filter(
-        (m: any) => m.recipient_id !== currentUser.id && !m.read_at
+        (m: any) => m.recipient_id === currentUser.id && !m.read_at
       );
       if (unread.length > 0) {
         await insforge.database

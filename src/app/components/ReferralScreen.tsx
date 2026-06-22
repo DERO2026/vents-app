@@ -74,6 +74,11 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [featuredMsg, setFeaturedMsg] = useState<string | null>(null);
   const [featuredUntil, setFeaturedUntil] = useState<string | null>(null);
 
+  // Profile bonus state
+  const [profileBonusClaimed, setProfileBonusClaimed] = useState(false);
+  const [profileBonusBusy, setProfileBonusBusy] = useState(false);
+  const [profileBonusMsg, setProfileBonusMsg] = useState<string | null>(null);
+
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
   const referralLink = `https://getvents.com/?ref=${referralCode}`;
   const currentMonth = new Date().toISOString().slice(0, 7);
@@ -83,12 +88,13 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     async function load() {
       setLoading(true);
       try {
-        const [refsRes, walletRes, userRes, entriesRes, winnersRes] = await Promise.all([
+        const [refsRes, walletRes, userRes, entriesRes, winnersRes, bonusRes] = await Promise.all([
           insforge.database.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
           insforge.database.rpc('get_my_vc_balance' as any),
           insforge.database.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
           insforge.database.from('prize_draw_entries').select('id').eq('user_id', currentUser!.id).eq('draw_month', currentMonth),
           insforge.database.from('prize_draw_winners').select('*, users(full_name, username, avatar_url)').order('drawn_at', { ascending: false }).limit(3),
+          insforge.database.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
         ]);
         if (refsRes.data) setReferrals(refsRes.data);
         setBalance((walletRes.data as any)?.spendable ?? 0);
@@ -98,6 +104,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         }
         setDrawEntries(entriesRes.data?.length ?? 0);
         if (winnersRes.data) setWinners(winnersRes.data as Winner[]);
+        setProfileBonusClaimed(!!(bonusRes.data));
       } catch (err) {
         console.error('Failed to load VC data:', err);
       } finally {
@@ -182,6 +189,23 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     } catch (err: any) {
       setBadgeMsg(err?.message || 'Purchase failed.');
     } finally { setBadgeBusy(false); }
+  }
+
+  async function handleClaimProfileBonus() {
+    setProfileBonusBusy(true); setProfileBonusMsg(null);
+    try {
+      const { data, error } = await insforge.database.rpc('claim_profile_bonus' as any);
+      if (error) throw error;
+      if ((data as any)?.success) {
+        setProfileBonusClaimed(true);
+        setBalance((prev) => prev + 100);
+        setProfileBonusMsg('+100 VC awarded!');
+      } else {
+        setProfileBonusMsg((data as any)?.message || 'Not eligible yet');
+      }
+    } catch (err: any) {
+      setProfileBonusMsg(err?.message || 'Failed. Try again.');
+    } finally { setProfileBonusBusy(false); }
   }
 
   async function handleFeaturedInPeople() {
@@ -374,12 +398,36 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           ))}
         </div>
 
+        {/* ─── PROFILE BONUS ─── */}
+        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '18px' }}>✅</span>
+            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Complete Profile Bonus</span>
+            <span style={{ marginLeft: 'auto', color: '#FFB830', fontSize: '13px', fontWeight: 700 }}>+100 VC</span>
+          </div>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Add a photo, bio (10+ chars), and phone number to claim your one-time bonus.</p>
+          {profileBonusMsg && <p style={{ color: profileBonusMsg.includes('+') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{profileBonusMsg}</p>}
+          <button
+            onClick={handleClaimProfileBonus}
+            disabled={profileBonusBusy || profileBonusClaimed}
+            style={{
+              width: '100%', borderRadius: '12px', padding: '11px',
+              background: profileBonusClaimed ? 'rgba(16,185,129,0.12)' : 'linear-gradient(135deg,#065F46,#10B981)',
+              border: profileBonusClaimed ? '1px solid rgba(16,185,129,0.3)' : 'none',
+              color: profileBonusClaimed ? '#10B981' : '#fff',
+              fontSize: '14px', fontWeight: 700, cursor: profileBonusClaimed || profileBonusBusy ? 'default' : 'pointer',
+            }}
+          >
+            {profileBonusClaimed ? '✓ Bonus claimed' : profileBonusBusy ? 'Checking…' : 'Claim +100 VC'}
+          </button>
+        </div>
+
         {/* ─── REFERRAL SECTION ─── */}
         <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={16} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Invite Friends</span>
+              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Invite Friends &amp; Earn</span>
             </div>
             <span style={{ color: '#A855F7', fontSize: '13px', fontWeight: 700 }}>{joinedCount} / {MAX_REFERRALS} joined</span>
           </div>

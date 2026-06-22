@@ -264,6 +264,12 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         >
           {event.title}
         </h4>
+        {event.organizer && event.organizer !== 'Verified Organizer' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
+            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
           <Calendar size={10} color="#8B8FA8" />
           <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
@@ -274,12 +280,6 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             {event.city}
           </span>
         </div>
-        {event.organizer && event.organizer !== 'Verified Organizer' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
-            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
-          </div>
-        )}
         {countdown && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginBottom: '4px' }}>
             <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
@@ -340,7 +340,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
       onClick={() => onPress(event)}
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
-        width: '180px',
+        width: '162px',
         background: '#131629',
         borderRadius: '18px',
         border: '1px solid rgba(255,255,255,0.06)',
@@ -597,7 +597,7 @@ function FeaturedCarousel({
           <img
             src={event.image}
             alt={event.title}
-            style={{ width: '100%', height: '180px', objectFit: 'cover', display: 'block', minHeight: '180px' }}
+            style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block', minHeight: '220px' }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
           <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(6,10,18,0.92) 100%)' }} />
@@ -985,7 +985,7 @@ export function HomeScreen({
                         🔥 Trending Events
                       </h3>
                     </div>
-                    <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
+                    <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px', paddingLeft: '16px', paddingRight: '0' }}>
                       {trendingEvents.map((event) => (
                         <HorizontalEventCard
                           key={`trending-${event.id}`}

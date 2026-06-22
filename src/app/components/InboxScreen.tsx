@@ -31,7 +31,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
           .select('id, sender_id, recipient_id, body, created_at, read_at')
           .or(`sender_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`)
           .order('created_at', { ascending: false })
-          .limit(200);
+          .limit(50);
 
         if (!msgs || msgs.length === 0) { setLoading(false); return; }
 

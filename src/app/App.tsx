@@ -232,6 +232,14 @@ export default function App() {
           window.history.replaceState({}, document.title, cleanUrl);
         }
 
+        // Store referral code from ?ref= so it can be claimed after signup
+        const refCode = params.get('ref');
+        if (refCode && refCode.length === 8) {
+          sessionStorage.setItem('vents_ref_code', refCode.toUpperCase());
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
         // Intercept event deep links: ?event=<eventId>
         const eventDeepLink = params.get('event');
         if (eventDeepLink) {
@@ -632,8 +640,8 @@ export default function App() {
     setLoadingEvents(true);
     try {
       const nextPage = loadMore ? eventsPageRef.current + 1 : 0;
-      const start = nextPage * 10;
-      const end = start + 9;
+      const start = nextPage * 20;
+      const end = start + 19;
 
       // Calculate user's age for 18+ filtering
       const userDob = (currentUser as any)?.date_of_birth;
@@ -658,7 +666,7 @@ export default function App() {
       if (dbEventsError) throw dbEventsError;
 
       if (dbEventsData) {
-        const hasMore = dbEventsData.length === 10;
+        const hasMore = dbEventsData.length === 20;
         setHasMoreEvents(hasMore);
         eventsPageRef.current = loadMore ? nextPage : 0;
 

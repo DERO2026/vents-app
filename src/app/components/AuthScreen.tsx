@@ -246,7 +246,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           .maybeSingle();
 
         const finalProfile = verifiedProfile || profile;
-        
+
+        // Apply referral code if user signed up via ?ref= link
+        const pendingRef = sessionStorage.getItem('vents_ref_code');
+        if (pendingRef) {
+          sessionStorage.removeItem('vents_ref_code');
+          insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef }).catch(() => {});
+        }
+
         onSuccess({
           id: userId,
           email: userEmail,
