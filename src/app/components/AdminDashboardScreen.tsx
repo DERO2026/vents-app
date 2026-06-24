@@ -399,14 +399,20 @@ export function AdminDashboardScreen({
   useEffect(() => {
     if (tab !== 'stats') return;
     setStatsLoading(true);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     Promise.all([
       insforge.database.from('users').select('id', { count: 'exact', head: true }),
       insforge.database.from('events').select('id', { count: 'exact', head: true }),
       insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
       insforge.database.from('vc_transactions').select('amount').eq('type', 'credit').eq('status', 'active'),
-    ]).then(([uRes, eRes, tRes, vcRes]) => {
+      insforge.database.from('tickets').select('amount').eq('payment_status', 'paid'),
+      insforge.database.from('users').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
+      insforge.database.from('users').select('id', { count: 'exact', head: true }).gte('created_at', monthAgo),
+    ]).then(([uRes, eRes, tRes, vcRes, revRes, weekRes, monthRes]) => {
       const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
-      setStats({ users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal });
+      const revenue = (revRes.data || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
+      setStats({ users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal, revenue, newThisWeek: weekRes.count ?? 0, newThisMonth: monthRes.count ?? 0 });
       setStatsLoading(false);
     }).catch(() => setStatsLoading(false));
   }, [tab]);
@@ -1471,10 +1477,13 @@ export function AdminDashboardScreen({
                   { label: 'Total Events', value: stats.events.toLocaleString(), color: '#A78BFA' },
                   { label: 'Paid Tickets', value: stats.tickets.toLocaleString(), color: '#10B981' },
                   { label: 'Active VC', value: stats.vc.toLocaleString(), color: '#F59E0B' },
+                  { label: 'Total Revenue', value: '₦' + (stats.revenue / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }), color: '#34D399' },
+                  { label: 'New This Week', value: stats.newThisWeek.toLocaleString(), color: '#60A5FA' },
+                  { label: 'New This Month', value: stats.newThisMonth.toLocaleString(), color: '#818CF8' },
                 ].map(card => (
                   <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '16px' }}>
                     <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                    <div style={{ color: card.color, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                    <div style={{ color: card.color, fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
                   </div>
                 ))}
               </div>

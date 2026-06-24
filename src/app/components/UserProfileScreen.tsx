@@ -55,6 +55,7 @@ export function UserProfileScreen({
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
   const [reviewSubmitting, setReviewSubmitting] = useState(false);
   const [avgRating, setAvgRating] = useState(0);
+  const [hasTicketFromOrganizer, setHasTicketFromOrganizer] = useState(false);
   const isVerified = user.is_verified || user.id === ROOT_UID;
   const isOwnProfile = currentUserId === user.id;
   const [showReport, setShowReport] = useState(false);
@@ -146,6 +147,24 @@ export function UserProfileScreen({
           if (currentUserId) setReviewSubmitted(data.some((r: any) => r.reviewer_id === currentUserId));
         }
       });
+
+    if (currentUserId && currentUserId !== user.id) {
+      insforge.database
+        .from('events')
+        .select('id')
+        .eq('organizer_id', user.id)
+        .then(({ data: orgEvents }) => {
+          if (!orgEvents || orgEvents.length === 0) return;
+          const eventIds = orgEvents.map((e: any) => e.id);
+          insforge.database
+            .from('tickets')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', currentUserId)
+            .in('event_id', eventIds)
+            .eq('status', 'active')
+            .then(({ count }) => setHasTicketFromOrganizer((count || 0) > 0));
+        });
+    }
   }, [user.id, currentUserId]);
 
   const submitReview = async () => {
@@ -588,7 +607,7 @@ export function UserProfileScreen({
             )}
           </div>
 
-          {!isOwnProfile && currentUserId && !reviewSubmitted && (
+          {!isOwnProfile && currentUserId && !reviewSubmitted && hasTicketFromOrganizer && (
             <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '12px' }}>
               <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>Leave a Review</p>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>

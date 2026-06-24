@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
+import { compressImage } from '../../lib/compressImage';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -170,7 +171,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const file = new File([croppedBlob], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const compressed = await compressImage(croppedBlob);
+      const file = new File([compressed], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch(

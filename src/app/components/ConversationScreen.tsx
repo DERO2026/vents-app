@@ -75,6 +75,20 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const audioCacheRef = useRef<Record<string, HTMLAudioElement>>({});
   const durationMsRef = useRef(0);
 
+  // Immediately mark all unread incoming messages as read on mount — fire and forget
+  // This runs before load() completes so InboxScreen sees zero unread when user goes back
+  useEffect(() => {
+    if (!currentUser?.id || !otherUser?.id) return;
+    insforge.database
+      .from('direct_messages')
+      .update({ read_at: new Date().toISOString() })
+      .eq('recipient_id', currentUser.id)
+      .eq('sender_id', otherUser.id)
+      .is('read_at', null)
+      .then(() => {})
+      .catch(() => {});
+  }, [currentUser?.id, otherUser?.id]);
+
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
     load();

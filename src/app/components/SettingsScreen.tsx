@@ -8,6 +8,7 @@ import {
   Smartphone, X, ExternalLink, ShieldCheck, Copy,
 } from 'lucide-react';
 import { generateTOTPSecret, verifyTOTP, makeTOTPUri } from '../../lib/totp';
+import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
 
 interface SettingsScreenProps {
@@ -251,7 +252,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
+      const compressed = await compressImage(croppedBlob);
+      const croppedFile = new File([compressed], 'avatar.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
       const res = await fetch(
@@ -302,7 +304,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const croppedFile = new File([croppedBlob], 'cover.jpg', { type: 'image/jpeg' });
+      const compressedCover = await compressImage(croppedBlob);
+      const croppedFile = new File([compressedCover], 'cover.jpg', { type: 'image/jpeg' });
       const formData = new FormData();
       formData.append('file', croppedFile);
       const res = await fetch(
@@ -1251,11 +1254,11 @@ export function SettingsScreen({
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
         <Section title="SUPPORT & LEGAL">
-          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('/privacy', '_blank')} />
+          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('https://getvents.com/privacy', '_blank')} />
           <Divider />
-          <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('/terms', '_blank')} />
+          <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('https://getvents.com/terms', '_blank')} />
           <Divider />
-          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => setSubScreen('help')} />
+          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

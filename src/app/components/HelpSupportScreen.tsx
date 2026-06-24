@@ -15,8 +15,8 @@ const FAQS = [
     a: 'Go to Profile → My Tickets and tap the event. Your QR code is on that screen. Screenshot it or keep the app open — organisers will scan it at the gate.',
   },
   {
-    q: 'I paid but my ticket isn\'t showing.',
-    a: 'Pull down to refresh on the My Tickets screen. If it still doesn\'t appear after 5 minutes, email ventsappltd@gmail.com with your payment reference and we\'ll sort it out.',
+    q: "I paid but my ticket isn't showing.",
+    a: "Pull down to refresh on the My Tickets screen. If it still doesn't appear after 5 minutes, email ventsappltd@gmail.com with your payment reference and we'll sort it out.",
   },
   {
     q: 'How do I create an event as an organiser?',
@@ -32,15 +32,19 @@ const FAQS = [
   },
   {
     q: 'How do I report a problem with an event or user?',
-    a: 'Email ventsappltd@gmail.com with the event name or user\'s username and a description. We review all reports and act on policy violations.',
+    a: 'Tap the three-dot menu (⋯) on any event or user profile and select "Report." Choose a reason and submit — our team reviews every report. For urgent issues, email ventsappltd@gmail.com or WhatsApp +234 9030737368.',
   },
   {
     q: 'What are Vents Cents?',
-    a: 'Vents Cents are in-app points earned by inviting friends. They can be used for discounts on future tickets. They are not withdrawable and have no cash value.',
+    a: 'Vents Cents (VC) are in-app reward points. You earn 300 VC for each friend you refer (they get 150 VC too), 100 VC for completing your profile, and 50 VC per ticket you purchase. They are not withdrawable and have no cash value.',
+  },
+  {
+    q: 'How do organisers withdraw their earnings?',
+    a: 'Go to your Organiser Dashboard → Wallet → Withdraw. Enter your bank details and the amount. Withdrawals are processed within 1–3 business days. Minimum withdrawal is ₦1,000.',
   },
   {
     q: 'How do I delete my account?',
-    a: 'Go to Profile → Settings → scroll to the bottom → tap "Delete Account." You\'ll be asked to confirm. Your data is anonymised immediately and you cannot reverse this. If you have trouble, email ventsappltd@gmail.com.',
+    a: "Go to Profile → Settings → scroll to the bottom → tap \"Delete Account.\" You'll be asked to confirm. Your data is anonymised immediately and you cannot reverse this. If you have trouble, email ventsappltd@gmail.com.",
   },
 ];
 
@@ -93,13 +97,13 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
             ventsappltd@gmail.com
           </a>
           <a
-            href="https://wa.me/2348000000000"
+            href="https://wa.me/2349030737368"
             target="_blank"
             rel="noopener noreferrer"
             style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#22C55E', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}
           >
             <Phone size={16} color="#22C55E" />
-            WhatsApp Support
+            WhatsApp: +234 9030737368
           </a>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8B8FA8', fontSize: '12px' }}>
             <MessageCircle size={14} color="#8B8FA8" />

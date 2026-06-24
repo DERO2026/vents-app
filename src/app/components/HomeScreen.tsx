@@ -593,33 +593,36 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '65vh', minHeight: '320px', maxHeight: '520px', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
           <img
             src={event.image}
             alt={event.title}
-            style={{ width: '100%', height: '220px', objectFit: 'cover', display: 'block', minHeight: '220px' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
             onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
           />
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(6,10,18,0.92) 100%)' }} />
-          <div style={{ position: 'absolute', top: '12px', left: '12px' }}>
-            <span style={{ background: 'rgba(167,139,250,0.9)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '6px', letterSpacing: '0.05em' }}>⭐ FEATURED</span>
+          {/* Deep gradient from transparent at top to almost-black at bottom */}
+          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
+          {/* FEATURED badge */}
+          <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
+            <span style={{ background: 'rgba(167,139,250,0.92)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.05em' }}>⭐ FEATURED</span>
           </div>
+          {/* Save button */}
           <button
             onClick={(ev) => { ev.stopPropagation(); onToggleSave(event.id); }}
-            style={{ position: 'absolute', top: '12px', right: '12px', background: 'rgba(0,0,0,0.4)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ position: 'absolute', top: '14px', right: '14px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <span style={{ fontSize: '14px' }}>{isSaved.includes(event.id) ? '🔖' : '🔖'}</span>
           </button>
-          <div style={{ padding: '12px 14px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, margin: '0 0 6px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2 }}>{event.title}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                📅 {event.date}
-              </span>
-              <span style={{ color: '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                📍 {event.city}
-              </span>
-              <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 800 }}>{formatPrice(event.price)}</span>
+          {/* Info overlay at bottom */}
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
+            {event.organizer && event.organizer !== 'Verified Organizer' && (
+              <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, margin: '0 0 4px' }}>@{event.organizer}</p>
+            )}
+            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>📅 {event.date}</span>
+              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>📍 {event.city}</span>
+              <span style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
             </div>
           </div>
         </div>

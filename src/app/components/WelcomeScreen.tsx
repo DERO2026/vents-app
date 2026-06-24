@@ -50,7 +50,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState }: WelcomeSc
         }
         @keyframes arrowBounce {
           0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(5px); }
+          50%       { transform: translateX(0); }
         }
         @keyframes neonPulse {
           0%, 100% { opacity: 0.7; }
