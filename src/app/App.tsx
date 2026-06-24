@@ -165,6 +165,7 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [followingFilter, setFollowingFilter] = useState<'following' | 'followers' | 'attendees' | 'all'>('following');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
   const handleLanguageChange = useCallback((lang: string) => {
     setLanguage(lang);
@@ -192,6 +193,7 @@ export default function App() {
 
   const goBack = useCallback(() => {
     const prev = screenStack[screenStack.length - 1];
+    if (screen === 'conversation') setChatRefreshKey((k) => k + 1);
     if (prev) {
       setScreenStack((s) => s.slice(0, -1));
       setScreen(prev);
@@ -199,7 +201,7 @@ export default function App() {
       setScreen('home');
       setActiveTab('home');
     }
-  }, [screenStack, userRole]);
+  }, [screenStack, screen, userRole]);
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
@@ -1343,6 +1345,7 @@ export default function App() {
                 setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
                 navigateTo('conversation');
               }}
+              chatRefreshKey={chatRefreshKey}
             />
           )}
           {screen === 'saved' && (

@@ -7,6 +7,7 @@ interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
   currentUserId?: string;
   onOpenConversation?: (userId: string, userName: string, avatarUrl?: string, vcBadge?: string) => void;
+  chatRefreshKey?: number;
 }
 
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
@@ -40,6 +41,7 @@ export function ExploreScreen({
   onUserPress,
   currentUserId,
   onOpenConversation,
+  chatRefreshKey,
 }: ExploreScreenProps) {
 
   const [activeTab, setActiveTab] = useState<'people' | 'chats'>('people');
@@ -87,7 +89,7 @@ export function ExploreScreen({
         setConversations(convos);
         setLoadingChats(false);
       });
-  }, [activeTab, currentUserId]);
+  }, [activeTab, currentUserId, chatRefreshKey]);
 
   // Suggested accounts
   const [suggested, setSuggested] = useState<UserProfile[]>([]);
