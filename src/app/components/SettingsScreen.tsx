@@ -1144,6 +1144,7 @@ export function SettingsScreen({
   currentUser,
   onBack,
   onSignOut,
+  onNavigate,
   isDark,
   onToggleDark,
   onProfileUpdated,
