@@ -69,6 +69,7 @@ export interface UserProfile {
   interests: string[];
   avatar_url?: string;
   cover_url?: string;
+  role?: string;
   isOrganizer?: boolean;
   isVerified?: boolean;
   vc_badge?: string;

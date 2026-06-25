@@ -31,6 +31,7 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     interests: Array.isArray(dbUser.interests) ? dbUser.interests : [],
     avatar_url: dbUser.avatar_url,
     cover_url: dbUser.cover_url,
+    role: dbUser.role,
     isOrganizer: dbUser.role === 'organizer',
     isVerified: dbUser.is_verified === true,
     vc_badge: dbUser.vc_badge || undefined,
