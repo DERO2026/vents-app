@@ -76,7 +76,7 @@ export function TermsScreen() {
       </Section>
 
       <Section title="10. Account Suspension and Bans">
-        Vents may suspend or permanently ban accounts that violate these Terms. Banned users may not create new accounts. To appeal a ban, contact us via WhatsApp at <a href="https://wa.me/2349030737368" style={{ color: '#A78BFA' }}>+234 9030 737 368</a> or email <a href="mailto:ventsappltd@gmail.com" style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</a>.
+        Vents may suspend or permanently ban accounts that violate these Terms. Banned users may not create new accounts. To appeal a ban, contact us via WhatsApp at <a href="https://wa.me/2349030737368" style={{ color: '#A78BFA' }}>+234 9030 737 368</a> or email <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a>.
       </Section>
 
       <Section title="11. Reporting Content">
@@ -101,7 +101,7 @@ export function TermsScreen() {
 
       <Section title="16. Contact">
         Vents Ltd<br />
-        Email: <a href="mailto:ventsappltd@gmail.com" style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</a><br />
+        Email: <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a><br />
         WhatsApp: <a href="https://wa.me/2349030737368" style={{ color: '#A78BFA' }}>+234 9030 737 368</a>
       </Section>
 

@@ -73,7 +73,7 @@ export function PrivacyScreen() {
         • Request deletion (subject to retention obligations)<br />
         • Withdraw consent where processing is consent-based<br />
         • Lodge a complaint with the Nigeria Data Protection Commission (NDPC)<br /><br />
-        To exercise these rights, email <a href="mailto:ventsappltd@gmail.com" style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</a>.
+        To exercise these rights, email <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a>.
       </Section>
 
       <Section title="9. Security">
@@ -81,7 +81,7 @@ export function PrivacyScreen() {
       </Section>
 
       <Section title="10. Children">
-        Vents is not intended for children under 13. We do not knowingly collect personal data from anyone under 13. If you believe a child under 13 has created an account, contact us at <a href="mailto:ventsappltd@gmail.com" style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</a> and we will delete the account.
+        Vents is not intended for children under 13. We do not knowingly collect personal data from anyone under 13. If you believe a child under 13 has created an account, contact us at <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a> and we will delete the account.
       </Section>
 
       <Section title="11. Governing Law">
@@ -90,7 +90,7 @@ export function PrivacyScreen() {
 
       <Section title="12. Contact Us">
         Vents Ltd<br />
-        Email: <a href="mailto:ventsappltd@gmail.com" style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</a><br />
+        Email: <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a><br />
         WhatsApp: <a href="https://wa.me/2349030737368" style={{ color: '#A78BFA' }}>+234 9030 737 368</a>
       </Section>
 

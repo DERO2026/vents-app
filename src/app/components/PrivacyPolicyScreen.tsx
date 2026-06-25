@@ -15,7 +15,7 @@ How we use it: to run your account; to show you relevant nearby events; to proce
 
 Who we share it with: Paystack, to process payments. Nobody else, unless required by law.
 
-Your rights: you can ask what information we hold about you, ask us to correct it, or ask us to delete your account and data, by contacting ventsappltd@gmail.com. Nigeria's Data Protection Act gives you the right to all of this.
+Your rights: you can ask what information we hold about you, ask us to correct it, or ask us to delete your account and data, by contacting support@getvents.com. Nigeria's Data Protection Act gives you the right to all of this.
 
 Data retention: kept while your account is active, deleted within a reasonable period of closing it, except where legally required to keep transaction records longer.
 
@@ -25,7 +25,7 @@ Children: Vents is not intended for anyone under 18.
 
 Changes: this policy may be updated as the app changes, with notice for anything significant.
 
-Contact: ventsappltd@gmail.com`;
+Contact: support@getvents.com`;
 
 export function PrivacyPolicyScreen({ onBack }: PrivacyPolicyScreenProps) {
   return (

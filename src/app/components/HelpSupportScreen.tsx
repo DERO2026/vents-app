@@ -16,7 +16,7 @@ const FAQS = [
   },
   {
     q: "I paid but my ticket isn't showing.",
-    a: "Pull down to refresh on the My Tickets screen. If it still doesn't appear after 5 minutes, email ventsappltd@gmail.com with your payment reference and we'll sort it out.",
+    a: "Pull down to refresh on the My Tickets screen. If it still doesn't appear after 5 minutes, email support@getvents.com with your payment reference and we'll sort it out.",
   },
   {
     q: 'How do I create an event as an organiser?',
@@ -28,11 +28,11 @@ const FAQS = [
   },
   {
     q: 'Can I get a refund?',
-    a: 'Refunds are handled by the event organiser, not Vents. Contact the organiser directly via the event page. If an event is cancelled by the organiser, contact ventsappltd@gmail.com.',
+    a: 'Refunds are handled by the event organiser, not Vents. Contact the organiser directly via the event page. If an event is cancelled by the organiser, contact support@getvents.com.',
   },
   {
     q: 'How do I report a problem with an event or user?',
-    a: 'Tap the three-dot menu (⋯) on any event or user profile and select "Report." Choose a reason and submit — our team reviews every report. For urgent issues, email ventsappltd@gmail.com or WhatsApp +234 9030737368.',
+    a: 'Tap the three-dot menu (⋯) on any event or user profile and select "Report." Choose a reason and submit — our team reviews every report. For urgent issues, email support@getvents.com or WhatsApp +234 9030737368.',
   },
   {
     q: 'What are Vents Cents?',
@@ -44,7 +44,7 @@ const FAQS = [
   },
   {
     q: 'How do I delete my account?',
-    a: "Go to Profile → Settings → scroll to the bottom → tap \"Delete Account.\" You'll be asked to confirm. Your data is anonymised immediately and you cannot reverse this. If you have trouble, email ventsappltd@gmail.com.",
+    a: "Go to Profile → Settings → scroll to the bottom → tap \"Delete Account.\" You'll be asked to confirm. Your data is anonymised immediately and you cannot reverse this. If you have trouble, email support@getvents.com.",
   },
 ];
 
@@ -90,11 +90,11 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
             Can't find what you need? Reach us directly:
           </p>
           <a
-            href="mailto:ventsappltd@gmail.com"
+            href="mailto:support@getvents.com"
             style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#A78BFA', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}
           >
             <Mail size={16} color="#A78BFA" />
-            ventsappltd@gmail.com
+            support@getvents.com
           </a>
           <a
             href="https://wa.me/2349030737368"

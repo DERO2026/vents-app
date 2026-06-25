@@ -8,8 +8,8 @@ const SECTIONS: Section[] = [
     items: [
       { q: 'How do I buy a ticket?', a: 'Tap any event on the home screen, choose your ticket type and quantity, then tap "Buy Ticket." You can pay by debit/credit card, bank transfer, or USSD via Paystack. Your ticket appears in Profile → My Tickets immediately after payment is confirmed.' },
       { q: 'How do I access my QR code?', a: 'Go to Profile → My Tickets and tap the event. Your QR code is displayed on the ticket screen. Screenshot it or keep the app open — organizers will scan it at the gate using the Vents check-in scanner.' },
-      { q: 'I paid but my ticket is not showing.', a: 'Pull down to refresh on the My Tickets screen. If it still does not appear after 5 minutes, email ventsappltd@gmail.com with your Paystack payment reference and we will resolve it within 1 business day.' },
-      { q: 'Can I get a refund?', a: 'Refund policies are set by individual event organizers and must be stated on the event listing. If an event is cancelled by the organizer, contact ventsappltd@gmail.com and we will facilitate a refund through Paystack (typically 5–10 business days). Vents platform fees are non-refundable.' },
+      { q: 'I paid but my ticket is not showing.', a: 'Pull down to refresh on the My Tickets screen. If it still does not appear after 5 minutes, email support@getvents.com with your Paystack payment reference and we will resolve it within 1 business day.' },
+      { q: 'Can I get a refund?', a: 'Refund policies are set by individual event organizers and must be stated on the event listing. If an event is cancelled by the organizer, contact support@getvents.com and we will facilitate a refund through Paystack (typically 5–10 business days). Vents platform fees are non-refundable.' },
       { q: 'Can I transfer my ticket to someone else?', a: 'Ticket transfers are not currently supported in-app. Contact the event organizer directly — some organizers accommodate name changes at their discretion.' },
     ],
   },
@@ -29,16 +29,16 @@ const SECTIONS: Section[] = [
       { q: 'How do I receive payment from ticket sales?', a: 'Ticket revenue is paid out to your Paystack account. Ensure your Paystack merchant account is set up and linked. Payouts follow Paystack\'s schedule. Vents deducts a platform fee per transaction.' },
       { q: 'How do I check in attendees at the gate?', a: 'Use the Vents Check-in Scanner (available in your Organizer Dashboard). Scan the attendee\'s QR code from their Vents app. The scanner marks the ticket as checked in and shows attendee details.' },
       { q: 'Can I set a capacity limit for my event?', a: 'Yes. When creating an event, set the "Ticket Goal" field. Ticket sales will stop automatically when the limit is reached. You can increase the limit later from Manage Events.' },
-      { q: 'How do I apply for organizer verification?', a: 'Verified organizers receive a blue checkmark on their profile. To apply, email ventsappltd@gmail.com with your full name, the name of your events business, and a link to your social media presence. We review applications within 5 business days.' },
+      { q: 'How do I apply for organizer verification?', a: 'Verified organizers receive a blue checkmark on their profile. To apply, email support@getvents.com with your full name, the name of your events business, and a link to your social media presence. We review applications within 5 business days.' },
     ],
   },
   {
     title: 'Account & Safety',
     items: [
       { q: 'How do I report an event or user?', a: 'Tap the three-dot menu or flag icon on any event or user profile and select Report. Choose a reason and submit. All reports are reviewed by our moderation team within 48 hours.' },
-      { q: 'How do I delete my account?', a: 'Go to Profile → Settings → scroll to the bottom → tap "Delete Account." You will be asked to confirm. Your personal data is anonymised immediately. This action cannot be reversed. Email ventsappltd@gmail.com if you have trouble.' },
-      { q: 'I forgot my password. How do I reset it?', a: 'On the login screen, tap "Forgot password?" and enter your email. You will receive a reset link. If you signed up with a phone number, contact ventsappltd@gmail.com for assistance.' },
-      { q: 'How do I report a bug or technical issue?', a: 'Email ventsappltd@gmail.com with a description of the issue, your device model, and any screenshots. You can also reach us on WhatsApp at +234 9030 737 368.' },
+      { q: 'How do I delete my account?', a: 'Go to Profile → Settings → scroll to the bottom → tap "Delete Account." You will be asked to confirm. Your personal data is anonymised immediately. This action cannot be reversed. Email support@getvents.com if you have trouble.' },
+      { q: 'I forgot my password. How do I reset it?', a: 'On the login screen, tap "Forgot password?" and enter your email. You will receive a reset link. If you signed up with a phone number, contact support@getvents.com for assistance.' },
+      { q: 'How do I report a bug or technical issue?', a: 'Email support@getvents.com with a description of the issue, your device model, and any screenshots. You can also reach us on WhatsApp at +234 9030 737 368.' },
     ],
   },
 ];
@@ -88,8 +88,8 @@ export function HelpPage() {
         <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 8px' }}>Still need help?</h3>
         <p style={{ color: '#8B8FA8', fontSize: '14px', margin: '0 0 16px' }}>Our support team is available Monday–Friday, 9am–6pm WAT.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <a href="mailto:ventsappltd@gmail.com" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#A78BFA', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}>
-            ✉ ventsappltd@gmail.com
+          <a href="mailto:support@getvents.com" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#A78BFA', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}>
+            ✉ support@getvents.com
           </a>
           <a href="https://wa.me/2349030737368" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#A78BFA', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}>
             💬 WhatsApp: +234 9030 737 368

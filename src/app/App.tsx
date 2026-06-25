@@ -359,7 +359,7 @@ export default function App() {
           await insforge.auth.signOut().catch(() => {});
           sessionStorage.removeItem('vents_rt');
           setCurrentUser(null);
-          setAuthError('Your account has been suspended. To appeal, contact ventsappltd@gmail.com or WhatsApp +234 9030737368.');
+          setAuthError('Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.');
           setAuthLoading(false);
           return;
         }

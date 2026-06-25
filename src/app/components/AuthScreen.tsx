@@ -333,7 +333,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           .eq('email', email.trim().toLowerCase())
           .maybeSingle();
         if (deletedRow) {
-          throw new Error('This email address was used on a deleted account and cannot be re-registered. Contact ventsappltd@gmail.com if you believe this is an error.');
+          throw new Error('This email address was used on a deleted account and cannot be re-registered. Contact support@getvents.com if you believe this is an error.');
         }
 
         // Block re-signup with a previously deleted phone number
@@ -344,7 +344,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             .eq('phone', normalizedPhone)
             .maybeSingle();
           if (deletedPhoneRow) {
-            throw new Error('This phone number was used on a deleted account and cannot be re-registered. Contact ventsappltd@gmail.com if you believe this is an error.');
+            throw new Error('This phone number was used on a deleted account and cannot be re-registered. Contact support@getvents.com if you believe this is an error.');
           }
         }
 
@@ -585,13 +585,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             </div>
           </a>
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
-          <a href="mailto:ventsappltd@gmail.com" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
+          <a href="mailto:support@getvents.com" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(79,70,229,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: '18px' }}>✉️</span>
             </div>
             <div style={{ textAlign: 'left' }}>
               <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, margin: 0 }}>Email</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>ventsappltd@gmail.com</p>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>support@getvents.com</p>
             </div>
           </a>
         </div>

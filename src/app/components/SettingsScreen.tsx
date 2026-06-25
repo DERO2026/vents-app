@@ -943,10 +943,10 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
             </div>
             <div style={{ flex: 1 }}>
               <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Email Support</p>
-              <p style={{ color: '#C4C9E0', fontSize: '12px' }}>ventsappltd@gmail.com</p>
+              <p style={{ color: '#C4C9E0', fontSize: '12px' }}>support@getvents.com</p>
             </div>
             <button
-              onClick={() => window.open('mailto:ventsappltd@gmail.com', '_blank')}
+              onClick={() => window.open('mailto:support@getvents.com', '_blank')}
               style={{ background: 'rgba(167,139,250,0.15)', border: 'none', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
             >
               <ExternalLink size={15} color="#A78BFA" />
@@ -978,7 +978,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
               {articles.filter((a) => a.category === cat).map((article, i, arr) => (
                 <div key={article.title}>
                   <button
-                    onClick={() => window.open('mailto:ventsappltd@gmail.com', '_blank')}
+                    onClick={() => window.open('mailto:support@getvents.com', '_blank')}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1005,7 +1005,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
         <div style={{ textAlign: 'center', marginTop: '8px' }}>
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px' }}>Need more help?</p>
           <button
-            onClick={() => window.open('mailto:ventsappltd@gmail.com', '_blank')}
+            onClick={() => window.open('mailto:support@getvents.com', '_blank')}
             style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '12px', padding: '10px 20px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <ExternalLink size={14} />
@@ -1305,7 +1305,7 @@ function DeleteAccountScreen({
       setStep('done');
       setTimeout(() => onDeleted(), 3000);
     } catch (err: any) {
-      setError('Account deletion failed. Please try again or contact ventsappltd@gmail.com.');
+      setError('Account deletion failed. Please try again or contact support@getvents.com.');
     } finally {
       setLoading(false);
     }
@@ -1321,7 +1321,7 @@ function DeleteAccountScreen({
         </p>
         <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6 }}>
           If this was a mistake, contact us:<br />
-          <strong style={{ color: '#A78BFA' }}>ventsappltd@gmail.com</strong><br />
+          <strong style={{ color: '#A78BFA' }}>support@getvents.com</strong><br />
           WhatsApp: <strong style={{ color: '#A78BFA' }}>+234 9030737368</strong>
         </p>
       </div>
