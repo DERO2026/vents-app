@@ -98,7 +98,6 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState }: WelcomeSc
 
         {/* Welcome pill */}
         <div style={{ position: 'absolute', bottom: '28px', left: '24px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '50px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 2 }}>
-          <span style={{ fontSize: '14px' }}>🎉</span>
           <span style={{ color: '#C4C9E0', fontSize: '12px', fontWeight: 500 }}>
             Welcome to <span style={{ color: '#A855F7', fontWeight: 700 }}>Vents</span>
           </span>

@@ -29,13 +29,13 @@ interface Winner {
 const BADGE_TIERS = ['bronze', 'silver', 'gold', 'platinum', 'elite', 'legend'] as const;
 type BadgeTier = typeof BADGE_TIERS[number];
 
-const BADGE_CONFIG: { type: BadgeTier; label: string; cost: number; color: string; emoji: string }[] = [
-  { type: 'bronze',   label: 'Bronze',   cost: 300,   color: '#CD7F32', emoji: '🥉' },
-  { type: 'silver',   label: 'Silver',   cost: 800,   color: '#C0C0C0', emoji: '🥈' },
-  { type: 'gold',     label: 'Gold',     cost: 2000,  color: '#FFD700', emoji: '🥇' },
-  { type: 'platinum', label: 'Platinum', cost: 5000,  color: '#818CF8', emoji: '💎' },
-  { type: 'elite',    label: 'Elite',    cost: 12000, color: '#A855F7', emoji: '⚡' },
-  { type: 'legend',   label: 'Legend',   cost: 25000, color: '#EC4899', emoji: '👑' },
+const BADGE_CONFIG: { type: BadgeTier; label: string; cost: number; color: string; chipBg: string; chipColor: string; chipGradient?: string; chipBorder?: string }[] = [
+  { type: 'bronze',   label: 'Bronze',   cost: 300,   color: '#CD7F32', chipBg: '#CD7F32', chipColor: '#fff' },
+  { type: 'silver',   label: 'Silver',   cost: 800,   color: '#C0C0C0', chipBg: '#A8A9AD', chipColor: '#fff' },
+  { type: 'gold',     label: 'Gold',     cost: 2000,  color: '#FFD700', chipBg: '#FFD700', chipColor: '#1a1a2e' },
+  { type: 'platinum', label: 'Platinum', cost: 5000,  color: '#818CF8', chipBg: '#E5E4E2', chipColor: '#1a1a2e' },
+  { type: 'elite',    label: 'Elite',    cost: 12000, color: '#A855F7', chipBg: '#1a1a2e', chipColor: '#fff', chipBorder: '1px solid rgba(255,255,255,0.15)' },
+  { type: 'legend',   label: 'Legend',   cost: 25000, color: '#EC4899', chipBg: '', chipColor: '#fff', chipGradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)' },
 ];
 
 function monthCountdown(): string {
@@ -247,11 +247,15 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
             <Coins size={22} color="#FFB830" />
             <span style={{ color: '#C4C9E0', fontSize: '14px', fontWeight: 600 }}>Vents Cents Balance</span>
-            {currentBadge && (
-              <span style={{ marginLeft: 'auto', fontSize: '16px' }}>
-                {BADGE_CONFIG.find(b => b.type === currentBadge)?.emoji}
-              </span>
-            )}
+            {currentBadge && (() => {
+              const bc = BADGE_CONFIG.find(b => b.type === currentBadge);
+              if (!bc) return null;
+              return (
+                <span style={{ marginLeft: 'auto', background: bc.chipGradient || bc.chipBg, color: bc.chipColor, fontSize: '11px', fontWeight: 700, borderRadius: '20px', padding: '6px 12px', letterSpacing: '0.08em', border: bc.chipBorder || 'none' }}>
+                  {bc.label.toUpperCase()}
+                </span>
+              );
+            })()}
           </div>
           <p style={{ color: '#FFB830', fontSize: '36px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
             {balance.toLocaleString()}<span style={{ fontSize: '16px', color: '#8B8FA8', marginLeft: '6px' }}>VC</span>
@@ -320,14 +324,14 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Badges show on your profile and in search results.</p>
           {badgeMsg && <p style={{ color: badgeMsg.includes('activated') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{badgeMsg}</p>}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {BADGE_CONFIG.map(({ type, label, cost, color, emoji }) => {
+            {BADGE_CONFIG.map(({ type, label, cost, color, chipBg, chipColor, chipGradient, chipBorder }) => {
               const owned = currentBadge === type;
               const currentRank = currentBadge ? BADGE_TIERS.indexOf(currentBadge as BadgeTier) : -1;
               const thisRank = BADGE_TIERS.indexOf(type);
               const lowerTier = currentRank > thisRank;
               return (
                 <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: owned ? `${color}14` : 'rgba(255,255,255,0.02)', border: `1px solid ${owned ? color + '40' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px' }}>
-                  <span style={{ fontSize: '24px' }}>{emoji}</span>
+                  <span style={{ background: chipGradient || chipBg, color: chipColor, fontSize: '11px', fontWeight: 700, borderRadius: '20px', padding: '6px 12px', letterSpacing: '0.08em', border: chipBorder || 'none', whiteSpace: 'nowrap' }}>{label.toUpperCase()}</span>
                   <div style={{ flex: 1 }}>
                     <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{label} Badge</p>
                     <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{cost.toLocaleString()} VC</p>

@@ -220,7 +220,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                       )}
                       {event.status === 'live' && (
                         <div style={{ background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.18)', borderRadius: '10px', padding: '10px 12px', marginBottom: '10px' }}>
-                          <p style={{ color: '#10B981', fontSize: '12px', fontWeight: 600, marginBottom: '3px' }}>🚀 Your event is live!</p>
+                          <p style={{ color: '#10B981', fontSize: '12px', fontWeight: 600, marginBottom: '3px' }}>Your event is live!</p>
                           <p style={{ color: '#8B8FA8', fontSize: '11px', lineHeight: 1.5 }}>Attendees can now discover and book tickets for your event.</p>
                         </div>
                       )}
@@ -235,7 +235,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                         )}
                         {event.venue && (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>📍 {event.venue}{event.city ? `, ${event.city}` : ''}</span>
+                            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.venue}{event.city ? `, ${event.city}` : ''}</span>
                           </div>
                         )}
                         {event.ticketPrice && (
@@ -262,7 +262,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                             disabled={publishingId === event.id}
                             style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '10px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: publishingId === event.id ? 'not-allowed' : 'pointer', opacity: publishingId === event.id ? 0.6 : 1, marginBottom: '10px' }}
                           >
-                            {publishingId === event.id ? 'Submitting…' : '🚀 Publish Draft'}
+                            {publishingId === event.id ? 'Submitting…' : 'Publish Draft'}
                           </button>
                         </>
                       )}
@@ -317,7 +317,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
         {/* Empty state for created events */}
         {filteredOrg.length === 0 && !query && (
           <div style={{ background: 'rgba(168,85,247,0.06)', border: '1.5px dashed rgba(168,85,247,0.2)', borderRadius: '18px', padding: '28px 20px', marginBottom: '20px', textAlign: 'center' }}>
-            <div style={{ fontSize: '36px', marginBottom: '10px' }}>🎪</div>
+            <div style={{ marginBottom: '10px' }}><svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#A855F7" strokeWidth="1.5"><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg></div>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>No events yet</p>
             <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
               Create your first event and it will appear here with its review status.

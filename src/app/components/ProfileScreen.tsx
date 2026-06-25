@@ -299,18 +299,18 @@ export function ProfileScreen({
                     </span>
                   </div>
                   {currentUser?.vc_badge && (() => {
-                    const badgeMap: Record<string, { label: string; gradient: string; color: string }> = {
-                      bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
-                      silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
-                      gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
-                      platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
-                      elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
-                      legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+                    const badgeMap: Record<string, { label: string; background?: string; gradient?: string; color: string; border?: string }> = {
+                      bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
+                      silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
+                      gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
+                      platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
+                      elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
+                      legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
                     };
                     const b = badgeMap[currentUser.vc_badge!.toLowerCase()];
                     if (!b) return null;
                     return (
-                      <span style={{ background: b.gradient, borderRadius: '5px', padding: '2px 7px', fontSize: '10px', fontWeight: 700, color: b.color }}>
+                      <span style={{ background: b.gradient || b.background, borderRadius: '20px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, color: b.color, letterSpacing: '0.08em', border: b.border || 'none' }}>
                         {b.label}
                       </span>
                     );

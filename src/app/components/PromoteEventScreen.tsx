@@ -36,7 +36,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     icon: Crown,
     color: '#FFB830',
     price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
-    perks: ['Everything in Featured', '🔥 Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
+    perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
   },
 ];
 
@@ -141,7 +141,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           <CheckCircle size={40} color="#10B981" />
         </div>
         <h1 style={{ color: '#F0F0FF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px', textAlign: 'center' }}>
-          Promotion Active! 🚀
+          Promotion Active!
         </h1>
         <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', lineHeight: 1.6, marginBottom: '8px' }}>
           Your event is now on the <span style={{ color: plan.color, fontWeight: 600 }}>{plan.label}</span> plan for {selectedDuration} days.

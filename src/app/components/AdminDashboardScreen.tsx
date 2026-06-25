@@ -1658,7 +1658,7 @@ export function AdminDashboardScreen({
                 fontSize: '14px', fontWeight: 700, cursor: (creditTargetId.trim() && creditAmount) ? 'pointer' : 'default',
               }}
             >
-              {isCreditSending ? 'Crediting…' : '💰 Credit Vents Cents'}
+              {isCreditSending ? 'Crediting…' : 'Credit Vents Cents'}
             </button>
           </div>
 

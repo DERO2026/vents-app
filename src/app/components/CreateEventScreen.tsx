@@ -1121,7 +1121,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           {submitting
             ? 'Saving...'
             : step === 4
-            ? '🚀 Publish Event'
+            ? 'Publish Event'
             : `Next: ${STEPS[step].label}`}
         </button>
         {step === 4 && !submitting && (

@@ -27,21 +27,29 @@ interface HomeScreenProps {
 }
 
 const VC_BADGE_MAP: Record<string, { label: string; gradient: string; color: string }> = {
-  bronze: { label: '🥉 Bronze', gradient: 'linear-gradient(135deg,#CD7F32,#A0522D)', color: '#FFD9B3' },
-  silver: { label: '🥈 Silver', gradient: 'linear-gradient(135deg,#9CA3AF,#6B7280)', color: '#E5E7EB' },
-  gold: { label: '🥇 Gold', gradient: 'linear-gradient(135deg,#F59E0B,#D97706)', color: '#FEF3C7' },
-  platinum: { label: '💎 Platinum', gradient: 'linear-gradient(135deg,#818CF8,#4F46E5)', color: '#E0E7FF' },
-  elite: { label: '⚡ Elite', gradient: 'linear-gradient(135deg,#A855F7,#7C3AED)', color: '#F3E8FF' },
-  legend: { label: '👑 Legend', gradient: 'linear-gradient(135deg,#EC4899,#7C3AED)', color: '#FFF' },
+  bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
+  silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
+  gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
+  platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
+  elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
+  legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
 };
 
 function VcBadgeInline({ badge }: { badge: string }) {
-  const b = VC_BADGE_MAP[badge];
+  const b = VC_BADGE_MAP[badge as keyof typeof VC_BADGE_MAP];
   if (!b) return null;
   return (
     <span style={{
-      background: b.gradient, color: b.color, fontSize: '8px', fontWeight: 700,
-      borderRadius: '4px', padding: '1px 5px', letterSpacing: '0.03em', whiteSpace: 'nowrap',
+      background: (b as any).gradient || (b as any).background,
+      color: b.color,
+      fontSize: '11px',
+      fontWeight: 700,
+      borderRadius: '20px',
+      padding: '6px 12px',
+      letterSpacing: '0.08em',
+      whiteSpace: 'nowrap',
+      border: (b as any).border || 'none',
+      textTransform: 'uppercase',
     }}>
       {b.label}
     </span>
@@ -84,7 +92,7 @@ function useCardCountdown(eventDate?: string): string | null {
   return `${m}m`;
 }
 
-const CATEGORIES = [{ id: 'all', label: 'All', icon: '✨' }, ...CATEGORY_LIST];
+const CATEGORIES = [{ id: 'all', label: 'All', icon: '' }, ...CATEGORY_LIST];
 
 export function mapDbEventToFrontend(dbEvent: any): Event {
   const dt = dbEvent.event_date ? new Date(dbEvent.event_date) : null;
@@ -173,8 +181,8 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         width: '100%',
         background: '#0D0D1A',
         borderRadius: '16px',
-        border: '1px solid rgba(168,85,247,0.1)',
-        boxShadow: '0 0 12px rgba(168,85,247,0.04)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}
     >
       <div style={{ height: '110px', position: 'relative' }}>
@@ -199,7 +207,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         {/* FOMO tag */}
         {isSelling && (
           <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.15)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '6px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
-            <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>🔥 Selling Fast!</span>
+            <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>Selling Fast!</span>
           </div>
         )}
         <button
@@ -216,7 +224,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         </button>
       </div>
 
-      <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', flex: 1 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '4px' }}>
           <span
             style={{
@@ -244,7 +252,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
                 letterSpacing: '0.05em',
               }}
             >
-              {event.promoPlan === 'trending' ? '🔥 TRENDING' : event.promoPlan === 'featured' ? '⭐ FEATURED' : '⚡ SPOTLIGHT'}
+              {event.promoPlan === 'trending' ? 'TRENDING' : event.promoPlan === 'featured' ? 'FEATURED' : 'SPOTLIGHT'}
             </span>
           )}
         </div>
@@ -429,7 +437,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
                 letterSpacing: '0.05em',
               }}
             >
-              {event.promoPlan === 'trending' ? '🔥 TRENDING' : event.promoPlan === 'featured' ? '⭐ FEATURED' : '⚡ SPOTLIGHT'}
+              {event.promoPlan === 'trending' ? 'TRENDING' : event.promoPlan === 'featured' ? 'FEATURED' : 'SPOTLIGHT'}
             </span>
           )}
         </div>
@@ -563,7 +571,7 @@ function FeaturedCarousel({
     <div className="mb-6">
       <div className="flex items-center justify-between px-4 mb-3">
         <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-          ⭐ Featured
+          Featured
         </h3>
         {events.length > 1 && (
           <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
@@ -604,7 +612,7 @@ function FeaturedCarousel({
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
           {/* FEATURED badge */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
-            <span style={{ background: 'rgba(167,139,250,0.92)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.05em' }}>⭐ FEATURED</span>
+            <span style={{ background: 'rgba(167,139,250,0.92)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.05em' }}>FEATURED</span>
           </div>
           {/* Save button */}
           <button
@@ -620,8 +628,8 @@ function FeaturedCarousel({
             )}
             <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>📅 {event.date}</span>
-              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>📍 {event.city}</span>
+              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
+              <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
               <span style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
             </div>
           </div>
@@ -856,9 +864,9 @@ export function HomeScreen({
                 outline: 'none',
               }}
             >
-              <option value="all">📍 State: All</option>
+              <option value="all">State: All</option>
               {NIGERIA_STATES.map((s) => (
-                <option key={s.name} value={s.name}>📍 {s.name}</option>
+                <option key={s.name} value={s.name}>{s.name}</option>
               ))}
             </select>
             <ChevronDown size={10} color={stateFilter !== 'all' ? '#A78BFA' : '#8B8FA8'} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
@@ -893,32 +901,33 @@ export function HomeScreen({
               cursor: 'pointer',
             }}
           >
-            {upcomingOnly ? '📅 Upcoming' : '📅 All Time'}
+            {upcomingOnly ? 'Upcoming' : 'All Time'}
           </button>
         </div>
 
         {/* Category filter chips */}
-        <div className="flex gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+        <div className="flex gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
           {CATEGORIES.map((cat) => {
             const active = activeCategory === cat.id;
             return (
               <button
                 key={cat.id}
                 onClick={() => setActiveCategory(active ? 'all' : cat.id)}
-                className="flex-shrink-0 flex items-center gap-1 px-3 py-1"
+                className="flex-shrink-0"
                 style={{
-                  background: active ? 'rgba(167,139,250,0.18)' : '#131629',
-                  border: `1px solid ${active ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`,
+                  background: active ? '#7B2FF7' : 'rgba(255,255,255,0.06)',
+                  border: `1px solid ${active ? '#7B2FF7' : 'rgba(255,255,255,0.12)'}`,
                   borderRadius: '20px',
-                  fontSize: '11px',
-                  color: active ? '#C4B5FD' : '#8B8FA8',
-                  fontWeight: active ? 700 : 500,
+                  padding: '5px 14px',
+                  fontSize: '13px',
+                  color: active ? '#fff' : '#C0C0D0',
+                  fontWeight: 500,
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
+                  letterSpacing: '0.01em',
                 }}
               >
-                <span>{cat.icon}</span>
-                <span>{cat.label}</span>
+                {cat.label}
               </button>
             );
           })}
@@ -985,7 +994,7 @@ export function HomeScreen({
                   <div className="mb-6">
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                        🔥 Trending Events
+                        Trending Events
                       </h3>
                     </div>
                     <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px', paddingLeft: '16px', paddingRight: '0' }}>
@@ -1012,7 +1021,7 @@ export function HomeScreen({
             <div className="px-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-                  {isDefaultState ? '🎪 Explore Events' : '🔍 Search Results'}
+                  {isDefaultState ? 'Explore Events' : 'Search Results'}
                 </h3>
                 <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
                   {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
@@ -1023,7 +1032,7 @@ export function HomeScreen({
                 <div className="flex flex-col items-center py-12 px-4 text-center">
                   {isDefaultState ? (
                     <>
-                      <span style={{ fontSize: '48px', marginBottom: '12px' }}>🎪</span>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
                       <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
                         No events yet
                       </p>

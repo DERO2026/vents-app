@@ -1093,7 +1093,7 @@ export function EventDetailsScreen({
               </div>
             ) : relatedEvents.length === 0 ? (
               <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <span style={{ fontSize: '24px', display: 'block', marginBottom: '4px' }}>🎪</span>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B8FA8" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
               </div>
             ) : (
@@ -1257,7 +1257,7 @@ export function EventDetailsScreen({
             background: isBooked
               ? 'rgba(16,185,129,0.12)'
               : canBook
-              ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
+              ? '#FF5722'
               : '#1A1D2E',
             border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
             borderRadius: '16px',
@@ -1267,7 +1267,7 @@ export function EventDetailsScreen({
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: isBooked || !canBook ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)' : 'none',
+            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(255,87,34,0.4)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

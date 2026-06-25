@@ -578,7 +578,7 @@ export function OrganizerDashboard({
                           {event.title}
                         </h4>
                         <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }} className="truncate">
-                          📅 {dateStr} • 📍 {event.location || 'Lagos, Nigeria'}
+                          {dateStr} • {event.location || 'Lagos, Nigeria'}
                         </p>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
