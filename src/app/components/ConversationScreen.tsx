@@ -185,6 +185,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       ? 'audio/webm;codecs=opus'
       : MediaRecorder.isTypeSupported('audio/webm')
       ? 'audio/webm'
+      : MediaRecorder.isTypeSupported('audio/mp4')
+      ? 'audio/mp4'
       : '';
     let mr: MediaRecorder;
     try {
@@ -202,8 +204,9 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       setUploadingImg(true);
       try {
         const token = await getAuthToken();
-        const ext = mr.mimeType?.includes('ogg') ? 'ogg' : 'webm';
-        const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mr.mimeType || 'audio/webm' });
+        const mt = mr.mimeType || 'audio/webm';
+        const ext = mt.includes('ogg') ? 'ogg' : mt.includes('mp4') ? 'mp4' : 'webm';
+        const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mt });
         const formData = new FormData();
         formData.append('file', file);
         const res = await fetch(
@@ -263,7 +266,12 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     let a = audioCacheRef.current[id];
     if (!a) {
       a = new Audio(url);
-      a.onended = () => setPlayingId(null);
+      a.preload = 'auto';
+      a.onended = () => { setPlayingId(null); };
+      // Attach to DOM so mobile browsers honour the user-gesture play context.
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.onerror = () => { document.body.removeChild(a); delete audioCacheRef.current[id]; };
       audioCacheRef.current[id] = a;
     }
     audioRef.current = a;
