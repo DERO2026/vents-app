@@ -341,6 +341,9 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
+      if (username.trim().length < 3) {
+        throw new Error("Username must be at least 3 characters.");
+      }
       if (usernameAvailable === false) {
         throw new Error("Username is already taken.");
       }
