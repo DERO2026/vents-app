@@ -1,7 +1,7 @@
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, Filter, ChevronDown,
-  Clock, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
+  Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
 } from 'lucide-react';
