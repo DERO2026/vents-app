@@ -21,9 +21,9 @@ export default function BadgeChip({ tier }: BadgeChipProps) {
   return (
     <span style={{
       ...style,
-      height: 18,
-      padding: '2px 8px',
-      fontSize: 9,
+      height: 16,
+      padding: '1px 6px',
+      fontSize: 8,
       fontWeight: 800,
       borderRadius: 20,
       textTransform: 'uppercase' as const,

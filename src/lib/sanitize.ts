@@ -6,6 +6,25 @@ export function sanitize(value: string): string {
     .trim();
 }
 
+export function sanitizeText(input: string): string {
+  return input
+    .trim()
+    .replace(/[<>'"`;]/g, '')
+    .substring(0, 500);
+}
+
+export function validateEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+export function validateUsername(username: string): boolean {
+  return /^[a-zA-Z0-9_]{3,30}$/.test(username.trim());
+}
+
+export function validatePassword(password: string): boolean {
+  return password.length >= 8;
+}
+
 /** Sanitize all string values in an object (shallow). */
 export function sanitizeObject<T extends Record<string, unknown>>(obj: T): T {
   const result = { ...obj };

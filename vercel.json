@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "env": { "VITE_SENTRY_DSN": "", "VITE_PAYSTACK_PUBLIC_KEY": "" },
+  "env": { "VITE_SENTRY_DSN": "https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744", "VITE_PAYSTACK_PUBLIC_KEY": "", "VITE_POSTHOG_KEY": "" },
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
@@ -11,7 +11,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://checkout.paystack.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https://*.insforge.app https://*.insforge.dev https://*.insforge.site; connect-src 'self' https://*.insforge.app https://*.insforge.site wss://*.insforge.app wss://*.insforge.site https://api.paystack.co https://checkout.paystack.com; frame-src https://checkout.paystack.com; frame-ancestors 'none';"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://js.paystack.co https://checkout.paystack.com https://cdn.pushalert.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https:; media-src 'self' blob: https://*.insforge.app https://*.insforge.dev https://*.insforge.site; connect-src 'self' https://*.insforge.app https://*.insforge.site wss://*.insforge.app wss://*.insforge.site https://api.paystack.co https://checkout.paystack.com https://api.pushalert.co https://app.posthog.com; frame-src https://checkout.paystack.com; frame-ancestors 'none';"
         },
         {
           "key": "X-Frame-Options",

@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken } from '../lib/insforge';
+import { setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
+import { identifyUser, trackEvent } from '../lib/analytics';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -941,6 +943,7 @@ export default function App() {
   }, []);
 
   const handleEventPress = useCallback((event: Event) => {
+    trackEvent('event_viewed', { eventId: event.id });
     setSelectedEvent(event);
     navigateTo('event-details');
   }, [navigateTo]);
@@ -973,6 +976,8 @@ export default function App() {
             p_payment_status: 'paid',
           });
           if (insertError) throw insertError;
+          trackPushEvent('ticket_purchased', { eventId: ticket.event.id, eventTitle: ticket.event.title });
+          trackEvent('ticket_booked', { eventId: ticket.event.id, amount: ticket.totalPrice });
 
           // 3.6: Ticket confirmation notification
           insforge.database.from('notifications').insert([{
@@ -1088,6 +1093,8 @@ export default function App() {
             following_id: userId
           }]);
         if (error) throw error;
+        trackPushEvent('user_followed', { targetId: userId });
+        trackEvent('user_followed');
         const displayName = currentUser.username ? `@${currentUser.username}` : (currentUser.full_name || 'Someone');
         insforge.database.rpc('notify_user' as any, {
           p_user_id: userId,
@@ -1137,6 +1144,8 @@ export default function App() {
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
     setCurrentUser(enriched);
+    setPushAlertSubscriber(userProfile.id, userProfile.email);
+    identifyUser(userProfile.id, { email: userProfile.email, role: userProfile.role, username: userProfile.username });
     setScreenStack([]);
     // Check if new user needs to pick interests
     try {
@@ -1646,6 +1655,8 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onCreated={(event) => {
+                trackPushEvent('event_created', { eventId: event.id, eventTitle: event.title });
+                trackEvent('event_created', { eventId: event.id });
                 setOrgEvents((prev) => [event, ...prev]);
                 fetchEvents(true);
                 setOrgTab('manage-events');

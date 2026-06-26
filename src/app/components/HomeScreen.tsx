@@ -732,6 +732,13 @@ export function HomeScreen({
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
     return matchQuery && matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
+  }).sort((a, b) => {
+    // On non-All tabs, featured events float to the top
+    if (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') {
+      if (a.isFeatured && !b.isFeatured) return -1;
+      if (!a.isFeatured && b.isFeatured) return 1;
+    }
+    return 0;
   });
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);

@@ -6,6 +6,8 @@ import { insforge, saveRefreshToken, clearRefreshToken } from '../../lib/insforg
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
+import { trackEvent } from '../../lib/analytics';
+import { validateUsername, validatePassword } from '../../lib/sanitize';
 
 interface AuthScreenProps {
   initialMode: AuthMode;
@@ -272,11 +274,26 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     throw new Error("User profile creation is taking longer than expected. Please try signing in.");
   };
 
+  const MAX_AUTH_ATTEMPTS = 5;
+  const AUTH_LOCKOUT_MS = 5 * 60 * 1000;
+
   const handleSubmit = async () => {
     setEmailTouched(true);
     setErrorMessage(null);
     // reset mode doesn't use the email field — skip the email validation gate
     if (mode !== 'reset' && !isEmailOrUsernameValid(email)) return;
+
+    // Client-side rate limiting for login and signup
+    if (mode === 'login' || mode === 'signup') {
+      const stored = JSON.parse(localStorage.getItem('auth_attempts') || '{"count":0,"timestamp":0}');
+      const now = Date.now();
+      if (stored.count >= MAX_AUTH_ATTEMPTS && now - stored.timestamp < AUTH_LOCKOUT_MS) {
+        const minutesLeft = Math.ceil((AUTH_LOCKOUT_MS - (now - stored.timestamp)) / 60000);
+        setErrorMessage(`Too many attempts. Please wait ${minutesLeft} minute(s) before trying again.`);
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -307,7 +324,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       } else if (mode === 'signup') {
         if (!name.trim()) throw new Error('Full name is required.');
         if (!username.trim()) throw new Error('Username is required.');
-        if (username.trim().length < 3) throw new Error('Username must be at least 3 characters.');
+        if (!validateUsername(username.trim())) throw new Error('Username must be 3-30 characters, letters numbers and underscores only.');
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
         const rawDigits = phone.replace(/\D/g, '');
@@ -317,6 +334,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           throw new Error('Please enter a valid Nigerian phone number (+234 format).');
         }
         if (!password) throw new Error('Password is required.');
+        if (!validatePassword(password)) throw new Error('Password must be at least 8 characters.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         if (!signupState && !selectedState) throw new Error('State is required.');
         if (!role) throw new Error('Role is required.');
@@ -388,8 +406,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         }
 
         if (data?.requireEmailVerification) {
+          trackEvent('user_signed_up', { role: strictRole });
           setIsVerifying(true);
         } else if (data?.accessToken && data?.user) {
+          trackEvent('user_signed_up', { role: strictRole });
           const avatarUrl = await uploadAvatarIfPending();
           await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
         }
@@ -464,10 +484,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             return;
           }
 
+          localStorage.removeItem('auth_attempts');
           onSuccess(profilePayload);
         }
       }
     } catch (err: any) {
+      // Increment rate-limit counter on auth failure
+      if (mode === 'login' || mode === 'signup') {
+        const stored = JSON.parse(localStorage.getItem('auth_attempts') || '{"count":0,"timestamp":0}');
+        localStorage.setItem('auth_attempts', JSON.stringify({ count: stored.count + 1, timestamp: Date.now() }));
+      }
       const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
         (typeof err?.error_description === 'string' ? err.error_description : '');
       const msgL = msg.toLowerCase();
@@ -508,23 +534,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               setBanInfo({ status: row.status, until: row.banned_until ?? null });
               return;
             }
-            // No row means the email doesn't exist in the system at all
-            const noAccount = Array.isArray(statusRows) ? statusRows.length === 0 : !statusRows;
-            if (noAccount) {
-              setErrorMessage('No account found with that email or username.');
-              return;
-            }
           }
         } catch { /* ignore status check failure — fall through to normal error */ }
+        // Login always shows generic message — never reveal whether email/password is the issue
+        setErrorMessage('Incorrect email or password.');
+        return;
       }
-      // Specific, user-friendly error messages for login/forgot/reset
-      const safe = msgL.includes('user not found') || msgL.includes('no user') || msgL.includes('not registered') || msgL.includes('does not exist')
-        ? 'No account found with that email or username.'
-        : msgL.includes('invalid password') || msgL.includes('wrong password') || msgL.includes('incorrect password')
-        ? 'Incorrect password. Please try again.'
-        : msgL.includes('invalid login') || msgL.includes('invalid_credentials') || msgL.includes('invalid credentials')
-        ? 'Incorrect password. Please try again.'
-        : msgL.includes('email not confirmed') || msgL.includes('not confirmed')
+      // Specific, user-friendly error messages for forgot/reset
+      const safe = msgL.includes('email not confirmed') || msgL.includes('not confirmed')
         ? 'Please verify your email before logging in.'
         : msgL.includes('rate limit') || msgL.includes('too many')
         ? 'Too many attempts. Please wait a few minutes and try again.'

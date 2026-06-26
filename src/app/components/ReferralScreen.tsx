@@ -213,7 +213,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     try {
       const { error } = await insforge.database.rpc('feature_in_people_vc' as any);
       if (error) throw error;
-      setBalance((prev) => prev - 1500);
+      setBalance((prev) => prev - 150);
       const newUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
       setFeaturedUntil(newUntil);
       setFeaturedMsg('You are now featured in People for 3 days!');
@@ -370,12 +370,12 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           {featuredMsg && <p style={{ color: featuredMsg.includes('now') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{featuredMsg}</p>}
           <button
             onClick={handleFeaturedInPeople}
-            disabled={featuredBusy || balance < 1500}
+            disabled={featuredBusy || balance < 150}
             style={{
-              width: '100%', background: balance >= 1500 ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)',
+              width: '100%', background: balance >= 150 ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)',
               border: 'none', borderRadius: '12px', padding: '12px',
-              color: balance >= 1500 ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700,
-              cursor: balance >= 1500 && !featuredBusy ? 'pointer' : 'not-allowed',
+              color: balance >= 150 ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700,
+              cursor: balance >= 150 && !featuredBusy ? 'pointer' : 'not-allowed',
             }}
           >
             {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · 1,500 VC`}
