@@ -611,7 +611,7 @@ export function AdminDashboardScreen({
       // If approved, update user role to organizer
       if (status === 'approved') {
         if (req?.user_id) {
-          await insforge.database.from('users').update({ role: 'organizer' }).eq('id', req.user_id);
+          await insforge.database.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
         }
         if (req?.users?.phone) {
           sendSMS({
