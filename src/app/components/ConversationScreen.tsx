@@ -64,6 +64,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [voiceToast, setVoiceToast] = useState<string | null>(null);
+  const [locationModalVisible, setLocationModalVisible] = useState(false);
+  const pendingLocationRef = useRef(false);
   const [audioError, setAudioError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
@@ -143,7 +145,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     finally { setUploadingImg(false); }
   }, [currentUser.id, otherUser.id, eventId]);
 
-  const sendLocation = useCallback(async () => {
+  const doGetLocation = useCallback(async () => {
     if (!navigator.geolocation) {
       setVoiceToast('Location not available on this device');
       setTimeout(() => setVoiceToast(null), 3000);
@@ -166,6 +168,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       }
     );
   }, [currentUser.id, otherUser.id, eventId]);
+
+  const sendLocation = useCallback(async () => {
+    if (localStorage.getItem('vents_location_asked')) {
+      doGetLocation();
+    } else {
+      setLocationModalVisible(true);
+    }
+  }, [doGetLocation]);
 
   const startRecording = useCallback(async () => {
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
@@ -364,6 +374,25 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{voiceToast || audioError}</p>
         </div>
       )}
+      {/* Location permission modal */}
+      {locationModalVisible && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#1A1D2E', borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.08)' }}>
+            <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '10px', fontFamily: 'Space Grotesk, sans-serif' }}>Allow Location Access</h3>
+            <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '24px' }}>Vents uses your location to show events near you. Your location is never stored or shared.</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => { localStorage.setItem('vents_location_asked', 'true'); setLocationModalVisible(false); doGetLocation(); }}
+                style={{ background: '#7B2FF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >Allow</button>
+              <button
+                onClick={() => { localStorage.setItem('vents_location_asked', 'true'); setLocationModalVisible(false); }}
+                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', color: '#8B8FA8', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
+              >Not Now</button>
+            </div>
+          </div>
+        </div>
+      )}
       {/* Image lightbox */}
       {lightboxUrl && (
         <div onClick={() => setLightboxUrl(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -414,7 +443,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
               };
               const b = bm[otherUser.vc_badge];
-              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '11px', fontWeight: 700, borderRadius: '20px', padding: '6px 12px', whiteSpace: 'nowrap', letterSpacing: '0.08em', border: b.border || 'none' }}>{b.label}</span> : null;
+              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '9px', fontWeight: 800, borderRadius: '20px', height: '18px', padding: '2px 8px', whiteSpace: 'nowrap', letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' as const }}>{b.label}</span> : null;
             })()}
           </div>
           {eventTitle && <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }}>Re: {eventTitle}</p>}

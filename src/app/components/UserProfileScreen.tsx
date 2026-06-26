@@ -381,7 +381,7 @@ export function UserProfileScreen({
             const b = badgeMap[user.vc_badge!.toLowerCase()];
             if (!b) return null;
             return (
-              <span style={{ background: b.gradient || b.background, borderRadius: '20px', padding: '6px 12px', fontSize: '11px', fontWeight: 700, color: b.color, whiteSpace: 'nowrap', letterSpacing: '0.08em', border: b.border || 'none' }}>
+              <span style={{ background: b.gradient || b.background, borderRadius: '20px', height: '18px', padding: '2px 8px', fontSize: '9px', fontWeight: 800, color: b.color, whiteSpace: 'nowrap', letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' as const }}>
                 {b.label}
               </span>
             );

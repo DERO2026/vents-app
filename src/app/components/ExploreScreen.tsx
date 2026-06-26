@@ -228,7 +228,7 @@ export function ExploreScreen({
                                 legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
                               };
                               const b = bm[profile.vc_badge];
-                              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '11px', fontWeight: 700, borderRadius: '20px', padding: '6px 12px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.08em', border: b.border || 'none' }}>{b.label}</span> : null;
+                              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '9px', fontWeight: 800, borderRadius: '20px', height: '18px', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' as const }}>{b.label}</span> : null;
                             })()}
                           </div>
                           <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>

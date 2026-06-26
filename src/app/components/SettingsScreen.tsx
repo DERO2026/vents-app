@@ -1,13 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
-import QRCode from 'qrcode';
 import {
-  ArrowLeft, User, Bell, Shield, Moon, Sun, HelpCircle, LogOut, MessageCircle,
+  ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, ShieldCheck, Copy,
 } from 'lucide-react';
-import { generateTOTPSecret, verifyTOTP, makeTOTPUri } from '../../lib/totp';
 import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
 
@@ -23,7 +21,7 @@ interface SettingsScreenProps {
   onLanguageChange?: (lang: string) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'language' | '2fa' | 'help' | 'change-password' | 'delete-account';
+type SubScreen = null | 'profile' | 'payment' | 'language' | 'help' | 'change-password' | 'delete-account';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -659,262 +657,6 @@ function LanguageScreen({
   );
 }
 
-function TwoFAScreen({ onBack, currentUser }: { onBack: () => void; currentUser: any }) {
-  const smsOtpRef = useRef<HTMLInputElement>(null);
-
-  // SMS step state
-  const [smsEnabled, setSmsEnabled] = useState(false);
-  const [smsStep, setSmsStep] = useState<'menu' | 'verify-sms'>('menu');
-  const [smsCode, setSmsCode] = useState('');
-  const [smsVerified, setSmsVerified] = useState(false);
-
-  // TOTP state
-  const [totpEnabled, setTotpEnabled] = useState(false);
-  const [totpStep, setTotpStep] = useState<'menu' | 'qr' | 'verify'>('menu');
-  const [totpSecret, setTotpSecret] = useState('');
-  const [totpQr, setTotpQr] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-  const [totpError, setTotpError] = useState<string | null>(null);
-  const [totpSaving, setTotpSaving] = useState(false);
-  const [secretCopied, setSecretCopied] = useState(false);
-  const totpCodeRef = useRef<HTMLInputElement>(null);
-
-  // Load existing TOTP state
-  useEffect(() => {
-    if (!currentUser?.id) return;
-    insforge.database.from('users').select('totp_enabled').eq('id', currentUser.id).maybeSingle().then(({ data }) => {
-      if (data?.totp_enabled) setTotpEnabled(true);
-    });
-  }, [currentUser?.id]);
-
-  const startTotpEnrollment = async () => {
-    const secret = generateTOTPSecret();
-    const uri = makeTOTPUri(secret, currentUser?.email || 'user');
-    const qrDataUrl = await QRCode.toDataURL(uri, { width: 220, margin: 1, color: { dark: '#F0F0FF', light: '#131629' } });
-    setTotpSecret(secret);
-    setTotpQr(qrDataUrl);
-    setTotpCode('');
-    setTotpError(null);
-    setTotpStep('qr');
-  };
-
-  const handleTotpVerify = async () => {
-    setTotpError(null);
-    if (totpCode.length !== 6) return;
-    const valid = await verifyTOTP(totpSecret, totpCode);
-    if (!valid) {
-      setTotpError('Incorrect code — try again.');
-      setTotpCode('');
-      setTimeout(() => totpCodeRef.current?.focus(), 50);
-      return;
-    }
-    setTotpSaving(true);
-    try {
-      const { error } = await insforge.database.from('users').update({ totp_secret: totpSecret, totp_enabled: true }).eq('id', currentUser.id);
-      if (error) throw error;
-      setTotpEnabled(true);
-      setTotpStep('menu');
-    } catch {
-      setTotpError('Failed to save. Please try again.');
-    } finally {
-      setTotpSaving(false);
-    }
-  };
-
-  const handleTotpDisable = async () => {
-    setTotpSaving(true);
-    try {
-      await insforge.database.from('users').update({ totp_secret: null, totp_enabled: false }).eq('id', currentUser.id);
-      setTotpEnabled(false);
-      setTotpSecret('');
-    } catch { /* ignore */ } finally { setTotpSaving(false); }
-  };
-
-  // ── SMS verify step ───────────────────────────────────────────────────────
-  if (smsStep === 'verify-sms') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
-        <SubHeader title="Verify Phone" onBack={() => { setSmsStep('menu'); setSmsCode(''); }} />
-        <div style={{ flex: 1, padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <div style={{ fontSize: '52px', marginBottom: '16px' }}>📱</div>
-          <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '8px', textAlign: 'center' }}>Enter verification code</h3>
-          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '28px' }}>
-            We'll send a 6-digit code to {currentUser?.phone_number || 'your phone number'} when SMS delivery is active.
-          </p>
-          {/* OTP boxes — tap any box to focus the hidden input */}
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '24px', cursor: 'text' }} onClick={() => smsOtpRef.current?.focus()}>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} style={{ width: '42px', height: '52px', background: '#131629', border: `1px solid ${smsCode.length > i ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{smsCode[i] ?? ''}</span>
-              </div>
-            ))}
-          </div>
-          {/* Hidden real input — type="tel" so maxLength works on mobile */}
-          <input
-            ref={smsOtpRef}
-            type="tel"
-            inputMode="numeric"
-            maxLength={6}
-            value={smsCode}
-            onChange={e => setSmsCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            autoFocus
-            style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px' }}
-          />
-          <button
-            onClick={() => { if (smsCode.length === 6) { setSmsVerified(true); setSmsStep('menu'); setSmsEnabled(true); } }}
-            style={{ width: '100%', background: smsCode.length === 6 ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: 'none', borderRadius: '14px', padding: '14px', color: smsCode.length === 6 ? '#fff' : '#8B8FA8', fontSize: '15px', fontWeight: 700, cursor: smsCode.length === 6 ? 'pointer' : 'not-allowed' }}
-          >
-            Verify
-          </button>
-          <button style={{ background: 'none', border: 'none', color: '#A78BFA', fontSize: '13px', cursor: 'pointer', marginTop: '14px' }}>
-            Resend code
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── TOTP QR step ─────────────────────────────────────────────────────────
-  if (totpStep === 'qr' || totpStep === 'verify') {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
-        <SubHeader title="Set Up Authenticator" onBack={() => { setTotpStep('menu'); setTotpCode(''); setTotpError(null); }} />
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px 20px 40px', display: 'flex', flexDirection: 'column', alignItems: 'center', scrollbarWidth: 'none' }}>
-          <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-            <ShieldCheck size={24} color="#818CF8" />
-          </div>
-          <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, marginBottom: '6px', textAlign: 'center', fontFamily: 'Space Grotesk, sans-serif' }}>Scan QR Code</h3>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', marginBottom: '20px', lineHeight: 1.5 }}>
-            Open Google Authenticator, Authy, or any TOTP app, and scan this code.
-          </p>
-          {totpQr && (
-            <img src={totpQr} alt="TOTP QR code" style={{ width: 200, height: 200, borderRadius: '12px', marginBottom: '16px', background: '#131629', padding: '6px' }} />
-          )}
-          {/* Manual secret entry */}
-          <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px 14px', width: '100%', marginBottom: '20px' }}>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '6px' }}>Can't scan? Enter this key manually:</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ color: '#A78BFA', fontSize: '12px', fontFamily: 'monospace', flex: 1, letterSpacing: '0.05em', wordBreak: 'break-all' }}>{totpSecret}</span>
-              <button onClick={async () => { await navigator.clipboard.writeText(totpSecret); setSecretCopied(true); setTimeout(() => setSecretCopied(false), 1500); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: secretCopied ? '#10B981' : '#8B8FA8', flexShrink: 0 }}>
-                {secretCopied ? <CheckCircle size={14} /> : <Copy size={14} />}
-              </button>
-            </div>
-          </div>
-          <p style={{ color: '#C4C9E0', fontSize: '13px', marginBottom: '10px', textAlign: 'center' }}>
-            After scanning, enter the 6-digit code to confirm:
-          </p>
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', cursor: 'text' }} onClick={() => totpCodeRef.current?.focus()}>
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} style={{ width: '42px', height: '52px', background: '#131629', border: `1px solid ${totpCode.length > i ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <span style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{totpCode[i] ?? ''}</span>
-              </div>
-            ))}
-          </div>
-          <input
-            ref={totpCodeRef}
-            type="tel"
-            inputMode="numeric"
-            maxLength={6}
-            value={totpCode}
-            onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            onKeyDown={e => e.key === 'Enter' && handleTotpVerify()}
-            autoFocus
-            style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px' }}
-          />
-          {totpError && (
-            <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px', textAlign: 'center' }}>{totpError}</p>
-          )}
-          <button
-            onClick={handleTotpVerify}
-            disabled={totpCode.length !== 6 || totpSaving}
-            style={{ marginTop: '16px', width: '100%', background: totpCode.length === 6 && !totpSaving ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: 'none', borderRadius: '14px', padding: '14px', color: totpCode.length === 6 && !totpSaving ? '#fff' : '#8B8FA8', fontSize: '15px', fontWeight: 700, cursor: totpCode.length === 6 && !totpSaving ? 'pointer' : 'not-allowed' }}
-          >
-            {totpSaving ? 'Saving…' : 'Verify & Enable'}
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Menu ─────────────────────────────────────────────────────────────────
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
-      <SubHeader title="Two-Factor Authentication" onBack={onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px 32px', scrollbarWidth: 'none' }}>
-        {smsVerified && (
-          <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <CheckCircle size={16} color="#10B981" />
-            <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>SMS 2FA enabled successfully!</span>
-          </div>
-        )}
-        {totpEnabled && (
-          <div style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px', display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <ShieldCheck size={16} color="#10B981" />
-            <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Authenticator 2FA is active</span>
-          </div>
-        )}
-        <p style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
-          Two-factor authentication adds an extra layer of security to your account.
-        </p>
-
-        {/* SMS */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '11px', background: smsEnabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Smartphone size={18} color={smsEnabled ? '#10B981' : '#8B8FA8'} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>SMS Authentication</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Receive a code by text message</p>
-            </div>
-            <Toggle on={smsEnabled} onChange={() => { if (!smsEnabled) setSmsStep('verify-sms'); else setSmsEnabled(false); }} />
-          </div>
-          <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
-        </div>
-
-        {/* Authenticator App (TOTP) */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '11px', background: totpEnabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <ShieldCheck size={18} color={totpEnabled ? '#10B981' : '#8B8FA8'} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Authenticator App</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Google Authenticator, Authy, etc.</p>
-            </div>
-            <Toggle on={totpEnabled} onChange={() => {
-              if (totpEnabled) handleTotpDisable();
-              else startTotpEnrollment();
-            }} />
-          </div>
-          <div style={{ height: '1px', background: 'rgba(255,255,255,0.05)' }} />
-        </div>
-
-        {/* Email (informational only) */}
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 0' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '11px', background: 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Globe size={18} color="#10B981" />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Email Authentication</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Always active — used for account recovery</p>
-            </div>
-            <Toggle on={true} onChange={() => {}} />
-          </div>
-        </div>
-
-        <div style={{ background: 'rgba(167,139,250,0.06)', border: '1px solid rgba(167,139,250,0.15)', borderRadius: '14px', padding: '14px', marginTop: '20px' }}>
-          <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>🔒 Recovery</p>
-          <p style={{ color: '#C4C9E0', fontSize: '12px', lineHeight: 1.5 }}>
-            If you lose your 2FA device, use your account email to reset access via the forgot password flow.
-          </p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function HelpCenterScreen({ onBack }: { onBack: () => void }) {
   const articles = [
     { title: 'How to buy a ticket', category: 'Tickets', emoji: '🎟️' },
@@ -1161,10 +903,33 @@ export function SettingsScreen({
 
   const [pushNotifs, setPushNotifs] = useState(true);
   const [emailNotifs, setEmailNotifs] = useState(true);
-  const [promoNotifs, setPromoNotifs] = useState(false);
+  const [promoNotifs, setPromoNotifs] = useState(true);
   const [locationServices, setLocationServices] = useState(true);
-  const [biometrics, setBiometrics] = useState(false);
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
+
+  // Load promotions_enabled from DB on mount
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    insforge.database
+      .from('users')
+      .select('promotions_enabled')
+      .eq('id', currentUser.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data && typeof data.promotions_enabled === 'boolean') {
+          setPromoNotifs(data.promotions_enabled);
+        }
+      });
+  }, [currentUser?.id]);
+
+  const handlePromoToggle = async (val: boolean) => {
+    setPromoNotifs(val);
+    if (!currentUser?.id) return;
+    await insforge.database
+      .from('users')
+      .update({ promotions_enabled: val })
+      .eq('id', currentUser.id);
+  };
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
   if (subScreen === 'payment') return <PaymentMethodsScreen onBack={() => setSubScreen(null)} />;
@@ -1177,7 +942,6 @@ export function SettingsScreen({
       />
     );
   }
-  if (subScreen === '2fa') return <TwoFAScreen onBack={() => setSubScreen(null)} currentUser={currentUser} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
@@ -1242,15 +1006,11 @@ export function SettingsScreen({
           <Divider />
           <SettingRow icon={Bell} label="Email Updates" toggle={emailNotifs} onToggle={setEmailNotifs} />
           <Divider />
-          <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={setPromoNotifs} />
+          <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={handlePromoToggle} />
         </Section>
 
         <Section title="PRIVACY & SECURITY">
           <SettingRow icon={Shield} label="Location Services" toggle={locationServices} onToggle={setLocationServices} />
-          <Divider />
-          <SettingRow icon={Shield} label="Biometric Login" toggle={biometrics} onToggle={setBiometrics} />
-          <Divider />
-          <SettingRow icon={Shield} label="Two-Factor Authentication" onPress={() => setSubScreen('2fa')} />
           <Divider />
           <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
         </Section>

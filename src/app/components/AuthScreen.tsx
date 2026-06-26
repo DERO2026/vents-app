@@ -670,14 +670,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     <div
       style={{
         background: '#060A12',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
         width: '100%',
         height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        overflowY: 'auto',
-        scrollbarWidth: 'none',
-        msOverflowStyle: 'none',
-        position: 'relative',
+        overflow: 'hidden',
+        overscrollBehavior: 'none',
+        touchAction: 'pan-y',
       }}
     >
       <style>{`
@@ -685,6 +687,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         input::placeholder { color: #8B8FA8; }
         input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #131629 inset !important; -webkit-text-fill-color: #F0F0FF !important; }
       `}</style>
+      {/* Inner scroll wrapper — keyboard cannot push this screen */}
+      <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any, scrollbarWidth: 'none' as any, display: 'flex', flexDirection: 'column' }}>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
@@ -1428,6 +1432,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           onClose={() => setCropImageSrc(null)}
         />
       )}
+      </div>{/* end inner scroll wrapper */}
     </div>
   );
 }

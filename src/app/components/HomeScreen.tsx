@@ -1,5 +1,10 @@
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
-import { Search, Bell, MapPin, Calendar, X, Filter, ChevronDown } from 'lucide-react';
+import {
+  Search, Bell, MapPin, X, Filter, ChevronDown,
+  Clock, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
+  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
+  Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
+} from 'lucide-react';
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { VentsLogo } from './VentsLogo';
@@ -658,11 +663,42 @@ export function HomeScreen({
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
+
+  const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
+    { id: 'today', label: 'Today', icon: Clock, color: '#FFFFFF' },
+    { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
+    { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FF7' },
+    { id: 'Music', label: 'Music', icon: Music, color: '#FF6B6B' },
+    { id: 'Technology', label: 'Tech', icon: Cpu, color: '#4ECDC4' },
+    { id: 'Food & Drinks', label: 'Food', icon: UtensilsCrossed, color: '#FFE66D' },
+    { id: 'Comedy Shows', label: 'Comedy', icon: Laugh, color: '#FF8C42' },
+    { id: 'Arts & Culture', label: 'Arts', icon: Palette, color: '#C77DFF' },
+    { id: 'Sports & Wellness', label: 'Sports', icon: Dumbbell, color: '#06D6A0' },
+    { id: 'Conferences', label: 'Conferences', icon: Presentation, color: '#4CC9F0' },
+    { id: 'Family Events', label: 'Family', icon: Heart, color: '#FF6B9D' },
+    { id: 'Nightlife', label: 'Nightlife', icon: Moon, color: '#9B5DE5' },
+    { id: 'Fashion', label: 'Fashion', icon: Sparkles, color: '#F72585' },
+    { id: 'Health & Wellness', label: 'Wellness', icon: Activity, color: '#43AA8B' },
+    { id: 'Education', label: 'Education', icon: BookOpen, color: '#4361EE' },
+    { id: 'Weddings', label: 'Weddings', icon: Diamond, color: '#FFD166' },
+    { id: 'Gaming', label: 'Gaming', icon: Gamepad2, color: '#7209B7' },
+    { id: 'Business & Finance', label: 'Finance', icon: TrendingUp, color: '#3A86FF' },
+    { id: 'Religious & Spiritual', label: 'Religious', icon: Sun, color: '#FFBE0B' },
+    { id: 'Charity & Fundraising', label: 'Charity', icon: Gift, color: '#FB5607' },
+    { id: 'Film & Media', label: 'Film', icon: Film, color: '#8338EC' },
+    { id: 'Politics', label: 'Politics', icon: Landmark, color: '#023E8A' },
+    { id: 'Travel & Adventure', label: 'Travel', icon: Compass, color: '#0096C7' },
+    { id: 'Kids & Family', label: 'Kids', icon: Star, color: '#FFCA3A' },
+    { id: 'Art Exhibition', label: 'Exhibition', icon: Image, color: '#E9C46A' },
+    { id: 'Open Mic', label: 'Open Mic', icon: Mic, color: '#F4A261' },
+    { id: 'Workshop', label: 'Workshop', icon: Wrench, color: '#2EC4B6' },
+  ];
 
   // Debounce search query
   useEffect(() => {
@@ -689,10 +725,22 @@ export function HomeScreen({
       event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.venue.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Category filter matches category name
+    // Category filter (today/week are date-based, not category-based)
     const matchCategory =
       activeCategory === 'all' ||
+      activeCategory === 'today' ||
+      activeCategory === 'week' ||
       event.category.toLowerCase() === activeCategory.toLowerCase();
+
+    const evtDt = event.event_date ? new Date(event.event_date) : (event.date ? new Date(event.date) : null);
+    const _now = new Date();
+    const _todayStart = new Date(_now.toISOString().split('T')[0]);
+    const _todayEnd = new Date(_todayStart); _todayEnd.setDate(_todayEnd.getDate() + 1);
+    const _weekEnd = new Date(_todayStart); _weekEnd.setDate(_weekEnd.getDate() + 7);
+    const matchDateCategory =
+      (activeCategory !== 'today' && activeCategory !== 'week') ||
+      (activeCategory === 'today' && evtDt !== null && evtDt >= _todayStart && evtDt < _todayEnd) ||
+      (activeCategory === 'week' && evtDt !== null && evtDt >= _now && evtDt <= _weekEnd);
 
     // State filter
     const matchState =
@@ -709,7 +757,7 @@ export function HomeScreen({
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
-    return matchQuery && matchCategory && matchState && matchPrice && matchUpcoming;
+    return matchQuery && matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
   });
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
@@ -751,8 +799,42 @@ export function HomeScreen({
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
+      {/* Search overlay */}
+      {searchOpen && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
+          padding: 'calc(16px + env(safe-area-inset-top)) 16px 12px',
+          background: '#060A12', borderBottom: '1px solid rgba(255,255,255,0.07)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '48px' }}>
+              <Search size={18} color="#8B8FA8" />
+              <input
+                autoFocus
+                type="text"
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                placeholder="Search title, category, location..."
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+              />
+              {inputValue && (
+                <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+                  <X size={16} color="#8B8FA8" />
+                </button>
+              )}
+            </div>
+            <button
+              onClick={() => { setSearchOpen(false); setInputValue(''); setSearchQuery(''); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
-      <div 
+      <div
         className="flex items-center justify-between px-5 pb-3"
         style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
       >
@@ -774,6 +856,14 @@ export function HomeScreen({
               <MapPin size={16} color="#C4C9E0" />
             </button>
           )}
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="w-9 h-9 rounded-full flex items-center justify-center"
+            style={{ background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer' }}
+            title="Search"
+          >
+            <Search size={18} color="#AAAAAA" />
+          </button>
           <button
             onClick={onNotificationsPress}
             className="w-9 h-9 rounded-full flex items-center justify-center"
@@ -799,43 +889,6 @@ export function HomeScreen({
 
       {/* Scrollable content */}
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-        {/* Search Bar */}
-        <div className="px-4 mb-4">
-          <div
-            className="flex items-center gap-3 px-4"
-            style={{
-              height: '48px',
-              background: '#131629',
-              borderRadius: '14px',
-              border: '1px solid rgba(255,255,255,0.07)',
-            }}
-          >
-            <Search size={18} color="#8B8FA8" />
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder="Search title, category, location..."
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                outline: 'none',
-                color: '#F0F0FF',
-                fontSize: '14px',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            />
-            {inputValue && (
-              <button
-                onClick={() => { setInputValue(''); setSearchQuery(''); }}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-              >
-                <X size={16} color="#8B8FA8" />
-              </button>
-            )}
-          </div>
-        </div>
 
 
 
@@ -905,29 +958,39 @@ export function HomeScreen({
           </button>
         </div>
 
-        {/* Category filter chips */}
-        <div className="flex gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {CATEGORIES.map((cat) => {
+        {/* Category icon bar */}
+        <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as any}>
+          {ICON_CATEGORIES.map((cat) => {
             const active = activeCategory === cat.id;
+            const IconComp = cat.icon;
             return (
               <button
                 key={cat.id}
-                onClick={() => setActiveCategory(active ? 'all' : cat.id)}
-                className="flex-shrink-0"
+                onClick={() => setActiveCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
                 style={{
-                  background: active ? '#7B2FF7' : 'rgba(255,255,255,0.06)',
-                  border: `1px solid ${active ? '#7B2FF7' : 'rgba(255,255,255,0.12)'}`,
-                  borderRadius: '20px',
-                  padding: '5px 14px',
-                  fontSize: '13px',
-                  color: active ? '#fff' : '#C0C0D0',
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  letterSpacing: '0.01em',
+                  width: '72px', minWidth: '72px', padding: '10px 6px',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center',
+                  background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
                 }}
               >
-                {cat.label}
+                <div style={{
+                  width: '48px', height: '48px', borderRadius: '14px',
+                  background: active ? cat.color : 'rgba(255,255,255,0.06)',
+                  boxShadow: active ? `0 0 12px ${cat.color}66` : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  transition: 'background 0.2s, box-shadow 0.2s',
+                }}>
+                  <IconComp size={24} color={active ? '#fff' : cat.color} />
+                </div>
+                <span style={{
+                  fontSize: '11px', fontWeight: 600,
+                  color: active ? '#FFFFFF' : '#AAAAAA',
+                  marginTop: '6px', maxWidth: '70px',
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  textAlign: 'center',
+                }}>
+                  {cat.label}
+                </span>
               </button>
             );
           })}
