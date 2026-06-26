@@ -572,16 +572,31 @@ export function AdminDashboardScreen({
     if (tab !== 'org-requests') return;
     if (currentUser?.role !== 'admin' && !isRoot) return;
     setOrgRequestsLoading(true);
-    insforge.database
-      .from('organizer_requests')
-      .select('id, user_id, reason, status, admin_note, created_at, users!organizer_requests_user_id_fkey(username, full_name, email)')
-      .order('created_at', { ascending: false })
-      .limit(100)
-      .then(({ data, error }: any) => {
-        if (error) { console.error('Org requests fetch error:', error); flash(false, 'Failed to load requests: ' + (error.message || JSON.stringify(error))); }
-        setOrgRequests(data || []);
+    (async () => {
+      const { data: reqs, error } = await insforge.database
+        .from('organizer_requests')
+        .select('id, user_id, reason, status, admin_note, created_at')
+        .order('created_at', { ascending: false })
+        .limit(100);
+      if (error) {
+        console.error('Org requests fetch error:', error);
+        flash(false, 'Failed to load requests: ' + (error.message || JSON.stringify(error)));
         setOrgRequestsLoading(false);
-      });
+        return;
+      }
+      const rows = reqs || [];
+      const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
+      let usersMap: Record<string, any> = {};
+      if (userIds.length > 0) {
+        const { data: users } = await insforge.database
+          .from('users')
+          .select('id, username, full_name, email')
+          .in('id', userIds);
+        (users || []).forEach((u: any) => { usersMap[u.id] = u; });
+      }
+      setOrgRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
+      setOrgRequestsLoading(false);
+    })();
   }, [tab, currentUser?.id, isRoot]);
 
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {

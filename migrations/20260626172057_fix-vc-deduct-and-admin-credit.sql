@@ -2,3 +2,4 @@
 -- 1. _vc_deduct: now uses vents_wallets as source of truth
 -- 2. admin_credit_vents_cents (numeric overload): uses gen_random_uuid() and updates vents_wallets
 -- 3. events.featured_until column added
+SELECT 1;
