@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
+import { openPaystackPopup } from '../../lib/paystack';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -96,42 +97,50 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
     }
   };
 
-  const handlePay = async () => {
+  const handlePay = () => {
     if (!selectedEventId || !currentUser) return;
+    const plan = PLANS.find(p => p.id === selectedPlan);
+    if (!plan) return;
+    const amountNaira = plan.price[selectedDuration];
     setLoading(true);
-    try {
-      const planTypeMap: Record<Plan, string> = {
-        spotlight: 'boosted',
-        featured: 'featured',
-        trending: 'trending'
-      };
-      
-      const start = new Date();
-      const end = new Date();
-      end.setDate(start.getDate() + selectedDuration);
-      
-      const { error } = await insforge.database
-        .from('event_promotions')
-        .insert([{
-          event_id: selectedEventId,
-          organizer_id: currentUser.id,
-          plan_type: planTypeMap[selectedPlan],
-          start_date: start.toISOString(),
-          end_date: end.toISOString(),
-          status: 'active'
-        }]);
 
-      if (error) throw error;
-      
-      setPaid(true);
-      if (onPromoted) {
-        onPromoted();
-      }
-    } catch (err) {
-      console.error('Failed to save event promotion:', err);
-    } finally {
-      setLoading(false);
-    }
+    openPaystackPopup({
+      email: currentUser.email,
+      amountNaira,
+      metadata: { event_id: selectedEventId, plan: selectedPlan, duration: selectedDuration },
+      onSuccess: async (response) => {
+        try {
+          const planTypeMap: Record<Plan, string> = { spotlight: 'boosted', featured: 'featured', trending: 'trending' };
+          const start = new Date();
+          const end = new Date();
+          end.setDate(start.getDate() + selectedDuration);
+
+          // Record promotion
+          await insforge.database.from('event_promotions').insert([{
+            event_id: selectedEventId,
+            organizer_id: currentUser.id,
+            plan_type: planTypeMap[selectedPlan],
+            start_date: start.toISOString(),
+            end_date: end.toISOString(),
+            status: 'active'
+          }]);
+
+          // Mark event as featured with expiry
+          await insforge.database.from('events')
+            .update({ is_featured: true, featured_until: end.toISOString() })
+            .eq('id', selectedEventId);
+
+          console.log('Promotion payment ref:', response.reference);
+          setPaid(true);
+          if (onPromoted) onPromoted();
+        } catch (err) {
+          console.error('Failed to save event promotion:', err);
+        } finally {
+          setLoading(false);
+        }
+      },
+      onClose: () => { setLoading(false); },
+    });
   };
 
   if (paid) {

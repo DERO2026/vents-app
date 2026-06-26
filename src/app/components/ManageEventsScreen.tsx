@@ -306,6 +306,16 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                           Analytics
                         </button>
                       </div>
+                      {/* Promote button — only for live/approved events */}
+                      {(event.status === 'live' || event.status === 'approved') && onPromoteEvent && (
+                        <button
+                          onClick={() => onPromoteEvent(event.id)}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: '#A855F7', fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
+                        >
+                          <Zap size={12} />
+                          Promote Event
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

@@ -378,7 +378,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
               cursor: balance >= 150 && !featuredBusy ? 'pointer' : 'not-allowed',
             }}
           >
-            {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · 1,500 VC`}
+            {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · 150 VC`}
           </button>
         </div>
 

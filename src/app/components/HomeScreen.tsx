@@ -112,7 +112,9 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     organizer: dbEvent.organizer_name || dbEvent.organizer_username || 'Verified Organizer',
     organizerVcBadge: dbEvent.organizer_vc_badge || null,
     organizerVerified: true,
-    isFeatured: dbEvent.is_featured === true,
+    isFeatured: dbEvent.is_featured === true && (
+      !dbEvent.featured_until || new Date(dbEvent.featured_until) > new Date()
+    ),
     isTrending: false,
     attendees: 0,
     capacity: Number(dbEvent.ticket_goal || dbEvent.capacity || 1000),

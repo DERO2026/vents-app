@@ -288,9 +288,9 @@ export function UserProfileScreen({
             border: isFollowing ? '1px solid rgba(167,139,250,0.3)' : 'none',
             background: isFollowing
               ? 'rgba(167,139,250,0.1)'
-              : '#FF5722',
+              : '#7B2FF7',
             cursor: 'pointer',
-            boxShadow: isFollowing ? 'none' : '0 4px 16px rgba(255,87,34,0.4)',
+            boxShadow: isFollowing ? 'none' : '0 4px 16px rgba(123,47,247,0.4)',
           }}
         >
           {isFollowing ? (

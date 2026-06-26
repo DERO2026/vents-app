@@ -570,14 +570,19 @@ export function AdminDashboardScreen({
 
   useEffect(() => {
     if (tab !== 'org-requests') return;
+    if (currentUser?.role !== 'admin' && !isRoot) return;
     setOrgRequestsLoading(true);
     insforge.database
       .from('organizer_requests')
       .select('id, user_id, reason, status, admin_note, created_at, users!organizer_requests_user_id_fkey(username, full_name, email)')
       .order('created_at', { ascending: false })
       .limit(100)
-      .then(({ data }) => { setOrgRequests(data || []); setOrgRequestsLoading(false); });
-  }, [tab]);
+      .then(({ data, error }: any) => {
+        if (error) { console.error('Org requests fetch error:', error); flash(false, 'Failed to load requests: ' + (error.message || JSON.stringify(error))); }
+        setOrgRequests(data || []);
+        setOrgRequestsLoading(false);
+      });
+  }, [tab, currentUser?.id, isRoot]);
 
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
     const { error } = await insforge.database

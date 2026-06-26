@@ -1259,7 +1259,7 @@ export function EventDetailsScreen({
             background: isBooked
               ? 'rgba(16,185,129,0.12)'
               : canBook
-              ? '#FF5722'
+              ? '#7B2FF7'
               : '#1A1D2E',
             border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
             borderRadius: '16px',
@@ -1269,7 +1269,7 @@ export function EventDetailsScreen({
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: isBooked || !canBook ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(255,87,34,0.4)' : 'none',
+            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(123,47,247,0.4)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
