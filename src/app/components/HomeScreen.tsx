@@ -8,6 +8,7 @@ import {
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { VentsLogo } from './VentsLogo';
+import BadgeChip from './BadgeChip';
 import { formatPrice } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
@@ -31,35 +32,7 @@ interface HomeScreenProps {
   unreadNotificationsCount?: number;
 }
 
-const VC_BADGE_MAP: Record<string, { label: string; gradient: string; color: string }> = {
-  bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
-  silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
-  gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
-  platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
-  elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
-  legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
-};
 
-function VcBadgeInline({ badge }: { badge: string }) {
-  const b = VC_BADGE_MAP[badge as keyof typeof VC_BADGE_MAP];
-  if (!b) return null;
-  return (
-    <span style={{
-      background: (b as any).gradient || (b as any).background,
-      color: b.color,
-      fontSize: '11px',
-      fontWeight: 700,
-      borderRadius: '20px',
-      padding: '6px 12px',
-      letterSpacing: '0.08em',
-      whiteSpace: 'nowrap',
-      border: (b as any).border || 'none',
-      textTransform: 'uppercase',
-    }}>
-      {b.label}
-    </span>
-  );
-}
 
 function useCardCountdown(eventDate?: string): string | null {
   const target = useMemo(() => {
@@ -280,7 +253,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         {event.organizer && event.organizer !== 'Verified Organizer' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
-            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
+            <BadgeChip tier={event.organizerVcBadge} />
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
@@ -475,7 +448,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         {event.organizer && event.organizer !== 'Verified Organizer' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
-            {event.organizerVcBadge && <VcBadgeInline badge={event.organizerVcBadge} />}
+            <BadgeChip tier={event.organizerVcBadge} />
           </div>
         )}
         {countdown && (
@@ -725,11 +698,12 @@ export function HomeScreen({
       event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
       event.venue.toLowerCase().includes(searchQuery.toLowerCase());
 
-    // Category filter (today/week are date-based, not category-based)
+    // Category filter (today/week are date-based; featured events appear in all tabs)
     const matchCategory =
       activeCategory === 'all' ||
       activeCategory === 'today' ||
       activeCategory === 'week' ||
+      event.isFeatured ||
       event.category.toLowerCase() === activeCategory.toLowerCase();
 
     const evtDt = event.event_date ? new Date(event.event_date) : (event.date ? new Date(event.date) : null);
@@ -846,16 +820,6 @@ export function HomeScreen({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {onLiveMapPress && (
-            <button
-              onClick={() => onLiveMapPress?.()}
-              className="w-9 h-9 rounded-full flex items-center justify-center"
-              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}
-              title="Live Map"
-            >
-              <MapPin size={16} color="#C4C9E0" />
-            </button>
-          )}
           <button
             onClick={() => setSearchOpen(true)}
             className="w-9 h-9 rounded-full flex items-center justify-center"

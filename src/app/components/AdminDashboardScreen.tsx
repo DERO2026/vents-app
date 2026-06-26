@@ -34,7 +34,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests';
 
 interface EventRow {
   id: string;
@@ -331,6 +331,10 @@ export function AdminDashboardScreen({
   const [pendingOrgs, setPendingOrgs] = useState<any[]>([]);
   const [pendingOrgsLoading, setPendingOrgsLoading] = useState(false);
 
+  // Organizer Requests tab state
+  const [orgRequests, setOrgRequests] = useState<any[]>([]);
+  const [orgRequestsLoading, setOrgRequestsLoading] = useState(false);
+
   useEffect(() => {
     if (tab !== 'vc') return;
     setVcLoading(true);
@@ -563,6 +567,34 @@ export function AdminDashboardScreen({
     if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'logs') return;
     loadLogs();
   }, [tab, loadLogs, currentUser, isRoot]);
+
+  useEffect(() => {
+    if (tab !== 'org-requests') return;
+    setOrgRequestsLoading(true);
+    insforge.database
+      .from('organizer_requests')
+      .select('id, user_id, reason, status, admin_note, created_at, users!organizer_requests_user_id_fkey(username, full_name, email)')
+      .order('created_at', { ascending: false })
+      .limit(100)
+      .then(({ data }) => { setOrgRequests(data || []); setOrgRequestsLoading(false); });
+  }, [tab]);
+
+  const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
+    const { error } = await insforge.database
+      .from('organizer_requests')
+      .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) {
+      setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+      // If approved, update user role to organizer
+      if (status === 'approved') {
+        const req = orgRequests.find((r) => r.id === id);
+        if (req?.user_id) {
+          await insforge.database.from('users').update({ role: 'organizer' }).eq('id', req.user_id);
+        }
+      }
+    }
+  };
 
   const loadEvents = useCallback(async () => {
     setEventsLoading(true);
@@ -868,6 +900,7 @@ export function AdminDashboardScreen({
     { key: 'stats' as Tab, label: 'Stats', icon: <Zap size={14} /> },
     { key: 'verify' as Tab, label: 'Verify', icon: <BadgeCheck size={14} /> },
     { key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> },
+    { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
@@ -1549,6 +1582,40 @@ export function AdminDashboardScreen({
 
       {/* ════════════════ PAYOUTS TAB ════════════════════════════════════ */}
       {tab === 'payouts' && <PayoutsTab />}
+
+      {tab === 'org-requests' && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Organizer Upgrade Requests</p>
+          {orgRequestsLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : orgRequests.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No requests yet.</p>
+          ) : (
+            orgRequests.map((req: any) => {
+              const user = req.users;
+              const name = user?.full_name || user?.username || user?.email || req.user_id;
+              return (
+                <div key={req.id} style={{ background: '#131629', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{name}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: req.status === 'pending' ? 'rgba(245,158,11,0.15)' : req.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: req.status === 'pending' ? '#F59E0B' : req.status === 'approved' ? '#10B981' : '#EF4444', textTransform: 'uppercase' as const }}>
+                      {req.status}
+                    </span>
+                  </div>
+                  {req.reason && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px', lineHeight: 1.4 }}>{req.reason}</p>}
+                  <p style={{ color: '#555C7A', fontSize: '11px', margin: '0 0 10px' }}>{new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  {req.status === 'pending' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => reviewOrgRequest(req.id, 'approved')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                      <button onClick={() => reviewOrgRequest(req.id, 'rejected')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
 
       {/* ════════════════ SYSTEM CONTROLLER TAB (ROOT ONLY) ═══════════════ */}
       {tab === 'system' && isRoot && (

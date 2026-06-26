@@ -111,7 +111,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState('');
+  const [phone, setPhone] = useState('+234');
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
@@ -1105,7 +1105,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 />
               )}
               {mode === 'signup' && (
-                <div style={{ maxHeight: '200px', overflow: 'hidden', width: '100%', maxWidth: '100%' }}>
+                <div style={{ width: '100%', maxWidth: '100%' }}>
                   <label style={{ display: 'block', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.04em' }}>
                     DATE OF BIRTH
                   </label>
@@ -1124,10 +1124,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                       }
                     }}
                     style={{
-                      width: '100%', background: '#131629',
+                      width: '100%', maxWidth: '320px', height: '44px', background: '#131629',
                       border: `1px solid ${dobError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'}`,
-                      borderRadius: '14px', padding: '14px 16px',
-                      color: dob ? '#F0F0FF' : '#8B8FA8', fontSize: '14px',
+                      borderRadius: '14px', padding: '0 16px',
+                      color: dob ? '#F0F0FF' : '#8B8FA8', fontSize: '15px',
                       outline: 'none', boxSizing: 'border-box',
                       colorScheme: 'dark',
                     }}

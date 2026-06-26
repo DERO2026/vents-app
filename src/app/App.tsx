@@ -512,6 +512,28 @@ export default function App() {
       }
     }
     fetchFollows();
+
+    if (!currentUser?.id) return;
+    // Real-time subscription so follow state stays in sync across navigations
+    const channel = insforge.database
+      .channel(`follows-${currentUser.id}`)
+      .on('postgres_changes' as any, {
+        event: '*',
+        schema: 'public',
+        table: 'follows',
+        filter: `follower_id=eq.${currentUser.id}`,
+      }, (payload: any) => {
+        if (payload.eventType === 'INSERT') {
+          setFollowing((prev) =>
+            prev.includes(payload.new.following_id) ? prev : [...prev, payload.new.following_id]
+          );
+        } else if (payload.eventType === 'DELETE') {
+          setFollowing((prev) => prev.filter((id) => id !== payload.old.following_id));
+        }
+      })
+      .subscribe();
+
+    return () => { insforge.database.removeChannel(channel); };
   }, [currentUser]);
 
   // Fetch user's saved events from database
@@ -885,6 +907,7 @@ export default function App() {
   const [conversationUser, setConversationUser] = useState<{ id: string; name: string; avatarUrl?: string; vc_badge?: string } | null>(null);
   const [conversationEventId, setConversationEventId] = useState<string | undefined>(undefined);
   const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
+  const [exploreTab, setExploreTab] = useState<'people' | 'chats'>('people');
 
   const [selectedState, setSelectedState] = useState<string>(() => {
     return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
@@ -1343,9 +1366,12 @@ export default function App() {
               currentUserId={currentUser?.id}
               onOpenConversation={(userId, userName, avatarUrl, vcBadge) => {
                 setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
+                setExploreTab('chats');
                 navigateTo('conversation');
               }}
               chatRefreshKey={chatRefreshKey}
+              initialTab={exploreTab}
+              onTabChange={setExploreTab}
             />
           )}
           {screen === 'saved' && (

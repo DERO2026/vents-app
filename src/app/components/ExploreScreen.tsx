@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import BadgeChip from './BadgeChip';
 import { Search, X, MapPin, User, CheckCircle, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
@@ -9,6 +9,8 @@ interface ExploreScreenProps {
   currentUserId?: string;
   onOpenConversation?: (userId: string, userName: string, avatarUrl?: string, vcBadge?: string) => void;
   chatRefreshKey?: number;
+  initialTab?: 'people' | 'chats';
+  onTabChange?: (tab: 'people' | 'chats') => void;
 }
 
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
@@ -44,9 +46,24 @@ export function ExploreScreen({
   currentUserId,
   onOpenConversation,
   chatRefreshKey,
+  initialTab = 'people',
+  onTabChange,
 }: ExploreScreenProps) {
 
-  const [activeTab, setActiveTab] = useState<'people' | 'chats'>('people');
+  const [activeTab, setActiveTab] = useState<'people' | 'chats'>(initialTab);
+  const changeTab = (tab: 'people' | 'chats') => { setActiveTab(tab); onTabChange?.(tab); };
+  const TABS: Array<'people' | 'chats'> = ['people', 'chats'];
+  const swipeStartX = useRef<number | null>(null);
+  const handleTouchStart = (e: React.TouchEvent) => { swipeStartX.current = e.touches[0].clientX; };
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (swipeStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - swipeStartX.current;
+    swipeStartX.current = null;
+    if (Math.abs(dx) < 50) return;
+    const idx = TABS.indexOf(activeTab);
+    if (dx < 0 && idx < TABS.length - 1) changeTab(TABS[idx + 1]);
+    else if (dx > 0 && idx > 0) changeTab(TABS[idx - 1]);
+  };
 
   // Chats state
   const [conversations, setConversations] = useState<any[]>([]);
@@ -162,7 +179,7 @@ export function ExploreScreen({
         {(['people', 'chats'] as const).map(tab => (
           <button
             key={tab}
-            onClick={() => setActiveTab(tab)}
+            onClick={() => changeTab(tab)}
             style={{
               background: 'none', border: 'none', cursor: 'pointer',
               padding: '10px 16px 12px',
@@ -181,7 +198,8 @@ export function ExploreScreen({
 
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}
+        onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
 
         {/* ── Chats tab ── */}
         {activeTab === 'chats' && (

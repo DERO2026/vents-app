@@ -59,6 +59,10 @@ export function ProfileScreen({
   const [attendees, setAttendees] = useState(0);
   const [highlightData, setHighlightData] = useState<{ groups: any[]; startGroupIndex: number } | null>(null);
   const [highlightRefresh, setHighlightRefresh] = useState(0);
+  const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
+  const [orgRequestReason, setOrgRequestReason] = useState('');
+  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
+  const [orgRequestError, setOrgRequestError] = useState('');
 
   useEffect(() => {
     async function fetchStats() {
@@ -101,6 +105,39 @@ export function ProfileScreen({
     }
     fetchStats();
   }, [currentUser?.id]);
+
+  useEffect(() => {
+    async function checkOrgRequest() {
+      if (!currentUser?.id) return;
+      const { data } = await insforge.database
+        .from('organizer_requests')
+        .select('status')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) setOrgRequestStatus(data.status === 'approved' ? 'sent' : data.status === 'rejected' ? 'idle' : 'already');
+    }
+    checkOrgRequest();
+  }, [currentUser?.id]);
+
+  const submitOrgRequest = async () => {
+    if (!currentUser?.id || orgRequestStatus === 'sending') return;
+    setOrgRequestStatus('sending');
+    setOrgRequestError('');
+    try {
+      const { error } = await insforge.database
+        .from('organizer_requests')
+        .insert([{ user_id: currentUser.id, reason: orgRequestReason.trim() || null }]);
+      if (error) throw error;
+      setOrgRequestStatus('sent');
+      setShowOrgRequestModal(false);
+    } catch (err: any) {
+      setOrgRequestError(err?.message || 'Failed to submit request.');
+      setOrgRequestStatus('idle');
+    }
+  };
+
   if (!currentUser) {
     return (
       <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
@@ -529,6 +566,60 @@ export function ProfileScreen({
                 Admin Dashboard
               </span>
             </button>
+          </div>
+        )}
+
+        {/* Become an Organizer — only for attendees */}
+        {!isOrganizer && !isAdmin && (
+          <div className="px-4 mb-3">
+            <button
+              onClick={() => {
+                if (orgRequestStatus === 'already' || orgRequestStatus === 'sent') return;
+                setShowOrgRequestModal(true);
+              }}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
+                borderRadius: '14px',
+                border: `1px solid ${orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
+                cursor: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'default' : 'pointer',
+                opacity: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 0.7 : 1,
+              }}
+            >
+              <BadgeCheck size={16} color="#A78BFA" />
+              <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>
+                {orgRequestStatus === 'already' ? 'Request Pending Review' : orgRequestStatus === 'sent' ? 'Organizer Request Submitted' : 'Become an Organizer'}
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* Become Organizer modal */}
+        {showOrgRequestModal && (
+          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            onClick={() => setShowOrgRequestModal(false)}>
+            <div style={{ background: '#131629', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
+              onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become an Organizer</h3>
+              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
+              </p>
+              <textarea
+                value={orgRequestReason}
+                onChange={(e) => setOrgRequestReason(e.target.value)}
+                placeholder="e.g. I want to host tech meetups in Lagos..."
+                rows={4}
+                style={{ width: '100%', background: '#0D1020', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              />
+              {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
+              <button
+                onClick={submitOrgRequest}
+                disabled={orgRequestStatus === 'sending'}
+                style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+              >
+                {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
           </div>
         )}
 
