@@ -1079,7 +1079,17 @@ export function HomeScreen({
                         No events yet
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        We're just getting started. Check back soon — events are on the way.
+                        Check back soon — new events are added every day.
+                      </p>
+                    </>
+                  ) : !searchQuery.trim() && activeCategory !== 'all' ? (
+                    <>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                        No {activeCategory} events yet
+                      </p>
+                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                        Check back soon or browse <span style={{ color: '#A855F7', cursor: 'pointer' }} onClick={() => setActiveCategory('all')}>All events</span>.
                       </p>
                     </>
                   ) : (
@@ -1089,7 +1099,7 @@ export function HomeScreen({
                         No matches
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
-                        Try a different search or clear the filters.
+                        Try a different search or browse all events.
                       </p>
                     </>
                   )}
