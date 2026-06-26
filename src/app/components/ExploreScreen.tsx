@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import BadgeChip from './BadgeChip';
 import { Search, X, MapPin, User, CheckCircle, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
@@ -218,18 +219,7 @@ export function ExploreScreen({
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
                             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: isUnread ? 700 : 500 }}>{name}</span>
-                            {profile?.vc_badge && (() => {
-                              const bm: Record<string, { label: string; background?: string; gradient?: string; color: string; border?: string }> = {
-                                bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
-                                silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
-                                gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
-                                platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
-                                elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
-                                legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
-                              };
-                              const b = bm[profile.vc_badge];
-                              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '9px', fontWeight: 800, borderRadius: '20px', height: '18px', padding: '2px 8px', whiteSpace: 'nowrap', flexShrink: 0, letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' as const }}>{b.label}</span> : null;
-                            })()}
+                            <BadgeChip tier={profile?.vc_badge} />
                           </div>
                           <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                         </div>

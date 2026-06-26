@@ -1105,7 +1105,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 />
               )}
               {mode === 'signup' && (
-                <div>
+                <div style={{ maxHeight: '200px', overflow: 'hidden', width: '100%', maxWidth: '100%' }}>
                   <label style={{ display: 'block', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.04em' }}>
                     DATE OF BIRTH
                   </label>

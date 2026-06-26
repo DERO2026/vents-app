@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import BadgeChip from './BadgeChip';
 import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
 import {
   Settings,
@@ -298,23 +299,7 @@ export function ProfileScreen({
                       {roleLabel}
                     </span>
                   </div>
-                  {currentUser?.vc_badge && (() => {
-                    const badgeMap: Record<string, { label: string; background?: string; gradient?: string; color: string; border?: string }> = {
-                      bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
-                      silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
-                      gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
-                      platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
-                      elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
-                      legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
-                    };
-                    const b = badgeMap[currentUser.vc_badge!.toLowerCase()];
-                    if (!b) return null;
-                    return (
-                      <span style={{ background: b.gradient || b.background, borderRadius: '20px', height: '18px', padding: '2px 8px', fontSize: '9px', fontWeight: 800, color: b.color, letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' }}>
-                        {b.label}
-                      </span>
-                    );
-                  })()}
+                  <BadgeChip tier={currentUser?.vc_badge} />
                 </div>
               </div>
             </div>

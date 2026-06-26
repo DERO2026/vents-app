@@ -11,12 +11,23 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
     <div
       style={{
         background: '#060A12',
-        width: '100%',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        overflow: 'hidden',
+        overscrollBehavior: 'none',
+      }}
+    >
+    <div
+      style={{
         height: '100%',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch' as any,
+        scrollbarWidth: 'none' as const,
         display: 'flex',
         flexDirection: 'column',
-        overflowY: 'auto',
-        scrollbarWidth: 'none' as const,
       }}
     >
       {/* Header */}
@@ -257,6 +268,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
           </div>
         </div>
       </div>
+    </div>{/* end inner scroll */}
     </div>
   );
 }

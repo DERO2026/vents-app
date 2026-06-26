@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { UserProfile } from './types';
@@ -433,18 +434,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{otherUser.name}</p>
-            {otherUser.vc_badge && (() => {
-              const bm: Record<string, { label: string; background?: string; gradient?: string; color: string; border?: string }> = {
-                bronze: { label: 'BRONZE', background: '#CD7F32', color: '#fff' },
-                silver: { label: 'SILVER', background: '#A8A9AD', color: '#fff' },
-                gold: { label: 'GOLD', background: '#FFD700', color: '#1a1a2e' },
-                platinum: { label: 'PLATINUM', background: '#E5E4E2', color: '#1a1a2e' },
-                elite: { label: 'ELITE', background: '#1a1a2e', color: '#fff', border: '1px solid rgba(255,255,255,0.15)' },
-                legend: { label: 'LEGEND', gradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)', color: '#fff' },
-              };
-              const b = bm[otherUser.vc_badge];
-              return b ? <span style={{ background: b.gradient || b.background, color: b.color, fontSize: '9px', fontWeight: 800, borderRadius: '20px', height: '18px', padding: '2px 8px', whiteSpace: 'nowrap', letterSpacing: '0.08em', border: b.border || 'none', display: 'inline-flex', alignItems: 'center', textTransform: 'uppercase' as const }}>{b.label}</span> : null;
-            })()}
+            <BadgeChip tier={otherUser.vc_badge} />
           </div>
           {eventTitle && <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }}>Re: {eventTitle}</p>}
         </div>

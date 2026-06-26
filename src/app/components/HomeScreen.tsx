@@ -671,7 +671,7 @@ export function HomeScreen({
   const [featuredIndex, setFeaturedIndex] = useState(0);
 
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
-    { id: 'today', label: 'Today', icon: Clock, color: '#FFFFFF' },
+    { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
     { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
     { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FF7' },
     { id: 'Music', label: 'Music', icon: Music, color: '#FF6B6B' },
@@ -968,24 +968,27 @@ export function HomeScreen({
                 key={cat.id}
                 onClick={() => setActiveCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
                 style={{
-                  width: '72px', minWidth: '72px', padding: '10px 6px',
+                  width: '64px', minWidth: '64px', padding: '8px 4px',
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
                   background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
                 }}
               >
                 <div style={{
-                  width: '48px', height: '48px', borderRadius: '14px',
-                  background: active ? cat.color : 'rgba(255,255,255,0.06)',
-                  boxShadow: active ? `0 0 12px ${cat.color}66` : 'none',
+                  width: '44px', height: '44px', borderRadius: '12px',
+                  background: active
+                    ? (cat.id === 'today' ? 'rgba(160,160,160,0.2)' : cat.color)
+                    : 'rgba(255,255,255,0.06)',
+                  boxShadow: active && cat.id !== 'today' ? `0 0 12px ${cat.color}66` : 'none',
+                  border: active && cat.id === 'today' ? '1.5px solid rgba(255,255,255,0.3)' : 'none',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   transition: 'background 0.2s, box-shadow 0.2s',
                 }}>
-                  <IconComp size={24} color={active ? '#fff' : cat.color} />
+                  <IconComp size={20} color={active ? '#FFFFFF' : cat.color} />
                 </div>
                 <span style={{
-                  fontSize: '11px', fontWeight: 600,
+                  fontSize: '10px', fontWeight: 600,
                   color: active ? '#FFFFFF' : '#AAAAAA',
-                  marginTop: '6px', maxWidth: '70px',
+                  marginTop: '6px', maxWidth: '62px',
                   overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                   textAlign: 'center',
                 }}>
