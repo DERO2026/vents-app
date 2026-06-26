@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
+import { extractEventsFromUrl, publishEvents, type ImportedEvent } from '../../lib/eventImporter';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -35,7 +36,7 @@ interface AuditLog {
   target_user_id: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events';
 
 interface EventRow {
   id: string;
@@ -335,6 +336,15 @@ export function AdminDashboardScreen({
   // Organizer Requests tab state
   const [orgRequests, setOrgRequests] = useState<any[]>([]);
   const [orgRequestsLoading, setOrgRequestsLoading] = useState(false);
+
+  // Import Events tab state
+  const [importUrl, setImportUrl] = useState('');
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResults, setImportResults] = useState<ImportedEvent[]>([]);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [selectedImports, setSelectedImports] = useState<Set<number>>(new Set());
+  const [publishLoading, setPublishLoading] = useState(false);
+  const [publishMsg, setPublishMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -935,6 +945,7 @@ export function AdminDashboardScreen({
     { key: 'verify' as Tab, label: 'Verify', icon: <BadgeCheck size={14} /> },
     { key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> },
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
+    { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
@@ -1648,6 +1659,164 @@ export function AdminDashboardScreen({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ════════════════ IMPORT EVENTS TAB ═══════════════ */}
+      {tab === 'import-events' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Header */}
+          <div style={{ background: 'rgba(123,47,247,0.08)', border: '1px solid rgba(123,47,247,0.25)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FF7, #F107A3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Zap size={20} color="#fff" />
+            </div>
+            <div>
+              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Import Free Events</h3>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Paste any URL — AI extracts free Nigerian events automatically</p>
+            </div>
+          </div>
+
+          {/* URL input */}
+          <div>
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>EVENT PAGE URL</p>
+            <input
+              value={importUrl}
+              onChange={(e) => setImportUrl(e.target.value)}
+              placeholder="https://www.eventbrite.com/d/nigeria/free-events/"
+              style={{ width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box' }}
+            />
+          </div>
+
+          {/* Extract button */}
+          <button
+            onClick={async () => {
+              if (!importUrl.trim()) return;
+              setImportLoading(true);
+              setImportError(null);
+              setImportResults([]);
+              setSelectedImports(new Set());
+              setPublishMsg(null);
+              try {
+                const results = await extractEventsFromUrl(importUrl.trim());
+                setImportResults(results);
+                if (results.length === 0) setImportError('No free events found at this URL. Try a different page.');
+                else setSelectedImports(new Set(results.map((_, i) => i)));
+              } catch (err: any) {
+                setImportError(err?.message || 'Failed to extract events. Check the URL and try again.');
+              } finally {
+                setImportLoading(false);
+              }
+            }}
+            disabled={importLoading || !importUrl.trim()}
+            style={{ width: '100%', background: importLoading || !importUrl.trim() ? 'rgba(123,47,247,0.3)' : 'linear-gradient(135deg, #7B2FF7, #F107A3)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: importLoading || !importUrl.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          >
+            {importLoading ? (
+              <>
+                <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                Extracting events with AI...
+              </>
+            ) : (
+              <><Zap size={14} /> Extract Events</>
+            )}
+          </button>
+
+          {importError && (
+            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '12px', color: '#EF4444', fontSize: '13px' }}>
+              {importError}
+            </div>
+          )}
+
+          {/* Results */}
+          {importResults.length > 0 && (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{importResults.length} free event{importResults.length !== 1 ? 's' : ''} found</p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button onClick={() => setSelectedImports(new Set(importResults.map((_, i) => i)))} style={{ background: 'none', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#A78BFA', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>All</button>
+                  <button onClick={() => setSelectedImports(new Set())} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '4px 10px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>None</button>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {importResults.map((event, i) => {
+                  const selected = selectedImports.has(i);
+                  return (
+                    <div
+                      key={i}
+                      onClick={() => {
+                        const next = new Set(selectedImports);
+                        if (selected) next.delete(i); else next.add(i);
+                        setSelectedImports(next);
+                      }}
+                      style={{ background: selected ? 'rgba(123,47,247,0.08)' : '#131629', border: selected ? '1.5px solid rgba(123,47,247,0.4)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', cursor: 'pointer' }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                        <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: selected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: selected ? '#7B2FF7' : 'transparent', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800 }}>✓</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
+                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.location}</p>
+                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>FREE</span>
+                            {event.category && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.category}</span>}
+                            {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.state}</span>}
+                          </div>
+                          {event.description && <p style={{ color: '#6B7280', fontSize: '11px', margin: '6px 0 0', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{event.description}</p>}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Publish button */}
+              <button
+                onClick={async () => {
+                  const toPublish = importResults.filter((_, i) => selectedImports.has(i));
+                  if (toPublish.length === 0) return;
+                  setPublishLoading(true);
+                  setPublishMsg(null);
+                  try {
+                    const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', insforge.database);
+                    setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
+                    setImportResults([]);
+                    setSelectedImports(new Set());
+                    setImportUrl('');
+                  } catch (err: any) {
+                    setPublishMsg(`✗ ${err?.message || 'Publish failed.'}`);
+                  } finally {
+                    setPublishLoading(false);
+                  }
+                }}
+                disabled={publishLoading || selectedImports.size === 0}
+                style={{ width: '100%', background: publishLoading || selectedImports.size === 0 ? 'rgba(123,47,247,0.3)' : '#7B2FF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: publishLoading || selectedImports.size === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: selectedImports.size > 0 ? '0 4px 16px rgba(123,47,247,0.4)' : 'none' }}
+              >
+                {publishLoading ? (
+                  <>
+                    <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                    Publishing...
+                  </>
+                ) : (
+                  `Publish ${selectedImports.size} Selected Event${selectedImports.size !== 1 ? 's' : ''}`
+                )}
+              </button>
+            </>
+          )}
+
+          {publishMsg && (
+            <div style={{ background: publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`, borderRadius: '10px', padding: '12px', color: publishMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '13px', fontWeight: 600 }}>
+              {publishMsg}
+            </div>
+          )}
+
+          {/* Instructions */}
+          <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>SETUP REQUIRED</p>
+            <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
+              Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>VITE_ANTHROPIC_API_KEY</span> in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>.
+            </p>
+          </div>
         </div>
       )}
 
