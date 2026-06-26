@@ -464,7 +464,7 @@ export function AdminDashboardScreen({
   const handleVcAdminTransfer = async () => {
     const uid = vcTransfer.userId.trim();
     if (!uid || !vcTransfer.amount || Number(vcTransfer.amount) <= 0) {
-      setVcMsg('Enter a user ID and a positive amount.'); return;
+      setVcMsg('Search and select a user first, then enter a positive amount.'); return;
     }
     if (!vcTransfer.reason.trim()) {
       setVcMsg('A reason is required for admin transfers.'); return;
@@ -1360,7 +1360,7 @@ export function AdminDashboardScreen({
                     </div>
                     <div>
                       <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{u.full_name || u.username || 'Unknown'}</div>
-                      <div style={{ color: '#8B8FA8', fontSize: '11px' }}>@{u.username} · {u.email}</div>
+                      <div style={{ color: '#8B8FA8', fontSize: '11px' }}>@{u.username}</div>
                     </div>
                   </button>
                 ))}

@@ -489,13 +489,14 @@ export default function App() {
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
 
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
-  const [following, setFollowing] = useState<string[]>([]);
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
-  // Fetch user's follows from database
+  // Fetch user's follows from database — dependency is currentUser?.id only so
+  // object-reference churn from setCurrentUser({...prev}) doesn't cause races.
   useEffect(() => {
     async function fetchFollows() {
       if (!currentUser?.id) {
-        setFollowing([]);
+        setFollowingIds(new Set());
         return;
       }
       try {
@@ -505,14 +506,14 @@ export default function App() {
           .eq('follower_id', currentUser.id);
         if (error) throw error;
         if (data) {
-          setFollowing(data.map((f: any) => f.following_id));
+          setFollowingIds(new Set(data.map((f: any) => f.following_id)));
         }
       } catch (err) {
         console.error("Failed to fetch follows:", err);
       }
     }
     fetchFollows();
-  }, [currentUser]);
+  }, [currentUser?.id]);
 
   // Fetch user's saved events from database
   useEffect(() => {
@@ -1063,11 +1064,13 @@ export default function App() {
     }
     if (userId === currentUser.id) return;
 
-    const isFollowing = following.includes(userId);
+    const isFollowing = followingIds.has(userId);
     // Optimistically update UI
-    setFollowing((prev) =>
-      isFollowing ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
+    setFollowingIds((prev) => {
+      const next = new Set(prev);
+      if (isFollowing) next.delete(userId); else next.add(userId);
+      return next;
+    });
 
     try {
       if (isFollowing) {
@@ -1085,7 +1088,6 @@ export default function App() {
             following_id: userId
           }]);
         if (error) throw error;
-        // 3.6: Notify the followed user
         const displayName = currentUser.username ? `@${currentUser.username}` : (currentUser.full_name || 'Someone');
         insforge.database.rpc('notify_user' as any, {
           p_user_id: userId,
@@ -1100,11 +1102,13 @@ export default function App() {
     } catch (err) {
       console.error("Failed to toggle follow in DB:", err);
       // Revert optimistic update
-      setFollowing((prev) =>
-        isFollowing ? [...prev, userId] : prev.filter((id) => id !== userId)
-      );
+      setFollowingIds((prev) => {
+        const next = new Set(prev);
+        if (isFollowing) next.add(userId); else next.delete(userId);
+        return next;
+      });
     }
-  }, [currentUser, following, navigateTo]);
+  }, [currentUser, followingIds, navigateTo]);
 
   const handleProfileNavigate = useCallback((target: string) => {
     if (target === 'welcome') {
@@ -1368,7 +1372,7 @@ export default function App() {
               onSignOut={handleSignOut}
               tickets={allTickets}
               savedCount={savedEvents.length}
-              followingCount={following.length}
+              followingCount={followingIds.size}
               onViewTicket={(ticket) => {
                 setPurchasedTicket(ticket);
                 navigateTo('payment-success');
@@ -1470,7 +1474,7 @@ export default function App() {
           )}
           {screen === 'following-list' && (
             <FollowingListScreen
-              following={following}
+              following={[...followingIds]}
               onToggleFollow={handleToggleFollow}
               onBack={goBack}
               currentUserId={currentUser?.id}
@@ -1554,7 +1558,7 @@ export default function App() {
               onBook={() => handleBookEvent(selectedEvent)}
               bookingLoading={bookingLoading}
               onEventPress={handleEventPress}
-              following={following}
+              following={[...followingIds]}
               onToggleFollow={handleToggleFollow}
               currentUserId={currentUser?.id}
               onOrganizerPress={async (organizerId) => {
@@ -1728,7 +1732,7 @@ export default function App() {
           {screen === 'user-profile' && selectedUser && (
             <UserProfileScreen
               user={selectedUser}
-              isFollowing={following.includes(selectedUser.id)}
+              isFollowing={followingIds.has(selectedUser.id)}
               onToggleFollow={() => handleToggleFollow(selectedUser.id)}
               onBack={goBack}
               onEventPress={handleEventPress}

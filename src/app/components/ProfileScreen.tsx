@@ -217,7 +217,7 @@ export function ProfileScreen({
   const starColor = isAdmin ? '#fff' : '#000';
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
+    <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
       {/* Header */}
       <div 
         className="flex items-center justify-between px-4 pb-3"
@@ -596,7 +596,7 @@ export function ProfileScreen({
 
         {/* Become Organizer modal */}
         {showOrgRequestModal && (
-          <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
             onClick={() => setShowOrgRequestModal(false)}>
             <div style={{ background: '#131629', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
               onClick={(e) => e.stopPropagation()}>
