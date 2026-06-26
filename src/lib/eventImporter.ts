@@ -12,12 +12,31 @@ export interface ImportedEvent {
   source_url: string;
 }
 
+async function fetchPageContent(url: string): Promise<string> {
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    `https://proxy.cors.sh/${url}`,
+  ];
+
+  for (const proxyUrl of proxies) {
+    try {
+      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
+      if (!response.ok) continue;
+      const data = await response.json().catch(() => null);
+      if (data?.contents) return data.contents;
+      const text = await response.text().catch(() => '');
+      if (text.length > 100) return text;
+    } catch {
+      continue;
+    }
+  }
+  throw new Error('Could not fetch page content. Try a different URL or check your connection.');
+}
+
 export async function extractEventsFromUrl(url: string): Promise<ImportedEvent[]> {
   try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const pageResponse = await fetch(proxyUrl);
-    const pageData = await pageResponse.json();
-    const htmlContent = pageData.contents || '';
+    const htmlContent = await fetchPageContent(url);
 
     const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
     if (!apiKey) throw new Error('VITE_ANTHROPIC_API_KEY not set');

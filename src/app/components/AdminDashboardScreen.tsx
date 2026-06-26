@@ -1810,13 +1810,15 @@ export function AdminDashboardScreen({
             </div>
           )}
 
-          {/* Instructions */}
-          <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px' }}>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>SETUP REQUIRED</p>
-            <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
-              Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>VITE_ANTHROPIC_API_KEY</span> in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>.
-            </p>
-          </div>
+          {/* Instructions — only show if API key not configured */}
+          {!import.meta.env.VITE_ANTHROPIC_API_KEY && (
+            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '14px' }}>
+              <p style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>⚠ SETUP REQUIRED</p>
+              <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
+                Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>VITE_ANTHROPIC_API_KEY</span> in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>. Redeploy after adding.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
