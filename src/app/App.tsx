@@ -512,28 +512,6 @@ export default function App() {
       }
     }
     fetchFollows();
-
-    if (!currentUser?.id) return;
-    // Real-time subscription so follow state stays in sync across navigations
-    const channel = insforge.database
-      .channel(`follows-${currentUser.id}`)
-      .on('postgres_changes' as any, {
-        event: '*',
-        schema: 'public',
-        table: 'follows',
-        filter: `follower_id=eq.${currentUser.id}`,
-      }, (payload: any) => {
-        if (payload.eventType === 'INSERT') {
-          setFollowing((prev) =>
-            prev.includes(payload.new.following_id) ? prev : [...prev, payload.new.following_id]
-          );
-        } else if (payload.eventType === 'DELETE') {
-          setFollowing((prev) => prev.filter((id) => id !== payload.old.following_id));
-        }
-      })
-      .subscribe();
-
-    return () => { insforge.database.removeChannel(channel); };
   }, [currentUser]);
 
   // Fetch user's saved events from database
