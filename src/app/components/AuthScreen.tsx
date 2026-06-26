@@ -468,6 +468,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         }
       }
     } catch (err: any) {
+      const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
+        (typeof err?.error_description === 'string' ? err.error_description : '');
+      const msgL = msg.toLowerCase();
+
+      if (mode === 'signup') {
+        // Signup-specific error messages — never show login-focused text during signup
+        const safe = (msgL.includes('email already') || msgL.includes('email exists') || msgL.includes('already registered') || msgL.includes('already in use') || (msgL.includes('duplicate') && msgL.includes('email')))
+          ? 'Email already in use. Try logging in instead.'
+          : (msgL.includes('username already') || msgL.includes('username exists') || msgL.includes('username taken') || (msgL.includes('duplicate') && msgL.includes('username')))
+          ? 'Username already taken. Please choose another.'
+          : (msgL.includes('phone') && (msgL.includes('already') || msgL.includes('exists') || msgL.includes('taken')))
+          ? 'Phone number already registered. Try logging in instead.'
+          : (msgL.includes('password') && (msgL.includes('weak') || msgL.includes('short') || msgL.includes('simple') || msgL.includes('strength')))
+          ? 'Password is too weak. Use at least 8 characters with letters and numbers.'
+          : msgL.includes('rate limit') || msgL.includes('too many')
+          ? 'Too many attempts. Please wait a few minutes and try again.'
+          : msgL.includes('network') || msgL.includes('fetch')
+          ? 'Network error. Check your connection and try again.'
+          : err?.message || 'Signup failed. Please check your details and try again.';
+        setErrorMessage(safe);
+        return;
+      }
+
       // On login failure, check if the account is suspended/deleted so we can
       // show the ban screen instead of a generic "Invalid credentials" message.
       if (mode === 'login') {
@@ -494,10 +517,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           }
         } catch { /* ignore status check failure — fall through to normal error */ }
       }
-      // Specific, user-friendly error messages
-      const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
-        (typeof err?.error_description === 'string' ? err.error_description : '');
-      const msgL = msg.toLowerCase();
+      // Specific, user-friendly error messages for login/forgot/reset
       const safe = msgL.includes('user not found') || msgL.includes('no user') || msgL.includes('not registered') || msgL.includes('does not exist')
         ? 'No account found with that email or username.'
         : msgL.includes('invalid password') || msgL.includes('wrong password') || msgL.includes('incorrect password')
