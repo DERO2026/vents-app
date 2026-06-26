@@ -4,6 +4,7 @@ import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken } from '../lib/insforge';
 import { setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
 import { identifyUser, trackEvent } from '../lib/analytics';
+import { sendSMS } from '../lib/sendchamp';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -976,6 +977,12 @@ export default function App() {
             p_payment_status: 'paid',
           });
           if (insertError) throw insertError;
+          if (currentUser?.phone) {
+            sendSMS({
+              to: currentUser.phone,
+              message: `Your ticket for ${ticket.event.title} has been confirmed! Check the Vents app for your QR code. - Vents`,
+            }).catch(() => {});
+          }
           trackPushEvent('ticket_purchased', { eventId: ticket.event.id, eventTitle: ticket.event.title });
           trackEvent('ticket_booked', { eventId: ticket.event.id, amount: ticket.totalPrice });
 

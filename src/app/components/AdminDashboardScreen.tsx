@@ -6,6 +6,7 @@ import {
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
 } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
+import { sendSMS } from '../../lib/sendchamp';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -590,7 +591,7 @@ export function AdminDashboardScreen({
       if (userIds.length > 0) {
         const { data: users } = await insforge.database
           .from('users')
-          .select('id, username, full_name, email')
+          .select('id, username, full_name, email, phone')
           .in('id', userIds);
         (users || []).forEach((u: any) => { usersMap[u.id] = u; });
       }
@@ -606,11 +607,24 @@ export function AdminDashboardScreen({
       .eq('id', id);
     if (!error) {
       setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+      const req = orgRequests.find((r) => r.id === id);
       // If approved, update user role to organizer
       if (status === 'approved') {
-        const req = orgRequests.find((r) => r.id === id);
         if (req?.user_id) {
           await insforge.database.from('users').update({ role: 'organizer' }).eq('id', req.user_id);
+        }
+        if (req?.users?.phone) {
+          sendSMS({
+            to: req.users.phone,
+            message: `Congratulations! Your request to become an organizer on Vents has been approved. You can now create and manage events. - Vents`,
+          }).catch(() => {});
+        }
+      } else if (status === 'rejected') {
+        if (req?.users?.phone) {
+          sendSMS({
+            to: req.users.phone,
+            message: `Your organizer request on Vents was not approved at this time. Contact support@getvents.com for more information. - Vents`,
+          }).catch(() => {});
         }
       }
     }
