@@ -604,7 +604,10 @@ function FeaturedCarousel({
           {/* Info overlay at bottom */}
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
             {event.organizer && event.organizer !== 'Verified Organizer' && (
-              <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, margin: '0 0 4px' }}>@{event.organizer}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
+                <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
+                <BadgeChip tier={event.organizerVcBadge} />
+              </div>
             )}
             <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
