@@ -10,6 +10,7 @@ interface ConversationScreenProps {
   eventId?: string;
   eventTitle?: string;
   onBack: () => void;
+  onNavigateToProfile?: (userId: string) => void;
 }
 
 interface DM {
@@ -52,7 +53,7 @@ async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<
   });
 }
 
-export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack }: ConversationScreenProps) {
+export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack, onNavigateToProfile }: ConversationScreenProps) {
   const [messages, setMessages] = useState<DM[]>([]);
   const [body, setBody] = useState('');
   const [sending, setSending] = useState(false);
@@ -425,13 +426,16 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           <ArrowLeft size={22} color="#A78BFA" />
         </button>
-        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+        <div
+          onClick={() => onNavigateToProfile?.(otherUser.id)}
+          style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, cursor: onNavigateToProfile ? 'pointer' : 'default' }}
+        >
           {otherUser.avatarUrl
             ? <img src={otherUser.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             : <span style={{ color: '#A78BFA', fontSize: '15px', fontWeight: 700 }}>{otherUser.name[0]?.toUpperCase()}</span>
           }
         </div>
-        <div>
+        <div onClick={() => onNavigateToProfile?.(otherUser.id)} style={{ cursor: onNavigateToProfile ? 'pointer' : 'default' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{otherUser.name}</p>
             <BadgeChip tier={otherUser.vc_badge} />

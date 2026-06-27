@@ -151,20 +151,11 @@ export function UserProfileScreen({
 
     if (currentUserId && currentUserId !== user.id) {
       insforge.database
-        .from('events')
-        .select('id')
-        .eq('organizer_id', user.id)
-        .then(({ data: orgEvents }) => {
-          if (!orgEvents || orgEvents.length === 0) return;
-          const eventIds = orgEvents.map((e: any) => e.id);
-          insforge.database
-            .from('tickets')
-            .select('id', { count: 'exact', head: true })
-            .eq('user_id', currentUserId)
-            .in('event_id', eventIds)
-            .eq('status', 'active')
-            .then(({ count }) => setHasTicketFromOrganizer((count || 0) > 0));
-        });
+        .from('tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', currentUserId)
+        .eq('status', 'active')
+        .then(({ count }) => setHasTicketFromOrganizer((count || 0) > 0));
     }
   }, [user.id, currentUserId]);
 

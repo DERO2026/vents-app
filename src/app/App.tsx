@@ -1011,6 +1011,10 @@ export default function App() {
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
   const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
+    if (!currentUser) {
+      navigateTo('auth');
+      return;
+    }
     setSelectedTicketType(ticketType);
     setSelectedTicketQty(qty);
     if ((ticketType.price ?? 0) * qty === 0) {
@@ -1680,6 +1684,9 @@ export default function App() {
               onEditEvent={(id, updates) =>
                 setOrgEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)))
               }
+              onDeleteEvent={(id) =>
+                setOrgEvents((prev) => prev.filter((e) => e.id !== id))
+              }
               onPromoteEvent={(eventId) => {
                 setPromotionEventId(eventId);
                 navigateTo('promote-event');
@@ -1738,6 +1745,14 @@ export default function App() {
               eventId={conversationEventId}
               eventTitle={conversationEventTitle}
               onBack={goBack}
+              onNavigateToProfile={async (userId) => {
+                const { data } = await insforge.database
+                  .from('public_profiles')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+                  .eq('id', userId)
+                  .maybeSingle();
+                if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
+              }}
             />
           )}
 

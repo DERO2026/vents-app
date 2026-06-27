@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone } from 'lucide-react';
+import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone, MoreVertical, Trash2, EyeOff, Eye } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
@@ -11,6 +11,7 @@ interface ManageEventsScreenProps {
   orgEvents: OrganizerEvent[];
   onEditEvent: (id: string, updates: Partial<OrganizerEvent>) => void;
   onPromoteEvent?: (eventId: string) => void;
+  onDeleteEvent?: (id: string) => void;
 }
 
 const STATUS_STYLE = {
@@ -46,9 +47,12 @@ function isEditLocked(event: OrganizerEvent): boolean {
   return days >= 0 && days <= 3;
 }
 
-export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent, onPromoteEvent }: ManageEventsScreenProps) {
+export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent, onPromoteEvent, onDeleteEvent }: ManageEventsScreenProps) {
   const [query, setQuery] = useState('');
   const [editingEvent, setEditingEvent] = useState<OrganizerEvent | null>(null);
+  const [optionsEvent, setOptionsEvent] = useState<OrganizerEvent | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<OrganizerEvent | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Edit form state
   const [editTitle, setEditTitle] = useState('');
@@ -118,6 +122,25 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
       showPhone: editShowPhone,
     });
     setEditingEvent(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await insforge.database.from('events').delete().eq('id', deleteTarget.id);
+      onDeleteEvent?.(deleteTarget.id);
+      setDeleteTarget(null);
+    } catch { /* ignore */ } finally {
+      setDeleting(false);
+    }
+  }
+
+  async function toggleHide(event: OrganizerEvent) {
+    const newHidden = !((event as any).hidden_by_admin);
+    await insforge.database.from('events').update({ hidden_by_admin: newHidden }).eq('id', event.id);
+    onEditEvent(event.id, { status: newHidden ? 'draft' : 'live' } as any);
+    setOptionsEvent(null);
   }
 
   return (
@@ -202,7 +225,12 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                             )}
                           </div>
                         </div>
-                        <StatusIcon size={20} color={ss.color} style={{ flexShrink: 0, marginTop: '2px' }} />
+                        <button
+                          onClick={() => setOptionsEvent(event)}
+                          style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <MoreVertical size={16} color="#8B8FA8" />
+                        </button>
                       </div>
 
                       {/* Status message */}
@@ -447,6 +475,47 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                 style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer', boxShadow: '0 6px 24px rgba(123,47,190,0.4)' }}
               >
                 Save Changes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Options bottom sheet */}
+      {optionsEvent && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setOptionsEvent(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#0D1020', borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '16px 0 calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px', margin: '0 auto 16px' }} />
+            <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, padding: '0 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }} className="truncate">{optionsEvent.title}</p>
+            {[
+              { icon: <Edit2 size={18} />, label: 'Edit', color: '#A78BFA', action: () => { openEdit(optionsEvent); setOptionsEvent(null); } },
+              ...(onPromoteEvent && (optionsEvent.status === 'live' || optionsEvent.status === 'approved') ? [{ icon: <Zap size={18} />, label: 'Promote', color: '#F59E0B', action: () => { onPromoteEvent(optionsEvent.id); setOptionsEvent(null); } }] : []),
+              { icon: <Users size={18} />, label: 'Attendees', color: '#3B82F6', action: () => { onNavigate('attendee-list'); setOptionsEvent(null); } },
+              { icon: (optionsEvent as any).hidden_by_admin ? <Eye size={18} /> : <EyeOff size={18} />, label: (optionsEvent as any).hidden_by_admin ? 'Make Live' : 'Hide Event', color: '#8B8FA8', action: () => toggleHide(optionsEvent) },
+              { icon: <Trash2 size={18} />, label: 'Delete Event', color: '#EF4444', action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } },
+            ].map((item, i) => (
+              <button key={i} onClick={item.action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <span style={{ color: item.color }}>{item.icon}</span>
+                <span style={{ color: item.color === '#EF4444' ? '#EF4444' : '#F0F0FF', fontSize: '15px', fontWeight: 600 }}>{item.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}>
+          <div style={{ background: '#0D1020', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '340px' }}>
+            <Trash2 size={32} color="#EF4444" style={{ marginBottom: '12px' }} />
+            <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Delete Event?</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+              "{deleteTarget.title}" will be permanently deleted. This cannot be undone.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: '#1A1D2E', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={confirmDelete} disabled={deleting} style={{ flex: 1, background: deleting ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: '#EF4444', fontSize: '14px', fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer' }}>
+                {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
           </div>
