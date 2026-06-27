@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
-  Search, Bell, MapPin, X, Filter, ChevronDown,
+  Search, Bell, MapPin, X, Filter, ChevronDown, Plus,
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
@@ -20,6 +20,7 @@ interface HomeScreenProps {
   onNotificationsPress?: () => void;
   onSearchPress?: () => void;
   onProfilePress?: () => void;
+  onCreatePress?: () => void;
   selectedState?: string;
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
@@ -470,6 +471,12 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
   );
 });
 
+const shimmerBg: React.CSSProperties = {
+  background: 'linear-gradient(90deg, #1a1d2e 25%, #252840 50%, #1a1d2e 75%)',
+  backgroundSize: '800px 100%',
+  animation: 'shimmer 1.4s infinite linear',
+};
+
 function HorizontalCardSkeleton() {
   return (
     <div
@@ -482,16 +489,15 @@ function HorizontalCardSkeleton() {
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
-        opacity: 0.6,
         flexShrink: 0,
       }}
     >
-      <div style={{ height: '110px', background: '#1A1D36' }} />
+      <div style={{ height: '110px', borderRadius: 0, ...shimmerBg }} />
       <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
-        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '50px', height: '12px', borderRadius: '4px', ...shimmerBg }} />
+        <div style={{ width: '80%', height: '14px', borderRadius: '4px', ...shimmerBg }} />
+        <div style={{ width: '60%', height: '10px', borderRadius: '4px', marginTop: '4px', ...shimmerBg }} />
+        <div style={{ width: '40%', height: '10px', borderRadius: '4px', ...shimmerBg }} />
       </div>
     </div>
   );
@@ -629,6 +635,7 @@ export function HomeScreen({
   onNotificationsPress,
   onSearchPress: _onSearchPress,
   onProfilePress,
+  onCreatePress,
   onLiveMapPress,
   dbEvents,
   loading,
@@ -684,6 +691,38 @@ export function HomeScreen({
       setSearchQuery(inputValue);
     }, 300);
     return () => clearTimeout(handler);
+  }, [inputValue]);
+
+  // People search state (for full-screen search overlay)
+  const [searchPeople, setSearchPeople] = useState<any[]>([]);
+  const [loadingPeople, setLoadingPeople] = useState(false);
+  const [suggestedPeople, setSuggestedPeople] = useState<any[]>([]);
+
+  useEffect(() => {
+    insforge.database
+      .from('public_profiles')
+      .select('id, full_name, username, avatar_url, is_verified, role')
+      .eq('is_verified', true)
+      .limit(5)
+      .then(({ data }) => setSuggestedPeople(data || []));
+  }, []);
+
+  useEffect(() => {
+    const q = inputValue.trim();
+    if (!q) { setSearchPeople([]); return; }
+    setLoadingPeople(true);
+    const t = setTimeout(async () => {
+      try {
+        const like = `%${q.toLowerCase()}%`;
+        const { data } = await insforge.database
+          .from('public_profiles')
+          .select('id, full_name, username, avatar_url, is_verified, role')
+          .or(`username.ilike.${like},full_name.ilike.${like}`)
+          .limit(8);
+        setSearchPeople(data || []);
+      } catch { /* ignore */ } finally { setLoadingPeople(false); }
+    }, 300);
+    return () => clearTimeout(t);
   }, [inputValue]);
 
   // Trigger fresh fetch on mount
@@ -785,81 +824,176 @@ export function HomeScreen({
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
-      {/* Search overlay */}
+      {/* Full-screen Search overlay */}
       {searchOpen && (
-        <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
-          padding: 'calc(16px + env(safe-area-inset-top)) 16px 12px',
-          background: '#060A12', borderBottom: '1px solid rgba(255,255,255,0.07)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '48px' }}>
-              <Search size={18} color="#8B8FA8" />
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#060A12', display: 'flex', flexDirection: 'column' }}>
+          {/* Search bar */}
+          <div style={{ padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
+              <Search size={17} color="#8B8FA8" />
               <input
                 autoFocus
                 type="text"
                 value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Search title, category, location..."
+                onChange={e => setInputValue(e.target.value)}
+                placeholder="Search people and events..."
                 style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
               />
               {inputValue && (
-                <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                  <X size={16} color="#8B8FA8" />
+                <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                  <X size={15} color="#8B8FA8" />
                 </button>
               )}
             </div>
             <button
               onClick={() => { setSearchOpen(false); setInputValue(''); setSearchQuery(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#A78BFA', fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
             >
               Cancel
             </button>
           </div>
+
+          {/* Results */}
+          <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '0 16px 32px' }}>
+            {!inputValue.trim() ? (
+              <>
+                {/* Suggested People */}
+                {suggestedPeople.length > 0 && (
+                  <>
+                    <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
+                    {suggestedPeople.map((u: any) => (
+                      <div
+                        key={u.id}
+                        onClick={() => { setSearchOpen(false); setInputValue(''); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>}
+                        </div>
+                        <div>
+                          <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, display: 'block' }}>{u.full_name || u.username}</span>
+                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {/* Popular Events */}
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
+                {dbEvents.slice(0, 4).map(ev => (
+                  <div
+                    key={ev.id}
+                    onClick={() => { setSearchOpen(false); setInputValue(''); onEventPress(ev); }}
+                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                  >
+                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#131629' }}>
+                      <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                      <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                    </div>
+                  </div>
+                ))}
+              </>
+            ) : (
+              <>
+                {/* People results */}
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                {loadingPeople ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
+                ) : searchPeople.length === 0 ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>No people found</p>
+                ) : (
+                  <>
+                    {searchPeople.map((u: any) => (
+                      <div
+                        key={u.id}
+                        onClick={() => { setSearchOpen(false); setInputValue(''); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>}
+                        </div>
+                        <div>
+                          <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, display: 'block' }}>{u.full_name || u.username}</span>
+                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
+
+                {/* Event results */}
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
+                {filteredEvents.length === 0 ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No events found</p>
+                ) : (
+                  filteredEvents.slice(0, 8).map(ev => (
+                    <div
+                      key={ev.id}
+                      onClick={() => { setSearchOpen(false); onEventPress(ev); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                    >
+                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#131629' }}>
+                        <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Header */}
+      {/* Header — max 56px, no tagline */}
       <div
-        className="flex items-center justify-between px-5 pb-3"
-        style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px',
+          height: 'calc(56px + env(safe-area-inset-top))',
+          flexShrink: 0,
+        }}
       >
-        <div>
-          <VentsLogo />
-          <p style={{ marginTop: '3px', fontSize: '13px', color: 'rgba(255,255,255,0.45)', letterSpacing: '0.01em' }}>
-            Discover Nigeria's{' '}
-            <em style={{ color: '#A855F7', fontStyle: 'normal', fontWeight: 600 }}>Best Events</em>
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
+        <VentsLogo />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={() => setSearchOpen(true)}
-            className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer' }}
-            title="Search"
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <Search size={18} color="#AAAAAA" />
+            <Search size={17} color="#A78BFA" />
           </button>
           <button
             onClick={onNotificationsPress}
-            className="w-9 h-9 rounded-full flex items-center justify-center"
-            style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer' }}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <Bell size={16} color="#C4C9E0" />
           </button>
           <button
             onClick={onProfilePress}
-            className="w-9 h-9 rounded-full overflow-hidden flex items-center justify-center"
-            style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', cursor: 'pointer' }}
+            style={{ width: '32px', height: '32px', borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
           >
             {currentUser?.avatar_url ? (
               <img src={currentUser.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>
+              <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>
                 {(currentUser?.full_name || currentUser?.email || 'A').charAt(0).toUpperCase()}
               </span>
             )}
           </button>
+          {(currentUser?.role === 'organizer' || currentUser?.role === 'admin' || currentUser?.role === 'root') && (
+            <button
+              onClick={onCreatePress}
+              style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#7B2FF7', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
+            >
+              <Plus size={17} color="#fff" strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </div>
 

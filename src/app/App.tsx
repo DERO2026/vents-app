@@ -541,10 +541,12 @@ export default function App() {
     fetchSavedEvents();
   }, [currentUser]);
   const [allTickets, setAllTickets] = useState<PurchasedTicket[]>([]);
+  const [ticketsLoading, setTicketsLoading] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [promotionEventId, setPromotionEventId] = useState<string>('');
 
   const fetchUserTickets = useCallback(async (userId: string) => {
+    setTicketsLoading(true);
     try {
       const { data, error } = await insforge.database
         .from('tickets')
@@ -634,6 +636,8 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch user tickets:', err);
+    } finally {
+      setTicketsLoading(false);
     }
   }, [currentUser?.id, currentUser?.full_name]);
 
@@ -1347,6 +1351,7 @@ export default function App() {
               onSearchPress={() => handleTabChange('explore')}
               onNotificationsPress={() => navigateTo('notifications')}
               onProfilePress={() => handleTabChange('profile')}
+              onCreatePress={() => navigateTo('org-dashboard')}
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
@@ -1533,11 +1538,13 @@ export default function App() {
           {screen === 'my-tickets' && (
             <MyTicketsScreen
               tickets={allTickets}
+              loading={ticketsLoading}
               onBack={goBack}
               onViewTicket={(ticket) => {
                 setPurchasedTicket(ticket);
                 navigateTo('payment-success');
               }}
+              onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
             />
           )}
           {screen === 'settings' && (

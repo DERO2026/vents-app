@@ -1,29 +1,43 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, Ticket, Calendar, MapPin, QrCode } from 'lucide-react';
+import { ArrowLeft, Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
+import { SkeletonCard } from './SkeletonCard';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
+  loading?: boolean;
   onBack: () => void;
   onViewTicket: (ticket: PurchasedTicket) => void;
+  onRefresh?: () => Promise<void>;
 }
 
-export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
+  const touchStartY = useRef<number | null>(null);
+
+  const handleRefresh = async () => {
+    if (refreshing || !onRefresh) return;
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
+    touchStartY.current = e.touches[0].clientY;
   };
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (touchStartX.current === null) return;
+    if (touchStartX.current === null || touchStartY.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
-    if (Math.abs(dx) > 50) {
+    const dy = e.changedTouches[0].clientY - touchStartY.current;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
       if (dx < 0) setActiveTab('past');
       else setActiveTab('upcoming');
     }
     touchStartX.current = null;
+    touchStartY.current = null;
   };
 
   const now = Date.now();
@@ -81,7 +95,29 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>My Tickets</h1>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, flex: 1 }}>My Tickets</h1>
+        {onRefresh && (
+          <button
+            onClick={handleRefresh}
+            style={{
+              background: '#131629',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <RefreshCw
+              size={16}
+              color="#A78BFA"
+              style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}
+            />
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -140,7 +176,12 @@ export function MyTicketsScreen({ tickets, onBack, onViewTicket }: MyTicketsScre
           scrollbarWidth: 'none',
         }}
       >
-        {displayed.length === 0 ? (
+        {loading ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <SkeletonCard variant="ticket" />
+            <SkeletonCard variant="ticket" />
+          </div>
+        ) : displayed.length === 0 ? (
           <div
             style={{
               display: 'flex',

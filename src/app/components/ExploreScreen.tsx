@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, MapPin, User, CheckCircle, MessageCircle } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle, Edit3 } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
+import { SkeletonCard } from './SkeletonCard';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -24,9 +25,9 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
 
   return {
     id: dbUser.id,
-    name: name,
+    name,
     username: dbUser.username || (dbUser.email ? dbUser.email.split('@')[0] : null) || dbUser.id?.slice(0, 8) || 'user',
-    avatarColor: avatarColor,
+    avatarColor,
     avatarInitials: initials,
     city: dbUser.state || 'Lagos',
     bio: dbUser.bio || 'Hello, I am using Vents!',
@@ -50,31 +51,16 @@ export function ExploreScreen({
   onToggleFollow,
   onOpenConversation,
   chatRefreshKey,
-  initialTab = 'people',
-  onTabChange,
 }: ExploreScreenProps) {
+  const [query, setQuery] = useState('');
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const [activeTab, setActiveTab] = useState<'people' | 'chats'>(initialTab);
-  const changeTab = (tab: 'people' | 'chats') => { setActiveTab(tab); onTabChange?.(tab); };
-  const TABS: Array<'people' | 'chats'> = ['people', 'chats'];
-  const swipeStartX = useRef<number | null>(null);
-  const handleTouchStart = (e: React.TouchEvent) => { swipeStartX.current = e.touches[0].clientX; };
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    if (swipeStartX.current === null) return;
-    const dx = e.changedTouches[0].clientX - swipeStartX.current;
-    swipeStartX.current = null;
-    if (Math.abs(dx) < 50) return;
-    const idx = TABS.indexOf(activeTab);
-    if (dx < 0 && idx < TABS.length - 1) changeTab(TABS[idx + 1]);
-    else if (dx > 0 && idx > 0) changeTab(TABS[idx - 1]);
-  };
-
-  // Chats state
+  // ── Conversations ────────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<any[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
 
   useEffect(() => {
-    if (activeTab !== 'chats' || !currentUserId) return;
+    if (!currentUserId) return;
     setLoadingChats(true);
     insforge.database
       .from('direct_messages')
@@ -84,18 +70,15 @@ export function ExploreScreen({
       .limit(200)
       .then(async ({ data, error }) => {
         if (error || !data) { setLoadingChats(false); return; }
-        // Group by conversation partner, track unread counts
         const seen = new Map<string, any>();
         const unreadCounts = new Map<string, number>();
         for (const msg of data) {
           const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
           if (!seen.has(partnerId)) seen.set(partnerId, msg);
-          // Count unread: messages sent TO me (not from me) with no read_at
           if (msg.sender_id !== currentUserId && !msg.read_at) {
             unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
           }
         }
-        // Fetch partner profiles
         const partnerIds = [...seen.keys()];
         if (partnerIds.length === 0) { setConversations([]); setLoadingChats(false); return; }
         const { data: profiles } = await insforge.database
@@ -103,326 +86,214 @@ export function ExploreScreen({
           .select('id, full_name, username, avatar_url, vc_badge')
           .in('id', partnerIds);
         const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
-        const convos = partnerIds.map(pid => ({
+        setConversations(partnerIds.map(pid => ({
           partnerId: pid,
           lastMsg: seen.get(pid),
           profile: profileMap.get(pid) || null,
           unreadCount: unreadCounts.get(pid) || 0,
-        }));
-        setConversations(convos);
+        })));
         setLoadingChats(false);
       });
-  }, [activeTab, currentUserId, chatRefreshKey]);
+  }, [currentUserId, chatRefreshKey]);
 
-  // Suggested accounts
-  const [suggested, setSuggested] = useState<UserProfile[]>([]);
-  useEffect(() => {
-    insforge.database
-      .from('public_profiles')
-      .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
-      .eq('is_verified', true)
-      .eq('role', 'organizer')
-      .limit(5)
-      .then(({ data }) => {
-        setSuggested((data || []).map(mapDbUserToUserProfile));
-      }).catch(() => {});
-  }, []);
-
-  // User Search state
-  const [userQuery, setUserQuery] = useState('');
+  // ── People search ────────────────────────────────────────────────────────────
   const [searchedUsers, setSearchedUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
-  useEffect(() => {
-    if (!userQuery.trim()) {
-      setSearchedUsers([]);
-      return;
-    }
 
-    const searchUsers = async () => {
-      setLoadingUsers(true);
+  useEffect(() => {
+    const q = query.trim();
+    if (!q) { setSearchedUsers([]); return; }
+    setLoadingUsers(true);
+    const t = setTimeout(async () => {
       try {
-        const q = `%${userQuery.trim().toLowerCase()}%`;
-        const { data, error } = await insforge.database
+        const like = `%${q.toLowerCase()}%`;
+        const { data } = await insforge.database
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
-          .ilike('username', q);
-        if (error) throw error;
-        if (data) setSearchedUsers(data.map(mapDbUserToUserProfile));
-      } catch (err) {
-        console.error("Failed to search users:", err);
-      } finally {
-        setLoadingUsers(false);
-      }
-    };
-
-    const debounceHandler = setTimeout(searchUsers, 300);
-    return () => clearTimeout(debounceHandler);
-  }, [userQuery]);
+          .or(`username.ilike.${like},full_name.ilike.${like}`)
+          .limit(20);
+        setSearchedUsers((data || []).map(mapDbUserToUserProfile));
+      } catch { /* ignore */ } finally { setLoadingUsers(false); }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [query]);
 
   const timeAgo = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60000);
-    if (m < 1) return 'just now';
+    if (m < 1) return 'now';
     if (m < 60) return `${m}m`;
     const h = Math.floor(m / 60);
     if (h < 24) return `${h}h`;
     return `${Math.floor(h / 24)}d`;
   };
 
+  const isSearching = query.trim().length > 0;
+
+  // Filtered conversations when searching
+  const filteredConvos = isSearching
+    ? conversations.filter(c => {
+        const name = (c.profile?.full_name || c.profile?.username || '').toLowerCase();
+        const msg = (c.lastMsg?.body || '').toLowerCase();
+        const q = query.trim().toLowerCase();
+        return name.includes(q) || msg.includes(q);
+      })
+    : conversations;
+
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
-      {/* Header */}
-      <div className="px-4 pb-0" style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))', flexShrink: 0 }}>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-          Explore
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+      {/* ── Header ── */}
+      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          Messages
         </h1>
+        <button
+          onClick={() => { setQuery(''); searchRef.current?.focus(); }}
+          style={{ background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.25)', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          title="New message"
+        >
+          <Edit3 size={17} color="#A78BFA" />
+        </button>
       </div>
 
-      {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid rgba(255,255,255,0.06)', flexShrink: 0, padding: '0 16px' }}>
-        {(['people', 'chats'] as const).map(tab => (
-          <button
-            key={tab}
-            onClick={() => changeTab(tab)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: '10px 16px 12px',
-              color: activeTab === tab ? '#F0F0FF' : '#8B8FA8',
-              fontSize: '14px', fontWeight: 600,
-              position: 'relative',
-            }}
-          >
-            {tab === 'people' ? 'People' : 'Chats'}
-            {activeTab === tab && (
-              <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '2px', background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)', borderRadius: '2px' }} />
-            )}
-          </button>
-        ))}
+      {/* ── Search bar ── */}
+      <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '10px 14px' }}>
+          <Search size={16} color="#8B8FA8" />
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="Search people and messages..."
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+          />
+          {query && (
+            <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
+              <X size={15} color="#8B8FA8" />
+            </button>
+          )}
+        </div>
       </div>
 
+      {/* ── Content ── */}
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
-      {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}
-        onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-
-        {/* ── Chats tab ── */}
-        {activeTab === 'chats' && (
-          <div style={{ padding: '12px 16px' }}>
-            {!currentUserId ? (
-              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '14px' }}>Sign in to see your chats.</p>
-            ) : loadingChats ? (
-              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '14px' }}>Loading...</p>
-            ) : conversations.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <MessageCircle size={28} color="#6B7280" />
-                </div>
-                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>No conversations yet</p>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>Message an organizer or attendee to start</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                {conversations.map(({ partnerId, lastMsg, profile, unreadCount }: any) => {
-                  const name = profile?.full_name || profile?.username || 'User';
-                  const username = profile?.username || '';
-                  const avatarUrl = profile?.avatar_url;
-                  const initial = name[0]?.toUpperCase() || 'U';
-                  const isUnread = unreadCount > 0;
-                  return (
-                    <div
-                      key={partnerId}
-                      onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '14px', cursor: 'pointer', background: isUnread ? 'rgba(167,139,250,0.06)' : 'transparent' }}
-                    >
-                      <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
-                        {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
-                      </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: isUnread ? 700 : 500 }}>{name}</span>
-                            <BadgeChip tier={profile?.vc_badge} />
+        {!currentUserId ? (
+          <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to see your messages.</p>
+        ) : (
+          <>
+            {/* ── People results (while searching) ── */}
+            {isSearching && (
+              <div style={{ padding: '0 16px 8px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                {loadingUsers ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Searching…</p>
+                ) : searchedUsers.length === 0 ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No people found</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {searchedUsers.map(u => (
+                      <div
+                        key={u.id}
+                        onClick={() => onUserPress(u)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}
+                      >
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.name}</span>
+                            {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" />}
+                            <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
-                        <span style={{ color: isUnread ? '#C4C9E0' : '#8B8FA8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
-                        </span>
+                        <button
+                          onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
+                          style={{
+                            background: following.includes(u.id) ? 'rgba(167,139,250,0.12)' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
+                            border: following.includes(u.id) ? '1px solid rgba(167,139,250,0.3)' : 'none',
+                            borderRadius: '20px', padding: '5px 12px',
+                            color: following.includes(u.id) ? '#A78BFA' : '#fff',
+                            fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+                          }}
+                        >{following.includes(u.id) ? 'Following' : 'Follow'}</button>
                       </div>
-                      {isUnread && (
-                        <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 5px' }}>
-                          <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── People tab ── */}
-        {activeTab === 'people' && (
-          <div>
-            {/* User Search Bar */}
-            <div className="px-4 mb-4">
-              <div
-                className="flex items-center gap-3 px-4"
-                style={{
-                  height: '48px',
-                  background: '#131629',
-                  borderRadius: '14px',
-                  border: '1px solid rgba(255,255,255,0.08)',
-                }}
-              >
-                <Search size={18} color="#8B8FA8" />
-                <input
-                  value={userQuery}
-                  onChange={(e) => setUserQuery(e.target.value)}
-                  placeholder="Search by @username..."
-                  style={{
-                    flex: 1,
-                    background: 'transparent',
-                    border: 'none',
-                    outline: 'none',
-                    color: '#F0F0FF',
-                    fontSize: '14px',
-                  }}
-                />
-                {userQuery && (
-                  <button onClick={() => setUserQuery('')}>
-                    <X size={16} color="#8B8FA8" />
-                  </button>
+                    ))}
+                  </div>
+                )}
+                {filteredConvos.length > 0 && (
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>MESSAGES</p>
                 )}
               </div>
-            </div>
-
-            {/* Suggested accounts (shown when not searching) */}
-            {!userQuery.trim() && suggested.length > 0 && (
-              <div style={{ padding: '0 16px 12px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', margin: '0 0 10px' }}>Suggested</p>
-                {suggested.map(u => (
-                  <div
-                    key={u.id}
-                    onClick={() => onUserPress(u)}
-                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.04)' }}
-                  >
-                    <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      {u.avatar_url
-                        ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                        : <span style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{u.avatarInitials}</span>}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.name}</span>
-                        {u.isVerified && <CheckCircle size={12} color="#A78BFA" />}
-                      </div>
-                      <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
-                    </div>
-                    <button
-                      onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
-                      style={{
-                        background: following.includes(u.id) ? 'rgba(167,139,250,0.12)' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
-                        border: following.includes(u.id) ? '1px solid rgba(167,139,250,0.3)' : 'none',
-                        borderRadius: '20px', padding: '6px 14px',
-                        color: following.includes(u.id) ? '#A78BFA' : '#fff',
-                        fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >{following.includes(u.id) ? 'Following' : 'Follow'}</button>
-                  </div>
-                ))}
-              </div>
             )}
 
-            {/* User Results List */}
-            {!userQuery.trim() ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
-                <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Search size={28} color="#6B7280" />
+            {/* ── Conversations ── */}
+            <div style={{ padding: '0 16px' }}>
+              {!isSearching && (
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>CONVERSATIONS</p>
+              )}
+              {loadingChats && conversations.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {[1, 2, 3].map(i => (
+                    <SkeletonCard key={i} variant="message" />
+                  ))}
                 </div>
-                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>Find people</p>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>Search for someone by username</p>
-              </div>
-            ) : loadingUsers ? (
-              <div style={{ display: 'flex', justifyContent: 'center', padding: '40px', color: '#8B8FA8', fontSize: '14px' }}>
-                Searching...
-              </div>
-            ) : searchedUsers.length === 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px', gap: '8px' }}>
-                <User size={36} color="#2A2D3E" />
-                <p style={{ color: '#8B8FA8', fontSize: '14px' }}>No users found for "@{userQuery}"</p>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '0 16px' }}>
-                {searchedUsers.map((user) => (
-                  <div
-                    key={user.id}
-                    onClick={() => onUserPress(user)}
-                    style={{
-                      background: '#131629',
-                      border: '1px solid rgba(255,255,255,0.05)',
-                      borderRadius: '16px',
-                      padding: '12px 14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '12px',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '44px',
-                        height: '44px',
-                        borderRadius: '12px',
-                        background: user.avatar_url ? 'none' : user.avatarColor,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        overflow: 'hidden',
-                        flexShrink: 0,
-                      }}
-                    >
-                      {user.avatar_url ? (
-                        <img src={user.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      ) : (
-                        <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-                          {user.avatarInitials}
-                        </span>
-                      )}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }} className="truncate">
-                          {user.name}
-                        </span>
-                        {user.isVerified && (
-                          <CheckCircle size={13} fill="#4F46E5" color="#fff" />
-                        )}
-                        {user.isOrganizer && (
-                          <span style={{ background: 'rgba(167,139,250,0.15)', color: '#A78BFA', fontSize: '8px', fontWeight: 700, padding: '1px 5px', borderRadius: '4px', textTransform: 'uppercase' }}>
-                            CREATOR
+              ) : filteredConvos.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
+                  <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <MessageCircle size={28} color="#6B7280" />
+                  </div>
+                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>
+                    {isSearching ? 'No matching messages' : 'No conversations yet'}
+                  </p>
+                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>
+                    {isSearching ? 'Try a different search term' : 'Message an organizer or attendee to start'}
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount }: any) => {
+                    const name = profile?.full_name || profile?.username || 'User';
+                    const avatarUrl = profile?.avatar_url;
+                    const initial = name[0]?.toUpperCase() || 'U';
+                    const isUnread = unreadCount > 0;
+                    return (
+                      <div
+                        key={partnerId}
+                        onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', cursor: 'pointer', background: isUnread ? 'rgba(167,139,250,0.05)' : 'transparent' }}
+                      >
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                          {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: isUnread ? 700 : 500 }}>{name}</span>
+                              <BadgeChip tier={profile?.vc_badge} />
+                            </div>
+                            <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                          </div>
+                          <span style={{ color: isUnread ? '#C4C9E0' : '#8B8FA8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
                           </span>
+                        </div>
+                        {isUnread && (
+                          <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 5px' }}>
+                            <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                          </div>
                         )}
                       </div>
-                      <span style={{ color: '#8B8FA8', fontSize: '11px', display: 'block' }} className="truncate">
-                        @{user.username}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'rgba(255,255,255,0.03)', padding: '5px 10px', borderRadius: '10px' }}>
-                      <MapPin size={10} color="#8B8FA8" />
-                      <span style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>
-                        {user.city}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </>
         )}
       </div>
-
     </div>
   );
 }
