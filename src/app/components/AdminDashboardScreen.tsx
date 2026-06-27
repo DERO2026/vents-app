@@ -1780,10 +1780,14 @@ export function AdminDashboardScreen({
                   setPublishMsg(null);
                   try {
                     const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', insforge.database);
-                    setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
-                    setImportResults([]);
-                    setSelectedImports(new Set());
-                    setImportText('');
+                    if (result.success > 0) {
+                      setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
+                      setImportResults([]);
+                      setSelectedImports(new Set());
+                      setImportText('');
+                    } else {
+                      setPublishMsg(`✗ All ${result.failed} event${result.failed !== 1 ? 's' : ''} failed to publish.${result.lastError ? ` Error: ${result.lastError}` : ''}`);
+                    }
                   } catch (err: any) {
                     setPublishMsg(`✗ ${err?.message || 'Publish failed.'}`);
                   } finally {

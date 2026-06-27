@@ -41,33 +41,45 @@ export async function publishEvents(
   events: ImportedEvent[],
   organizerId: string,
   database: any
-): Promise<{ success: number; failed: number }> {
+): Promise<{ success: number; failed: number; lastError?: string }> {
   let success = 0;
   let failed = 0;
+  let lastError: string | undefined;
 
   for (const event of events) {
     try {
+      const time = event.time || '10:00';
+      const eventDate = event.date
+        ? `${event.date}T${time}:00+01:00`
+        : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+
       const { error } = await database.from('events').insert({
         title: event.title,
         description: event.description,
-        start_date: event.date,
-        start_time: event.time || '09:00',
+        image_url: event.image_url || null,
         location: event.location,
-        state: event.state,
-        category: event.category,
-        is_free: true,
+        event_date: eventDate,
         price: 0,
+        category: event.category,
         organizer_id: organizerId,
         status: 'live',
         is_featured: false,
-        cover_image: event.image_url || null,
+        hidden_by_admin: false,
+        is_18_plus: false,
+        ticket_goal: 0,
+        start_time: time,
       });
-      if (error) failed++;
-      else success++;
-    } catch {
+      if (error) {
+        lastError = error.message || JSON.stringify(error);
+        failed++;
+      } else {
+        success++;
+      }
+    } catch (e: any) {
+      lastError = e.message;
       failed++;
     }
   }
 
-  return { success, failed };
+  return { success, failed, lastError };
 }
