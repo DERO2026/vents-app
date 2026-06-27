@@ -1249,8 +1249,13 @@ export function EventDetailsScreen({
         </div>
         <button
           onClick={() => {
-            if (!isBooked && canBook && selectedTicket) {
-              onGetTickets(selectedTicket, selectedQty);
+            try {
+              if (!isBooked && canBook && selectedTicket) {
+                onGetTickets(selectedTicket, selectedQty);
+              }
+            } catch (err: any) {
+              console.error('BOOK BUTTON CRASH:', err);
+              alert('Booking error: ' + (err?.message || String(err)));
             }
           }}
           disabled={isBooked || !canBook}

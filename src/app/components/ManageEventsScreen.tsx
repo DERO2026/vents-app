@@ -226,10 +226,10 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                           </div>
                         </div>
                         <button
-                          onClick={() => setOptionsEvent(event)}
-                          style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '8px', padding: '6px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          onClick={(e) => { e.stopPropagation(); setOptionsEvent(event); }}
+                          style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '8px', padding: '7px', cursor: 'pointer', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                          <MoreVertical size={16} color="#8B8FA8" />
+                          <MoreVertical size={16} color="#A78BFA" />
                         </button>
                       </div>
 

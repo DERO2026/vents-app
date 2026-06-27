@@ -1019,13 +1019,13 @@ export default function App() {
     setSelectedTicketQty(qty);
     if ((ticketType.price ?? 0) * qty === 0) {
       const freeTicket: PurchasedTicket = {
-        id: `free-${Date.now()}`,
+        ticketId: `VNT-FREE-${Date.now()}`,
         event: selectedEvent!,
         ticketType,
         quantity: qty,
-        totalPaid: 0,
-        purchaseDate: new Date().toISOString(),
-        status: 'active',
+        totalAmount: 0,
+        purchasedAt: new Date().toISOString(),
+        holderName: currentUser.name || currentUser.username || '',
       };
       handleCheckoutSuccess(freeTicket);
       return;
@@ -1366,6 +1366,8 @@ export default function App() {
                 navigateTo('user-profile');
               }}
               currentUserId={currentUser?.id}
+              following={[...followingIds]}
+              onToggleFollow={handleToggleFollow}
               onOpenConversation={(userId, userName, avatarUrl, vcBadge) => {
                 setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
                 setExploreTab('chats');

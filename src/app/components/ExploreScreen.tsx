@@ -7,6 +7,8 @@ import { insforge } from '../../lib/insforge';
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
   currentUserId?: string;
+  following?: string[];
+  onToggleFollow?: (userId: string) => void;
   onOpenConversation?: (userId: string, userName: string, avatarUrl?: string, vcBadge?: string) => void;
   chatRefreshKey?: number;
   initialTab?: 'people' | 'chats';
@@ -44,6 +46,8 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
 export function ExploreScreen({
   onUserPress,
   currentUserId,
+  following = [],
+  onToggleFollow,
   onOpenConversation,
   chatRefreshKey,
   initialTab = 'people',
@@ -317,9 +321,15 @@ export function ExploreScreen({
                       <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
                     </div>
                     <button
-                      onClick={e => { e.stopPropagation(); onUserPress(u); }}
-                      style={{ background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '20px', padding: '6px 14px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
-                    >Follow</button>
+                      onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
+                      style={{
+                        background: following.includes(u.id) ? 'rgba(167,139,250,0.12)' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
+                        border: following.includes(u.id) ? '1px solid rgba(167,139,250,0.3)' : 'none',
+                        borderRadius: '20px', padding: '6px 14px',
+                        color: following.includes(u.id) ? '#A78BFA' : '#fff',
+                        fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >{following.includes(u.id) ? 'Following' : 'Follow'}</button>
                   </div>
                 ))}
               </div>
