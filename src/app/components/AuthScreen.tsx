@@ -144,6 +144,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
   const [dob, setDob] = useState('');
   const [dobError, setDobError] = useState<string | null>(null);
+  const [tosAccepted, setTosAccepted] = useState(false);
 
   const signupFileInputRef = useRef<HTMLInputElement>(null);
   const [signupAvatarUrl, setSignupAvatarUrl] = useState('');
@@ -211,7 +212,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
          name.trim().length > 0 &&
          !!signupState &&
          !!role &&
-         !!dob && !dobError)
+         !!dob && !dobError &&
+         tosAccepted)
       : mode === 'reset'
       ? (password.length > 0 && confirmPassword.length > 0 && password === confirmPassword)
       : (email.length > 0 && password.length > 0)
@@ -1315,13 +1317,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             </button>
 
             {mode === 'signup' && (
-              <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '12px', marginTop: '-12px', marginBottom: '10px', lineHeight: 1.5 }}>
-                You must be at least 13 years old to use Vents.<br />
-                By signing up you confirm you are at least 13 years old and agree to our{' '}
-                <a href="/terms" target="_blank" style={{ color: '#A78BFA', textDecoration: 'none' }}>Terms of Use</a>
-                {' '}and{' '}
-                <a href="/privacy" target="_blank" style={{ color: '#A78BFA', textDecoration: 'none' }}>Privacy Policy</a>.
-              </p>
+              <div style={{ marginTop: '-8px', marginBottom: '14px' }}>
+                <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer' }}>
+                  <div
+                    onClick={() => setTosAccepted(v => !v)}
+                    style={{
+                      width: '18px', height: '18px', borderRadius: '5px', flexShrink: 0, marginTop: '1px',
+                      border: tosAccepted ? 'none' : '2px solid rgba(167,139,250,0.5)',
+                      background: tosAccepted ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : 'transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
+                    }}
+                  >
+                    {tosAccepted && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800, lineHeight: 1 }}>✓</span>}
+                  </div>
+                  <span style={{ color: '#8B8FA8', fontSize: '12px', lineHeight: 1.55 }}>
+                    I agree to the{' '}
+                    <a href="https://getvents.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#A78BFA', textDecoration: 'none' }}>Terms of Service</a>
+                    {' '}and{' '}
+                    <a href="https://getvents.com/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#A78BFA', textDecoration: 'none' }}>Privacy Policy</a>.
+                    {' '}You must be at least 13 years old to use Vents.
+                  </span>
+                </label>
+              </div>
             )}
 
             {mode !== 'forgot' && mode !== 'reset' && (
