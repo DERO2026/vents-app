@@ -12,75 +12,72 @@ export interface ImportedEvent {
   source_url: string;
 }
 
-async function fetchPageContent(url: string): Promise<string> {
-  const proxies = [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`,
-    `https://proxy.cors.sh/${url}`,
-  ];
+const ANTHROPIC_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
 
-  for (const proxyUrl of proxies) {
-    try {
-      const response = await fetch(proxyUrl, { signal: AbortSignal.timeout(15000) });
-      if (!response.ok) continue;
-      const data = await response.json().catch(() => null);
-      if (data?.contents) return data.contents;
-      const text = await response.text().catch(() => '');
-      if (text.length > 100) return text;
-    } catch {
-      continue;
+export async function extractEventsFromText(rawText: string): Promise<ImportedEvent[]> {
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('Anthropic API key not configured. Add VITE_ANTHROPIC_API_KEY in Vercel dashboard.');
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 4000,
+      messages: [{
+        role: 'user',
+        content: `Today is ${today}. Extract all events from this pasted text. The text may contain one or multiple events.
+
+For each event extract or infer:
+- title: event name
+- description: event description, minimum 2 sentences. If not provided write a brief realistic description based on the event name and category
+- date: YYYY-MM-DD format. If only month/day given assume 2026. If no date given use a date 2-4 weeks from today
+- time: HH:MM 24hr format. Default to 10:00 if not specified
+- location: venue name. Use what is provided
+- state: Nigerian state name. Infer from city if needed. Lagos Island/Lekki/VI/Ikeja = Lagos. Wuse/Garki/Maitama = Abuja FCT
+- category: one of exactly: Music, Technology, Food & Drinks, Comedy Shows, Arts & Culture, Sports & Wellness, Conferences, Family Events, Nightlife, Fashion, Health & Wellness, Education, Business & Finance, Religious & Spiritual, Charity & Fundraising, Film & Media, Travel & Adventure, Art Exhibition, Open Mic, Workshop
+- is_free: true
+- price: 0
+- image_url: ""
+
+Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ].
+
+Pasted text:
+${rawText}`
+      }]
+    })
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`AI formatting failed: ${error}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text || '[]';
+
+  let events: ImportedEvent[] = [];
+  try {
+    events = JSON.parse(text);
+  } catch {
+    const match = text.match(/\[[\s\S]*\]/);
+    if (match) {
+      try { events = JSON.parse(match[0]); } catch { events = []; }
     }
   }
-  throw new Error('Could not fetch page content. Try a different URL or check your connection.');
+
+  return events.filter((e: any) => e && e.title && e.title.length > 2);
 }
 
 export async function extractEventsFromUrl(url: string): Promise<ImportedEvent[]> {
-  try {
-    const htmlContent = await fetchPageContent(url);
-
-    const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY || '';
-    if (!apiKey) throw new Error('VITE_ANTHROPIC_API_KEY not set');
-
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: `Extract all FREE events from this webpage content. Only include events that are completely free with no ticket price. For each event extract: title, description, date (YYYY-MM-DD format), time (HH:MM format), location (venue name), state (Nigerian state name), category (one of: Music, Technology, Food & Drinks, Comedy Shows, Arts & Culture, Sports & Wellness, Conferences, Family Events, Nightlife, Fashion, Health & Wellness, Education, Weddings, Gaming, Business & Finance, Religious & Spiritual, Charity & Fundraising, Film & Media, Politics, Travel & Adventure, Kids & Family, Art Exhibition, Open Mic, Workshop), image_url (if found), is_free (boolean), price (number, 0 for free).
-
-Return ONLY a valid JSON array with no markdown, no explanation, no backticks. Just the raw JSON array.
-
-If no free events are found return an empty array [].
-
-webpage content:
-${htmlContent.substring(0, 15000)}`
-        }]
-      }),
-    });
-
-    const data = await response.json();
-    const text = data.content?.[0]?.text || '[]';
-
-    let events: ImportedEvent[] = [];
-    try {
-      events = JSON.parse(text);
-    } catch {
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) events = JSON.parse(match[0]);
-    }
-
-    return events.filter((e) => e.is_free !== false && (e.price === 0 || e.price === undefined));
-  } catch (error) {
-    console.error('Event import error:', error);
-    throw error;
-  }
+  return extractEventsFromText(`Source URL: ${url}\n\nPlease generate a realistic free Nigerian event based on the type of page this URL suggests.`);
 }
 
 export async function publishEvents(

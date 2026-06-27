@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
-import { extractEventsFromUrl, publishEvents, type ImportedEvent } from '../../lib/eventImporter';
+import { extractEventsFromText, publishEvents, type ImportedEvent } from '../../lib/eventImporter';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -338,7 +338,7 @@ export function AdminDashboardScreen({
   const [orgRequestsLoading, setOrgRequestsLoading] = useState(false);
 
   // Import Events tab state
-  const [importUrl, setImportUrl] = useState('');
+  const [importText, setImportText] = useState('');
   const [importLoading, setImportLoading] = useState(false);
   const [importResults, setImportResults] = useState<ImportedEvent[]>([]);
   const [importError, setImportError] = useState<string | null>(null);
@@ -1672,51 +1672,52 @@ export function AdminDashboardScreen({
             </div>
             <div>
               <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Import Free Events</h3>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Paste any URL — AI extracts free Nigerian events automatically</p>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Copy event details from tix.africa, pulse.ng or any site and paste below. AI will format and categorise them instantly.</p>
             </div>
           </div>
 
-          {/* URL input */}
+          {/* Paste input */}
           <div>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>EVENT PAGE URL</p>
-            <input
-              value={importUrl}
-              onChange={(e) => setImportUrl(e.target.value)}
-              placeholder="https://www.eventbrite.com/d/nigeria/free-events/"
-              style={{ width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box' }}
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>PASTE EVENT DETAILS</p>
+            <textarea
+              value={importText}
+              onChange={(e) => setImportText(e.target.value)}
+              placeholder={`Paste event details here — copy from any website:\n\nEvent Name: \nDate: \nTime: \nVenue: \nCity/State: \nDescription: \nPrice: Free\n\nYou can paste multiple events separated by ---`}
+              rows={10}
+              style={{ width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }}
             />
           </div>
 
           {/* Extract button */}
           <button
             onClick={async () => {
-              if (!importUrl.trim()) return;
+              if (!importText.trim()) return;
               setImportLoading(true);
               setImportError(null);
               setImportResults([]);
               setSelectedImports(new Set());
               setPublishMsg(null);
               try {
-                const results = await extractEventsFromUrl(importUrl.trim());
+                const results = await extractEventsFromText(importText.trim());
                 setImportResults(results);
-                if (results.length === 0) setImportError('No free events found at this URL. Try a different page.');
+                if (results.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
                 else setSelectedImports(new Set(results.map((_, i) => i)));
               } catch (err: any) {
-                setImportError(err?.message || 'Failed to extract events. Check the URL and try again.');
+                setImportError(err?.message || 'Failed to format events. Check your API key and try again.');
               } finally {
                 setImportLoading(false);
               }
             }}
-            disabled={importLoading || !importUrl.trim()}
-            style={{ width: '100%', background: importLoading || !importUrl.trim() ? 'rgba(123,47,247,0.3)' : 'linear-gradient(135deg, #7B2FF7, #F107A3)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: importLoading || !importUrl.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            disabled={importLoading || !importText.trim()}
+            style={{ width: '100%', background: importLoading || !importText.trim() ? 'rgba(123,47,247,0.3)' : 'linear-gradient(135deg, #7B2FF7, #F107A3)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: importLoading || !importText.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
           >
             {importLoading ? (
               <>
                 <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                Extracting events with AI...
+                Formatting with AI...
               </>
             ) : (
-              <><Zap size={14} /> Extract Events</>
+              <><Zap size={14} /> Format with AI</>
             )}
           </button>
 
@@ -1782,7 +1783,7 @@ export function AdminDashboardScreen({
                     setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
                     setImportResults([]);
                     setSelectedImports(new Set());
-                    setImportUrl('');
+                    setImportText('');
                   } catch (err: any) {
                     setPublishMsg(`✗ ${err?.message || 'Publish failed.'}`);
                   } finally {
