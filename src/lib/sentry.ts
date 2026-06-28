@@ -1,9 +1,8 @@
 import * as Sentry from '@sentry/react';
 
 export function initSentry() {
-  if (!import.meta.env.VITE_SENTRY_DSN) return;
   Sentry.init({
-    dsn: import.meta.env.VITE_SENTRY_DSN,
+    dsn: 'https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744',
     environment: import.meta.env.MODE || 'production',
     tracesSampleRate: 0.2,
     replaysOnErrorSampleRate: 1.0,
@@ -14,6 +13,7 @@ export function initSentry() {
         blockAllMedia: false,
       }),
     ],
+    dataCollection: {},
   });
 }
 
