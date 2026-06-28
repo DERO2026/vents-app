@@ -557,6 +557,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         background: '#0D1220',
         borderTop: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', gap: '8px', alignItems: 'flex-end', flexShrink: 0,
+        transform: 'translateZ(0)',
+        WebkitTransform: 'translateZ(0)',
+        position: 'relative',
+        zIndex: 10,
       }}>
         {recording ? (
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '20px', padding: '10px 14px' }}>

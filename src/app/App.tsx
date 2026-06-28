@@ -1352,6 +1352,14 @@ export default function App() {
               onNotificationsPress={() => navigateTo('notifications')}
               onProfilePress={() => handleTabChange('profile')}
               onCreatePress={() => navigateTo('org-dashboard')}
+              onUserPress={async (u) => {
+                const { data } = await insforge.database
+                  .from('public_profiles')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+                  .eq('id', u.id)
+                  .maybeSingle();
+                if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
+              }}
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}

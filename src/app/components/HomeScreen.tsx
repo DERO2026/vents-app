@@ -21,6 +21,7 @@ interface HomeScreenProps {
   onSearchPress?: () => void;
   onProfilePress?: () => void;
   onCreatePress?: () => void;
+  onUserPress?: (user: { id: string; name: string; username: string; avatar_url?: string }) => void;
   selectedState?: string;
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
@@ -277,7 +278,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           </div>
         )}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
+          <span style={{ fontSize: '12px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 700 }}>
             {formatPrice(event.price)}
           </span>
           {event.is_18_plus && (
@@ -462,7 +463,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
           </div>
         )}
         <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '13px', color: '#FFB830', fontWeight: 800 }}>
+          <span style={{ fontSize: '13px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 800 }}>
             {formatPrice(event.price)}
           </span>
         </div>
@@ -619,7 +620,7 @@ function FeaturedCarousel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
-              <span style={{ background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.4)', color: '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
+              <span style={{ background: event.price === 0 ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${event.price === 0 ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: event.price === 0 ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
             </div>
           </div>
         </div>
@@ -636,6 +637,7 @@ export function HomeScreen({
   onSearchPress: _onSearchPress,
   onProfilePress,
   onCreatePress,
+  onUserPress,
   onLiveMapPress,
   dbEvents,
   loading,
@@ -689,7 +691,7 @@ export function HomeScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 80 && !pullRefreshing) {
+    if (dy > 120 && !pullRefreshing) {
       setPullRefreshing(true);
       try { await fetchEvents(); } finally { setPullRefreshing(false); }
     }
@@ -741,7 +743,7 @@ export function HomeScreen({
   useEffect(() => {
     insforge.database
       .from('public_profiles')
-      .select('id, full_name, username, avatar_url, is_verified, role')
+      .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
       .eq('is_verified', true)
       .limit(5)
       .then(({ data }) => setSuggestedPeople(data || []));
@@ -756,7 +758,7 @@ export function HomeScreen({
         const like = `%${q.toLowerCase()}%`;
         const { data } = await insforge.database
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, is_verified, role')
+          .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
           .limit(8);
         setSearchPeople(data || []);
@@ -872,11 +874,11 @@ export function HomeScreen({
       {/* Pull-to-refresh spinner */}
       {pullRefreshing && (
         <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
-          display: 'flex', justifyContent: 'center', paddingTop: '16px',
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)', zIndex: 200,
         }}>
           <div style={{
-            width: '32px', height: '32px', borderRadius: '50%',
+            width: '40px', height: '40px', borderRadius: '50%',
             border: '3px solid rgba(123,47,247,0.2)',
             borderTop: '3px solid #7B2FF7',
             animation: 'spin 0.8s linear infinite',
@@ -923,14 +925,17 @@ export function HomeScreen({
                     {suggestedPeople.map((u: any) => (
                       <div
                         key={u.id}
-                        onClick={() => { setSearchOpen(false); setInputValue(''); }}
+                        onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>}
                         </div>
-                        <div>
-                          <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, display: 'block' }}>{u.full_name || u.username}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
+                            <BadgeChip tier={u.vc_badge} />
+                          </div>
                           <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
@@ -968,14 +973,17 @@ export function HomeScreen({
                     {searchPeople.map((u: any) => (
                       <div
                         key={u.id}
-                        onClick={() => { setSearchOpen(false); setInputValue(''); }}
+                        onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>}
                         </div>
-                        <div>
-                          <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, display: 'block' }}>{u.full_name || u.username}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
+                            <BadgeChip tier={u.vc_badge} />
+                          </div>
                           <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>

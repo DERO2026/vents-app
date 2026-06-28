@@ -32,7 +32,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     if (touchStartX.current === null || touchStartY.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
+    if (dy > 120 && Math.abs(dy) > Math.abs(dx)) {
       // Pull-to-refresh
       handleRefresh();
     } else if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
@@ -76,11 +76,11 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     >
       {refreshing && (
         <div style={{
-          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
-          display: 'flex', justifyContent: 'center', paddingTop: '16px',
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)', zIndex: 200,
         }}>
           <div style={{
-            width: '32px', height: '32px', borderRadius: '50%',
+            width: '40px', height: '40px', borderRadius: '50%',
             border: '3px solid rgba(123,47,247,0.2)',
             borderTop: '3px solid #7B2FF7',
             animation: 'spin 0.8s linear infinite',

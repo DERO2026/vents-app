@@ -4,13 +4,14 @@ import { sanitize } from '../../lib/sanitize';
 import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
-  Smartphone, X, ExternalLink, ShieldCheck, Copy,
+  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp, Instagram, Twitter, Music,
 } from 'lucide-react';
+import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
 
 interface SettingsScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string } | null;
   onBack: () => void;
   onSignOut: () => void;
   onNavigate?: (screen: string) => void;
@@ -975,8 +976,11 @@ export function SettingsScreen({
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>{displayName}</p>
-            <p style={{ color: '#8B8FA8', fontSize: '13px' }}>{displayEmail}</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>{displayName}</p>
+              <BadgeChip tier={(currentUser as any)?.vc_badge} />
+            </div>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '2px' }}>{displayEmail}</p>
           </div>
           <button
             onClick={() => setSubScreen('profile')}
@@ -1023,6 +1027,48 @@ export function SettingsScreen({
           <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('https://getvents.com/terms', '_blank')} />
           <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
+        </Section>
+
+        <Section title="RESOURCES">
+          <SettingRow icon={Star} label="Rate this App" onPress={() => window.open('https://apps.apple.com/app/vents', '_blank')} />
+          <Divider />
+          <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => window.open('mailto:support@getvents.com')} />
+          <Divider />
+          {/* Instagram */}
+          <div
+            onClick={() => window.open('https://instagram.com/TheVentsApp', '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
+          >
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, #E1306C, #F77737)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Instagram size={16} color="#fff" />
+            </div>
+            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Instagram</span>
+            <ChevronRight size={16} color="#555C7A" />
+          </div>
+          <Divider />
+          {/* Twitter/X */}
+          <div
+            onClick={() => window.open('https://twitter.com/TheVentsApp', '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
+          >
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Twitter size={16} color="#fff" />
+            </div>
+            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Twitter/X</span>
+            <ChevronRight size={16} color="#555C7A" />
+          </div>
+          <Divider />
+          {/* TikTok */}
+          <div
+            onClick={() => window.open('https://tiktok.com/@TheVentsApp', '_blank')}
+            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
+          >
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Music size={16} color="#fff" />
+            </div>
+            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on TikTok</span>
+            <ChevronRight size={16} color="#555C7A" />
+          </div>
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
