@@ -1658,8 +1658,14 @@ export default function App() {
                 }
               }}
               onScanTickets={(eventId) => {
+                // Try dbEvents first, fall back to a minimal event object so scan always opens
                 const evtToScan = dbEvents.find(e => e.id === eventId);
-                if (evtToScan) setSelectedEvent(evtToScan);
+                if (evtToScan) {
+                  setSelectedEvent(evtToScan);
+                } else {
+                  // Create a minimal event proxy so CheckinScannerScreen gets the ID
+                  setSelectedEvent({ id: eventId } as any);
+                }
                 navigateTo('checkin-scanner');
               }}
               onEventPress={(event) => {
@@ -1668,6 +1674,7 @@ export default function App() {
                 if (mapped) setSelectedEvent(mapped);
                 navigateTo('event-details');
               }}
+              onManageEvents={() => navigateTo('manage-events')}
             />
           )}
           {screen === 'create-event' && (

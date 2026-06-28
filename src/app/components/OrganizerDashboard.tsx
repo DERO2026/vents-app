@@ -21,6 +21,7 @@ interface OrganizerDashboardProps {
   setActiveView: (view: 'attendee' | 'organizer') => void;
   onScanTickets?: (eventId: string) => void;
   onEventPress?: (event: any) => void;
+  onManageEvents?: () => void;
 }
 
 export function OrganizerDashboard({
@@ -30,6 +31,7 @@ export function OrganizerDashboard({
   setActiveView = () => {},
   onScanTickets,
   onEventPress,
+  onManageEvents,
 }: OrganizerDashboardProps) {
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
@@ -439,6 +441,27 @@ export function OrganizerDashboard({
           </div>
         )}
 
+        {/* Action buttons row */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+          <button
+            onClick={() => onManageEvents?.()}
+            style={{
+              flex: 1,
+              background: 'transparent',
+              border: '1px solid #7B2FF7',
+              borderRadius: '12px',
+              padding: '10px 20px',
+              color: '#7B2FF7',
+              fontFamily: 'Space Grotesk, sans-serif',
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Edit All Events
+          </button>
+        </div>
+
         {/* Primary Action (Create Event) */}
         <button
           onClick={() => onNavigate?.('create-event')}
@@ -589,21 +612,21 @@ export function OrganizerDashboard({
                           <button
                             onClick={() => onScanTickets?.(event.id)}
                             style={{
-                              background: 'rgba(167,139,250,0.12)',
-                              border: '1px solid rgba(167,139,250,0.3)',
-                              borderRadius: '8px',
-                              padding: '5px 10px',
-                              color: '#A78BFA',
-                              fontSize: '10px',
+                              background: '#7B2FF7',
+                              border: 'none',
+                              borderRadius: '12px',
+                              padding: '10px 20px',
+                              color: '#fff',
+                              fontSize: '13px',
                               fontWeight: 700,
                               cursor: 'pointer',
                               display: 'flex',
                               alignItems: 'center',
-                              gap: '4px',
+                              gap: '6px',
                             }}
                           >
-                            <ScanLine size={12} />
-                            Scan
+                            <ScanLine size={16} />
+                            Scan Tickets
                           </button>
                         )}
                         {activeTab === 'drafts' && (

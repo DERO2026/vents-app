@@ -55,6 +55,24 @@ export function ExploreScreen({
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
+  // Pull-to-refresh
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const pullStartY = useRef<number | null>(null);
+  const handlePullTouchStart = (e: React.TouchEvent) => {
+    pullStartY.current = e.touches[0].clientY;
+  };
+  const handlePullTouchEnd = (e: React.TouchEvent) => {
+    if (pullStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - pullStartY.current;
+    pullStartY.current = null;
+    if (dy > 80 && !pullRefreshing) {
+      setPullRefreshing(true);
+      setLocalRefreshKey(k => k + 1);
+      setTimeout(() => setPullRefreshing(false), 800);
+    }
+  };
+
   // ── Conversations ────────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<any[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
@@ -94,7 +112,7 @@ export function ExploreScreen({
         })));
         setLoadingChats(false);
       });
-  }, [currentUserId, chatRefreshKey]);
+  }, [currentUserId, chatRefreshKey, localRefreshKey]);
 
   // ── People search ────────────────────────────────────────────────────────────
   const [searchedUsers, setSearchedUsers] = useState<UserProfile[]>([]);
@@ -141,7 +159,24 @@ export function ExploreScreen({
     : conversations;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12', position: 'relative' }}
+      onTouchStart={handlePullTouchStart}
+      onTouchEnd={handlePullTouchEnd}
+    >
+      {pullRefreshing && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
+          display: 'flex', justifyContent: 'center', paddingTop: '16px',
+        }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            border: '3px solid rgba(123,47,247,0.2)',
+            borderTop: '3px solid #7B2FF7',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        </div>
+      )}
       {/* ── Header ── */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <h1 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>

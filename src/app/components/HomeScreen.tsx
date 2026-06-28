@@ -679,6 +679,22 @@ export function HomeScreen({
   };
   const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all';
 
+  // Pull-to-refresh
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartY = useRef<number | null>(null);
+  const handlePullTouchStart = (e: React.TouchEvent) => {
+    pullStartY.current = e.touches[0].clientY;
+  };
+  const handlePullTouchEnd = async (e: React.TouchEvent) => {
+    if (pullStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - pullStartY.current;
+    pullStartY.current = null;
+    if (dy > 80 && !pullRefreshing) {
+      setPullRefreshing(true);
+      try { await fetchEvents(); } finally { setPullRefreshing(false); }
+    }
+  };
+
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
     { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
     { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
@@ -847,7 +863,26 @@ export function HomeScreen({
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12', position: 'relative' }}>
+    <div
+      className="flex flex-col h-full"
+      style={{ background: '#060A12', position: 'relative' }}
+      onTouchStart={handlePullTouchStart}
+      onTouchEnd={handlePullTouchEnd}
+    >
+      {/* Pull-to-refresh spinner */}
+      {pullRefreshing && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
+          display: 'flex', justifyContent: 'center', paddingTop: '16px',
+        }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            border: '3px solid rgba(123,47,247,0.2)',
+            borderTop: '3px solid #7B2FF7',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        </div>
+      )}
       {/* Full-screen Search overlay */}
       {searchOpen && (
         <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#060A12', display: 'flex', flexDirection: 'column' }}>

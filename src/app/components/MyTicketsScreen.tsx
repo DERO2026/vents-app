@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
+import { Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
@@ -32,7 +32,10 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     if (touchStartX.current === null || touchStartY.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+    if (dy > 80 && Math.abs(dy) > Math.abs(dx)) {
+      // Pull-to-refresh
+      handleRefresh();
+    } else if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
       if (dx < 0) setActiveTab('past');
       else setActiveTab('upcoming');
     }
@@ -68,8 +71,22 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
       }}
     >
+      {refreshing && (
+        <div style={{
+          position: 'absolute', top: 0, left: 0, right: 0, zIndex: 200,
+          display: 'flex', justifyContent: 'center', paddingTop: '16px',
+        }}>
+          <div style={{
+            width: '32px', height: '32px', borderRadius: '50%',
+            border: '3px solid rgba(123,47,247,0.2)',
+            borderTop: '3px solid #7B2FF7',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        </div>
+      )}
       {/* Header */}
       <div
         style={{
@@ -79,22 +96,6 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
-        <button
-          onClick={onBack}
-          style={{
-            background: '#131629',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '50%',
-            width: '36px',
-            height: '36px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: 'pointer',
-          }}
-        >
-          <ArrowLeft size={16} color="#C4C9E0" />
-        </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, flex: 1 }}>My Tickets</h1>
         {onRefresh && (
           <button
