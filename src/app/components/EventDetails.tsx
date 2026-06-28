@@ -241,7 +241,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
                 border: '1px solid rgba(167,139,250,0.2)',
               }}
             >
-              <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 500 }}>Follow</span>
+              <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 500 }}>Subscribe</span>
             </button>
           </div>
 

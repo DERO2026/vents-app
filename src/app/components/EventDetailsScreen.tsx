@@ -806,7 +806,7 @@ export function EventDetailsScreen({
               transition: 'all 0.2s ease',
             }}
           >
-            {isFollowingOrg ? '✓ Following' : 'Follow'}
+            {isFollowingOrg ? '✓ Subscribed' : 'Subscribe'}
           </button>
         </div>
 

@@ -346,16 +346,16 @@ export function ProfileScreen({
               {(isAdmin ? [
                 { label: 'Events', value: eventsCreated, onClick: () => onNavigate('manage-events') },
                 { label: 'Saved', value: savedCount, onClick: () => onNavigate('saved') },
-                { label: 'Followers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Following', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
+                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
+                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
               ] : isOrganizer ? [
-                { label: 'Followers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Following', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
+                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
+                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
                 { label: 'Events Organized', value: eventsCreated, onClick: () => onNavigate('manage-events') },
                 { label: 'Saved Events', value: savedCount, onClick: () => onNavigate('saved') },
               ] : [
-                { label: 'Followers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Following', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
+                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
+                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
                 { label: 'Attended Events', value: tickets.length, onClick: () => onNavigate('my-tickets') },
                 { label: 'Saved Events', value: savedCount, onClick: () => onNavigate('saved') },
               ]).map((stat) => (

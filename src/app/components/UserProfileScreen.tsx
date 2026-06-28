@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle } from 'lucide-react';
+import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2 } from 'lucide-react';
 import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
@@ -296,8 +296,30 @@ export function UserProfileScreen({
               fontWeight: 700,
             }}
           >
-            {isFollowing ? 'Following' : 'Follow'}
+            {isFollowing ? 'Subscribed' : 'Subscribe'}
           </span>
+        </button>
+        {/* Share button */}
+        <button
+          onClick={async () => {
+            const shareUrl = `https://getvents.com/user/${user.id}`;
+            const shareData = { title: `${user.username || user.name} on Vents`, url: shareUrl };
+            try {
+              if (navigator.share) {
+                await navigator.share(shareData);
+              } else {
+                await navigator.clipboard.writeText(shareUrl);
+                alert('Profile link copied!');
+              }
+            } catch { /* user cancelled */ }
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '10px 16px', borderRadius: '24px',
+            border: '1px solid #7B2FF7', background: 'transparent', cursor: 'pointer',
+          }}
+        >
+          <Share2 size={16} color="#7B2FF7" />
         </button>
         {!isOwnProfile && onMessage && currentUserId && (
           <button
@@ -406,7 +428,7 @@ export function UserProfileScreen({
       >
         {[
           { label: 'Events', value: String(eventsCreated) },
-          { label: 'Followers', value: String(followers + (isFollowing ? 1 : 0)) },
+          { label: 'Subscribers', value: String(followers + (isFollowing ? 1 : 0)) },
           { label: 'Attended', value: String(eventsAttended) },
           { label: 'Attendees', value: String(attendees) },
         ].map(({ label, value }, i, arr) => (

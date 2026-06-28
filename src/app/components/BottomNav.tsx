@@ -19,10 +19,10 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
   return (
     <div
       style={{
-        background: 'rgba(8,10,20,0.97)',
-        backdropFilter: 'blur(20px)',
-        borderTop: '1px solid rgba(255,255,255,0.07)',
-        paddingBottom: 'env(safe-area-inset-bottom)',
+        background: '#0D0D0D',
+        borderTop: '1px solid rgba(123,47,247,0.15)',
+        boxShadow: '0 -4px 20px rgba(123,47,247,0.08)',
+        paddingBottom: 'env(safe-area-inset-bottom, 16px)',
         position: 'absolute',
         bottom: 0,
         left: 0,
@@ -30,12 +30,11 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'space-around',
-        padding: '10px 8px',
-        paddingBottom: 'calc(10px + env(safe-area-inset-bottom))',
+        height: '64px',
         zIndex: 50,
       }}
     >
-      {TABS.map(({ id, Icon }) => {
+      {TABS.map(({ id, Icon, label }) => {
         const isActive = activeTab === id;
         return (
           <button
@@ -44,32 +43,48 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
             style={{
               flex: 1,
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
               background: 'none',
               border: 'none',
               cursor: 'pointer',
-              padding: '6px 0',
+              padding: '0',
+              position: 'relative',
+              gap: '4px',
             }}
           >
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                width: '44px',
-                height: '36px',
-                borderRadius: '18px',
-                background: isActive ? 'rgba(123,47,247,0.15)' : 'transparent',
-                transition: 'background 0.2s',
-              }}
-            >
-              <Icon
-                size={22}
-                strokeWidth={isActive ? 2.5 : 1.8}
-                color={isActive ? '#7B2FF7' : '#666666'}
-              />
+            {/* Active indicator line */}
+            <div style={{
+              position: 'absolute',
+              top: 0,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: isActive ? '24px' : '0px',
+              height: '2px',
+              borderRadius: '0 0 2px 2px',
+              background: '#7B2FF7',
+              transition: 'width 0.25s ease',
+            }} />
+            {/* Icon pill */}
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              padding: '6px 16px',
+              borderRadius: '12px',
+              background: isActive ? 'rgba(123,47,247,0.15)' : 'transparent',
+              transition: 'background 0.2s',
+            }}>
+              <Icon size={20} strokeWidth={isActive ? 2.5 : 1.8} color={isActive ? '#7B2FF7' : '#555555'} />
             </div>
+            {/* Label */}
+            <span style={{
+              fontSize: '10px',
+              fontWeight: isActive ? 700 : 400,
+              color: isActive ? '#7B2FF7' : '#555555',
+              lineHeight: 1,
+            }}>{label}</span>
           </button>
         );
       })}

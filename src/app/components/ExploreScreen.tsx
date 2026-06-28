@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, MessageCircle, Edit3 } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 import { SkeletonCard } from './SkeletonCard';
@@ -147,13 +147,6 @@ export function ExploreScreen({
         <h1 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           Messages
         </h1>
-        <button
-          onClick={() => { setQuery(''); searchRef.current?.focus(); }}
-          style={{ background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.25)', borderRadius: '10px', padding: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          title="New message"
-        >
-          <Edit3 size={17} color="#A78BFA" />
-        </button>
       </div>
 
       {/* ── Search bar ── */}
@@ -218,7 +211,7 @@ export function ExploreScreen({
                             color: following.includes(u.id) ? '#A78BFA' : '#fff',
                             fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
                           }}
-                        >{following.includes(u.id) ? 'Following' : 'Follow'}</button>
+                        >{following.includes(u.id) ? 'Subscribed' : 'Subscribe'}</button>
                       </div>
                     ))}
                   </div>

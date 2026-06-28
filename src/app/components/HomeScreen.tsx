@@ -1,6 +1,6 @@
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
-  Search, Bell, MapPin, X, Filter, ChevronDown, Plus,
+  Search, Bell, MapPin, X, SlidersHorizontal, Plus,
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
@@ -249,6 +249,8 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
             height: '32px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
           }}
         >
           {event.title}
@@ -434,6 +436,8 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
             overflow: 'hidden',
             height: '34px',
             marginTop: '2px',
+            textTransform: 'uppercase',
+            letterSpacing: '0.5px',
           }}
         >
           {event.title}
@@ -587,7 +591,7 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '65vh', minHeight: '320px', maxHeight: '520px', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
           <img
             src={event.image}
             alt={event.title}
@@ -615,7 +619,7 @@ function FeaturedCarousel({
                 <BadgeChip tier={event.organizerVcBadge} />
               </div>
             )}
-            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
@@ -654,6 +658,30 @@ export function HomeScreen({
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
+  const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+  // Temp states used inside the sheet before Apply
+  const [tempCategory, setTempCategory] = useState('all');
+  const [tempState, setTempState] = useState('all');
+  const [tempPrice, setTempPrice] = useState<'all' | 'free' | 'paid'>('all');
+
+  const openFilterSheet = () => {
+    setTempCategory(activeCategory);
+    setTempState(stateFilter);
+    setTempPrice(priceFilter);
+    setFilterSheetOpen(true);
+  };
+  const applyFilters = () => {
+    setActiveCategory(tempCategory);
+    setStateFilter(tempState);
+    setPriceFilter(tempPrice);
+    setFilterSheetOpen(false);
+  };
+  const clearFilters = () => {
+    setTempCategory('all');
+    setTempState('all');
+    setTempPrice('all');
+  };
+  const hasActiveFilters = activeCategory !== 'all' || stateFilter !== 'all' || priceFilter !== 'all';
 
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
     { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
@@ -951,17 +979,42 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Header — max 56px, no tagline */}
+      {/* Header */}
       <div
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px',
-          height: 'calc(56px + env(safe-area-inset-top))',
           flexShrink: 0,
         }}
       >
-        <VentsLogo />
+        {/* Logo + tagline */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          <VentsLogo />
+          <span style={{ fontSize: '10px', color: '#888888', fontWeight: 400, paddingLeft: '2px' }}>
+            Discover Nigeria's Best Events
+          </span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Filters button */}
+          <button
+            onClick={openFilterSheet}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              background: hasActiveFilters ? 'rgba(123,47,247,0.15)' : 'rgba(123,47,247,0.1)',
+              border: `1px solid ${hasActiveFilters ? 'rgba(123,47,247,0.5)' : 'rgba(123,47,247,0.3)'}`,
+              borderRadius: '20px', padding: '6px 14px', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <SlidersHorizontal size={13} color="#A78BFA" />
+            <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Filters</span>
+            {hasActiveFilters && (
+              <span style={{
+                position: 'absolute', top: '-3px', right: '-3px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#7B2FF7', border: '2px solid #060A12',
+              }} />
+            )}
+          </button>
           <button
             onClick={() => setSearchOpen(true)}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -1001,113 +1054,6 @@ export function HomeScreen({
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
 
-
-        {/* Filters and Sorting bar */}
-        <div className="flex items-center gap-2 px-4 mb-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginRight: '4px', flexShrink: 0 }}>
-            <Filter size={12} color="#8B8FA8" />
-            FILTERS:
-          </div>
-
-          {/* State filter */}
-          <div className="flex-shrink-0" style={{ position: 'relative' }}>
-            <select
-              value={stateFilter}
-              onChange={(e) => setStateFilter(e.target.value)}
-              style={{
-                appearance: 'none',
-                background: stateFilter !== 'all' ? 'rgba(167,139,250,0.12)' : '#131629',
-                border: `1px solid ${stateFilter !== 'all' ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: '20px',
-                fontSize: '11px',
-                color: stateFilter !== 'all' ? '#A78BFA' : '#8B8FA8',
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '4px 28px 4px 10px',
-                outline: 'none',
-              }}
-            >
-              <option value="all">State: All</option>
-              {NIGERIA_STATES.map((s) => (
-                <option key={s.name} value={s.name}>{s.name}</option>
-              ))}
-            </select>
-            <ChevronDown size={10} color={stateFilter !== 'all' ? '#A78BFA' : '#8B8FA8'} style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
-          </div>
-
-          <button
-            onClick={() => setPriceFilter(priceFilter === 'all' ? 'free' : priceFilter === 'free' ? 'paid' : 'all')}
-            className="flex-shrink-0 px-3 py-1"
-            style={{
-              background: priceFilter !== 'all' ? 'rgba(167,139,250,0.12)' : '#131629',
-              border: `1px solid ${priceFilter !== 'all' ? 'rgba(167,139,250,0.35)' : 'rgba(255,255,255,0.08)'}`,
-              borderRadius: '20px',
-              fontSize: '11px',
-              color: priceFilter !== 'all' ? '#A78BFA' : '#8B8FA8',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {priceFilter === 'all' ? 'Price: All' : priceFilter === 'free' ? 'Free Only' : 'Paid Only'}
-          </button>
-
-          <button
-            onClick={() => setUpcomingOnly(!upcomingOnly)}
-            className="flex-shrink-0 px-3 py-1"
-            style={{
-              background: upcomingOnly ? 'rgba(16,185,129,0.12)' : '#131629',
-              border: `1px solid ${upcomingOnly ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.08)'}`,
-              borderRadius: '20px',
-              fontSize: '11px',
-              color: upcomingOnly ? '#10B981' : '#8B8FA8',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {upcomingOnly ? 'Upcoming' : 'All Time'}
-          </button>
-        </div>
-
-        {/* Category icon bar */}
-        <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as any}>
-          {ICON_CATEGORIES.map((cat) => {
-            const active = activeCategory === cat.id;
-            const IconComp = cat.icon;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
-                style={{
-                  width: '64px', minWidth: '64px', padding: '8px 4px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
-                }}
-              >
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '12px',
-                  background: active
-                    ? (cat.id === 'today' ? 'rgba(160,160,160,0.2)' : cat.color)
-                    : 'rgba(255,255,255,0.06)',
-                  boxShadow: active && cat.id !== 'today' ? `0 0 12px ${cat.color}66` : 'none',
-                  border: active && cat.id === 'today' ? '1.5px solid rgba(255,255,255,0.3)' : 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.2s, box-shadow 0.2s',
-                }}>
-                  <IconComp size={20} color={active ? '#FFFFFF' : cat.color} />
-                </div>
-                <span style={{
-                  fontSize: '10px', fontWeight: 600,
-                  color: active ? '#FFFFFF' : '#AAAAAA',
-                  marginTop: '6px', maxWidth: '62px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  textAlign: 'center',
-                }}>
-                  {cat.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
 
         {/* Results / Feed sections */}
         {loading ? (
@@ -1277,6 +1223,132 @@ export function HomeScreen({
           </>
         )}
       </div>
+
+      {/* Filter bottom sheet */}
+      {filterSheetOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            onClick={() => setFilterSheetOpen(false)}
+            style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 200 }}
+          />
+          {/* Sheet */}
+          <div style={{
+            position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 201,
+            background: '#0E1020', borderRadius: '24px 24px 0 0',
+            border: '1px solid rgba(255,255,255,0.08)',
+            paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
+            maxHeight: '85vh', display: 'flex', flexDirection: 'column',
+          }}>
+            {/* Handle */}
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
+              <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
+            </div>
+            {/* Title */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
+              <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800 }}>Filters</span>
+              <button onClick={() => setFilterSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
+                <X size={20} color="#8B8FA8" />
+              </button>
+            </div>
+
+            {/* Scrollable content */}
+            <div style={{ overflowY: 'auto', flex: 1, scrollbarWidth: 'none', padding: '0 20px' }}>
+              {/* CATEGORY */}
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>CATEGORY</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                {['All', 'Music', 'Technology', 'Food & Drinks', 'Comedy Shows', 'Arts & Culture',
+                  'Sports & Wellness', 'Conferences', 'Family Events', 'Nightlife', 'Fashion',
+                  'Health & Wellness', 'Education', 'Weddings', 'Gaming', 'Business & Finance',
+                  'Religious & Spiritual', 'Charity & Fundraising', 'Film & Media', 'Politics',
+                  'Travel & Adventure', 'Kids & Family', 'Art Exhibition', 'Open Mic', 'Workshop'
+                ].map((cat) => {
+                  const catId = cat === 'All' ? 'all' : cat;
+                  const active = tempCategory === catId;
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setTempCategory(catId)}
+                      style={{
+                        padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
+                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
+                        background: active ? '#7B2FF7' : 'transparent',
+                        color: active ? '#fff' : '#666666',
+                      }}
+                    >{cat}</button>
+                  );
+                })}
+              </div>
+
+              {/* STATE */}
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>STATE</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                {['All States', 'Lagos', 'Abuja', 'Rivers', 'Kano', 'Oyo', 'Enugu', 'Delta',
+                  'Anambra', 'Edo', 'Ogun', 'Ondo', 'Kwara', 'Kogi', 'Benue', 'Plateau',
+                  'Kaduna', 'Sokoto', 'Kebbi', 'Zamfara', 'Katsina', 'Jigawa', 'Bauchi',
+                  'Gombe', 'Yobe', 'Borno', 'Adamawa', 'Taraba', 'Nasarawa', 'Niger',
+                  'Ekiti', 'Imo', 'Abia', 'Ebonyi', 'Cross River', 'Akwa Ibom', 'Bayelsa'
+                ].map((st) => {
+                  const stId = st === 'All States' ? 'all' : st;
+                  const active = tempState === stId;
+                  return (
+                    <button
+                      key={st}
+                      onClick={() => setTempState(stId)}
+                      style={{
+                        padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
+                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
+                        background: active ? '#7B2FF7' : 'transparent',
+                        color: active ? '#fff' : '#666666',
+                      }}
+                    >{st}</button>
+                  );
+                })}
+              </div>
+
+              {/* PRICE */}
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
+                {(['all', 'free', 'paid'] as const).map((p) => {
+                  const active = tempPrice === p;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setTempPrice(p)}
+                      style={{
+                        flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
+                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
+                        background: active ? '#7B2FF7' : 'transparent',
+                        color: active ? '#fff' : '#666666',
+                      }}
+                    >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Footer buttons */}
+            <div style={{ display: 'flex', gap: '12px', padding: '16px 20px 0' }}>
+              <button
+                onClick={clearFilters}
+                style={{
+                  flex: 1, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
+                  color: '#C4C9E0', cursor: 'pointer',
+                }}
+              >Clear All</button>
+              <button
+                onClick={applyFilters}
+                style={{
+                  flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
+                  background: '#7B2FF7', border: 'none', color: '#fff', cursor: 'pointer',
+                  boxShadow: '0 4px 16px rgba(123,47,247,0.4)',
+                }}
+              >Apply</button>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }
