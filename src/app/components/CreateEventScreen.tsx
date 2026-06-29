@@ -220,6 +220,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const submitEvent = async (eventStatus: 'live' | 'draft') => {
     setSubmitting(true);
     setErrorMessage(null);
+    const safetyTimer = setTimeout(() => setSubmitting(false), 10000);
     try {
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
@@ -283,6 +284,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     } catch (err: any) {
       console.error('Failed to save event:', err);
       setErrorMessage(err.message || 'Failed to save event. Please try again.');
+    } finally {
+      clearTimeout(safetyTimer);
       setSubmitting(false);
     }
   };

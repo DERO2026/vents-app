@@ -159,6 +159,7 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [saveCard, setSaveCard] = useState(false);
 
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
@@ -178,58 +179,61 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
     { id: 'ussd', label: 'USSD', icon: Smartphone, desc: 'Dial from any phone' },
   ];
 
+  const handleFreeTicket = () => {
+    const ticket: PurchasedTicket = {
+      event,
+      ticketType,
+      quantity,
+      ticketId: `VNT-FREE-${Date.now().toString(36).toUpperCase()}`,
+      purchasedAt: new Date().toISOString(),
+      totalAmount: 0,
+      holderName: name.trim() || 'Guest',
+    };
+    onSuccess(ticket);
+  };
+
   const handlePay = () => {
     setEmailTouched(true);
     if (!email || !isValidEmail(email)) return;
     if (!name.trim()) return;
 
-    // For card and USSD payments, launch Paystack popup
-    // For bank transfer, we show the manual transfer details (handled in UI)
-    if (payMethod === 'card' || payMethod === 'ussd') {
-      openPaystackPopup({
-        email: email.trim(),
-        amountNaira: total,
-        metadata: {
-          event_id: event.id,
-          event_title: event.title,
-          ticket_type: ticketType.name,
-          quantity,
-          holder_name: name.trim(),
-        },
-        onSuccess: ({ reference }) => {
-          const ticket: PurchasedTicket = {
-            event,
-            ticketType,
-            quantity,
-            ticketId: reference,
-            purchasedAt: new Date().toISOString(),
-            totalAmount: total,
-            holderName: name.trim() || 'Guest',
-          };
-          onSuccess(ticket);
-        },
-        onClose: () => {
-          // User dismissed the popup — no state change needed
-          setLoading(false);
-        },
-      });
-    } else {
-      // Bank transfer — simulate confirmation (bank transfers are verified asynchronously)
-      setLoading(true);
-      setTimeout(() => {
-        setLoading(false);
+    // Free tickets bypass Paystack entirely
+    if (total === 0) {
+      handleFreeTicket();
+      return;
+    }
+
+    openPaystackPopup({
+      email: email.trim(),
+      amountNaira: total,
+      channels: saveCard ? ['card'] : ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+      metadata: {
+        event_id: event.id,
+        event_title: event.title,
+        ticket_type: ticketType.name,
+        quantity,
+        holder_name: name.trim(),
+        custom_fields: [
+          { display_name: 'Event', variable_name: 'event_title', value: event.title },
+          { display_name: 'Tickets', variable_name: 'ticket_quantity', value: String(quantity) },
+        ],
+      },
+      onSuccess: ({ reference }) => {
         const ticket: PurchasedTicket = {
           event,
           ticketType,
           quantity,
-          ticketId: `VNT-BANK-${Date.now().toString(36).toUpperCase()}`,
+          ticketId: reference,
           purchasedAt: new Date().toISOString(),
           totalAmount: total,
           holderName: name.trim() || 'Guest',
         };
         onSuccess(ticket);
-      }, 1500);
-    }
+      },
+      onClose: () => {
+        setLoading(false);
+      },
+    });
   };
 
   return (
@@ -634,25 +638,56 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
 
       {/* Pay CTA */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
+
+        {/* Payment method badges */}
+        {total > 0 && (
+          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
+            <span style={{ color: '#555C7A', fontSize: '11px' }}>Pay with:</span>
+            {['Visa', 'Mastercard', 'Verve', 'Bank Transfer', 'USSD'].map((method) => (
+              <span key={method} style={{
+                background: 'rgba(255,255,255,0.06)',
+                border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '6px',
+                padding: '3px 8px',
+                fontSize: '10px',
+                color: '#aaa',
+                fontWeight: 600,
+              }}>{method}</span>
+            ))}
+          </div>
+        )}
+
+        {/* Save card checkbox */}
+        {total > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
+            <input
+              type="checkbox"
+              id="saveCard"
+              checked={saveCard}
+              onChange={(e) => setSaveCard(e.target.checked)}
+              style={{ accentColor: '#7B2FF7', width: '16px', height: '16px', cursor: 'pointer' }}
+            />
+            <label htmlFor="saveCard" style={{ color: '#888', fontSize: '13px', cursor: 'pointer' }}>
+              Save card for faster future payments
+            </label>
+          </div>
+        )}
+
         <button
-          onClick={payMethod === 'bank' && bankStep === 'confirm' ? handlePay : (payMethod === 'bank' ? undefined : handlePay)}
-          disabled={loading || (payMethod === 'bank' && bankStep !== 'confirm')}
+          onClick={handlePay}
+          disabled={loading}
           style={{
             width: '100%',
-            background: loading
-              ? 'rgba(123,47,190,0.4)'
-              : (payMethod === 'bank' && bankStep !== 'confirm')
-              ? 'rgba(123,47,190,0.2)'
-              : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: loading ? 'rgba(123,47,190,0.4)' : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
-            color: payMethod === 'bank' && bankStep !== 'confirm' ? 'rgba(255,255,255,0.35)' : '#fff',
+            color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: loading || (payMethod === 'bank' && bankStep !== 'confirm') ? 'not-allowed' : 'pointer',
-            boxShadow: loading || (payMethod === 'bank' && bankStep !== 'confirm') ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            boxShadow: loading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -664,15 +699,10 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
               <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
               Processing...
             </>
-          ) : payMethod === 'bank' && bankStep !== 'confirm' ? (
-            <>
-              <Building2 size={16} />
-              {bankStep === 'details' ? 'Select Bank & Log In to Pay' : 'Log In to Continue'}
-            </>
           ) : (
             <>
               <Lock size={16} color="#fff" />
-              {payMethod === 'bank' ? `Authorize Transfer · ${formatPrice(total)}` : `Pay ${formatPrice(total)}`}
+              {total === 0 ? 'Get Free Ticket' : `Pay ${formatPrice(total)}`}
             </>
           )}
         </button>
