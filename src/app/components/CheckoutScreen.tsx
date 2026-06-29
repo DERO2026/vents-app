@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, CreditCard, Building2, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X, Eye, EyeOff, CheckCircle, Search } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
@@ -8,6 +8,7 @@ interface CheckoutScreenProps {
   event: Event;
   ticketType: TicketType;
   quantity: number;
+  currentUser: { id: string; email: string; full_name: string | null; username?: string } | null;
   onBack: () => void;
   onSuccess: (ticket: PurchasedTicket) => void;
 }
@@ -137,9 +138,9 @@ function Field({
   );
 }
 
-export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess }: CheckoutScreenProps) {
-  const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
+export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess }: CheckoutScreenProps) {
+  const [name, setName] = useState(currentUser?.full_name || '');
+  const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
@@ -160,6 +161,8 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
   const [promoApplied, setPromoApplied] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saveCard, setSaveCard] = useState(false);
+  const [paymentLoading, setPaymentLoading] = useState(false);
+  const [payError, setPayError] = useState<string | null>(null);
 
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
@@ -193,47 +196,82 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
   };
 
   const handlePay = () => {
-    setEmailTouched(true);
-    if (!email || !isValidEmail(email)) return;
-    if (!name.trim()) return;
+    setPayError(null);
 
-    // Free tickets bypass Paystack entirely
+    const payerEmail = currentUser?.email || email.trim();
+    if (!payerEmail || !isValidEmail(payerEmail)) {
+      setPayError('A valid email address is required to pay.');
+      return;
+    }
+
+    if (!event?.id) {
+      setPayError('Event not found. Please go back and try again.');
+      return;
+    }
+
+    // Free tickets bypass Paystack
     if (total === 0) {
       handleFreeTicket();
       return;
     }
 
-    openPaystackPopup({
-      email: email.trim(),
-      amountNaira: total,
-      channels: saveCard ? ['card'] : ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
-      metadata: {
-        event_id: event.id,
-        event_title: event.title,
-        ticket_type: ticketType.name,
-        quantity,
-        holder_name: name.trim(),
-        custom_fields: [
-          { display_name: 'Event', variable_name: 'event_title', value: event.title },
-          { display_name: 'Tickets', variable_name: 'ticket_quantity', value: String(quantity) },
-        ],
-      },
-      onSuccess: ({ reference }) => {
-        const ticket: PurchasedTicket = {
-          event,
-          ticketType,
+    const amountKobo = Math.round(total * 100);
+    if (amountKobo <= 0 || isNaN(amountKobo)) {
+      setPayError('Invalid payment amount. Please go back and try again.');
+      return;
+    }
+
+    const PaystackPop = (window as any).PaystackPop;
+    if (!PaystackPop) {
+      setPayError('Payment system not loaded. Please refresh the page and try again.');
+      return;
+    }
+
+    const reference = `VENTS_${Date.now()}_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+
+    try {
+      const handler = PaystackPop.setup({
+        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+        email: payerEmail,
+        amount: amountKobo,
+        currency: 'NGN',
+        ref: reference,
+        label: currentUser?.full_name || currentUser?.username || name.trim() || '',
+        channels: saveCard ? ['card'] : ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        metadata: {
+          event_id: event.id,
+          event_title: event.title,
+          ticket_type: ticketType.name,
+          user_id: currentUser?.id || '',
           quantity,
-          ticketId: reference,
-          purchasedAt: new Date().toISOString(),
-          totalAmount: total,
-          holderName: name.trim() || 'Guest',
-        };
-        onSuccess(ticket);
-      },
-      onClose: () => {
-        setLoading(false);
-      },
-    });
+          custom_fields: [
+            { display_name: 'Event', variable_name: 'event_title', value: event.title },
+            { display_name: 'Tickets', variable_name: 'ticket_quantity', value: String(quantity) },
+          ],
+        },
+        callback: (response: { reference: string }) => {
+          setPaymentLoading(true);
+          const ticket: PurchasedTicket = {
+            event,
+            ticketType,
+            quantity,
+            ticketId: response.reference,
+            purchasedAt: new Date().toISOString(),
+            totalAmount: total,
+            holderName: name.trim() || currentUser?.full_name || 'Guest',
+          };
+          onSuccess(ticket);
+          setPaymentLoading(false);
+        },
+        onClose: () => {
+          setPaymentLoading(false);
+        },
+      });
+
+      handler.openIframe();
+    } catch (err: any) {
+      setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));
+    }
   };
 
   return (
@@ -673,12 +711,19 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
           </div>
         )}
 
+        {payError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
+            <AlertCircle size={14} color="#EF4444" />
+            <span style={{ color: '#EF4444', fontSize: '13px' }}>{payError}</span>
+          </div>
+        )}
+
         <button
           onClick={handlePay}
-          disabled={loading}
+          disabled={paymentLoading}
           style={{
             width: '100%',
-            background: loading ? 'rgba(123,47,190,0.4)' : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            background: paymentLoading ? 'rgba(123,47,190,0.4)' : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
             borderRadius: '16px',
             padding: '15px',
@@ -686,15 +731,15 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            boxShadow: loading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
+            cursor: paymentLoading ? 'not-allowed' : 'pointer',
+            boxShadow: paymentLoading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
           }}
         >
-          {loading ? (
+          {paymentLoading ? (
             <>
               <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
               Processing...

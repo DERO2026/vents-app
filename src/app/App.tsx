@@ -1647,6 +1647,7 @@ export default function App() {
               event={selectedEvent}
               ticketType={selectedTicketType}
               quantity={selectedTicketQty}
+              currentUser={currentUser}
               onBack={goBack}
               onSuccess={handleCheckoutSuccess}
             />
