@@ -327,16 +327,25 @@ export default function App() {
 
         // If we got the user from the manual refresh, skip SDK call
         if (!sessionUserId) {
-          const { data, error } = await insforge.auth.getCurrentUser();
-          if (error) {
-            console.error("GetCurrentUser failed:", error);
-            if (error.statusCode !== 401) {
-              setAuthError(error.message || "Session restoration failed.");
-            }
+          let getCurrentUserData: any = null;
+          let getCurrentUserError: any = null;
+          try {
+            const result = await insforge.auth.getCurrentUser();
+            getCurrentUserData = result.data;
+            getCurrentUserError = result.error;
+          } catch (err: any) {
+            console.warn("GetCurrentUser threw:", err?.message || err);
             setCurrentUser(null);
             setAuthLoading(false);
             return;
           }
+          if (getCurrentUserError) {
+            console.warn("GetCurrentUser failed:", getCurrentUserError?.statusCode);
+            setCurrentUser(null);
+            setAuthLoading(false);
+            return;
+          }
+          const data = getCurrentUserData;
           if (!data?.user) {
             setCurrentUser(null);
             setAuthLoading(false);
@@ -467,7 +476,7 @@ export default function App() {
           setActiveTab('home');
         }
       } else {
-        setScreen('welcome');
+        setScreen('home');
       }
     }
   }, [screen, splashMinTimePassed, authLoading, currentUser]);

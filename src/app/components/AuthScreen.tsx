@@ -391,12 +391,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (existsResult?.phone_taken) throw new Error('Phone number already exists');
         if (existsResult?.username_taken) throw new Error('Username already exists');
 
-        const { data, error } = await insforge.auth.signUp({
-          email,
-          password,
-          options: { data: userMetaPayload }
-        });
+        const { data, error } = await insforge.auth.signUp({ email, password });
         if (error) throw error;
+
+        // InsForge does not support raw_user_meta_data in signUp options.
+        // Write profile fields directly to the users table after auth record is created.
+        if (data?.user?.id) {
+          await insforge.database.from('users').upsert({
+            id: data.user.id,
+            email: normalizedEmail,
+            full_name: userMetaPayload.full_name,
+            username: userMetaPayload.username,
+            phone_number: userMetaPayload.phone_number,
+            state: userMetaPayload.state,
+            role: userMetaPayload.role,
+            avatar_url: userMetaPayload.avatar_url || null,
+          }, { onConflict: 'id' }).catch((e: any) => console.warn('Profile upsert after signup:', e?.message));
+        }
 
         // Persist refresh token immediately after signup so session survives reload.
         // The SDK sets hc.refreshToken internally — also check data for it.
@@ -514,7 +525,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           ? 'Too many attempts. Please wait a few minutes and try again.'
           : msgL.includes('network') || msgL.includes('fetch')
           ? 'Network error. Check your connection and try again.'
-          : err?.message || 'Signup failed. Please check your details and try again.';
+          : 'Signup failed. Please check your details and try again.';
         setErrorMessage(safe);
         return;
       }
