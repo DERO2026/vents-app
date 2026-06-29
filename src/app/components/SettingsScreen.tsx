@@ -4,7 +4,7 @@ import { sanitize } from '../../lib/sanitize';
 import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
-  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp, Instagram, Twitter, Music,
+  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp, Camera, Music,
 } from 'lucide-react';
 import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
@@ -1026,6 +1026,8 @@ export function SettingsScreen({
           <Divider />
           <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('https://getvents.com/terms', '_blank')} />
           <Divider />
+          <SettingRow icon={Shield} label="Refund Policy" onPress={() => window.open('https://getvents.com/refunds', '_blank')} />
+          <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
         </Section>
 
@@ -1039,8 +1041,8 @@ export function SettingsScreen({
             onClick={() => window.open('https://instagram.com/TheVentsApp', '_blank')}
             style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
           >
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(135deg, #E1306C, #F77737)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Instagram size={16} color="#fff" />
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Camera size={16} color="#fff" />
             </div>
             <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Instagram</span>
             <ChevronRight size={16} color="#555C7A" />
@@ -1052,7 +1054,7 @@ export function SettingsScreen({
             style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
           >
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Twitter size={16} color="#fff" />
+              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>X</span>
             </div>
             <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Twitter/X</span>
             <ChevronRight size={16} color="#555C7A" />
@@ -1063,8 +1065,9 @@ export function SettingsScreen({
             onClick={() => window.open('https://tiktok.com/@TheVentsApp', '_blank')}
             style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
           >
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative' }}>
               <Music size={16} color="#fff" />
+              <span style={{ position: 'absolute', bottom: '4px', right: '4px', width: '7px', height: '7px', borderRadius: '50%', background: '#69C9D0', border: '1px solid #000' }} />
             </div>
             <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on TikTok</span>
             <ChevronRight size={16} color="#555C7A" />

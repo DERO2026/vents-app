@@ -44,6 +44,7 @@ import { TransactionsScreen } from './components/TransactionsScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacyScreen } from './components/PrivacyScreen';
 import { TermsScreen } from './components/TermsScreen';
+import { RefundPolicyScreen } from './components/RefundPolicyScreen';
 import { HelpPage } from './components/HelpPage';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
@@ -147,6 +148,7 @@ export default function App() {
   const pathname = window.location.pathname;
   if (pathname === '/privacy') return <PrivacyScreen />;
   if (pathname === '/terms') return <TermsScreen />;
+  if (pathname === '/refunds') return <RefundPolicyScreen />;
   if (pathname === '/help') return <HelpPage />;
 
   const [screen, setScreen] = useState<Screen>('splash');
@@ -186,7 +188,7 @@ export default function App() {
 
   const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner'];
   const navigateTo = useCallback((next: Screen) => {
-    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'admin' && currentUser?.id !== ROOT_UID) {
+    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'organiser' && currentUser?.role !== 'admin' && currentUser?.id !== ROOT_UID) {
       console.warn(`Unauthorized attempt to access ${next} screen`);
       return;
     }
@@ -1078,13 +1080,20 @@ export default function App() {
 
   const handleToggleFollow = useCallback(async (userId: string) => {
     if (!currentUser) {
-      console.warn("User must be logged in to follow");
+      console.error('[Subscribe] No currentUser — redirecting to auth');
       navigateTo('auth');
       return;
     }
-    if (userId === currentUser.id) return;
+    if (userId === currentUser.id) {
+      console.warn('[Subscribe] Cannot follow yourself');
+      return;
+    }
+
+    console.log('[Subscribe] toggleFollow called. currentUser.id:', currentUser.id, 'targetId:', userId, 'currentRole:', currentUser.role);
 
     const isFollowing = followingIds.has(userId);
+    console.log('[Subscribe] isFollowing:', isFollowing);
+
     // Optimistically update UI
     setFollowingIds((prev) => {
       const next = new Set(prev);
@@ -1099,6 +1108,7 @@ export default function App() {
           .delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', userId);
+        console.log('[Subscribe] delete result error:', error);
         if (error) throw error;
       } else {
         const { error } = await insforge.database
@@ -1107,6 +1117,7 @@ export default function App() {
             follower_id: currentUser.id,
             following_id: userId
           }]);
+        console.log('[Subscribe] insert result error:', error);
         if (error) throw error;
         trackPushEvent('user_followed', { targetId: userId });
         trackEvent('user_followed');
@@ -1118,11 +1129,12 @@ export default function App() {
           p_body: `${displayName} started following you`,
           p_icon: '👤',
         }).then(({ error: notifyErr }: any) => {
-          if (notifyErr) console.warn('Follow notify failed:', notifyErr.message);
+          if (notifyErr) console.warn('[Subscribe] Follow notify failed:', notifyErr.message);
         });
       }
+      console.log('[Subscribe] DB operation succeeded');
     } catch (err) {
-      console.error("Failed to toggle follow in DB:", err);
+      console.error('[Subscribe] DB operation FAILED:', err);
       // Revert optimistic update
       setFollowingIds((prev) => {
         const next = new Set(prev);

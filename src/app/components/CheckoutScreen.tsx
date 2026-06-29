@@ -676,6 +676,12 @@ export function CheckoutScreen({ event, ticketType, quantity, onBack, onSuccess 
             </>
           )}
         </button>
+        <p style={{ fontSize: '11px', color: '#555C7A', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
+          By purchasing you agree to our{' '}
+          <span onClick={() => window.open('https://getvents.com/refunds', '_blank')} style={{ color: '#7B2FF7', cursor: 'pointer' }}>Refund Policy</span>
+          {' '}and{' '}
+          <span onClick={() => window.open('https://getvents.com/terms', '_blank')} style={{ color: '#7B2FF7', cursor: 'pointer' }}>Terms of Service</span>
+        </p>
       </div>
 
       {/* Country picker modal */}
