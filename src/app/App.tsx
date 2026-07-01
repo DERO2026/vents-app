@@ -1208,9 +1208,11 @@ export default function App() {
     setAuthLoading(false);
   }, []);
 
-  // Screens where the bottom nav is visible for both roles
+  // Screens where the bottom nav is visible for both roles.
+  // Guests browse these screens too (home-first flow) — the nav must stay
+  // visible for them; individual screens handle their own auth prompts.
   const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
-  const showBottomNav = !!currentUser && navScreens.includes(screen);
+  const showBottomNav = navScreens.includes(screen);
 
   // Determine if the current user is organizer/admin (for nav FAB)
   const isOrganizerOrAdmin =
