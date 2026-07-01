@@ -74,7 +74,7 @@ export function ProfileScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 120 && !pullRefreshing) {
+    if (dy > 200 && !pullRefreshing) {
       setPullRefreshing(true);
       try { setHighlightRefresh(r => r + 1); } finally { setPullRefreshing(false); }
     }
@@ -156,8 +156,26 @@ export function ProfileScreen({
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
-        Loading profile...
+      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: '#8B8FA8', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+        <div style={{ fontSize: '17px', fontWeight: 600, color: '#fff' }}>Sign in to view your profile</div>
+        <div style={{ fontSize: '14px', color: '#8B8FA8', maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
+        <button
+          onClick={() => onNavigate('auth')}
+          style={{
+            marginTop: '8px',
+            padding: '13px 28px',
+            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            border: 'none',
+            borderRadius: '14px',
+            color: '#fff',
+            fontSize: '15px',
+            fontWeight: 700,
+            fontFamily: 'Space Grotesk, sans-serif',
+            cursor: 'pointer',
+          }}
+        >
+          Sign In / Create Account
+        </button>
       </div>
     );
   }
