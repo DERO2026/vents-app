@@ -161,9 +161,9 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '100%',
-        background: '#0D0D1A',
+        background: '#090514',
         borderRadius: '16px',
-        border: '1px solid rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.07)',
         boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
       }}
     >
@@ -261,12 +261,12 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           </div>
         )}
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-          <Calendar size={10} color="#8B8FA8" />
-          <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
+          <Calendar size={10} color="#94A3B8" />
+          <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-          <MapPin size={10} color="#8B8FA8" />
-          <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
+          <MapPin size={10} color="#94A3B8" />
+          <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
             {event.city}
           </span>
         </div>
@@ -296,9 +296,9 @@ function CardSkeleton() {
       style={{
         width: '100%',
         height: '210px',
-        background: '#131629',
+        background: '#090514',
         borderRadius: '16px',
-        border: '1px solid rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -331,9 +331,9 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '162px',
-        background: '#131629',
+        background: '#090514',
         borderRadius: '18px',
-        border: '1px solid rgba(255,255,255,0.06)',
+        border: '1px solid rgba(255,255,255,0.07)',
         flexShrink: 0,
         boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
       }}
@@ -440,12 +440,12 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
           {event.title}
         </h4>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-          <Calendar size={10} color="#8B8FA8" />
-          <span style={{ fontSize: '10px', color: '#8B8FA8' }}>{event.date}</span>
+          <Calendar size={10} color="#94A3B8" />
+          <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <MapPin size={10} color="#8B8FA8" />
-          <span style={{ fontSize: '10px', color: '#8B8FA8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
+          <MapPin size={10} color="#94A3B8" />
+          <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
             {event.city}
           </span>
         </div>
@@ -484,9 +484,9 @@ function HorizontalCardSkeleton() {
       style={{
         width: '180px',
         height: '220px',
-        background: '#131629',
+        background: '#090514',
         borderRadius: '18px',
-        border: '1px solid rgba(255,255,255,0.05)',
+        border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
@@ -588,7 +588,7 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#131629', border: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)' }}>
           <img
             src={event.image}
             alt={event.title}
@@ -691,7 +691,7 @@ export function HomeScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 120 && !pullRefreshing) {
+    if (dy > 200 && !pullRefreshing) {
       setPullRefreshing(true);
       try { await fetchEvents(); } finally { setPullRefreshing(false); }
     }
@@ -700,7 +700,7 @@ export function HomeScreen({
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
     { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
     { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
-    { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FF7' },
+    { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FBE' },
     { id: 'Music', label: 'Music', icon: Music, color: '#FF6B6B' },
     { id: 'Technology', label: 'Tech', icon: Cpu, color: '#4ECDC4' },
     { id: 'Food & Drinks', label: 'Food', icon: UtensilsCrossed, color: '#FFE66D' },
@@ -867,7 +867,7 @@ export function HomeScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#060A12', position: 'relative' }}
+      style={{ background: '#020005', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -880,18 +880,18 @@ export function HomeScreen({
           <div style={{
             width: '40px', height: '40px', borderRadius: '50%',
             border: '3px solid rgba(123,47,247,0.2)',
-            borderTop: '3px solid #7B2FF7',
+            borderTop: '3px solid #7B2FBE',
             animation: 'spin 0.8s linear infinite',
           }} />
         </div>
       )}
       {/* Full-screen Search overlay */}
       {searchOpen && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#060A12', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#020005', display: 'flex', flexDirection: 'column' }}>
           {/* Search bar */}
           <div style={{ padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
-              <Search size={17} color="#8B8FA8" />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
+              <Search size={17} color="#94A3B8" />
               <input
                 autoFocus
                 type="text"
@@ -902,7 +902,7 @@ export function HomeScreen({
               />
               {inputValue && (
                 <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                  <X size={15} color="#8B8FA8" />
+                  <X size={15} color="#94A3B8" />
                 </button>
               )}
             </div>
@@ -921,7 +921,7 @@ export function HomeScreen({
                 {/* Suggested People */}
                 {suggestedPeople.length > 0 && (
                   <>
-                    <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
+                    <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
                     {suggestedPeople.map((u: any) => (
                       <div
                         key={u.id}
@@ -936,26 +936,26 @@ export function HomeScreen({
                             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
                 {/* Popular Events */}
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
+                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
                 {dbEvents.slice(0, 4).map(ev => (
                   <div
                     key={ev.id}
                     onClick={() => { setSearchOpen(false); setInputValue(''); onEventPress(ev); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                   >
-                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#131629' }}>
+                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
                       <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                      <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                      <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
                     </div>
                   </div>
                 ))}
@@ -963,11 +963,11 @@ export function HomeScreen({
             ) : (
               <>
                 {/* People results */}
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
                 {loadingPeople ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
+                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
                 ) : searchPeople.length === 0 ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>No people found</p>
+                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>No people found</p>
                 ) : (
                   <>
                     {searchPeople.map((u: any) => (
@@ -984,7 +984,7 @@ export function HomeScreen({
                             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
@@ -992,9 +992,9 @@ export function HomeScreen({
                 )}
 
                 {/* Event results */}
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
+                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
                 {filteredEvents.length === 0 ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No events found</p>
+                  <p style={{ color: '#94A3B8', fontSize: '13px' }}>No events found</p>
                 ) : (
                   filteredEvents.slice(0, 8).map(ev => (
                     <div
@@ -1002,12 +1002,12 @@ export function HomeScreen({
                       onClick={() => { setSearchOpen(false); onEventPress(ev); }}
                       style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                     >
-                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#131629' }}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
                         <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                        <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
                       </div>
                     </div>
                   ))
@@ -1031,7 +1031,7 @@ export function HomeScreen({
           <VentsLogo />
           <div style={{ fontSize: '10px', fontWeight: 400, paddingLeft: '2px' }}>
             <span style={{ color: '#888888' }}>Discover Nigeria's </span>
-            <span style={{ color: '#7B2FF7', fontWeight: 700, textShadow: '0 0 8px rgba(123,47,247,0.8)' }}>Best</span>
+            <span style={{ color: '#7B2FBE', fontWeight: 700, textShadow: '0 0 8px rgba(123,47,247,0.8)' }}>Best</span>
             <span style={{ color: '#888888' }}> Events</span>
           </div>
         </div>
@@ -1047,12 +1047,12 @@ export function HomeScreen({
               borderRadius: '50%', cursor: 'pointer', position: 'relative', flexShrink: 0,
             }}
           >
-            <SlidersHorizontal size={15} color="#7B2FF7" />
+            <SlidersHorizontal size={15} color="#7B2FBE" />
             {hasActiveFilters && (
               <span style={{
                 position: 'absolute', top: '-2px', right: '-2px',
                 width: '8px', height: '8px', borderRadius: '50%',
-                background: '#7B2FF7', border: '2px solid #060A12',
+                background: '#7B2FBE', border: '2px solid #020005',
               }} />
             )}
           </button>
@@ -1064,7 +1064,7 @@ export function HomeScreen({
           </button>
           <button
             onClick={onNotificationsPress}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <Bell size={16} color="#C4C9E0" />
           </button>
@@ -1083,7 +1083,7 @@ export function HomeScreen({
           {(currentUser?.role === 'organizer' || currentUser?.role === 'admin' || currentUser?.role === 'root') && (
             <button
               onClick={onCreatePress}
-              style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#7B2FF7', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
+              style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
             >
               <Plus size={17} color="#fff" strokeWidth={2.5} />
             </button>
@@ -1227,7 +1227,7 @@ export function HomeScreen({
                 <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                   {isDefaultState ? 'Explore Events' : 'Search Results'}
                 </h3>
-                <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                <span style={{ color: '#94A3B8', fontSize: '11px' }}>
                   {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
                 </span>
               </div>
@@ -1237,7 +1237,7 @@ export function HomeScreen({
                   {isDefaultState ? (
                     <>
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
                         No events yet
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
@@ -1247,7 +1247,7 @@ export function HomeScreen({
                   ) : !searchQuery.trim() && activeCategory !== 'all' ? (
                     <>
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
                         No {activeCategory} events yet
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
@@ -1257,7 +1257,7 @@ export function HomeScreen({
                   ) : (
                     <>
                       <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
-                      <p style={{ color: '#8B8FA8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
+                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
                         No matches
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
@@ -1330,14 +1330,14 @@ export function HomeScreen({
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
               <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800 }}>Filters</span>
               <button onClick={() => setFilterSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                <X size={20} color="#8B8FA8" />
+                <X size={20} color="#94A3B8" />
               </button>
             </div>
 
             {/* Scrollable content */}
             <div style={{ overflowY: 'auto', flex: 1, scrollbarWidth: 'none', padding: '0 20px' }}>
               {/* STATE */}
-              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>STATE</p>
+              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>STATE</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
                 {['All States', 'Lagos', 'Abuja', 'Rivers', 'Kano', 'Oyo', 'Enugu', 'Delta',
                   'Anambra', 'Edo', 'Ogun', 'Ondo', 'Kwara', 'Kogi', 'Benue', 'Plateau',
@@ -1354,7 +1354,7 @@ export function HomeScreen({
                       style={{
                         padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
                         cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FF7' : 'transparent',
+                        background: active ? '#7B2FBE' : 'transparent',
                         color: active ? '#fff' : '#666666',
                       }}
                     >{st}</button>
@@ -1363,7 +1363,7 @@ export function HomeScreen({
               </div>
 
               {/* PRICE */}
-              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
+              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
                 {(['all', 'free', 'paid'] as const).map((p) => {
                   const active = tempPrice === p;
@@ -1374,7 +1374,7 @@ export function HomeScreen({
                       style={{
                         flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
                         cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FF7' : 'transparent',
+                        background: active ? '#7B2FBE' : 'transparent',
                         color: active ? '#fff' : '#666666',
                       }}
                     >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
@@ -1397,7 +1397,7 @@ export function HomeScreen({
                 onClick={applyFilters}
                 style={{
                   flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
-                  background: '#7B2FF7', border: 'none', color: '#fff', cursor: 'pointer',
+                  background: '#7B2FBE', border: 'none', color: '#fff', cursor: 'pointer',
                   boxShadow: '0 4px 16px rgba(123,47,247,0.4)',
                 }}
               >Apply</button>

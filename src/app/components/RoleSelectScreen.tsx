@@ -10,7 +10,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         position: 'fixed',
         top: 0,
         left: 0,
@@ -27,8 +27,8 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
         <button
           onClick={onBack}
           style={{
-            background: '#131629',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: '#090514',
+            border: '1px solid rgba(255,255,255,0.07)',
             borderRadius: '50%',
             width: '36px',
             height: '36px',
@@ -57,7 +57,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
           How will you{' '}
           <span style={{ color: '#A855F7' }}>use VENTS?</span>
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5 }}>
+        <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.5 }}>
           Choose your role to personalise your experience.
         </p>
       </div>
@@ -70,9 +70,9 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
           onClick={() => onSelect('attendee')}
           style={{
             flex: 1,
-            background: 'linear-gradient(135deg, rgba(79,70,229,0.12) 0%, rgba(123,47,190,0.08) 100%)',
-            border: '1.5px solid rgba(79,70,229,0.35)',
-            borderRadius: '20px',
+            background: '#090514',
+            border: '1px solid rgba(255,255,255,0.07)',
+            borderRadius: '24px',
             padding: '16px 18px',
             cursor: 'pointer',
             position: 'relative',
@@ -83,8 +83,8 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
         >
           <div style={{ position: 'absolute', right: '-16px', top: '-16px', width: '90px', height: '90px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(79,70,229,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #4F46E5, #7B2FBE)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(79,70,229,0.4)' }}>
-              <Ticket size={20} color="#fff" />
+            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(123,47,190,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Ticket size={20} color="#7B2FBE" />
             </div>
             <div>
               <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>I'm an Attendee</h2>
@@ -106,7 +106,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: '12px', background: 'linear-gradient(135deg, #4F46E5, #7B2FBE)', borderRadius: '12px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
+          <div style={{ marginTop: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '100px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center', boxShadow: '0 8px 24px rgba(123,47,190,0.35)' }}>
             Join as Attendee →
           </div>
         </div>
@@ -116,9 +116,9 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
           onClick={() => onSelect('organizer')}
           style={{
             flex: 1,
-            background: 'linear-gradient(135deg, rgba(168,85,247,0.12) 0%, rgba(245,158,11,0.06) 100%)',
-            border: '1.5px solid rgba(168,85,247,0.35)',
-            borderRadius: '20px',
+            background: '#090514',
+            border: '1px solid rgba(255,255,255,0.07)',
+            borderRadius: '24px',
             padding: '16px 18px',
             cursor: 'pointer',
             position: 'relative',
@@ -129,8 +129,8 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
         >
           <div style={{ position: 'absolute', right: '-16px', top: '-16px', width: '90px', height: '90px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '10px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #A855F7, #7B2FBE)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, boxShadow: '0 4px 12px rgba(168,85,247,0.4)' }}>
-              <BarChart3 size={20} color="#fff" />
+            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'rgba(123,47,190,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <BarChart3 size={20} color="#7B2FBE" />
             </div>
             <div>
               <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>I'm an Organizer</h2>
@@ -152,7 +152,7 @@ export function RoleSelectScreen({ onSelect, onBack }: RoleSelectScreenProps) {
               </div>
             ))}
           </div>
-          <div style={{ marginTop: '12px', background: 'linear-gradient(135deg, #A855F7, #7B2FBE)', borderRadius: '12px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
+          <div style={{ marginTop: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '100px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center', boxShadow: '0 8px 24px rgba(123,47,190,0.35)' }}>
             Join as Organizer →
           </div>
         </div>

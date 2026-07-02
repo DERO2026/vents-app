@@ -34,7 +34,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
   return (
     <div
       style={{
-        background: '#000000',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -107,13 +107,13 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
 
       {/* Content */}
       <div style={{ flex: 1, padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
           Discover Nigeria's
           <br />
           <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Best Events</span>
         </h1>
 
-        <p style={{ color: 'rgba(255,255,255,0.45)', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+        <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
           Book tickets to concerts, tech summits, food festivals and more — all across Nigeria.
         </p>
 
@@ -149,17 +149,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
           onClick={onGetStarted}
           style={{
             width: '100%',
-            background: 'rgba(168,85,247,0.15)',
-            border: '1.5px solid rgba(168,85,247,0.5)',
-            backdropFilter: 'blur(12px)',
-            borderRadius: '18px',
-            padding: '19px 24px',
+            background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+            border: 'none',
+            borderRadius: '100px',
+            padding: '16px 32px',
             color: '#fff',
             fontSize: '20px',
             fontWeight: 900,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: 'pointer',
-            animation: 'ctaPulse 2.4s ease-in-out infinite',
+            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
             marginBottom: '12px',
             letterSpacing: '0.01em',
             display: 'flex',
@@ -171,10 +170,22 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
           <span style={{ fontSize: '22px', animation: 'arrowBounce 1.2s ease-in-out infinite' }}>→</span>
         </button>
 
-        {/* Sign in link */}
+        {/* Sign in */}
         <button
           onClick={onSignIn}
-          style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.45)', fontSize: '14px', fontWeight: 400, cursor: 'pointer', padding: '4px', textAlign: 'center' }}
+          style={{
+            width: '100%',
+            background: 'transparent',
+            border: '1px solid rgba(255,255,255,0.15)',
+            borderRadius: '100px',
+            padding: '16px 32px',
+            color: 'rgba(255,255,255,0.45)',
+            fontSize: '14px',
+            fontWeight: 400,
+            cursor: 'pointer',
+            textAlign: 'center',
+            marginBottom: '12px',
+          }}
         >
           Already have an account?{' '}
           <span style={{ color: '#A855F7', fontWeight: 600 }}>Sign in</span>
@@ -184,7 +195,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
         {onBrowseGuest && (
           <button
             onClick={onBrowseGuest}
-            style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, textDecoration: 'underline', marginTop: 16, cursor: 'pointer', textAlign: 'center' }}
+            style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, textDecoration: 'underline', marginTop: 16, cursor: 'pointer', textAlign: 'center' }}
           >
             Browse as guest
           </button>

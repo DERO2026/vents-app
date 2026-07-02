@@ -10,7 +10,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse at 50% 40%, #1C0538 0%, #0A0015 55%, #060A12 100%)',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -89,6 +89,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
           opacity: 0,
           textTransform: 'uppercase',
           fontWeight: 500,
+          fontFamily: 'Outfit, sans-serif',
         }}
       >
         Discover Nigeria's Best Events
@@ -111,7 +112,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
               width: '7px',
               height: '7px',
               borderRadius: '50%',
-              background: '#A855F7',
+              background: '#7B2FBE',
               animation: `splashDot 1.3s ease-in-out ${i * 0.18}s infinite`,
             }}
           />
