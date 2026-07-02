@@ -23,23 +23,27 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#F0F0FF',
+  color: '#FFFFFF',
   fontSize: '14px',
   fontFamily: 'Inter, sans-serif',
 };
 
 const BTN_PRIMARY: React.CSSProperties = {
   width: '100%',
+  height: '52px',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
   border: 'none',
-  borderRadius: '16px',
-  padding: '16px',
+  borderRadius: '100px',
+  padding: '0 24px',
   color: '#fff',
   fontSize: '16px',
   fontWeight: 700,
   fontFamily: 'Space Grotesk, sans-serif',
   cursor: 'pointer',
-  boxShadow: '0 8px 32px rgba(123,47,190,0.4), 0 0 0 1px rgba(168,85,247,0.4), 0 0 24px rgba(168,85,247,0.3)',
+  boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
 };
 
 function isValidEmail(email: string): boolean {
@@ -66,17 +70,19 @@ function InputRow({
   return (
     <div>
       <div
+        className="auth-input-row"
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#131629',
-          border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'}`,
-          borderRadius: '14px',
-          padding: '14px 16px',
+          background: '#090514',
+          border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
+          borderRadius: '16px',
+          height: '52px',
+          padding: '0 16px',
           gap: '12px',
         }}
       >
-        <Icon size={18} color={error ? '#EF4444' : '#8B8FA8'} />
+        <Icon size={18} color={error ? '#EF4444' : '#94A3B8'} />
         <input
           type={type}
           placeholder={placeholder}
@@ -719,7 +725,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   return (
     <div
       style={{
-        background: '#060A12',
+        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
         position: 'fixed',
         top: 0,
         left: 0,
@@ -734,8 +740,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     >
       <style>{`
         ::-webkit-scrollbar { display: none; }
-        input::placeholder { color: #8B8FA8; }
-        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #131629 inset !important; -webkit-text-fill-color: #F0F0FF !important; }
+        input::placeholder { color: #94A3B8; }
+        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #090514 inset !important; -webkit-text-fill-color: #FFFFFF !important; }
+        .auth-input-row:focus-within { border-color: #7B2FBE !important; }
+        .auth-input-field:focus { border-color: #7B2FBE !important; outline: none; }
       `}</style>
       {/* Inner scroll wrapper — keyboard cannot push this screen */}
       <div style={{ height: '100%', overflowY: 'auto', WebkitOverflowScrolling: 'touch' as any, scrollbarWidth: 'none' as any, display: 'flex', flexDirection: 'column' }}>
@@ -795,7 +803,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             </div>
 
             {errorMessage && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
                 <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
                 <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
               </div>
@@ -887,9 +895,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               disabled={loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword}
               style={{
                 ...BTN_PRIMARY,
-                background: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword)
-                  ? 'rgba(123,47,190,0.35)'
-                  : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                opacity: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 0.6 : 1,
                 cursor: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 'not-allowed' : 'pointer',
                 marginBottom: '16px',
               }}
@@ -929,9 +935,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   alignItems: 'center',
                   gap: '8px',
                   background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
                   borderRadius: '12px',
-                  padding: '12px 14px',
+                  padding: '12px 16px',
                   marginBottom: '20px',
                   textAlign: 'left',
                 }}
@@ -997,10 +1003,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               disabled={loading || verificationCode.length !== 6}
               style={{
                 ...BTN_PRIMARY,
-                background:
-                  loading || verificationCode.length !== 6
-                    ? 'rgba(123,47,190,0.35)'
-                    : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                opacity: (loading || verificationCode.length !== 6) ? 0.6 : 1,
                 cursor: loading || verificationCode.length !== 6 ? 'not-allowed' : 'pointer',
                 marginBottom: '20px',
               }}
@@ -1030,16 +1033,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           <>
             <h2
               style={{
-                color: '#F0F0FF',
-                fontSize: '26px',
-                fontWeight: 800,
-                fontFamily: 'Space Grotesk, sans-serif',
+                color: '#FFFFFF',
+                fontSize: '24px',
+                fontWeight: 700,
+                fontFamily: 'Outfit, sans-serif',
                 marginBottom: '6px',
               }}
             >
               {mode === 'login' ? 'Welcome back' : mode === 'signup' ? 'Create account' : mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
             </h2>
-            <p style={{ color: '#8B8FA8', fontSize: '14px', marginBottom: '28px' }}>
+            <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '28px' }}>
               {mode === 'login'
                 ? 'Sign in to your VENTS account'
                 : mode === 'signup'
@@ -1056,9 +1059,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   alignItems: 'center',
                   gap: '8px',
                   background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
                   borderRadius: '12px',
-                  padding: '12px 14px',
+                  padding: '12px 16px',
                   marginBottom: '20px',
                 }}
               >
@@ -1156,7 +1159,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               )}
               {mode === 'signup' && (
                 <div style={{ width: '100%', maxWidth: '100%' }}>
-                  <label style={{ display: 'block', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px', letterSpacing: '0.04em' }}>
+                  <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     DATE OF BIRTH
                   </label>
                   <input
@@ -1173,11 +1176,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                         setDobError(null);
                       }
                     }}
+                    className="auth-input-field"
                     style={{
-                      width: '100%', maxWidth: '320px', height: '44px', background: '#131629',
-                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'}`,
-                      borderRadius: '14px', padding: '0 16px',
-                      color: dob ? '#F0F0FF' : '#8B8FA8', fontSize: '15px',
+                      width: '100%', maxWidth: '320px', height: '52px', background: '#090514',
+                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
+                      borderRadius: '16px', padding: '0 16px',
+                      color: dob ? '#FFFFFF' : '#94A3B8', fontSize: '15px',
                       outline: 'none', boxSizing: 'border-box',
                       colorScheme: 'dark',
                     }}
@@ -1292,7 +1296,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 style={{
                   background: 'none',
                   border: 'none',
-                  color: '#A78BFA',
+                  color: '#C084FC',
                   fontSize: '13px',
                   cursor: 'pointer',
                   marginBottom: '24px',
@@ -1309,9 +1313,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               disabled={loading || !canSubmit}
               style={{
                 ...BTN_PRIMARY,
-                background: loading || !canSubmit
-                  ? 'rgba(123,47,190,0.35)'
-                  : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                opacity: (loading || !canSubmit) ? 0.6 : 1,
                 cursor: loading || !canSubmit ? 'not-allowed' : 'pointer',
                 marginBottom: '20px',
               }}
@@ -1334,18 +1336,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     onClick={() => setTosAccepted(v => !v)}
                     style={{
                       width: '18px', height: '18px', borderRadius: '5px', flexShrink: 0, marginTop: '1px',
-                      border: tosAccepted ? 'none' : '2px solid rgba(167,139,250,0.5)',
-                      background: tosAccepted ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : 'transparent',
+                      border: tosAccepted ? 'none' : '2px solid rgba(123,47,190,0.5)',
+                      background: tosAccepted ? '#7B2FBE' : 'transparent',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
                     }}
                   >
                     {tosAccepted && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800, lineHeight: 1 }}>✓</span>}
                   </div>
-                  <span style={{ color: '#8B8FA8', fontSize: '12px', lineHeight: 1.55 }}>
+                  <span style={{ color: '#94A3B8', fontSize: '12px', lineHeight: 1.55 }}>
                     I agree to the{' '}
-                    <a href="https://getvents.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#A78BFA', textDecoration: 'none' }}>Terms of Service</a>
+                    <a href="https://getvents.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#C084FC', textDecoration: 'underline' }}>Terms of Service</a>
                     {' '}and{' '}
-                    <a href="https://getvents.com/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#A78BFA', textDecoration: 'none' }}>Privacy Policy</a>.
+                    <a href="https://getvents.com/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#C084FC', textDecoration: 'underline' }}>Privacy Policy</a>.
                     {' '}You must be at least 13 years old to use Vents.
                   </span>
                 </label>
@@ -1360,7 +1362,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#A78BFA',
+                    color: '#C084FC',
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontSize: '14px',
@@ -1379,7 +1381,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#A78BFA',
+                    color: '#C084FC',
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontSize: '14px',
