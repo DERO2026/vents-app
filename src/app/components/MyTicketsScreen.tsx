@@ -66,7 +66,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -96,7 +96,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, flex: 1 }}>My Tickets</h1>
+        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, flex: 1 }}>My Tickets</h1>
         {onRefresh && (
           <button
             onClick={handleRefresh}
@@ -126,9 +126,9 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         <div
           style={{
             display: 'flex',
-            background: '#131629',
-            borderRadius: '12px',
-            padding: '3px',
+            background: '#090514',
+            borderRadius: '100px',
+            padding: '4px',
             gap: '3px',
           }}
         >
@@ -139,13 +139,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               style={{
                 flex: 1,
                 padding: '9px',
-                borderRadius: '10px',
+                borderRadius: '100px',
                 border: 'none',
                 background:
                   activeTab === tab
                     ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
                     : 'transparent',
-                color: activeTab === tab ? '#fff' : '#8B8FA8',
+                color: activeTab === tab ? '#FFFFFF' : '#94A3B8',
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -197,22 +197,22 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 width: '72px',
                 height: '72px',
                 borderRadius: '20px',
-                background: '#131629',
+                background: '#090514',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Ticket size={32} color="#2A2D3E" />
+              <Ticket size={32} color="#94A3B8" />
             </div>
             <div style={{ textAlign: 'center', padding: '0 16px' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 600, marginBottom: '8px' }}>
+              <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
                 {activeTab === 'upcoming'
                   ? "Seems like you haven't reserved any ticket yet, we are here to help!"
                   : 'Your expired tickets will appear here!'}
               </p>
               {activeTab === 'past' && (
-                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '16px' }}>
+                <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '16px' }}>
                   Please come back later or start exploring events now!
                 </p>
               )}
@@ -244,8 +244,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 key={ticket.ticketId}
                 onClick={() => onViewTicket(ticket)}
                 style={{
-                  background: '#131629',
-                  border: '1px solid rgba(255,255,255,0.06)',
+                  background: '#090514',
+                  border: '1px solid rgba(255,255,255,0.05)',
                   borderRadius: '20px',
                   overflow: 'hidden',
                   cursor: 'pointer',
@@ -256,7 +256,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   <img
                     src={ticket.event.image}
                     alt={ticket.event.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '20px 20px 0 0' }}
                   />
                   <div
                     style={{
@@ -270,12 +270,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       position: 'absolute',
                       top: '10px',
                       left: '12px',
-                      background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-                      borderRadius: '6px',
+                      background: 'rgba(123,47,190,0.15)',
+                      border: '1px solid #7B2FBE',
+                      borderRadius: '100px',
                       padding: '3px 8px',
                     }}
                   >
-                    <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>
+                    <span style={{ color: '#C084FC', fontSize: '10px', fontWeight: 700 }}>
                       {ticket.ticketType.name.toUpperCase()}
                     </span>
                   </div>
@@ -293,8 +294,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       gap: '5px',
                     }}
                   >
-                    <QrCode size={13} color="#A78BFA" />
-                    <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600 }}>
+                    <QrCode size={13} color="#7B2FBE" />
+                    <span style={{ color: '#7B2FBE', fontSize: '14px', fontWeight: 600 }}>
                       View QR
                     </span>
                   </div>
@@ -304,8 +305,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 <div style={{ padding: '14px' }}>
                   <h3
                     style={{
-                      color: '#F0F0FF',
-                      fontSize: '15px',
+                      color: '#FFFFFF',
+                      fontSize: '16px',
                       fontWeight: 700,
                       marginBottom: '8px',
                     }}
@@ -314,14 +315,14 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   </h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Calendar size={12} color="#8B8FA8" />
-                      <span style={{ color: '#C4C9E0', fontSize: '12px' }}>
+                      <Calendar size={12} color="#94A3B8" />
+                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
                         {ticket.event.date} · {ticket.event.time}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <MapPin size={12} color="#8B8FA8" />
-                      <span style={{ color: '#C4C9E0', fontSize: '12px' }}>
+                      <MapPin size={12} color="#94A3B8" />
+                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
                         {ticket.event.venue}, {ticket.event.city}
                       </span>
                     </div>
@@ -334,15 +335,15 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       justifyContent: 'space-between',
                       alignItems: 'center',
                       paddingTop: '10px',
-                      borderTop: '1px solid rgba(255,255,255,0.06)',
+                      borderTop: '1px dashed rgba(255,255,255,0.1)',
                     }}
                   >
                     <div>
-                      <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
                         {ticket.quantity} × {ticket.ticketType.name}
                       </span>
                     </div>
-                    <span style={{ color: '#FFB830', fontSize: '15px', fontWeight: 800 }}>
+                    <span style={{ color: '#94A3B8', fontSize: '14px' }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
