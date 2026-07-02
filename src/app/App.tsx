@@ -476,7 +476,7 @@ export default function App() {
           setActiveTab('home');
         }
       } else {
-        setScreen('home');
+        setScreen('welcome');
       }
     }
   }, [screen, splashMinTimePassed, authLoading, currentUser]);
@@ -1307,6 +1307,10 @@ export default function App() {
                 setPendingSignup(true);
                 setAuthMode('signup');
                 navigateTo('role-select');
+              }}
+              onBrowseGuest={() => {
+                setScreen('home');
+                setActiveTab('home');
               }}
             />
           )}

@@ -6,6 +6,7 @@ interface WelcomeScreenProps {
   onGetStarted: () => void;
   onSignIn: () => void;
   onPickState?: () => void;
+  onBrowseGuest?: () => void;
 }
 
 const SLIDES = [
@@ -15,7 +16,7 @@ const SLIDES = [
   'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800&fit=crop&crop=center',
 ];
 
-export function WelcomeScreen({ onGetStarted, onSignIn, onPickState }: WelcomeScreenProps) {
+export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGuest }: WelcomeScreenProps) {
   const [slide, setSlide] = useState(0);
   const [fading, setFading] = useState(false);
 
@@ -178,6 +179,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState }: WelcomeSc
           Already have an account?{' '}
           <span style={{ color: '#A855F7', fontWeight: 600 }}>Sign in</span>
         </button>
+
+        {/* Browse as guest */}
+        {onBrowseGuest && (
+          <button
+            onClick={onBrowseGuest}
+            style={{ background: 'none', border: 'none', color: '#888', fontSize: 13, textDecoration: 'underline', marginTop: 16, cursor: 'pointer', textAlign: 'center' }}
+          >
+            Browse as guest
+          </button>
+        )}
 
         {/* Footer */}
         <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px' }}>
