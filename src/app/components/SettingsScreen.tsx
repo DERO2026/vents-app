@@ -33,7 +33,7 @@ function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void 
         width: '44px',
         height: '26px',
         borderRadius: '13px',
-        background: on ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2A2D3E',
+        background: on ? '#7B2FBE' : '#1A1625',
         cursor: 'pointer',
         position: 'relative',
         transition: 'background 0.25s ease',
@@ -93,24 +93,24 @@ function SettingRow({
           width: '36px',
           height: '36px',
           borderRadius: '10px',
-          background: danger ? 'rgba(239,68,68,0.1)' : accent ? 'rgba(168,85,247,0.1)' : 'rgba(255,255,255,0.05)',
+          background: danger ? 'rgba(239,68,68,0.1)' : 'rgba(123,47,190,0.15)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           flexShrink: 0,
         }}
       >
-        <Icon size={17} color={danger ? '#EF4444' : accent ? '#A855F7' : '#C4C9E0'} />
+        <Icon size={17} color={danger ? '#EF4444' : '#7B2FBE'} />
       </div>
-      <span style={{ flex: 1, color: danger ? '#EF4444' : '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>
+      <span style={{ flex: 1, color: danger ? '#EF4444' : '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>
         {label}
       </span>
       {typeof toggle === 'boolean' && onToggle ? (
         <Toggle on={toggle} onChange={onToggle} />
       ) : value ? (
-        <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{value}</span>
+        <span style={{ color: '#94A3B8', fontSize: '13px' }}>{value}</span>
       ) : onPress ? (
-        <ChevronRight size={16} color="#8B8FA8" />
+        <ChevronRight size={16} color="#94A3B8" />
       ) : null}
     </div>
   );
@@ -119,10 +119,10 @@ function SettingRow({
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: '8px' }}>
-      <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.08em', marginBottom: '2px', paddingLeft: '4px' }}>
+      <p style={{ color: '#94A3B8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.5px', textTransform: 'uppercase', marginBottom: '2px', paddingLeft: '4px' }}>
         {title}
       </p>
-      <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '0 14px' }}>
+      <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '0 14px' }}>
         {children}
       </div>
     </div>
@@ -952,7 +952,7 @@ export function SettingsScreen({
   const displayEmail = currentUser?.email || '';
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
@@ -961,13 +961,13 @@ export function SettingsScreen({
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Settings</h1>
+        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700 }}>Settings</h1>
       </div>
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
         {/* Profile card — shows avatar if available */}
-        <div style={{ background: '#0D0D1A', border: '1px solid rgba(168,85,247,0.1)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(168,85,247,0.1)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
           <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 0 16px rgba(168,85,247,0.3)' }}>
             {(currentUser as any)?.avatar_url ? (
               <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -1044,8 +1044,8 @@ export function SettingsScreen({
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Camera size={16} color="#fff" />
             </div>
-            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Instagram</span>
-            <ChevronRight size={16} color="#555C7A" />
+            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on Instagram</span>
+            <ChevronRight size={16} color="#94A3B8" />
           </div>
           <Divider />
           {/* Twitter/X */}
@@ -1056,8 +1056,8 @@ export function SettingsScreen({
             <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ color: '#fff', fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>X</span>
             </div>
-            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on Twitter/X</span>
-            <ChevronRight size={16} color="#555C7A" />
+            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on Twitter/X</span>
+            <ChevronRight size={16} color="#94A3B8" />
           </div>
           <Divider />
           {/* TikTok */}
@@ -1069,16 +1069,16 @@ export function SettingsScreen({
               <Music size={16} color="#fff" />
               <span style={{ position: 'absolute', bottom: '4px', right: '4px', width: '7px', height: '7px', borderRadius: '50%', background: '#69C9D0', border: '1px solid #000' }} />
             </div>
-            <span style={{ flex: 1, color: '#F0F0FF', fontSize: '15px', fontWeight: 500 }}>Follow on TikTok</span>
-            <ChevronRight size={16} color="#555C7A" />
+            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on TikTok</span>
+            <ChevronRight size={16} color="#94A3B8" />
           </div>
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <div style={{ background: '#131629', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '16px', padding: '0 14px' }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
           </div>
-          <div style={{ background: '#131629', border: '1px solid rgba(239,68,68,0.15)', borderRadius: '16px', padding: '0 14px' }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
           </div>
         </div>
