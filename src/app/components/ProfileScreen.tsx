@@ -156,22 +156,26 @@ export function ProfileScreen({
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: '#8B8FA8', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
-        <div style={{ fontSize: '17px', fontWeight: 600, color: '#fff' }}>Sign in to view your profile</div>
-        <div style={{ fontSize: '14px', color: '#8B8FA8', maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: '#FFFFFF' }}>Sign in to view your profile</div>
+        <div style={{ fontSize: '14px', color: '#94A3B8', maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
         <button
           onClick={() => onNavigate('auth')}
           style={{
             marginTop: '8px',
-            padding: '13px 28px',
+            width: '100%',
+            maxWidth: '280px',
+            height: '52px',
+            padding: '0 28px',
             background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
-            borderRadius: '14px',
+            borderRadius: '100px',
             color: '#fff',
             fontSize: '15px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: 'pointer',
+            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
           }}
         >
           Sign In / Create Account
@@ -253,7 +257,7 @@ export function ProfileScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#060A12', position: 'relative' }}
+      style={{ background: '#020005', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -334,6 +338,8 @@ export function ProfileScreen({
                   style={{
                     background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
                     boxShadow: '0 8px 24px rgba(123,47,190,0.4)',
+                    border: '2px solid #7B2FBE',
+                    boxSizing: 'border-box',
                   }}
                 >
                   {currentUser?.avatar_url ? (
@@ -355,8 +361,8 @@ export function ProfileScreen({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <h2
                     style={{
-                      color: '#F0F0FF',
-                      fontSize: '17px',
+                      color: '#FFFFFF',
+                      fontSize: '20px',
                       fontWeight: 700,
                       fontFamily: 'Space Grotesk, sans-serif',
                       margin: 0,
@@ -394,7 +400,7 @@ export function ProfileScreen({
             </div>
 
             {/* Stats tab bar — role-specific */}
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none', background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '10px' }}>
               {(isAdmin ? [
                 { label: 'Events', value: eventsCreated, onClick: () => onNavigate('manage-events') },
                 { label: 'Saved', value: savedCount, onClick: () => onNavigate('saved') },
@@ -419,15 +425,15 @@ export function ProfileScreen({
                     minWidth: '72px',
                     textAlign: 'center',
                     padding: '10px 6px',
-                    background: 'rgba(255,255,255,0.05)',
+                    background: 'transparent',
                     borderRadius: '12px',
                     cursor: 'pointer',
                   }}
                 >
-                  <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+                  <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
                     {stat.value}
                   </p>
-                  <p style={{ color: '#8B8FA8', fontSize: '10px', marginTop: '2px', margin: 0 }}>
+                  <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '2px', margin: 0, textTransform: 'uppercase' }}>
                     {stat.label}
                   </p>
                 </div>
@@ -521,7 +527,7 @@ export function ProfileScreen({
         <div className="px-4 mb-4">
           <div
             style={{
-              background: '#131629',
+              background: '#090514',
               borderRadius: '16px',
               border: '1px solid rgba(255,255,255,0.05)',
               overflow: 'hidden',
@@ -544,15 +550,15 @@ export function ProfileScreen({
                 >
                   <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${item.color}15` }}
+                    style={{ background: 'rgba(123,47,190,0.15)' }}
                   >
-                    <Icon size={17} color={item.color} />
+                    <Icon size={17} color="#7B2FBE" />
                   </div>
                   <div className="flex-1">
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>
+                    <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>
                       {item.label}
                     </p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{item.sublabel}</p>
+                    <p style={{ color: '#94A3B8', fontSize: '12px' }}>{item.sublabel}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {item.badge && (
@@ -572,7 +578,7 @@ export function ProfileScreen({
                         </span>
                       </div>
                     )}
-                    <ChevronRight size={15} color="#8B8FA8" />
+                    <ChevronRight size={15} color="#94A3B8" />
                   </div>
                 </button>
               );
@@ -681,9 +687,9 @@ export function ProfileScreen({
             onClick={onSignOut}
             className="w-full flex items-center justify-center gap-2 p-4"
             style={{
-              background: 'rgba(239,68,68,0.07)',
+              background: 'rgba(239,68,68,0.1)',
               borderRadius: '14px',
-              border: '1px solid rgba(239,68,68,0.14)',
+              border: '1px solid rgba(239,68,68,0.2)',
               cursor: 'pointer',
             }}
           >
