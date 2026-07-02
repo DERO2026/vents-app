@@ -230,9 +230,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
     const reference = `VENTS_${Date.now()}_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
+    const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY;
+    console.log('[PAYSTACK REQUEST DEBUG]', JSON.stringify({ key: publicKey?.substring(0, 15), email: payerEmail, amount: amountKobo, currency: 'NGN', ref: reference }));
+
     try {
       const handler = PaystackPop.setup({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY,
+        key: publicKey,
         email: payerEmail,
         amount: amountKobo,
         currency: 'NGN',
