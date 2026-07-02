@@ -21,7 +21,7 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#F0F0FF',
+  color: '#FFFFFF',
   fontSize: '14px',
   fontFamily: 'Inter, sans-serif',
 };
@@ -104,15 +104,16 @@ function Field({
 }) {
   return (
     <div style={{ width: '100%', minWidth: 0 }}>
-      <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>{label}</p>
+      <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#131629',
-          border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.08)'}`,
-          borderRadius: '12px',
-          padding: '12px 14px',
+          background: '#090514',
+          border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
+          borderRadius: '16px',
+          height: '52px',
+          padding: '0 14px',
           gap: '10px',
           width: '100%',
           boxSizing: 'border-box',
@@ -277,7 +278,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -306,16 +307,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Checkout</h1>
+        <h1 style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
       </div>
 
       <div style={{ flex: 1, padding: '4px 16px 140px' }}>
         {/* Order mini summary */}
         <div
           style={{
-            background: '#131629',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '16px',
+            background: '#090514',
+            border: '1px solid rgba(255,255,255,0.05)',
+            borderRadius: '24px',
             padding: '14px',
             marginBottom: '20px',
             display: 'flex',
@@ -325,15 +326,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         >
           <img src={event.image} alt="" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{event.title}</p>
+            <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
             <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
           </div>
-          <p style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800 }}>{formatPrice(subtotal)}</p>
+          <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
         </div>
 
         {/* Attendee info */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
             <Field
@@ -348,7 +349,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
             {/* Phone with country code */}
             <div>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Phone Number</p>
+              <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number</p>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={() => setShowCountryPicker(true)}
@@ -356,16 +357,18 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     display: 'flex',
                     alignItems: 'center',
                     gap: '6px',
-                    background: '#131629',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '12px',
-                    padding: '12px 10px',
+                    background: '#090514',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '16px',
+                    height: '52px',
+                    padding: '0 10px',
                     cursor: 'pointer',
                     flexShrink: 0,
+                    boxSizing: 'border-box',
                   }}
                 >
                   <span style={{ fontSize: '16px' }}>{selectedCountry.flag}</span>
-                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500 }}>{selectedCountry.code}</span>
+                  <span style={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 500 }}>{selectedCountry.code}</span>
                   <ChevronDown size={12} color="#8B8FA8" />
                 </button>
                 <div
@@ -373,10 +376,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     flex: 1,
                     display: 'flex',
                     alignItems: 'center',
-                    background: '#131629',
-                    border: '1px solid rgba(255,255,255,0.08)',
-                    borderRadius: '12px',
-                    padding: '12px 14px',
+                    background: '#090514',
+                    border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '16px',
+                    height: '52px',
+                    padding: '0 14px',
+                    boxSizing: 'border-box',
                   }}
                 >
                   <input
@@ -393,8 +398,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </div>
 
         {/* Payment method */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Payment Method</p>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Payment Method</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
             {payMethods.map((pm) => {
               const Icon = pm.icon;
@@ -407,8 +412,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
-                    background: isActive ? 'rgba(124,58,237,0.1)' : 'transparent',
-                    border: isActive ? '1.5px solid rgba(124,58,237,0.45)' : '1px solid rgba(255,255,255,0.07)',
+                    background: isActive ? 'rgba(123,47,190,0.1)' : '#090514',
+                    border: isActive ? '1px solid #7B2FBE' : '1px solid rgba(255,255,255,0.07)',
                     borderRadius: '12px',
                     padding: '12px',
                     cursor: 'pointer',
@@ -420,7 +425,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     <Icon size={18} color={isActive ? '#A78BFA' : '#8B8FA8'} />
                   </div>
                   <div>
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{pm.label}</p>
+                    <p style={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 600 }}>{pm.label}</p>
                     <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{pm.desc}</p>
                   </div>
                   <div style={{ marginLeft: 'auto', width: '18px', height: '18px', borderRadius: '50%', border: isActive ? 'none' : '2px solid rgba(255,255,255,0.2)', background: isActive ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'transparent' }} />
@@ -643,27 +648,27 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </div>
 
         {/* Order breakdown */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
           <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{ticketType.name} × {quantity}</span>
-              <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{formatPrice(subtotal)}</span>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Service fee (5%)</span>
-              <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{formatPrice(serviceFee)}</span>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>Service fee (5%)</span>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#10B981', fontSize: '13px' }}>Promo (10% off)</span>
-                <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
+                <span style={{ color: '#10B981', fontSize: '14px' }}>Promo (10% off)</span>
+                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
               </div>
             )}
-            <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '4px 0' }} />
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Total</span>
-              <span style={{ color: '#FFB830', fontSize: '18px', fontWeight: 800 }}>{formatPrice(total)}</span>
+              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Total</span>
+              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>{formatPrice(total)}</span>
             </div>
           </div>
         </div>
@@ -723,16 +728,18 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           disabled={paymentLoading}
           style={{
             width: '100%',
-            background: paymentLoading ? 'rgba(123,47,190,0.4)' : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+            height: '52px',
+            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
-            borderRadius: '16px',
-            padding: '15px',
+            borderRadius: '100px',
+            padding: '0 24px',
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: paymentLoading ? 'not-allowed' : 'pointer',
-            boxShadow: paymentLoading ? 'none' : '0 6px 24px rgba(123,47,190,0.45), 0 0 0 1px rgba(168,85,247,0.4), 0 0 20px rgba(168,85,247,0.3)',
+            opacity: paymentLoading ? 0.6 : 1,
+            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -751,11 +758,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </>
           )}
         </button>
-        <p style={{ fontSize: '11px', color: '#555C7A', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
+        <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
           By purchasing you agree to our{' '}
-          <span onClick={() => window.open('https://getvents.com/refunds', '_blank')} style={{ color: '#7B2FF7', cursor: 'pointer' }}>Refund Policy</span>
+          <span onClick={() => window.open('https://getvents.com/refunds', '_blank')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>
           {' '}and{' '}
-          <span onClick={() => window.open('https://getvents.com/terms', '_blank')} style={{ color: '#7B2FF7', cursor: 'pointer' }}>Terms of Service</span>
+          <span onClick={() => window.open('https://getvents.com/terms', '_blank')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
         </p>
       </div>
 
