@@ -155,18 +155,18 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
     <div style={{ textAlign: 'center' }}>
       <div
         style={{
-          background: 'rgba(168,85,247,0.12)',
+          background: '#090514',
           border: '1px solid rgba(168,85,247,0.2)',
-          borderRadius: '10px',
+          borderRadius: '12px',
           padding: '8px 12px',
           minWidth: '50px',
         }}
       >
-        <span style={{ color: '#A855F7', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <span style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
           {String(value).padStart(2, '0')}
         </span>
       </div>
-      <span style={{ color: '#8B8FA8', fontSize: '10px', display: 'block', marginTop: '4px' }}>
+      <span style={{ color: '#94A3B8', fontSize: '10px', display: 'block', marginTop: '4px' }}>
         {label}
       </span>
     </div>
@@ -365,7 +365,7 @@ export function EventDetailsScreen({
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -400,7 +400,7 @@ export function EventDetailsScreen({
           style={{
             position: 'absolute',
             inset: 0,
-            background: 'linear-gradient(to bottom, rgba(6,10,18,0.35) 0%, transparent 30%, rgba(6,10,18,1) 100%)',
+            background: 'linear-gradient(to top, #020005 0%, transparent 100%)',
           }}
         />
 
@@ -419,7 +419,7 @@ export function EventDetailsScreen({
           <button
             onClick={onBack}
             style={{
-              background: 'rgba(0,0,0,0.45)',
+              background: 'rgba(0,0,0,0.5)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255,255,255,0.15)',
               borderRadius: '50%',
@@ -437,7 +437,7 @@ export function EventDetailsScreen({
             <button
               onClick={handleShare}
               style={{
-                background: 'rgba(0,0,0,0.45)',
+                background: 'rgba(0,0,0,0.5)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.15)',
                 borderRadius: '50%',
@@ -454,7 +454,7 @@ export function EventDetailsScreen({
             <button
               onClick={onToggleSave}
               style={{
-                background: 'rgba(0,0,0,0.45)',
+                background: 'rgba(0,0,0,0.5)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.15)',
                 borderRadius: '50%',
@@ -476,7 +476,7 @@ export function EventDetailsScreen({
               <button
                 onClick={() => setShowReport(true)}
                 style={{
-                  background: 'rgba(0,0,0,0.45)',
+                  background: 'rgba(0,0,0,0.5)',
                   backdropFilter: 'blur(10px)',
                   border: '1px solid rgba(255,255,255,0.15)',
                   borderRadius: '50%',
@@ -500,12 +500,13 @@ export function EventDetailsScreen({
             position: 'absolute',
             bottom: '16px',
             left: '16px',
-            background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-            borderRadius: '8px',
+            background: 'rgba(123,47,190,0.15)',
+            border: '1px solid #7B2FBE',
+            borderRadius: '100px',
             padding: '4px 10px',
           }}
         >
-          <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700, letterSpacing: '0.05em' }}>
+          <span style={{ color: '#C084FC', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
             {event.category.toUpperCase()}
           </span>
         </div>
@@ -517,10 +518,11 @@ export function EventDetailsScreen({
         <div style={{ marginBottom: '12px' }}>
           <h1
             style={{
-              color: '#F0F0FF',
-              fontSize: '22px',
-              fontWeight: 800,
-              fontFamily: 'Space Grotesk, sans-serif',
+              color: '#FFFFFF',
+              fontSize: '24px',
+              fontWeight: 700,
+              fontFamily: 'Outfit, sans-serif',
+              letterSpacing: '-0.5px',
               lineHeight: 1.25,
               marginBottom: '8px',
             }}
@@ -554,10 +556,10 @@ export function EventDetailsScreen({
               key={label}
               style={{
                 flex: 1,
-                background: '#131629',
+                background: '#090514',
                 border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '14px',
-                padding: '12px',
+                borderRadius: '20px',
+                padding: '16px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: '10px',
@@ -579,7 +581,7 @@ export function EventDetailsScreen({
               </div>
               <div>
                 <div style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>{label}</div>
-                <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{value}</div>
+                <div style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>{value}</div>
               </div>
             </div>
           ))}
@@ -588,10 +590,10 @@ export function EventDetailsScreen({
         {/* Location */}
         <div
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '14px',
-            padding: '12px',
+            borderRadius: '20px',
+            padding: '16px',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
@@ -613,10 +615,10 @@ export function EventDetailsScreen({
             <MapPin size={16} color="#A855F7" />
           </div>
           <div>
-            <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
+            <div style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600 }}>
               {event.venue}
             </div>
-            <div style={{ color: '#8B8FA8', fontSize: '12px' }}>
+            <div style={{ color: '#94A3B8', fontSize: '12px' }}>
               {event.area}, {event.city}, {event.state}
             </div>
           </div>
@@ -694,10 +696,10 @@ export function EventDetailsScreen({
         {/* Capacity */}
         <div
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '14px',
-            padding: '14px',
+            borderRadius: '20px',
+            padding: '16px',
             marginBottom: '16px',
           }}
         >
@@ -779,7 +781,7 @@ export function EventDetailsScreen({
           )}
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>
+              <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
                 {organizerProfile?.full_name || event.organizer}
               </span>
               {(event.organizerVerified || organizerProfile?.is_verified) && (
@@ -923,14 +925,14 @@ export function EventDetailsScreen({
 
         {/* Description */}
         <div style={{ marginBottom: '16px' }}>
-          <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '8px' }}>
+          <span style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
             About
           </span>
           <p
             style={{
-              color: '#C4C9E0',
+              color: '#94A3B8',
               fontSize: '14px',
-              lineHeight: 1.7,
+              lineHeight: 1.5,
               overflow: 'hidden',
               display: '-webkit-box',
               WebkitLineClamp: expanded ? 'unset' : 3,
@@ -1232,9 +1234,9 @@ export function EventDetailsScreen({
           bottom: 0,
           left: 0,
           right: 0,
-          background: 'rgba(6,10,18,0.95)',
+          background: 'rgba(2,0,5,0.85)',
           backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255,255,255,0.08)',
+          borderTop: '1px solid rgba(255,255,255,0.07)',
           padding: '14px 16px 24px',
           display: 'flex',
           alignItems: 'center',
@@ -1242,8 +1244,8 @@ export function EventDetailsScreen({
         }}
       >
         <div>
-          <div style={{ color: '#8B8FA8', fontSize: '11px' }}>From</div>
-          <div style={{ color: '#FFB830', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+          <div style={{ color: '#94A3B8', fontSize: '12px', textTransform: 'uppercase' }}>From</div>
+          <div style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
             {formatPrice(lowestPrice)}
           </div>
         </div>
@@ -1264,17 +1266,17 @@ export function EventDetailsScreen({
             background: isBooked
               ? 'rgba(16,185,129,0.12)'
               : canBook
-              ? '#7B2FF7'
+              ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
               : '#1A1D2E',
             border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
             borderRadius: '16px',
-            padding: '15px',
+            padding: '14px 28px',
             color: isBooked ? '#10B981' : canBook ? '#fff' : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: isBooked || !canBook ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !isBooked ? '0 6px 24px rgba(123,47,247,0.4)' : 'none',
+            boxShadow: canBook && !isBooked ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
