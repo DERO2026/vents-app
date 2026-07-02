@@ -160,10 +160,11 @@ export function ExploreScreen({
 
   return (
     <div
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12', position: 'relative' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
+      <style>{`input::placeholder { color: #94A3B8; }`}</style>
       {pullRefreshing && (
         <div style={{
           position: 'fixed', top: '50%', left: '50%',
@@ -179,25 +180,25 @@ export function ExploreScreen({
       )}
       {/* ── Header ── */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           Messages
         </h1>
       </div>
 
       {/* ── Search bar ── */}
       <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '10px 14px' }}>
-          <Search size={16} color="#8B8FA8" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', height: '48px', padding: '0 14px', boxSizing: 'border-box' }}>
+          <Search size={16} color="#94A3B8" />
           <input
             ref={searchRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search people and messages..."
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
           />
           {query && (
             <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-              <X size={15} color="#8B8FA8" />
+              <X size={15} color="#94A3B8" />
             </button>
           )}
         </div>
@@ -224,26 +225,26 @@ export function ExploreScreen({
                       <div
                         key={u.id}
                         onClick={() => onUserPress(u)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', cursor: 'pointer', background: 'rgba(255,255,255,0.02)' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: '#090514' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.name}</span>
+                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{u.name}</span>
                             {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" />}
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#8B8FA8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
                         <button
                           onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
                           style={{
-                            background: following.includes(u.id) ? 'rgba(167,139,250,0.12)' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
-                            border: following.includes(u.id) ? '1px solid rgba(167,139,250,0.3)' : 'none',
-                            borderRadius: '20px', padding: '5px 12px',
-                            color: following.includes(u.id) ? '#A78BFA' : '#fff',
+                            background: following.includes(u.id) ? 'transparent' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
+                            border: following.includes(u.id) ? '1px solid rgba(255,255,255,0.15)' : 'none',
+                            borderRadius: '100px', padding: '5px 12px',
+                            color: following.includes(u.id) ? '#94A3B8' : '#FFFFFF',
                             fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
                           }}
                         >{following.includes(u.id) ? 'Subscribed' : 'Subscribe'}</button>
@@ -271,12 +272,12 @@ export function ExploreScreen({
               ) : filteredConvos.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
                   <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={28} color="#6B7280" />
+                    <MessageCircle size={28} color="#94A3B8" />
                   </div>
-                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>
+                  <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 700, margin: 0 }}>
                     {isSearching ? 'No matching messages' : 'No conversations yet'}
                   </p>
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>
+                  <p style={{ color: '#94A3B8', fontSize: '14px', margin: 0 }}>
                     {isSearching ? 'Try a different search term' : 'Message an organizer or attendee to start'}
                   </p>
                 </div>
@@ -291,26 +292,26 @@ export function ExploreScreen({
                       <div
                         key={partnerId}
                         onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '14px', cursor: 'pointer', background: isUnread ? 'rgba(167,139,250,0.05)' : 'transparent' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '0', cursor: 'pointer', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
                       >
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
                           {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                              <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: isUnread ? 700 : 500 }}>{name}</span>
+                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{name}</span>
                               <BadgeChip tier={profile?.vc_badge} />
                             </div>
-                            <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                            <span style={{ color: '#94A3B8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                           </div>
-                          <span style={{ color: isUnread ? '#C4C9E0' : '#8B8FA8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: '#94A3B8', fontSize: '13px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
                           </span>
                         </div>
                         {isUnread && (
-                          <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 5px' }}>
-                            <span style={{ color: '#fff', fontSize: '11px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
+                            <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                           </div>
                         )}
                       </div>
