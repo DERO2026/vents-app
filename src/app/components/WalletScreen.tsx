@@ -120,7 +120,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const totalEarned = wallet?.total_earned_kobo ?? 0;
 
   return (
-    <div style={{ background: '#0D0E1A', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
+    <div style={{ background: '#020005', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
@@ -136,7 +136,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       ) : (
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
           {/* Balance card */}
-          <div style={{ background: 'linear-gradient(135deg,#4F46E5,#7C3AED,#A855F7)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
+          <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
               <Wallet size={18} color="rgba(255,255,255,0.7)" />
               <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>Available Balance</span>
@@ -152,7 +152,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
             <button
               onClick={() => setShowWithdraw(true)}
-              style={{ flex: 1, background: balance > 0 ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '14px', padding: '14px', cursor: balance > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              style={{ flex: 1, background: balance > 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '100px', padding: '14px', cursor: balance > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               disabled={balance === 0}
             >
               <ArrowDownCircle size={18} color={balance > 0 ? '#A855F7' : '#555'} />

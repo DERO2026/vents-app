@@ -116,7 +116,7 @@ export function OrganizerDashboard({
     return (
       <div
         style={{
-          background: '#060A12',
+          background: '#020005',
           width: '100%',
           height: '100%',
           minHeight: '100vh',
@@ -156,7 +156,7 @@ export function OrganizerDashboard({
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         minHeight: '100vh',
@@ -211,11 +211,14 @@ export function OrganizerDashboard({
             </button>
           )}
           <div>
+            <p style={{ color: '#94A3B8', fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
+              {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
+            </p>
             <h1
               style={{
-                color: '#F0F0FF',
-                fontSize: '20px',
-                fontWeight: 800,
+                color: '#FFFFFF',
+                fontSize: '24px',
+                fontWeight: 700,
                 fontFamily: 'Space Grotesk, sans-serif',
                 margin: 0,
                 letterSpacing: '-0.02em',
@@ -223,9 +226,6 @@ export function OrganizerDashboard({
             >
               Creator Studio
             </h1>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0', fontWeight: 500 }}>
-              {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
-            </p>
           </div>
         </div>
 
@@ -263,9 +263,9 @@ export function OrganizerDashboard({
           {/* Card 1: Total Revenue */}
           <div
             style={{
-              background: '#131629',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '16px',
+              background: '#090514',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '20px',
               padding: '20px 16px',
               position: 'relative',
               overflow: 'hidden',
@@ -296,10 +296,10 @@ export function OrganizerDashboard({
             >
               <DollarSign size={18} color="#10B981" />
             </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Total Revenue
             </span>
-            <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {formatPrice(revenue)}
             </span>
           </div>
@@ -307,9 +307,9 @@ export function OrganizerDashboard({
           {/* Card 2: Tickets Sold */}
           <div
             style={{
-              background: '#131629',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '16px',
+              background: '#090514',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '20px',
               padding: '20px 16px',
               position: 'relative',
               overflow: 'hidden',
@@ -340,10 +340,10 @@ export function OrganizerDashboard({
             >
               <Ticket size={18} color="#4F46E5" />
             </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Tickets Sold
             </span>
-            <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {ticketsSold}
             </span>
           </div>
@@ -351,9 +351,9 @@ export function OrganizerDashboard({
           {/* Card 3: Followers */}
           <div
             style={{
-              background: '#131629',
-              border: '1px solid rgba(255, 255, 255, 0.06)',
-              borderRadius: '16px',
+              background: '#090514',
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '20px',
               padding: '20px 16px',
               position: 'relative',
               overflow: 'hidden',
@@ -384,10 +384,10 @@ export function OrganizerDashboard({
             >
               <Users size={18} color="#A855F7" />
             </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500, marginBottom: '6px' }}>
+            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Followers
             </span>
-            <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {followers}
             </span>
           </div>
@@ -395,7 +395,7 @@ export function OrganizerDashboard({
 
         {/* ── Tickets Sold vs Goal Chart ──────────────────────────────────── */}
         {chartData.length > 0 && (
-          <div style={{ background: '#131629', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.06)', padding: '20px', marginBottom: '28px' }}>
+          <div style={{ background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h3 style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Tickets Sold vs Goal</h3>
@@ -416,8 +416,14 @@ export function OrganizerDashboard({
             </div>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={chartData} barGap={4} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
-                <XAxis dataKey="name" tick={{ fill: '#8B8FA8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#8B8FA8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <defs>
+                  <linearGradient id="orgDashBarGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#7B2FBE" />
+                    <stop offset="100%" stopColor="#4F46E5" />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
                   contentStyle={{ background: '#0F1322', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
                   labelStyle={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '4px' }}
@@ -430,7 +436,7 @@ export function OrganizerDashboard({
                       key={idx}
                       fill={entry.sold >= entry.goal
                         ? '#10B981'  // green = hit goal
-                        : entry.sold > 0 ? '#A78BFA' : 'rgba(167,139,250,0.3)'  // purple or empty
+                        : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty
                       }
                     />
                   ))}
@@ -447,11 +453,11 @@ export function OrganizerDashboard({
             onClick={() => onManageEvents?.()}
             style={{
               flex: 1,
-              background: 'transparent',
-              border: '1px solid #7B2FF7',
-              borderRadius: '12px',
+              background: 'rgba(123,47,190,0.15)',
+              border: 'none',
+              borderRadius: '100px',
               padding: '10px 20px',
-              color: '#7B2FF7',
+              color: '#C084FC',
               fontFamily: 'Space Grotesk, sans-serif',
               fontSize: '14px',
               fontWeight: 700,
@@ -567,8 +573,8 @@ export function OrganizerDashboard({
                       key={event.id}
                       onClick={() => onEventPress?.(event)}
                       style={{
-                        background: '#131629',
-                        border: '1px solid rgba(255,255,255,0.06)',
+                        background: '#090514',
+                        border: '1px solid rgba(255,255,255,0.05)',
                         borderRadius: '16px',
                         padding: '16px',
                         display: 'flex',
@@ -597,10 +603,10 @@ export function OrganizerDashboard({
                           </span>
                           <span style={{ color: '#8B8FA8', fontSize: '10px' }}>{event.category}</span>
                         </div>
-                        <h4 style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
+                        <h4 style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
                           {event.title}
                         </h4>
-                        <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }} className="truncate">
+                        <p style={{ color: '#94A3B8', fontSize: '12px', margin: 0 }} className="truncate">
                           {dateStr} • {event.location || 'Lagos, Nigeria'}
                         </p>
                       </div>
@@ -674,8 +680,8 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#131629',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: '#090514',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
                 }}
@@ -731,8 +737,8 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#131629',
-                  border: '1px solid rgba(255, 255, 255, 0.06)',
+                  background: '#090514',
+                  border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
                 }}
@@ -787,8 +793,8 @@ export function OrganizerDashboard({
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '64px 20px',
-                background: '#131629',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
+                background: '#090514',
+                border: '1px solid rgba(255, 255, 255, 0.05)',
                 borderRadius: '20px',
                 textAlign: 'center',
               }}
