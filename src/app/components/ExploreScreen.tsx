@@ -66,7 +66,7 @@ export function ExploreScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 120 && !pullRefreshing) {
+    if (dy > 200 && !pullRefreshing) {
       setPullRefreshing(true);
       setLocalRefreshKey(k => k + 1);
       setTimeout(() => setPullRefreshing(false), 800);

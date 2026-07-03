@@ -75,9 +75,8 @@ export function UserProfileScreen({
       .from('events')
       .select('id, title, event_date, image_url, category, price, status')
       .eq('organizer_id', user.id)
-      .in('status', ['live', 'published'])
-      .gt('event_date', new Date().toISOString())
-      .order('event_date', { ascending: true })
+      .in('status', ['live', 'published', 'approved'])
+      .order('event_date', { ascending: false })
       .limit(6)
       .then(({ data }) => setUserEvents(data || []));
   }, [user.id]);
@@ -605,7 +604,7 @@ export function UserProfileScreen({
             )}
           </div>
 
-          {!isOwnProfile && currentUserId && !reviewSubmitted && hasTicketFromOrganizer && (
+          {!isOwnProfile && currentUserId && !reviewSubmitted && (
             <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '12px' }}>
               <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>Leave a Review</p>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>

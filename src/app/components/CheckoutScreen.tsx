@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, CreditCard, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
-import { openPaystackPopup } from '../../lib/paystack';
+import { openPaystackPopup, calculatePaystackFee } from '../../lib/paystack';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -144,7 +144,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
   const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
-  const total = Math.max(0, subtotal + serviceFee - discount);
+  const preFeeTotal = Math.max(0, subtotal + serviceFee - discount);
+  const paystackFee = calculatePaystackFee(preFeeTotal);
+  const total = preFeeTotal + paystackFee;
 
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
@@ -485,6 +487,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
               </div>
             )}
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>Paystack processing fee</span>
+              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(paystackFee)}</span>
+            </div>
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Total</span>
