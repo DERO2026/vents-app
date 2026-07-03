@@ -44,7 +44,8 @@ export interface OpenPaystackOptions {
  * The Paystack inline script is loaded via index.html.
  */
 export function openPaystackPopup(opts: OpenPaystackOptions): void {
-  const publicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined;
+  const rawKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined) || '';
+  const publicKey = rawKey.replace(/^\uFEFF/, '').trim();
 
   if (!publicKey) {
     console.error('[Paystack] VITE_PAYSTACK_PUBLIC_KEY is not set.');
