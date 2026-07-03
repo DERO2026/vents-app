@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, CreditCard, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react';
+import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup, calculatePaystackFee } from '../../lib/paystack';
@@ -12,8 +12,6 @@ interface CheckoutScreenProps {
   onBack: () => void;
   onSuccess: (ticket: PurchasedTicket) => void;
 }
-
-type PayMethod = 'card' | 'ussd';
 
 const INPUT_STYLE: React.CSSProperties = {
   flex: 1,
@@ -133,11 +131,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [payMethod, setPayMethod] = useState<PayMethod>('card');
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [saveCard, setSaveCard] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
@@ -151,11 +147,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
-
-  const payMethods: { id: PayMethod; label: string; icon: React.ElementType; desc: string }[] = [
-    { id: 'card', label: 'Debit/Credit Card', icon: CreditCard, desc: 'Visa, Mastercard, Verve' },
-    { id: 'ussd', label: 'USSD', icon: Smartphone, desc: 'Dial from any phone' },
-  ];
 
   const handleFreeTicket = () => {
     const ticket: PurchasedTicket = {
@@ -216,7 +207,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         currency: 'NGN',
         ref: reference,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
-        channels: saveCard ? ['card'] : ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
         metadata: {
           event_id: event.id,
           event_title: event.title,
@@ -383,71 +374,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
         </div>
 
-        {/* Payment method */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Payment Method</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
-            {payMethods.map((pm) => {
-              const Icon = pm.icon;
-              const isActive = payMethod === pm.id;
-              return (
-                <button
-                  key={pm.id}
-                  onClick={() => setPayMethod(pm.id)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    background: isActive ? 'rgba(123,47,190,0.1)' : '#090514',
-                    border: isActive ? '1px solid #7B2FBE' : '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: '12px',
-                    padding: '12px',
-                    cursor: 'pointer',
-                    textAlign: 'left',
-                    width: '100%',
-                  }}
-                >
-                  <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: isActive ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Icon size={18} color={isActive ? '#A78BFA' : '#8B8FA8'} />
-                  </div>
-                  <div>
-                    <p style={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 600 }}>{pm.label}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{pm.desc}</p>
-                  </div>
-                  <div style={{ marginLeft: 'auto', width: '18px', height: '18px', borderRadius: '50%', border: isActive ? 'none' : '2px solid rgba(255,255,255,0.2)', background: isActive ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'transparent' }} />
-                </button>
-              );
-            })}
-          </div>
-
-          {payMethod === 'card' && (
-            <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '4px 0 0' }}>
-              Tap Pay below to enter your card details securely inside Paystack's payment window.
-            </p>
-          )}
-
-
-          {/* USSD */}
-          {payMethod === 'ussd' && (
-            <div style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: '12px', padding: '12px' }}>
-              <p style={{ color: '#3B82F6', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>USSD Codes</p>
-              {[
-                { bank: 'Zenith Bank', code: `*966*${total}#` },
-                { bank: 'GTBank', code: `*737*58*${total}#` },
-                { bank: 'Access Bank', code: `*901*58*${total}#` },
-                { bank: 'First Bank', code: `*894*${total}#` },
-                { bank: 'UBA', code: `*919*58*${total}#` },
-              ].map(({ bank, code }) => (
-                <div key={bank} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                  <span style={{ color: '#C4C9E0', fontSize: '12px' }}>{bank}:</span>
-                  <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, fontFamily: 'monospace' }}>Dial {code}</span>
-                </div>
-              ))}
-              <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>Ticket sent to email after payment confirmation.</p>
-            </div>
-          )}
-        </div>
-
         {/* Promo code */}
         <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <Tag size={16} color="#8B8FA8" />
@@ -507,40 +433,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
       {/* Pay CTA */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
-
-        {/* Payment method badges */}
-        {total > 0 && (
-          <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
-            <span style={{ color: '#555C7A', fontSize: '11px' }}>Pay with:</span>
-            {['Visa', 'Mastercard', 'Verve', 'USSD'].map((method) => (
-              <span key={method} style={{
-                background: 'rgba(255,255,255,0.06)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '6px',
-                padding: '3px 8px',
-                fontSize: '10px',
-                color: '#aaa',
-                fontWeight: 600,
-              }}>{method}</span>
-            ))}
-          </div>
-        )}
-
-        {/* Save card checkbox */}
-        {total > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <input
-              type="checkbox"
-              id="saveCard"
-              checked={saveCard}
-              onChange={(e) => setSaveCard(e.target.checked)}
-              style={{ accentColor: '#7B2FF7', width: '16px', height: '16px', cursor: 'pointer' }}
-            />
-            <label htmlFor="saveCard" style={{ color: '#888', fontSize: '13px', cursor: 'pointer' }}>
-              Save card for faster future payments
-            </label>
-          </div>
-        )}
 
         {payError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
