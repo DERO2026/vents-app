@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, CreditCard, Building2, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X, Eye, EyeOff, CheckCircle, Search } from 'lucide-react';
+import { ArrowLeft, CreditCard, Smartphone, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
@@ -13,8 +13,7 @@ interface CheckoutScreenProps {
   onSuccess: (ticket: PurchasedTicket) => void;
 }
 
-type PayMethod = 'card' | 'bank' | 'ussd';
-type BankStep = 'details' | 'login' | 'confirm';
+type PayMethod = 'card' | 'ussd';
 
 const INPUT_STYLE: React.CSSProperties = {
   flex: 1,
@@ -48,40 +47,28 @@ const COUNTRY_CODES = [
   { flag: '🇪🇹', code: '+251', name: 'Ethiopia', format: '091 000 0000' },
 ];
 
-// Our fixed receiving account — always Zenith Bank
-const OUR_ACCOUNT = { bank: 'Zenith Bank', account: '1014567890', name: 'VENTS PAYMENTS LTD' };
-
-// Customer's sending banks — where THEY pay FROM
-const CUSTOMER_BANKS = [
-  // Commercial banks
-  { name: 'Access Bank', abbr: 'ACCESS', color: '#F47920', ussd: '*901#', category: 'Commercial' },
-  { name: 'Zenith Bank', abbr: 'ZENITH', color: '#D40021', ussd: '*966#', category: 'Commercial' },
-  { name: 'GTBank', abbr: 'GTB', color: '#E8A000', ussd: '*737#', category: 'Commercial' },
-  { name: 'First Bank of Nigeria', abbr: 'FIRSTBANK', color: '#009A44', ussd: '*894#', category: 'Commercial' },
-  { name: 'UBA', abbr: 'UBA', color: '#BC1E24', ussd: '*919#', category: 'Commercial' },
-  { name: 'Fidelity Bank', abbr: 'FIDELITY', color: '#006600', ussd: '*770#', category: 'Commercial' },
-  { name: 'FCMB', abbr: 'FCMB', color: '#002060', ussd: '*329#', category: 'Commercial' },
-  { name: 'Sterling Bank', abbr: 'STERLING', color: '#0F5FB5', ussd: '*822#', category: 'Commercial' },
-  { name: 'Polaris Bank', abbr: 'POLARIS', color: '#0B4C8C', ussd: '*833#', category: 'Commercial' },
-  { name: 'Wema Bank', abbr: 'WEMA', color: '#7B2183', ussd: '*945#', category: 'Commercial' },
-  { name: 'Keystone Bank', abbr: 'KEYSTONE', color: '#C8111A', ussd: '*7111#', category: 'Commercial' },
-  { name: 'Union Bank', abbr: 'UNION', color: '#004B87', ussd: '*826#', category: 'Commercial' },
-  { name: 'Ecobank Nigeria', abbr: 'ECO', color: '#003399', ussd: '*326#', category: 'Commercial' },
-  { name: 'Stanbic IBTC Bank', abbr: 'STANBIC', color: '#009A44', ussd: '*909#', category: 'Commercial' },
-  { name: 'Heritage Bank', abbr: 'HERITAGE', color: '#FF6600', ussd: '*745#', category: 'Commercial' },
-  { name: 'Citibank Nigeria', abbr: 'CITI', color: '#056DAE', ussd: 'App only', category: 'Commercial' },
-  // Microfinance & Digital banks
-  { name: 'Kuda Bank', abbr: 'KUDA', color: '#40196D', ussd: 'App only', category: 'Digital' },
-  { name: 'OPay', abbr: 'OPAY', color: '#1A7A40', ussd: '*955#', category: 'Digital' },
-  { name: 'PalmPay', abbr: 'PALM', color: '#07C160', ussd: 'App only', category: 'Digital' },
-  { name: 'Moniepoint MFB', abbr: 'MONIE', color: '#0052CC', ussd: '*5573#', category: 'Digital' },
-  { name: 'Carbon (Paylater)', abbr: 'CARBON', color: '#1A1A1A', ussd: 'App only', category: 'Digital' },
-  { name: 'FairMoney MFB', abbr: 'FAIR', color: '#FF6600', ussd: 'App only', category: 'Digital' },
-  { name: 'VFD MFB', abbr: 'VFD', color: '#003580', ussd: '*5037#', category: 'Digital' },
-  { name: 'Rubies MFB', abbr: 'RUBIES', color: '#C8111A', ussd: '*7797#', category: 'Digital' },
-  { name: 'Sparkle MFB', abbr: 'SPARKLE', color: '#6C5CE7', ussd: 'App only', category: 'Digital' },
-  { name: 'Eyowo', abbr: 'EYOWO', color: '#FF3B30', ussd: '*4255#', category: 'Digital' },
-];
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{ width: '100%', minWidth: 0 }}>
+      <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: '#090514',
+          border: '1px solid rgba(255,255,255,0.05)',
+          borderRadius: '16px',
+          height: '52px',
+          padding: '0 14px',
+          width: '100%',
+          boxSizing: 'border-box',
+        }}
+      >
+        <span style={{ color: '#FFFFFF', fontSize: '14px' }}>{value}</span>
+      </div>
+    </div>
+  );
+}
 
 function Field({
   label,
@@ -146,14 +133,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [phone, setPhone] = useState('');
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
-  const [showBankPicker, setShowBankPicker] = useState(false);
-  const [selectedCustomerBank, setSelectedCustomerBank] = useState(CUSTOMER_BANKS[0]);
-  const [bankStep, setBankStep] = useState<BankStep>('details');
-  const [bankUsername, setBankUsername] = useState('');
-  const [bankPassword, setBankPassword] = useState('');
-  const [showBankPassword, setShowBankPassword] = useState(false);
-  const [bankLoginLoading, setBankLoginLoading] = useState(false);
-  const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
@@ -173,7 +152,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   const payMethods: { id: PayMethod; label: string; icon: React.ElementType; desc: string }[] = [
     { id: 'card', label: 'Debit/Credit Card', icon: CreditCard, desc: 'Visa, Mastercard, Verve' },
-    { id: 'bank', label: 'Bank Transfer', icon: Building2, desc: 'Nigerian banks & MFBs' },
     { id: 'ussd', label: 'USSD', icon: Smartphone, desc: 'Dial from any phone' },
   ];
 
@@ -334,7 +312,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
+            {currentUser?.full_name ? (
+              <ReadOnlyField label="Full Name" value={currentUser.full_name} />
+            ) : (
+              <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
+            )}
+            {currentUser?.email ? (
+              <ReadOnlyField label="Email Address" value={currentUser.email} />
+            ) : (
             <Field
               label="Email Address"
               placeholder="name@gmail.com"
@@ -344,6 +329,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               error={emailError}
               onBlur={() => setEmailTouched(true)}
             />
+            )}
 
             {/* Phone with country code */}
             <div>
@@ -438,155 +424,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </p>
           )}
 
-          {/* Bank transfer */}
-          {payMethod === 'bank' && bankStep === 'details' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {/* Our fixed receiving account */}
-              <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '12px' }}>
-                <p style={{ color: '#10B981', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '8px' }}>TRANSFER TO THIS ACCOUNT</p>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <span style={{ color: '#8B8FA8', fontSize: '12px' }}>Bank</span>
-                  <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{OUR_ACCOUNT.bank}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <span style={{ color: '#8B8FA8', fontSize: '12px' }}>Account No.</span>
-                  <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 800, fontFamily: 'monospace', letterSpacing: '0.05em' }}>{OUR_ACCOUNT.account}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <span style={{ color: '#8B8FA8', fontSize: '12px' }}>Account Name</span>
-                  <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{OUR_ACCOUNT.name}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: '#8B8FA8', fontSize: '12px' }}>Amount</span>
-                  <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 800 }}>{formatPrice(total)}</span>
-                </div>
-              </div>
-
-              {/* Their bank selector */}
-              <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>SELECT YOUR BANK TO PAY WITH</p>
-              <button
-                onClick={() => setShowBankPicker(true)}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                  background: '#0D0F1E', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px',
-                  padding: '12px 14px', cursor: 'pointer',
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: selectedCustomerBank.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <span style={{ color: '#fff', fontSize: '9px', fontWeight: 800 }}>{selectedCustomerBank.abbr}</span>
-                  </div>
-                  <div style={{ textAlign: 'left' }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{selectedCustomerBank.name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{selectedCustomerBank.category} · USSD: {selectedCustomerBank.ussd}</p>
-                  </div>
-                </div>
-                <ChevronDown size={16} color="#8B8FA8" />
-              </button>
-              <button
-                onClick={() => setBankStep('login')}
-                style={{
-                  width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-                  border: 'none', borderRadius: '12px', padding: '14px',
-                  color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                }}
-              >
-                <Building2 size={16} color="#fff" />
-                Log in to {selectedCustomerBank.name}
-              </button>
-            </div>
-          )}
-
-          {/* Bank login screen */}
-          {payMethod === 'bank' && bankStep === 'login' && (
-            <div style={{ background: '#0A0C18', border: `1px solid ${selectedCustomerBank.color}40`, borderRadius: '16px', overflow: 'hidden' }}>
-              {/* Bank header */}
-              <div style={{ background: selectedCustomerBank.color, padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <button onClick={() => setBankStep('details')} style={{ background: 'rgba(0,0,0,0.2)', border: 'none', borderRadius: '50%', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                  <ArrowLeft size={14} color="#fff" />
-                </button>
-                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <span style={{ color: '#fff', fontSize: '10px', fontWeight: 800 }}>{selectedCustomerBank.abbr}</span>
-                </div>
-                <div>
-                  <p style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{selectedCustomerBank.name}</p>
-                  <p style={{ color: 'rgba(255,255,255,0.75)', fontSize: '11px' }}>Internet Banking — Secure Login</p>
-                </div>
-              </div>
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center' }}>
-                  Sign in to authorize a transfer of{' '}
-                  <span style={{ color: '#FFB830', fontWeight: 700 }}>{formatPrice(total)}</span>
-                </p>
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '5px', fontWeight: 500 }}>Username / Customer ID</p>
-                  <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '11px 13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input placeholder="Enter username" value={bankUsername} onChange={(e) => setBankUsername(e.target.value)} style={{ ...INPUT_STYLE }} />
-                  </div>
-                </div>
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '5px', fontWeight: 500 }}>Password</p>
-                  <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '11px 13px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <input placeholder="Enter password" type={showBankPassword ? 'text' : 'password'} value={bankPassword} onChange={(e) => setBankPassword(e.target.value)} style={{ ...INPUT_STYLE }} />
-                    <button onClick={() => setShowBankPassword(!showBankPassword)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-                      {showBankPassword ? <EyeOff size={15} color="#8B8FA8" /> : <Eye size={15} color="#8B8FA8" />}
-                    </button>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    if (!bankUsername || !bankPassword) return;
-                    setBankLoginLoading(true);
-                    setTimeout(() => { setBankLoginLoading(false); setBankStep('confirm'); }, 1500);
-                  }}
-                  disabled={bankLoginLoading || !bankUsername || !bankPassword}
-                  style={{
-                    width: '100%', background: bankUsername && bankPassword ? selectedCustomerBank.color : 'rgba(255,255,255,0.08)',
-                    border: 'none', borderRadius: '10px', padding: '13px',
-                    color: '#fff', fontSize: '14px', fontWeight: 700, cursor: bankUsername && bankPassword ? 'pointer' : 'not-allowed',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                    opacity: bankUsername && bankPassword ? 1 : 0.5,
-                  }}
-                >
-                  {bankLoginLoading ? (
-                    <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                  ) : 'Sign In'}
-                </button>
-                <p style={{ color: '#5A5A7A', fontSize: '10px', textAlign: 'center' }}>
-                  🔒 Your login is secured and never stored by VENTS
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Transfer confirmation */}
-          {payMethod === 'bank' && bankStep === 'confirm' && (
-            <div style={{ background: '#0A0C18', border: `1px solid ${selectedCustomerBank.color}40`, borderRadius: '16px', overflow: 'hidden' }}>
-              <div style={{ background: selectedCustomerBank.color, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <CheckCircle size={16} color="#fff" />
-                <p style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>Logged in · {selectedCustomerBank.name}</p>
-              </div>
-              <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, marginBottom: '4px' }}>Confirm Transfer</p>
-                {[
-                  { label: 'From', value: `${selectedCustomerBank.name} (your account)` },
-                  { label: 'To', value: `${OUR_ACCOUNT.bank} — ${OUR_ACCOUNT.account}` },
-                  { label: 'Beneficiary', value: OUR_ACCOUNT.name },
-                  { label: 'Amount', value: formatPrice(total), highlight: true },
-                  { label: 'Narration', value: 'VENTS ticket payment' },
-                ].map(({ label, value, highlight }) => (
-                  <div key={label} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: '6px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                    <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{label}</span>
-                    <span style={{ color: highlight ? '#FFB830' : '#F0F0FF', fontSize: '12px', fontWeight: highlight ? 800 : 600, textAlign: 'right', maxWidth: '60%' }}>{value}</span>
-                  </div>
-                ))}
-                <p style={{ color: '#5A5A7A', fontSize: '10px', marginTop: '4px' }}>
-                  By confirming, you authorize this debit from your {selectedCustomerBank.name} account.
-                </p>
-              </div>
-            </div>
-          )}
 
           {/* USSD */}
           {payMethod === 'ussd' && (
@@ -669,7 +506,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         {total > 0 && (
           <div style={{ display: 'flex', gap: '6px', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap' }}>
             <span style={{ color: '#555C7A', fontSize: '11px' }}>Pay with:</span>
-            {['Visa', 'Mastercard', 'Verve', 'Bank Transfer', 'USSD'].map((method) => (
+            {['Visa', 'Mastercard', 'Verve', 'USSD'].map((method) => (
               <span key={method} style={{
                 background: 'rgba(255,255,255,0.06)',
                 border: '1px solid rgba(255,255,255,0.1)',
@@ -788,66 +625,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </div>
       )}
 
-      {/* Bank picker modal */}
-      {showBankPicker && (
-        <div onClick={() => setShowBankPicker(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#0F1120', borderRadius: '24px 24px 0 0', maxHeight: '82%', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
-              <div>
-                <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Your Bank</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Select the bank you'll pay FROM</p>
-              </div>
-              <button onClick={() => setShowBankPicker(false)} style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <X size={16} color="#C4C9E0" />
-              </button>
-            </div>
-            {/* Search */}
-            <div style={{ padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#131629', borderRadius: '10px', padding: '9px 12px' }}>
-                <Search size={14} color="#8B8FA8" />
-                <input
-                  placeholder="Search banks..."
-                  value={bankSearchQuery}
-                  onChange={(e) => setBankSearchQuery(e.target.value)}
-                  style={{ ...INPUT_STYLE, fontSize: '13px' }}
-                />
-              </div>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 32px', flex: 1 }}>
-              {(['Commercial', 'Digital'] as const).map((cat) => {
-                const banks = CUSTOMER_BANKS.filter((b) => b.category === cat && b.name.toLowerCase().includes(bankSearchQuery.toLowerCase()));
-                if (banks.length === 0) return null;
-                return (
-                  <div key={cat}>
-                    <p style={{ color: '#5A5A7A', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', padding: '10px 20px 4px' }}>
-                      {cat === 'Commercial' ? 'COMMERCIAL BANKS' : 'DIGITAL & MICROFINANCE BANKS'}
-                    </p>
-                    {banks.map((bank) => {
-                      const isSelected = selectedCustomerBank.name === bank.name;
-                      return (
-                        <button
-                          key={bank.name}
-                          onClick={() => { setSelectedCustomerBank(bank); setShowBankPicker(false); setBankStep('details'); }}
-                          style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '12px 20px', background: isSelected ? 'rgba(255,255,255,0.04)' : 'transparent', border: 'none', cursor: 'pointer' }}
-                        >
-                          <div style={{ width: '38px', height: '38px', borderRadius: '10px', background: bank.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            <span style={{ color: '#fff', fontSize: '8px', fontWeight: 900 }}>{bank.abbr}</span>
-                          </div>
-                          <div style={{ flex: 1, textAlign: 'left' }}>
-                            <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{bank.name}</p>
-                            <p style={{ color: '#8B8FA8', fontSize: '11px' }}>USSD: {bank.ussd}</p>
-                          </div>
-                          {isSelected && <CheckCircle size={18} color="#10B981" />}
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
