@@ -155,9 +155,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [bankLoginLoading, setBankLoginLoading] = useState(false);
   const [bankSearchQuery, setBankSearchQuery] = useState('');
   const [payMethod, setPayMethod] = useState<PayMethod>('card');
-  const [cardNum, setCardNum] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('');
-  const [cardCvv, setCardCvv] = useState('');
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -173,9 +170,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
-
-  const formatCardNum = (v: string) => v.replace(/\D/g, '').replace(/(.{4})/g, '$1 ').trim().slice(0, 19);
-  const formatExpiry = (v: string) => v.replace(/\D/g, '').replace(/^(\d{2})(\d)/, '$1/$2').slice(0, 5);
 
   const payMethods: { id: PayMethod; label: string; icon: React.ElementType; desc: string }[] = [
     { id: 'card', label: 'Debit/Credit Card', icon: CreditCard, desc: 'Visa, Mastercard, Verve' },
@@ -438,25 +432,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             })}
           </div>
 
-          {/* Card details */}
           {payMethod === 'card' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <Field
-                label="Card Number"
-                placeholder="0000 0000 0000 0000"
-                value={cardNum}
-                onChange={(v) => setCardNum(formatCardNum(v))}
-                icon={<CreditCard size={16} color="#8B8FA8" />}
-              />
-              <div style={{ display: 'flex', gap: '10px', minWidth: 0 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Field label="Expiry" placeholder="MM/YY" value={cardExpiry} onChange={(v) => setCardExpiry(formatExpiry(v))} />
-                </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Field label="CVV" placeholder="•••" value={cardCvv} onChange={setCardCvv} type="password" />
-                </div>
-              </div>
-            </div>
+            <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '4px 0 0' }}>
+              Tap Pay below to enter your card details securely inside Paystack's payment window.
+            </p>
           )}
 
           {/* Bank transfer */}
