@@ -123,7 +123,7 @@ export type Screen =
   | 'conversation'
   | 'wallet';
 
-export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
+export type TabId = 'home' | 'explore' | 'my-tickets' | 'chat' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
 export type UserRole = 'attendee' | 'organizer';
 
