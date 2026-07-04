@@ -1,4 +1,4 @@
-import { House, Ticket, MessageCircle, Settings } from 'lucide-react';
+import { Home, Ticket, Search, User } from 'lucide-react';
 import { TabId } from './types';
 
 interface BottomNavProps {
@@ -8,11 +8,11 @@ interface BottomNavProps {
   isOrganizer?: boolean;
 }
 
-const TABS: { id: TabId; Icon: typeof House; label: string }[] = [
-  { id: 'home',       Icon: House,          label: 'Home'     },
-  { id: 'my-tickets', Icon: Ticket,         label: 'Tickets'  },
-  { id: 'explore',    Icon: MessageCircle,  label: 'Chat'     },
-  { id: 'profile',    Icon: Settings,       label: 'Settings' },
+const TABS: { id: TabId; Icon: typeof Home; label: string }[] = [
+  { id: 'home',       Icon: Home,   label: 'Home'       },
+  { id: 'my-tickets', Icon: Ticket, label: 'My Tickets'  },
+  { id: 'explore',    Icon: Search, label: 'Explore'     },
+  { id: 'profile',    Icon: User,   label: 'Profile'     },
 ];
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
