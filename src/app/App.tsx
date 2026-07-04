@@ -54,7 +54,6 @@ const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
   explore: 'explore',
   'my-tickets': 'my-tickets',
-  chat: 'inbox',
   profile: 'profile',
 };
 
@@ -905,7 +904,7 @@ export default function App() {
   const [conversationUser, setConversationUser] = useState<{ id: string; name: string; avatarUrl?: string; vc_badge?: string } | null>(null);
   const [conversationEventId, setConversationEventId] = useState<string | undefined>(undefined);
   const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
-  const [homeInitialCategory, setHomeInitialCategory] = useState<string | undefined>(undefined);
+  const [exploreTab, setExploreTab] = useState<'people' | 'chats'>('people');
 
   const [selectedState, setSelectedState] = useState<string>(() => {
     return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
@@ -1212,7 +1211,7 @@ export default function App() {
   // Screens where the bottom nav is visible for both roles.
   // Guests browse these screens too (home-first flow) — the nav must stay
   // visible for them; individual screens handle their own auth prompts.
-  const navScreens = ['home', 'explore', 'my-tickets', 'inbox', 'profile'];
+  const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
   const showBottomNav = navScreens.includes(screen);
 
   // Determine if the current user is organizer/admin (for nav FAB)
@@ -1398,7 +1397,6 @@ export default function App() {
               hasMore={hasMoreEvents}
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
-              initialCategory={homeInitialCategory}
             />
           )}
           {screen === 'explore' && (
@@ -1410,12 +1408,14 @@ export default function App() {
               currentUserId={currentUser?.id}
               following={[...followingIds]}
               onToggleFollow={handleToggleFollow}
-              events={dbEvents}
-              onEventPress={handleEventPress}
-              onMoodSelect={(category) => {
-                setHomeInitialCategory(category);
-                handleTabChange('home');
+              onOpenConversation={(userId, userName, avatarUrl, vcBadge) => {
+                setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
+                setExploreTab('chats');
+                navigateTo('conversation');
               }}
+              chatRefreshKey={chatRefreshKey}
+              initialTab={exploreTab}
+              onTabChange={setExploreTab}
             />
           )}
           {screen === 'saved' && (

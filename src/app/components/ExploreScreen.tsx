@@ -1,18 +1,19 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, Music, Palette, Briefcase, Landmark, MapPin, Sparkles } from 'lucide-react';
-import { UserProfile, Event } from './types';
+import { Search, X, CheckCircle, MessageCircle } from 'lucide-react';
+import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
-import { formatPrice } from './data';
+import { SkeletonCard } from './SkeletonCard';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
   currentUserId?: string;
   following?: string[];
   onToggleFollow?: (userId: string) => void;
-  events: Event[];
-  onEventPress: (event: Event) => void;
-  onMoodSelect: (category: string) => void;
+  onOpenConversation?: (userId: string, userName: string, avatarUrl?: string, vcBadge?: string) => void;
+  chatRefreshKey?: number;
+  initialTab?: 'people' | 'chats';
+  onTabChange?: (tab: 'people' | 'chats') => void;
 }
 
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
@@ -43,34 +44,81 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
   };
 }
 
-// Decorative navigation shortcuts only — each maps to the closest real category
-// in Home's existing filter system. Not a database field.
-const MOODS: { id: string; label: string; category: string; icon: React.ElementType; gradient: string }[] = [
-  { id: 'turn-up',   label: 'Turn Up',     category: 'Nightlife',      icon: Music,    gradient: 'linear-gradient(135deg, #7B2FBE, #4F46E5)' },
-  { id: 'chill',     label: 'Chill Vibes', category: 'Arts & Culture', icon: Palette,  gradient: 'linear-gradient(135deg, #4F46E5, #7B2FBE)' },
-  { id: 'network',   label: 'Network',     category: 'Conferences',   icon: Briefcase, gradient: 'linear-gradient(135deg, #7B2FBE, #4F46E5)' },
-  { id: 'culture',   label: 'Culture',     category: 'Arts & Culture', icon: Landmark, gradient: 'linear-gradient(135deg, #4F46E5, #7B2FBE)' },
-];
-
 export function ExploreScreen({
   onUserPress,
   currentUserId,
   following = [],
   onToggleFollow,
-  events,
-  onEventPress,
-  onMoodSelect,
+  onOpenConversation,
+  chatRefreshKey,
 }: ExploreScreenProps) {
-  const [activeTab, setActiveTab] = useState<'discover' | 'people'>('discover');
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // ── People search (reuses the same search logic previously built for Messages/Explore) ──
+  // Pull-to-refresh
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const [localRefreshKey, setLocalRefreshKey] = useState(0);
+  const pullStartY = useRef<number | null>(null);
+  const handlePullTouchStart = (e: React.TouchEvent) => {
+    pullStartY.current = e.touches[0].clientY;
+  };
+  const handlePullTouchEnd = (e: React.TouchEvent) => {
+    if (pullStartY.current === null) return;
+    const dy = e.changedTouches[0].clientY - pullStartY.current;
+    pullStartY.current = null;
+    if (dy > 200 && !pullRefreshing) {
+      setPullRefreshing(true);
+      setLocalRefreshKey(k => k + 1);
+      setTimeout(() => setPullRefreshing(false), 800);
+    }
+  };
+
+  // ── Conversations ────────────────────────────────────────────────────────────
+  const [conversations, setConversations] = useState<any[]>([]);
+  const [loadingChats, setLoadingChats] = useState(false);
+
+  useEffect(() => {
+    if (!currentUserId) return;
+    setLoadingChats(true);
+    insforge.database
+      .from('direct_messages')
+      .select('id, sender_id, recipient_id, body, created_at, read_at')
+      .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
+      .order('created_at', { ascending: false })
+      .limit(200)
+      .then(async ({ data, error }) => {
+        if (error || !data) { setLoadingChats(false); return; }
+        const seen = new Map<string, any>();
+        const unreadCounts = new Map<string, number>();
+        for (const msg of data) {
+          const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
+          if (!seen.has(partnerId)) seen.set(partnerId, msg);
+          if (msg.sender_id !== currentUserId && !msg.read_at) {
+            unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
+          }
+        }
+        const partnerIds = [...seen.keys()];
+        if (partnerIds.length === 0) { setConversations([]); setLoadingChats(false); return; }
+        const { data: profiles } = await insforge.database
+          .from('public_profiles')
+          .select('id, full_name, username, avatar_url, vc_badge')
+          .in('id', partnerIds);
+        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+        setConversations(partnerIds.map(pid => ({
+          partnerId: pid,
+          lastMsg: seen.get(pid),
+          profile: profileMap.get(pid) || null,
+          unreadCount: unreadCounts.get(pid) || 0,
+        })));
+        setLoadingChats(false);
+      });
+  }, [currentUserId, chatRefreshKey, localRefreshKey]);
+
+  // ── People search ────────────────────────────────────────────────────────────
   const [searchedUsers, setSearchedUsers] = useState<UserProfile[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
   useEffect(() => {
-    if (activeTab !== 'people') return;
     const q = query.trim();
     if (!q) { setSearchedUsers([]); return; }
     setLoadingUsers(true);
@@ -86,61 +134,66 @@ export function ExploreScreen({
       } catch { /* ignore */ } finally { setLoadingUsers(false); }
     }, 300);
     return () => clearTimeout(t);
-  }, [query, activeTab]);
+  }, [query]);
 
-  // ── Discover: event search (client-side, real data already loaded) ──
+  const timeAgo = (iso: string) => {
+    const diff = Date.now() - new Date(iso).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'now';
+    if (m < 60) return `${m}m`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.floor(h / 24)}d`;
+  };
+
   const isSearching = query.trim().length > 0;
-  const searchedEvents = useMemo(() => {
-    if (activeTab !== 'discover' || !isSearching) return [];
-    const q = query.trim().toLowerCase();
-    return events.filter(e =>
-      e.title.toLowerCase().includes(q) ||
-      e.category.toLowerCase().includes(q) ||
-      e.venue.toLowerCase().includes(q)
-    ).slice(0, 20);
-  }, [events, query, activeTab, isSearching]);
 
-  // ── Trending venues: group real events by venue, order by count ──
-  const trendingVenues = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const e of events) {
-      const venue = (e.venue || '').trim();
-      if (!venue) continue;
-      counts.set(venue, (counts.get(venue) || 0) + 1);
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([venue, count]) => ({ venue, count }));
-  }, [events]);
-
-  // ── Vents Pick: most recent featured event ──
-  const ventsPick = useMemo(() => {
-    const featured = events.filter(e => e.isFeatured);
-    if (featured.length === 0) return null;
-    return [...featured].sort((a, b) =>
-      new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-    )[0];
-  }, [events]);
+  // Filtered conversations when searching
+  const filteredConvos = isSearching
+    ? conversations.filter(c => {
+        const name = (c.profile?.full_name || c.profile?.username || '').toLowerCase();
+        const msg = (c.lastMsg?.body || '').toLowerCase();
+        const q = query.trim().toLowerCase();
+        return name.includes(q) || msg.includes(q);
+      })
+    : conversations;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005', position: 'relative' }}>
+    <div
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005', position: 'relative' }}
+      onTouchStart={handlePullTouchStart}
+      onTouchEnd={handlePullTouchEnd}
+    >
       <style>{`input::placeholder { color: #94A3B8; }`}</style>
-
+      {pullRefreshing && (
+        <div style={{
+          position: 'fixed', top: '50%', left: '50%',
+          transform: 'translate(-50%, -50%)', zIndex: 200,
+        }}>
+          <div style={{
+            width: '40px', height: '40px', borderRadius: '50%',
+            border: '3px solid rgba(123,47,247,0.2)',
+            borderTop: '3px solid #7B2FF7',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+        </div>
+      )}
       {/* ── Header ── */}
-      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0 }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 12px' }}>
-          Explore
+      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          Messages
         </h1>
+      </div>
 
-        {/* Search bar */}
+      {/* ── Search bar ── */}
+      <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', height: '48px', padding: '0 14px', boxSizing: 'border-box' }}>
           <Search size={16} color="#94A3B8" />
           <input
             ref={searchRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
-            placeholder="Search people or events..."
+            placeholder="Search people and messages..."
             style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
           />
           {query && (
@@ -149,201 +202,125 @@ export function ExploreScreen({
             </button>
           )}
         </div>
-
-        {/* Discover / People toggle */}
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-          {(['discover', 'people'] as const).map(tab => {
-            const isActive = activeTab === tab;
-            return (
-              <button
-                key={tab}
-                onClick={() => setActiveTab(tab)}
-                style={{
-                  flex: 1,
-                  background: isActive ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#090514',
-                  border: isActive ? 'none' : '1px solid rgba(255,255,255,0.07)',
-                  borderRadius: '100px',
-                  padding: '10px',
-                  color: '#FFFFFF',
-                  fontSize: '13px',
-                  fontWeight: 700,
-                  cursor: 'pointer',
-                  textTransform: 'capitalize',
-                }}
-              >
-                {tab === 'discover' ? 'Discover' : 'People'}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
       {/* ── Content ── */}
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '4px 16px calc(80px + env(safe-area-inset-bottom))' }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
-        {activeTab === 'people' ? (
-          !currentUserId ? (
-            <p style={{ color: '#94A3B8', textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to find people.</p>
-          ) : !isSearching ? (
-            <p style={{ color: '#94A3B8', textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Search for people to follow.</p>
-          ) : loadingUsers ? (
-            <p style={{ color: '#94A3B8', fontSize: '13px', marginTop: '20px' }}>Searching…</p>
-          ) : searchedUsers.length === 0 ? (
-            <p style={{ color: '#94A3B8', fontSize: '13px', marginTop: '20px' }}>No people found</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
-              {searchedUsers.map(u => (
-                <div
-                  key={u.id}
-                  onClick={() => onUserPress(u)}
-                  style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: '#090514' }}
-                >
-                  <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
-                    {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{u.name}</span>
-                      {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" />}
-                      <BadgeChip tier={u.vc_badge} />
-                    </div>
-                    <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
-                  </div>
-                  <button
-                    onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
-                    style={{
-                      background: following.includes(u.id) ? 'transparent' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
-                      border: following.includes(u.id) ? '1px solid rgba(255,255,255,0.15)' : 'none',
-                      borderRadius: '100px', padding: '5px 12px',
-                      color: following.includes(u.id) ? '#94A3B8' : '#FFFFFF',
-                      fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-                    }}
-                  >{following.includes(u.id) ? 'Subscribed' : 'Subscribe'}</button>
-                </div>
-              ))}
-            </div>
-          )
-        ) : isSearching ? (
-          /* ── Discover: search results ── */
-          searchedEvents.length === 0 ? (
-            <p style={{ color: '#94A3B8', fontSize: '13px', marginTop: '20px' }}>No events found</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '8px' }}>
-              {searchedEvents.map(e => (
-                <div
-                  key={e.id}
-                  onClick={() => onEventPress(e)}
-                  style={{ display: 'flex', gap: '12px', alignItems: 'center', background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '10px', cursor: 'pointer' }}
-                >
-                  <img src={e.image} alt="" style={{ width: '56px', height: '56px', borderRadius: '12px', objectFit: 'cover', flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 700, margin: '0 0 2px' }} className="truncate">{e.title}</p>
-                    <p style={{ color: '#94A3B8', fontSize: '12px', margin: 0 }} className="truncate">{e.category} · {e.venue}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
+        {!currentUserId ? (
+          <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to see your messages.</p>
         ) : (
-          /* ── Discover: default sections ── */
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '28px', marginTop: '8px' }}>
-
-            {/* Events by mood */}
-            <div>
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>EVENTS BY MOOD</p>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                {MOODS.map(mood => {
-                  const Icon = mood.icon;
-                  return (
-                    <button
-                      key={mood.id}
-                      onClick={() => onMoodSelect(mood.category)}
-                      style={{
-                        background: '#090514',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        borderRadius: '20px',
-                        padding: '18px',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'flex-start',
-                        gap: '10px',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: mood.gradient, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Icon size={18} color="#FFFFFF" />
+          <>
+            {/* ── People results (while searching) ── */}
+            {isSearching && (
+              <div style={{ padding: '0 16px 8px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                {loadingUsers ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Searching…</p>
+                ) : searchedUsers.length === 0 ? (
+                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No people found</p>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    {searchedUsers.map(u => (
+                      <div
+                        key={u.id}
+                        onClick={() => onUserPress(u)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: '#090514' }}
+                      >
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
+                          {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{u.name}</span>
+                            {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" />}
+                            <BadgeChip tier={u.vc_badge} />
+                          </div>
+                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
+                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
+                          style={{
+                            background: following.includes(u.id) ? 'transparent' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
+                            border: following.includes(u.id) ? '1px solid rgba(255,255,255,0.15)' : 'none',
+                            borderRadius: '100px', padding: '5px 12px',
+                            color: following.includes(u.id) ? '#94A3B8' : '#FFFFFF',
+                            fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
+                          }}
+                        >{following.includes(u.id) ? 'Subscribed' : 'Subscribe'}</button>
                       </div>
-                      <span style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 700 }}>{mood.label}</span>
-                    </button>
-                  );
-                })}
+                    ))}
+                  </div>
+                )}
+                {filteredConvos.length > 0 && (
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>MESSAGES</p>
+                )}
               </div>
-            </div>
+            )}
 
-            {/* Trending venues */}
-            <div>
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>TRENDING VENUES</p>
-              {trendingVenues.length === 0 ? (
-                <p style={{ color: '#94A3B8', fontSize: '13px' }}>No venue data yet</p>
-              ) : (
-                <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '4px' }}>
-                  {trendingVenues.map(v => (
-                    <div
-                      key={v.venue}
-                      style={{
-                        background: '#090514',
-                        border: '1px solid rgba(255,255,255,0.05)',
-                        borderRadius: '16px',
-                        padding: '16px',
-                        minWidth: '150px',
-                        flexShrink: 0,
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '8px',
-                      }}
-                    >
-                      <div style={{ width: '32px', height: '32px', borderRadius: '10px', background: 'rgba(123,47,190,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <MapPin size={16} color="#7B2FBE" />
-                      </div>
-                      <span style={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 700 }} className="truncate">{v.venue}</span>
-                      <span style={{ color: '#94A3B8', fontSize: '11px' }}>{v.count} event{v.count !== 1 ? 's' : ''}</span>
-                    </div>
+            {/* ── Conversations ── */}
+            <div style={{ padding: '0 16px' }}>
+              {!isSearching && (
+                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>CONVERSATIONS</p>
+              )}
+              {loadingChats && conversations.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  {[1, 2, 3].map(i => (
+                    <SkeletonCard key={i} variant="message" />
                   ))}
                 </div>
-              )}
-            </div>
-
-            {/* Vents Picks */}
-            <div>
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>VENTS PICKS</p>
-              {!ventsPick ? (
-                <p style={{ color: '#94A3B8', fontSize: '13px' }}>No featured events yet</p>
+              ) : filteredConvos.length === 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
+                  <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <MessageCircle size={28} color="#94A3B8" />
+                  </div>
+                  <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 700, margin: 0 }}>
+                    {isSearching ? 'No matching messages' : 'No conversations yet'}
+                  </p>
+                  <p style={{ color: '#94A3B8', fontSize: '14px', margin: 0 }}>
+                    {isSearching ? 'Try a different search term' : 'Message an organizer or attendee to start'}
+                  </p>
+                </div>
               ) : (
-                <div
-                  onClick={() => onEventPress(ventsPick)}
-                  style={{
-                    position: 'relative',
-                    borderRadius: '20px',
-                    overflow: 'hidden',
-                    cursor: 'pointer',
-                    height: '160px',
-                  }}
-                >
-                  <img src={ventsPick.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', position: 'absolute', inset: 0 }} />
-                  <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(2,0,5,0.95), rgba(2,0,5,0.1))' }} />
-                  <div style={{ position: 'absolute', top: '12px', left: '12px', display: 'flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '100px', padding: '4px 10px' }}>
-                    <Sparkles size={12} color="#FFFFFF" />
-                    <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 700 }}>FEATURED</span>
-                  </div>
-                  <div style={{ position: 'absolute', bottom: '14px', left: '14px', right: '14px' }}>
-                    <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }} className="truncate">{ventsPick.title}</p>
-                    <p style={{ color: '#E5E7EB', fontSize: '12px', margin: 0 }}>{ventsPick.venue} · {formatPrice(ventsPick.price)}</p>
-                  </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount }: any) => {
+                    const name = profile?.full_name || profile?.username || 'User';
+                    const avatarUrl = profile?.avatar_url;
+                    const initial = name[0]?.toUpperCase() || 'U';
+                    const isUnread = unreadCount > 0;
+                    return (
+                      <div
+                        key={partnerId}
+                        onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '0', cursor: 'pointer', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                      >
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
+                          {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{name}</span>
+                              <BadgeChip tier={profile?.vc_badge} />
+                            </div>
+                            <span style={{ color: '#94A3B8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                          </div>
+                          <span style={{ color: '#94A3B8', fontSize: '13px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
+                          </span>
+                        </div>
+                        {isUnread && (
+                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
+                            <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
