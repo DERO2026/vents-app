@@ -882,7 +882,6 @@ export default function App() {
 
     const alreadyBooked = allTickets.some((t) => t.event.id === event.id);
     if (alreadyBooked) {
-      console.log("Already booked this event.");
       return;
     }
 
@@ -1098,10 +1097,7 @@ export default function App() {
       return;
     }
 
-    console.log('[Subscribe] toggleFollow called. currentUser.id:', currentUser.id, 'targetId:', userId, 'currentRole:', currentUser.role);
-
     const isFollowing = followingIds.has(userId);
-    console.log('[Subscribe] isFollowing:', isFollowing);
 
     // Optimistically update UI
     setFollowingIds((prev) => {
@@ -1117,7 +1113,6 @@ export default function App() {
           .delete()
           .eq('follower_id', currentUser.id)
           .eq('following_id', userId);
-        console.log('[Subscribe] delete result error:', error);
         if (error) throw error;
       } else {
         const { error } = await insforge.database
@@ -1126,7 +1121,6 @@ export default function App() {
             follower_id: currentUser.id,
             following_id: userId
           }]);
-        console.log('[Subscribe] insert result error:', error);
         if (error) throw error;
         trackPushEvent('user_followed', { targetId: userId });
         trackEvent('user_followed');
@@ -1141,7 +1135,6 @@ export default function App() {
           if (notifyErr) console.warn('[Subscribe] Follow notify failed:', notifyErr.message);
         });
       }
-      console.log('[Subscribe] DB operation succeeded');
     } catch (err) {
       console.error('[Subscribe] DB operation FAILED:', err);
       // Revert optimistic update

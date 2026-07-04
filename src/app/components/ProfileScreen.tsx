@@ -74,7 +74,7 @@ export function ProfileScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 200 && !pullRefreshing) {
+    if (dy > 400 && !pullRefreshing) {
       setPullRefreshing(true);
       try { setHighlightRefresh(r => r + 1); } finally { setPullRefreshing(false); }
     }

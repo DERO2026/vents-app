@@ -130,7 +130,6 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             .update({ is_featured: true, featured_until: end.toISOString() })
             .eq('id', selectedEventId);
 
-          console.log('Promotion payment ref:', response.reference);
           setPaid(true);
           if (onPromoted) onPromoted();
         } catch (err) {

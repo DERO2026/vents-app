@@ -691,7 +691,7 @@ export function HomeScreen({
     if (pullStartY.current === null) return;
     const dy = e.changedTouches[0].clientY - pullStartY.current;
     pullStartY.current = null;
-    if (dy > 200 && !pullRefreshing) {
+    if (dy > 400 && !pullRefreshing) {
       setPullRefreshing(true);
       try { await fetchEvents(); } finally { setPullRefreshing(false); }
     }
