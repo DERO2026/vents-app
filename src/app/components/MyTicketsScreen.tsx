@@ -32,7 +32,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     if (touchStartX.current === null || touchStartY.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
     const dy = e.changedTouches[0].clientY - touchStartY.current;
-    if (dy > 200 && Math.abs(dy) > Math.abs(dx)) {
+    if (dy > 400 && Math.abs(dy) > Math.abs(dx)) {
       // Pull-to-refresh
       handleRefresh();
     } else if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
