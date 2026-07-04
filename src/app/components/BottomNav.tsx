@@ -11,7 +11,7 @@ interface BottomNavProps {
 const TABS: { id: TabId; Icon: typeof Home; label: string }[] = [
   { id: 'home',       Icon: Home,   label: 'Home'       },
   { id: 'my-tickets', Icon: Ticket, label: 'My Tickets'  },
-  { id: 'explore',    Icon: Search, label: 'Explore'     },
+  { id: 'explore',    Icon: Search, label: 'Chats'     },
   { id: 'profile',    Icon: User,   label: 'Profile'     },
 ];
 
