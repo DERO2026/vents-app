@@ -32,6 +32,7 @@ interface HomeScreenProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   unreadNotificationsCount?: number;
+  initialCategory?: string;
 }
 
 
@@ -646,12 +647,18 @@ export function HomeScreen({
   hasMore,
   onLoadMore,
   unreadNotificationsCount: _unreadNotificationsCount,
+  initialCategory,
 }: HomeScreenProps) {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState('all');
+  const [activeCategory, setActiveCategory] = useState(initialCategory || 'all');
+
+  // Apply a new category filter pushed in from outside (e.g. Explore's mood shortcuts)
+  useEffect(() => {
+    if (initialCategory) setActiveCategory(initialCategory);
+  }, [initialCategory]);
   const [stateFilter, setStateFilter] = useState<string>('all');
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
