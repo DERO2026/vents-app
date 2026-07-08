@@ -23,11 +23,41 @@ html, body {
   overflow: hidden;
   position: fixed;
   inset: 0;
-  overscroll-behavior-y: none;
+  overscroll-behavior: none;
+  touch-action: manipulation; /* blocks double-tap-to-zoom */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 body {
   overscroll-behavior-y: none;
+}
+
+/* Native-feeling touch: no gray tap flash, no text-selection handles on
+   taps — except inside real text-entry fields, which must stay selectable. */
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+input, textarea, [contenteditable="true"] {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* Momentum scrolling on any scrollable container */
+[style*="overflow"] {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Physical press feedback on interactive elements */
+button, [role="button"], a {
+  -webkit-tap-highlight-color: transparent;
+}
+button:active, [role="button"]:active {
+  opacity: 0.75;
+  transform: scale(0.97);
+  transition: opacity 0.1s ease, transform 0.1s ease;
 }
 
 /* Force full mobile viewport coverage */

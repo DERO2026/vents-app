@@ -520,15 +520,22 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                       <span style={{ color: isMine ? 'rgba(255,255,255,0.7)' : '#C4C9E0', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         <MapPin size={12} /> {locationData.label}
                       </span>
-                      <a
-                        href={/iphone|ipad|ipod/i.test(navigator.userAgent)
-                          ? `maps://maps.apple.com/?q=${locationData.lat},${locationData.lng}`
-                          : `https://maps.google.com/?q=${locationData.lat},${locationData.lng}`}
-                        target="_blank" rel="noreferrer"
-                        style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, textDecoration: 'none', background: 'rgba(167,139,250,0.15)', padding: '3px 8px', borderRadius: '6px' }}
+                      <button
+                        onClick={() => {
+                          if (!window.confirm('Open this location in your Maps app?')) return;
+                          const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+                          const isAndroid = /android/i.test(navigator.userAgent);
+                          const url = isIOS
+                            ? `maps://maps.apple.com/?q=${locationData!.lat},${locationData!.lng}`
+                            : isAndroid
+                            ? `geo:${locationData!.lat},${locationData!.lng}?q=${locationData!.lat},${locationData!.lng}(${encodeURIComponent(locationData!.label)})`
+                            : `https://maps.google.com/?q=${locationData!.lat},${locationData!.lng}`;
+                          window.open(url, '_blank');
+                        }}
+                        style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, textDecoration: 'none', background: 'rgba(167,139,250,0.15)', padding: '3px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
                       >
                         Open ↗
-                      </a>
+                      </button>
                     </div>
                   </div>
                 ) : (
