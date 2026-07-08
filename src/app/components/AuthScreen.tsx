@@ -15,7 +15,7 @@ interface AuthScreenProps {
   userRole?: string;
   selectedState?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean }) => void;
   resetToken?: string;
 }
 
@@ -274,7 +274,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           phone_number: finalProfile.phone_number || payload.phone_number,
           state: finalProfile.state || payload.state,
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
-          isOrganizer: strictRole === 'organizer'
+          isOrganizer: strictRole === 'organizer',
+          is_verified: finalProfile.is_verified === true,
         });
         return;
       }
@@ -511,6 +512,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             state: profile?.state || data.user.user_metadata?.state,
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
             isOrganizer: dbRole === 'organizer',
+            is_verified: profile?.is_verified === true,
           };
 
           // 3.1: If TOTP is enabled, show the 2FA prompt before completing login
@@ -631,7 +633,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     const isSuspended = banInfo.status === 'suspended';
     const untilStr = banInfo.until ? new Date(banInfo.until).toLocaleDateString('en-NG', { dateStyle: 'long' }) : null;
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <AlertCircle size={32} color="#EF4444" />
         </div>
@@ -693,7 +695,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       }
     };
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <ShieldCheck size={32} color="#818CF8" />
         </div>
@@ -1420,7 +1422,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           style={{
             position: 'absolute',
             inset: 0,
-            background: '#060A12',
+            background: '#020005',
             zIndex: 100,
             display: 'flex',
             flexDirection: 'column',

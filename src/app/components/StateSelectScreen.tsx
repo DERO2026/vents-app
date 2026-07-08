@@ -71,7 +71,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -82,7 +82,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
       <div
         style={{
           padding: 'calc(28px + env(safe-area-inset-top)) 24px 20px',
-          background: 'linear-gradient(180deg, #0D0520 0%, #060A12 100%)',
+          background: 'linear-gradient(180deg, #0D0520 0%, #020005 100%)',
           flexShrink: 0,
         }}
       >
@@ -204,7 +204,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
           left: 0,
           right: 0,
           padding: '14px 20px 32px',
-          background: 'linear-gradient(to top, #060A12 60%, transparent)',
+          background: 'linear-gradient(to top, #020005 60%, transparent)',
         }}
       >
         <button

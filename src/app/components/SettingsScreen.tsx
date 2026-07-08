@@ -149,7 +149,7 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
 function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
   if (!currentUser) {
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
         Loading profile details...
       </div>
     );
@@ -399,7 +399,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
       <SubHeader title="Profile Details" onBack={onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', scrollbarWidth: 'none' }}>
         {loading ? (
@@ -582,7 +582,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
 function PaymentMethodsScreen({ onBack }: { onBack: () => void }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
       <SubHeader title="Payment Methods" onBack={onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
         <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(123,47,190,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
@@ -615,7 +615,7 @@ function LanguageScreen({
   onSelectLanguage: (lang: string) => void;
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
       <SubHeader title="Language" onBack={onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 32px', scrollbarWidth: 'none' }}>
         <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px', lineHeight: 1.5 }}>
@@ -674,7 +674,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
   const categories = Array.from(new Set(articles.map((a) => a.category)));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
       <SubHeader title="Help Center" onBack={onBack} />
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px 32px', scrollbarWidth: 'none' }}>
         {/* Contact support */}
@@ -817,7 +817,7 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
   };
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
@@ -896,7 +896,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   if (!currentUser) {
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
         Loading settings...
       </div>
     );
@@ -1123,7 +1123,7 @@ function DeleteAccountScreen({
 
   if (step === 'done') {
     return (
-      <div style={{ background: '#060A12', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
         <span style={{ fontSize: '48px', marginBottom: '20px' }}>✓</span>
         <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '12px' }}>Account Deleted</p>
         <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '16px' }}>
@@ -1139,7 +1139,7 @@ function DeleteAccountScreen({
   }
 
   return (
-    <div style={{ background: '#060A12', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#8B8FA8', cursor: 'pointer', padding: '4px' }}>
           <ArrowLeft size={20} />

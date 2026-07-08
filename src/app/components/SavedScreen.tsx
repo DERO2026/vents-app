@@ -14,7 +14,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
   const savedEvents = dbEvents.filter((e) => savedEventIds.includes(e.id));
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
+    <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {/* Header */}
       <div className="px-4 pb-4" style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '2px' }}>

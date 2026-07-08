@@ -30,7 +30,7 @@ Contact: support@getvents.com`;
 export function PrivacyPolicyScreen({ onBack }: PrivacyPolicyScreenProps) {
   return (
     <div style={{
-      background: '#060A12',
+      background: '#020005',
       width: '100%',
       height: '100%',
       display: 'flex',

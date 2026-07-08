@@ -61,7 +61,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     canvas.width = 400;
     canvas.height = 120;
     const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#060A12';
+    ctx.fillStyle = '#020005';
     ctx.fillRect(0, 0, 400, 120);
     ctx.fillStyle = '#F0F0FF';
     ctx.font = 'bold 16px Inter, sans-serif';
@@ -78,7 +78,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
+    <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {/* Header */}
       <div 
         className="flex items-center justify-between px-4 pb-4"
@@ -192,7 +192,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               <div className="relative flex items-center my-4">
                 <div
                   className="absolute -left-8 w-8 h-8 rounded-full"
-                  style={{ background: '#060A12' }}
+                  style={{ background: '#020005' }}
                 />
                 <div
                   className="flex-1 border-t-2 border-dashed"
@@ -200,7 +200,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                 />
                 <div
                   className="absolute -right-8 w-8 h-8 rounded-full"
-                  style={{ background: '#060A12' }}
+                  style={{ background: '#020005' }}
                 />
               </div>
 
@@ -244,7 +244,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       {/* Bottom actions */}
       <div
         className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-        style={{ background: 'linear-gradient(to top, #060A12 70%, transparent)' }}
+        style={{ background: 'linear-gradient(to top, #020005 70%, transparent)' }}
       >
         <div className="flex gap-3">
           <button

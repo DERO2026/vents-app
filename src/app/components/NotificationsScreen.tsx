@@ -105,7 +105,7 @@ export function NotificationsScreen({
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',

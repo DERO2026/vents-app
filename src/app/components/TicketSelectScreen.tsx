@@ -37,7 +37,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',

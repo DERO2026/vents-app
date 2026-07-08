@@ -118,13 +118,13 @@ export function FollowingListScreen({
   const titleText = activeFilter === 'following' ? 'Subscribed' : 'Subscribers';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#060A12' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
       {/* Header */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         padding: 'calc(20px + env(safe-area-inset-top)) 20px 14px',
         borderBottom: '1px solid rgba(255,255,255,0.04)',
-        background: '#060A12',
+        background: '#020005',
       }}>
         <button
           onClick={onBack}

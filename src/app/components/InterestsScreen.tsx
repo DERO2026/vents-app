@@ -31,7 +31,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
   }
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: 'calc(40px + env(safe-area-inset-top)) 24px 32px' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: 'calc(40px + env(safe-area-inset-top)) 24px 32px' }}>
       <div style={{ marginBottom: '32px' }}>
         <h1 style={{ color: '#F0F0FF', fontSize: '26px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif' }}>What are you into?</h1>
         <p style={{ color: '#8B8FA8', fontSize: '14px', margin: 0 }}>Pick at least 3 interests — we'll use them to personalize your Vents feed.</p>

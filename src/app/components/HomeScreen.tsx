@@ -290,32 +290,6 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
   );
 });
 
-function CardSkeleton() {
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '210px',
-        background: '#090514',
-        borderRadius: '16px',
-        border: '1px solid rgba(255,255,255,0.07)',
-        display: 'flex',
-        flexDirection: 'column',
-        overflow: 'hidden',
-        opacity: 0.6,
-      }}
-    >
-      <div style={{ height: '110px', background: '#1A1D36' }} />
-      <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
-        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
-      </div>
-    </div>
-  );
-}
-
 const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
   event: Event;
   onPress: (e: Event) => void;
@@ -1026,13 +1000,15 @@ export function HomeScreen({
           flexShrink: 0,
         }}
       >
-        {/* Logo + tagline */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+        {/* Logo + headline + tagline */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
           <VentsLogo />
-          <div style={{ fontSize: '10px', fontWeight: 400, paddingLeft: '2px' }}>
-            <span style={{ color: '#888888' }}>Discover Nigeria's </span>
-            <span style={{ color: '#7B2FBE', fontWeight: 700, textShadow: '0 0 8px rgba(123,47,247,0.8)' }}>Best</span>
-            <span style={{ color: '#888888' }}> Events</span>
+          <div style={{ fontSize: '11px', fontWeight: 600, color: '#E5E7EB', paddingLeft: '2px', lineHeight: 1.3, maxWidth: '210px' }}>
+            Book tickets to events, concerts, food festivals and more!
+          </div>
+          <div style={{ fontSize: '10px', fontWeight: 400, paddingLeft: '2px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+            <span style={{ color: '#888888' }}>Discover Nigeria's Best Events through</span>
+            <VentsLogo size={11} />
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1067,18 +1043,6 @@ export function HomeScreen({
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <Bell size={16} color="#C4C9E0" />
-          </button>
-          <button
-            onClick={onProfilePress}
-            style={{ width: '32px', height: '32px', borderRadius: '50%', overflow: 'hidden', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-          >
-            {currentUser?.avatar_url ? (
-              <img src={currentUser.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>
-                {(currentUser?.full_name || currentUser?.email || 'A').charAt(0).toUpperCase()}
-              </span>
-            )}
           </button>
           {(currentUser?.role === 'organizer' || currentUser?.role === 'admin' || currentUser?.role === 'root') && (
             <button
@@ -1173,9 +1137,9 @@ export function HomeScreen({
               <div className="mb-3">
                 <div style={{ width: '100px', height: '16px', background: '#1A1D36', borderRadius: '4px' }} />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
                 {Array.from({ length: 4 }).map((_, i) => (
-                  <CardSkeleton key={i} />
+                  <HorizontalCardSkeleton key={i} />
                 ))}
               </div>
             </div>
@@ -1270,15 +1234,16 @@ export function HomeScreen({
                   )}
                 </div>
               ) : (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px' }}>
                   {filteredEvents.map((event) => (
-                    <FeedCard
-                      key={event.id}
-                      event={event}
-                      onPress={onEventPress}
-                      isSaved={savedEvents.includes(event.id)}
-                      onToggleSave={onToggleSave}
-                    />
+                    <div key={event.id} style={{ width: '180px', flexShrink: 0 }}>
+                      <FeedCard
+                        event={event}
+                        onPress={onEventPress}
+                        isSaved={savedEvents.includes(event.id)}
+                        onToggleSave={onToggleSave}
+                      />
+                    </div>
                   ))}
                 </div>
               )}

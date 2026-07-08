@@ -105,7 +105,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
   };
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <style>{`input::placeholder { color: #8B8FA8; }`}</style>
 
       {/* Header */}

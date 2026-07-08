@@ -83,7 +83,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
         left: 0,
         right: 0,
         bottom: 0,
-        background: '#060A12',
+        background: '#020005',
         zIndex: 2000,
         display: 'flex',
         flexDirection: 'column',

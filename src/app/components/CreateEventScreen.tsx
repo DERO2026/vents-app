@@ -114,7 +114,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     return (
       <div
         style={{
-          background: '#060A12',
+          background: '#020005',
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -377,7 +377,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -1173,7 +1173,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           style={{
             position: 'fixed',
             inset: 0,
-            background: '#060A12',
+            background: '#020005',
             zIndex: 1000,
             display: 'flex',
             flexDirection: 'column',

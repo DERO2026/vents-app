@@ -94,7 +94,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -226,7 +226,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   width: '22px',
                   height: '22px',
                   borderRadius: '50%',
-                  background: '#060A12',
+                  background: '#020005',
                   flexShrink: 0,
                 }}
               />
@@ -242,7 +242,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   width: '22px',
                   height: '22px',
                   borderRadius: '50%',
-                  background: '#060A12',
+                  background: '#020005',
                   flexShrink: 0,
                 }}
               />

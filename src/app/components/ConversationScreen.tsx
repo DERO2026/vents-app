@@ -362,7 +362,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   return (
     <div
-      style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
+      style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
       onTouchStart={e => setSwipeStartX(e.touches[0].clientX)}
       onTouchEnd={e => {
         if (swipeStartX !== null && e.changedTouches[0].clientX - swipeStartX > 60) onBack();

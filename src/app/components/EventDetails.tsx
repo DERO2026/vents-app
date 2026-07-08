@@ -16,7 +16,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
+    <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {/* Hero Image */}
       <div className="relative" style={{ height: 'calc(280px + env(safe-area-inset-top))', flexShrink: 0 }}>
         <img src={event.image} alt={event.title} className="w-full h-full object-cover" />
@@ -294,7 +294,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
       <div
         className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
         style={{
-          background: 'linear-gradient(to top, #060A12 80%, transparent)',
+          background: 'linear-gradient(to top, #020005 80%, transparent)',
         }}
       >
         <button

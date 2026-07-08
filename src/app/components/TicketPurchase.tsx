@@ -46,7 +46,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#060A12' }}>
+    <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {/* Header */}
       <div
         className="flex items-center gap-3 px-4 pb-4"
@@ -310,7 +310,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
       {/* Pay Button */}
       <div
         className="absolute bottom-0 left-0 right-0 px-4 pb-6 pt-3"
-        style={{ background: 'linear-gradient(to top, #060A12 70%, transparent)' }}
+        style={{ background: 'linear-gradient(to top, #020005 70%, transparent)' }}
       >
         <button
           onClick={handlePurchase}

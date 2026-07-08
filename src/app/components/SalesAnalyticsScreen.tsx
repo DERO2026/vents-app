@@ -195,7 +195,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScreenProps) {
   if (!currentUser) {
     return (
-      <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
         Loading analytics...
       </div>
     );
@@ -339,7 +339,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',

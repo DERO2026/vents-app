@@ -144,7 +144,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
   }
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <style>{`input::placeholder, textarea::placeholder { color: #8B8FA8; }`}</style>
 
       {/* Header */}

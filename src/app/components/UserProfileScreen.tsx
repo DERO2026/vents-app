@@ -180,7 +180,7 @@ export function UserProfileScreen({
   return (
     <div
       style={{
-        background: '#060A12',
+        background: '#020005',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -203,7 +203,7 @@ export function UserProfileScreen({
             style={{
               width: '100%',
               height: '100%',
-              background: `linear-gradient(135deg, ${user.avatarColor}40 0%, rgba(79,70,229,0.25) 60%, #060A12 100%)`,
+              background: `linear-gradient(135deg, ${user.avatarColor}40 0%, rgba(79,70,229,0.25) 60%, #020005 100%)`,
             }}
           />
         )}
@@ -250,7 +250,7 @@ export function UserProfileScreen({
             height: '72px',
             borderRadius: '20px',
             background: user.avatar_url ? 'transparent' : user.avatarColor,
-            border: '3px solid #060A12',
+            border: '3px solid #020005',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',

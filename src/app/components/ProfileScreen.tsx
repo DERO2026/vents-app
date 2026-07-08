@@ -26,7 +26,7 @@ import { insforge } from '../../lib/insforge';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -240,7 +240,7 @@ export function ProfileScreen({
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
   const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
-  const isVerified = (currentUser as any)?.is_verified === true || currentUser?.id === ROOT_UID;
+  const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
   const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : 'Attendee';
   
   const filteredMenuItems = menuItems.filter(item => {
@@ -357,7 +357,7 @@ export function ProfileScreen({
                   position: 'absolute', bottom: -4, right: -4,
                   background: '#7B2FBE', borderRadius: '50%', width: '22px', height: '22px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: '2px solid #060A12',
+                  border: '2px solid #020005',
                 }}>
                   <Camera size={11} color="#fff" />
                 </div>
@@ -406,22 +406,10 @@ export function ProfileScreen({
 
             {/* Stats tab bar — role-specific */}
             <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none', background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '10px' }}>
-              {(isAdmin ? [
-                { label: 'Events', value: eventsCreated, onClick: () => onNavigate('manage-events') },
-                { label: 'Saved', value: savedCount, onClick: () => onNavigate('saved') },
+              {[
                 { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
                 { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
-              ] : isOrganizer ? [
-                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
-                { label: 'Events Organized', value: eventsCreated, onClick: () => onNavigate('manage-events') },
-                { label: 'Saved Events', value: savedCount, onClick: () => onNavigate('saved') },
-              ] : [
-                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
-                { label: 'Attended Events', value: tickets.length, onClick: () => onNavigate('my-tickets') },
-                { label: 'Saved Events', value: savedCount, onClick: () => onNavigate('saved') },
-              ]).map((stat) => (
+              ].map((stat) => (
                 <div
                   key={stat.label}
                   onClick={stat.onClick}
@@ -466,66 +454,6 @@ export function ProfileScreen({
             startGroupIndex={highlightData.startGroupIndex}
             onClose={() => { setHighlightData(null); setHighlightRefresh(r => r + 1); }}
           />
-        )}
-
-        {/* Recent ticket */}
-        {tickets.length > 0 && (
-          <div className="px-4 mb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h2 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Latest Ticket</h2>
-              <button
-                onClick={() => onNavigate('my-tickets')}
-                style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 500, background: 'none', border: 'none', cursor: 'pointer' }}
-              >
-                See all
-              </button>
-            </div>
-            <button
-              onClick={() => onViewTicket(tickets[tickets.length - 1])}
-              className="w-full flex items-center gap-3 p-3 text-left"
-              style={{
-                background: '#131629',
-                borderRadius: '14px',
-                border: '1px solid rgba(255,255,255,0.05)',
-              }}
-            >
-              <img
-                src={tickets[tickets.length - 1].event.image}
-                alt=""
-                className="object-cover flex-shrink-0"
-                style={{ width: '54px', height: '54px', borderRadius: '10px' }}
-              />
-              <div className="flex-1 min-w-0">
-                <p
-                  style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}
-                  className="truncate"
-                >
-                  {tickets[tickets.length - 1].event.title}
-                </p>
-                <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                  {tickets[tickets.length - 1].event.date}
-                </p>
-                <div className="flex items-center gap-2 mt-1">
-                  <span
-                    style={{
-                      fontSize: '10px',
-                      color: '#22C55E',
-                      background: 'rgba(34,197,94,0.12)',
-                      padding: '1px 6px',
-                      borderRadius: '4px',
-                      fontWeight: 600,
-                    }}
-                  >
-                    Confirmed
-                  </span>
-                  <span style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600 }}>
-                    {formatPrice(tickets[tickets.length - 1].totalAmount)}
-                  </span>
-                </div>
-              </div>
-              <ChevronRight size={16} color="#8B8FA8" />
-            </button>
-          </div>
         )}
 
         {/* Menu items */}

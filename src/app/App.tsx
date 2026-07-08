@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
-import { insforge, clearRefreshToken } from '../lib/insforge';
+import { insforge, clearRefreshToken, getAuthToken } from '../lib/insforge';
 import { setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
 import { identifyUser, trackEvent } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
@@ -156,7 +156,7 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -389,7 +389,8 @@ export default function App() {
           avatar_url: profile?.avatar_url,
           cover_url: profile?.cover_url,
           isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser'),
-          vc_badge: profile?.vc_badge
+          vc_badge: profile?.vc_badge,
+          is_verified: profile?.is_verified === true,
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
@@ -1107,6 +1108,12 @@ export default function App() {
     });
 
     try {
+      // Ensure hc.userToken is set so auth.uid() resolves in RLS policies —
+      // without this, a follow/unfollow after a page reload can silently
+      // fail RLS (auth.uid() resolves to NULL) while the UI still shows
+      // the optimistic update reverting a moment later.
+      await getAuthToken();
+
       if (isFollowing) {
         const { error } = await insforge.database
           .from('follows')
@@ -1167,7 +1174,7 @@ export default function App() {
     navigateTo(target as Screen);
   }, [navigateTo]);
 
-  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean }) => {
     const enriched = {
       ...userProfile,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer

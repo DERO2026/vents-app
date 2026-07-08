@@ -92,7 +92,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   }
 
   return (
-    <div style={{ background: '#060A12', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
