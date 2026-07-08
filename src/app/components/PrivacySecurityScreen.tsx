@@ -67,7 +67,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
   };
 
   const row = (label: string, sub: string, icon: React.ReactNode, children: React.ReactNode) => (
-    <div style={{ background: '#0D1220', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+    <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
         <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           {icon}
@@ -102,7 +102,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
     <select
       value={val}
       onChange={e => onChange(e.target.value)}
-      style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '8px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', cursor: 'pointer' }}
+      style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '8px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', cursor: 'pointer' }}
     >
       {VISIBILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>

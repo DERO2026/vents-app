@@ -425,7 +425,7 @@ export function OrganizerDashboard({
                 <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: '#0F1322', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
+                  contentStyle={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
                   labelStyle={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '4px' }}
                   itemStyle={{ color: '#A78BFA' }}
                 />

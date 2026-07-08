@@ -205,7 +205,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Withdraw modal */}
       {showWithdraw && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#1a1f2e', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Withdraw Funds</p>
             <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
             <input
@@ -234,7 +234,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Add/Edit bank modal */}
       {showAddBank && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#1a1f2e', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 20px' }}>{bankAccount ? 'Update Bank Account' : 'Add Bank Account'}</p>
             {(['Bank Name', 'Account Number', 'Account Name'] as const).map((label, i) => {
               const vals = [bankName, accountNumber, accountName];

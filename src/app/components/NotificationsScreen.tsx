@@ -125,7 +125,7 @@ export function NotificationsScreen({
           <button
             onClick={onBack}
             style={{
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '50%',
               width: '36px',
@@ -194,7 +194,7 @@ export function NotificationsScreen({
                 width: '72px',
                 height: '72px',
                 borderRadius: '20px',
-                background: '#131629',
+                background: '#090514',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',

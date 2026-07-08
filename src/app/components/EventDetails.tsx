@@ -118,7 +118,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
           <div className="flex flex-col gap-3 mb-4">
             <div
               className="flex items-center gap-3 p-3"
-              style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+              style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
             >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -134,7 +134,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
 
             <div
               className="flex items-center gap-3 p-3"
-              style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+              style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
             >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -152,7 +152,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
 
             <div
               className="flex items-center gap-3 p-3"
-              style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+              style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
             >
               <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -219,7 +219,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
           {/* Organizer */}
           <div
             className="flex items-center gap-3 p-3 mb-5"
-            style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+            style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <div
               className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"

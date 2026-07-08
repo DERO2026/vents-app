@@ -166,16 +166,10 @@ export default function App() {
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
-  const [language, setLanguage] = useState<string>(() => localStorage.getItem('vents_language') || 'en');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [followingFilter, setFollowingFilter] = useState<'following' | 'followers' | 'attendees' | 'all'>('following');
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
-
-  const handleLanguageChange = useCallback((lang: string) => {
-    setLanguage(lang);
-    localStorage.setItem('vents_language', lang);
-  }, []);
 
   const handleSwitchToAttendee = useCallback(() => {
     setUserRole('attendee');
@@ -1593,8 +1587,6 @@ export default function App() {
               onProfileUpdated={(fields) => {
                 setCurrentUser((prev) => prev ? { ...prev, ...fields, isOrganizer: fields.role === 'organizer' || prev.isOrganizer } : null);
               }}
-              language={language}
-              onLanguageChange={handleLanguageChange}
             />
           )}
 

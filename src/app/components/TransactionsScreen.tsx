@@ -91,7 +91,7 @@ export function TransactionsScreen({ onBack }: TransactionsScreenProps) {
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <div>
@@ -116,7 +116,7 @@ export function TransactionsScreen({ onBack }: TransactionsScreenProps) {
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {transactions.map((tx) => (
-              <div key={tx.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '14px' }}>
+              <div key={tx.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>

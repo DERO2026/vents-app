@@ -101,7 +101,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           <button
             onClick={handleRefresh}
             style={{
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '50%',
               width: '36px',

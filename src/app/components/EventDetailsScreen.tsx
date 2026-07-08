@@ -744,7 +744,7 @@ export function EventDetailsScreen({
         <div
           onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.06)',
             borderRadius: '14px',
             padding: '14px',
@@ -888,7 +888,7 @@ export function EventDetailsScreen({
                 <div
                   key={artist}
                   style={{
-                    background: '#131629',
+                    background: '#090514',
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: '50px',
                     padding: '7px 14px',
@@ -1053,7 +1053,7 @@ export function EventDetailsScreen({
               <button
                 onClick={() => onOrganizerPress(event.organizer_id!)}
                 style={{
-                  width: '100%', background: '#131629',
+                  width: '100%', background: '#090514',
                   border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px',
                   padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
                 }}
@@ -1069,7 +1069,7 @@ export function EventDetailsScreen({
               <button
                 onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}
                 style={{
-                  width: '100%', background: '#131629',
+                  width: '100%', background: '#090514',
                   border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px',
                   padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
                 }}
@@ -1092,11 +1092,11 @@ export function EventDetailsScreen({
             {loadingRelated ? (
               <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: '#131629', borderRadius: '16px', opacity: 0.6 }} />
+                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6 }} />
                 ))}
               </div>
             ) : relatedEvents.length === 0 ? (
-              <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B8FA8" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
               </div>
@@ -1108,7 +1108,7 @@ export function EventDetailsScreen({
                     onClick={() => onEventPress && onEventPress(evt)}
                     style={{
                       width: '150px',
-                      background: '#131629',
+                      background: '#090514',
                       border: '1px solid rgba(255,255,255,0.05)',
                       borderRadius: '16px',
                       overflow: 'hidden',
@@ -1151,7 +1151,7 @@ export function EventDetailsScreen({
             onClick={(e) => e.stopPropagation()}
             style={{
               width: '100%',
-              background: '#131629',
+              background: '#090514',
               borderRadius: '24px 24px 0 0',
               padding: '24px 20px 36px',
               border: '1px solid rgba(255,255,255,0.08)',

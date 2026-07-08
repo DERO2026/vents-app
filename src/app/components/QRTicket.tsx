@@ -87,14 +87,14 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: '#131629' }}
+          style={{ background: '#090514' }}
         >
           <ArrowLeft size={18} color="#F0F0FF" />
         </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>My Ticket</h1>
         <button
           onClick={handleShare}
-          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#131629' }}>
+          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#090514' }}>
           <Share2 size={16} color="#F0F0FF" />
         </button>
       </div>
@@ -122,7 +122,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="px-4">
           <div
             style={{
-              background: '#0F1322',
+              background: '#090514',
               borderRadius: '24px',
               overflow: 'hidden',
               border: '1px solid rgba(255,255,255,0.08)',
@@ -176,7 +176,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               {/* Ticket holder */}
               <div
                 className="flex items-center justify-between p-3 mb-4"
-                style={{ background: '#161929', borderRadius: '12px' }}
+                style={{ background: '#090514', borderRadius: '12px' }}
               >
                 <div>
                   <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Holder</p>
@@ -231,7 +231,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="px-4 mt-4">
           <div
             className="flex items-center justify-between p-4"
-            style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+            style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <span style={{ color: '#8B8FA8', fontSize: '14px' }}>Total Paid</span>
             <span style={{ color: '#22C55E', fontSize: '18px', fontWeight: 800 }}>
@@ -252,7 +252,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
             className="flex-1 flex items-center justify-center gap-2"
             style={{
               height: '50px',
-              background: '#131629',
+              background: '#090514',
               borderRadius: '14px',
               border: '1px solid rgba(255,255,255,0.08)',
             }}

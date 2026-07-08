@@ -70,7 +70,7 @@ function ConfirmModal({
       display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, padding: '24px',
     }}>
       <div style={{
-        background: '#0D0D1A', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '20px',
+        background: '#090514', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '20px',
         padding: '28px 24px', maxWidth: '340px', width: '100%', textAlign: 'center',
       }}>
         <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
@@ -912,7 +912,7 @@ export function AdminDashboardScreen({
   // ── Access guard ─────────────────────────────────────────────────────────────
   if (currentUser?.role !== 'admin' && !isRoot) {
     return (
-      <div style={{ background: '#000000', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
         <Shield size={48} color="#EF4444" style={{ marginBottom: '16px' }} />
         <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800 }}>Access Denied</h2>
         <p style={{ color: '#8B8FA8', fontSize: '14px', marginTop: '8px' }}>
@@ -951,7 +951,7 @@ export function AdminDashboardScreen({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ background: '#000000', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
 
       {confirmModal && (
         <ConfirmModal
@@ -965,7 +965,7 @@ export function AdminDashboardScreen({
       )}
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 20px 14px', borderBottom: '1px solid rgba(168,85,247,0.1)', background: '#000000', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 20px 14px', borderBottom: '1px solid rgba(168,85,247,0.1)', background: '#020005', flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
@@ -1020,7 +1020,7 @@ export function AdminDashboardScreen({
         <>
           {/* Search row */}
           <div style={{ padding: '12px 20px 6px', flexShrink: 0, display: 'flex', gap: '8px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', gap: '10px' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', gap: '10px' }}>
               <Search size={15} color="#8B8FA8" />
               <input
                 type="text"
@@ -1031,7 +1031,7 @@ export function AdminDashboardScreen({
                 style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '13px' }}
               />
             </div>
-            <button onClick={loadUsers} style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
+            <button onClick={loadUsers} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
               <RefreshCw size={15} />
             </button>
           </div>
@@ -1049,7 +1049,7 @@ export function AdminDashboardScreen({
                   const isBusy = busyId === u.id;
                   const isRootUser = u.id === ROOT_UID;
                   return (
-                    <div key={u.id} style={{ background: '#0D0D1A', borderRadius: '16px', border: `1px solid ${isRootUser ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)'}`, padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', opacity: isBusy ? 0.6 : 1, transition: 'opacity 0.2s' }}>
+                    <div key={u.id} style={{ background: '#090514', borderRadius: '16px', border: `1px solid ${isRootUser ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)'}`, padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px', opacity: isBusy ? 0.6 : 1, transition: 'opacity 0.2s' }}>
 
                       {/* Row: Name + badges */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -1188,7 +1188,7 @@ export function AdminDashboardScreen({
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px' }}>
           {/* Event search bar */}
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', gap: '10px' }}>
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '10px 14px', gap: '10px' }}>
               <Search size={15} color="#8B8FA8" />
               <input
                 type="text"
@@ -1198,7 +1198,7 @@ export function AdminDashboardScreen({
                 style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '13px' }}
               />
             </div>
-            <button onClick={loadEvents} style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
+            <button onClick={loadEvents} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
               <RefreshCw size={15} />
             </button>
           </div>
@@ -1212,7 +1212,7 @@ export function AdminDashboardScreen({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).map(ev => (
-                <div key={ev.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div key={ev.id} style={{ background: '#090514', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ev.title || '(Untitled)'}
@@ -1247,7 +1247,7 @@ export function AdminDashboardScreen({
                 const isRootAction = log.action.startsWith('ROOT_');
                 const actionColor = isRootAction ? '#A855F7' : log.action.startsWith('delete') ? '#EF4444' : log.action.startsWith('suspend') ? '#F59E0B' : '#A78BFA';
                 return (
-                  <div key={log.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: `1px solid ${isRootAction ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  <div key={log.id} style={{ background: '#090514', borderRadius: '14px', border: `1px solid ${isRootAction ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <span style={{ fontSize: '12px', fontWeight: 700, color: actionColor, background: `${actionColor}18`, padding: '2px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         {isRootAction && <Zap size={10} />}
@@ -1285,7 +1285,7 @@ export function AdminDashboardScreen({
               {reports.map(r => {
                 const statusColor = r.status === 'pending' ? '#F59E0B' : r.status === 'actioned' ? '#EF4444' : r.status === 'dismissed' ? '#6B7280' : '#10B981';
                 return (
-                  <div key={r.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px' }}>
+                  <div key={r.id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
                       <div>
                         <span style={{ fontSize: '11px', fontWeight: 700, color: statusColor, background: `${statusColor}20`, padding: '2px 8px', borderRadius: '6px' }}>{r.status}</span>
@@ -1390,7 +1390,7 @@ export function AdminDashboardScreen({
 
             {/* Search results */}
             {vcSearchResults.length > 0 && (
-              <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
                 {vcSearchResults.map(u => (
                   <button
                     key={u.id}
@@ -1582,7 +1582,7 @@ export function AdminDashboardScreen({
           ) : pendingOrgs.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>All organizers verified ✓</div>
           ) : pendingOrgs.map(u => (
-            <div key={u.id} style={{ background: '#0D0D1A', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div key={u.id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{u.full_name || 'No Name'}</div>
@@ -1640,7 +1640,7 @@ export function AdminDashboardScreen({
               const user = req.users;
               const name = user?.full_name || user?.username || user?.email || req.user_id;
               return (
-                <div key={req.id} style={{ background: '#131629', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                <div key={req.id} style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                     <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{name}</span>
                     <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: req.status === 'pending' ? 'rgba(245,158,11,0.15)' : req.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: req.status === 'pending' ? '#F59E0B' : req.status === 'approved' ? '#10B981' : '#EF4444', textTransform: 'uppercase' as const }}>
@@ -1684,7 +1684,7 @@ export function AdminDashboardScreen({
               onChange={(e) => setImportText(e.target.value)}
               placeholder={`Paste event details here — copy from any website:\n\nEvent Name: \nDate: \nTime: \nVenue: \nCity/State: \nDescription: \nPrice: Free\n\nYou can paste multiple events separated by ---`}
               rows={10}
-              style={{ width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }}
+              style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }}
             />
           </div>
 
@@ -1843,7 +1843,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Maintenance Mode */}
-          <div style={{ background: '#0D0D1A', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: maintenanceMode ? 'rgba(245,158,11,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1868,7 +1868,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Global Broadcast */}
-          <div style={{ background: '#0D0D1A', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(168,85,247,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Megaphone size={17} color="#A855F7" />
@@ -1895,7 +1895,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Vents Cents Credit */}
-          <div style={{ background: '#0D0D1A', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Zap size={17} color="#10B981" />
@@ -1940,7 +1940,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Orphaned Record Cleanup */}
-          <div style={{ background: '#0D0D1A', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Trash2 size={17} color="#EF4444" />
@@ -1960,7 +1960,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Bulk Actions */}
-          <div style={{ background: '#0D0D1A', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Swords size={17} color="#EF4444" />

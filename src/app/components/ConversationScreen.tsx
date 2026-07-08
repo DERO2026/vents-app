@@ -372,14 +372,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       <style>{`@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}`}</style>
       {/* Toast / error banners */}
       {(voiceToast || audioError) && (
-        <div style={{ position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)', background: '#1A1D2E', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '12px', padding: '10px 16px', zIndex: 9999, maxWidth: '320px', textAlign: 'center' }}>
+        <div style={{ position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)', background: '#090514', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '12px', padding: '10px 16px', zIndex: 9999, maxWidth: '320px', textAlign: 'center' }}>
           <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{voiceToast || audioError}</p>
         </div>
       )}
       {/* Location permission modal */}
       {locationModalVisible && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 10000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#1A1D2E', borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '28px 24px 36px', width: '100%', maxWidth: '480px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '10px', fontFamily: 'Space Grotesk, sans-serif' }}>Allow Location Access</h3>
             <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '24px' }}>Vents uses your location to show events near you. Your location is never stored or shared.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -404,7 +404,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       {/* Long-press context menu */}
       {longPressId && (
         <div onClick={() => setLongPressId(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div style={{ background: '#1A1D2E', borderRadius: '16px', padding: '8px', minWidth: '180px' }}>
+          <div style={{ background: '#090514', borderRadius: '16px', padding: '8px', minWidth: '180px' }}>
             <button
               onClick={e => { e.stopPropagation(); deleteMessage(longPressId); }}
               style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '14px 16px', background: 'none', border: 'none', color: '#EF4444', fontSize: '14px', cursor: 'pointer', borderRadius: '12px' }}
@@ -421,7 +421,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         padding: 'calc(14px + env(safe-area-inset-top)) 16px 12px',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         flexShrink: 0,
-        background: '#0D1220',
+        background: '#090514',
       }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
           <ArrowLeft size={22} color="#A78BFA" />
@@ -508,7 +508,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                   />
                 ) : locationData ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    <div style={{ borderRadius: '10px', overflow: 'hidden', width: '200px', height: '110px', background: '#1a2035' }}>
+                    <div style={{ borderRadius: '10px', overflow: 'hidden', width: '200px', height: '110px', background: '#090514' }}>
                       <iframe
                         title="map"
                         src={`https://www.openstreetmap.org/export/embed.html?bbox=${locationData.lng - 0.01},${locationData.lat - 0.01},${locationData.lng + 0.01},${locationData.lat + 0.01}&layer=mapnik&marker=${locationData.lat},${locationData.lng}`}
@@ -554,7 +554,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       <div style={{
         padding: '10px 16px',
         paddingBottom: 'calc(10px + env(safe-area-inset-bottom))',
-        background: '#0D1220',
+        background: '#090514',
         borderTop: '1px solid rgba(255,255,255,0.06)',
         display: 'flex', gap: '8px', alignItems: 'flex-end', flexShrink: 0,
         transform: 'translateZ(0)',
@@ -563,7 +563,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         zIndex: 10,
       }}>
         {recording ? (
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '20px', padding: '10px 14px' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '20px', padding: '10px 14px' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#EF4444', animation: 'pulse 1s infinite' }} />
             <span style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600 }}>
               {`${Math.floor(recordingSeconds / 60)}:${(recordingSeconds % 60).toString().padStart(2, '0')}`} / 1:00
@@ -602,7 +602,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
               placeholder="Type a message…"
               rows={1}
               style={{
-                flex: 1, background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
+                flex: 1, background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: '20px', padding: '10px 14px',
                 color: '#F0F0FF', fontSize: '14px', resize: 'none',
                 outline: 'none', fontFamily: 'inherit', lineHeight: 1.4,

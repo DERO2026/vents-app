@@ -1313,7 +1313,7 @@ export function HomeScreen({
           {/* Sheet */}
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 201,
-            background: '#0E1020', borderRadius: '24px 24px 0 0',
+            background: '#090514', borderRadius: '24px 24px 0 0',
             border: '1px solid rgba(255,255,255,0.08)',
             paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
             maxHeight: '85vh', display: 'flex', flexDirection: 'column',

@@ -121,7 +121,7 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
             <div
               key={i}
               style={{
-                background: '#0D1220',
+                background: '#090514',
                 border: `1px solid ${openIndex === i ? 'rgba(168,85,247,0.3)' : 'rgba(255,255,255,0.05)'}`,
                 borderRadius: '12px',
                 overflow: 'hidden',

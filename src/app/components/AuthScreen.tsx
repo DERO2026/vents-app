@@ -650,7 +650,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '28px' }}>
           If you believe this is a mistake, please reach out to us to appeal.
         </p>
-        <div style={{ background: '#0D0D1A', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '18px 20px', width: '100%', maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '18px 20px', width: '100%', maxWidth: '320px', display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <a href="https://wa.me/2349030737368" style={{ display: 'flex', alignItems: 'center', gap: '12px', textDecoration: 'none' }}>
             <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(37,211,102,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: '18px' }}>💬</span>
@@ -707,7 +707,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         </p>
         <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} style={{ width: '44px', height: '54px', background: '#131629', border: `1px solid ${totpCode.length > i ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => totpInputRef.current?.focus()}>
+            <div key={i} style={{ width: '44px', height: '54px', background: '#090514', border: `1px solid ${totpCode.length > i ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => totpInputRef.current?.focus()}>
               <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700 }}>{totpCode[i] ?? ''}</span>
             </div>
           ))}
@@ -780,7 +780,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             }
           }}
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -837,7 +837,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 <div
                   key={i}
                   style={{
-                    width: '42px', height: '52px', background: '#131629',
+                    width: '42px', height: '52px', background: '#090514',
                     border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
                     borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
@@ -977,7 +977,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   style={{
                     width: '42px',
                     height: '52px',
-                    background: '#131629',
+                    background: '#090514',
                     border: `1.5px solid ${
                       verificationCode.length > i
                         ? '#A78BFA'
@@ -1244,7 +1244,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      background: '#131629',
+                      background: '#090514',
                       border: '1px solid rgba(255,255,255,0.08)',
                       borderRadius: '14px',
                       padding: '14px 16px',
@@ -1439,7 +1439,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 setShowStateDropdown(false);
                 setStateSearchQuery('');
               }}
-              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
             >
               <X size={16} color="#C4C9E0" />
             </button>
@@ -1450,7 +1450,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '12px 16px',

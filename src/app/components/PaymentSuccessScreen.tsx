@@ -146,7 +146,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       <div style={{ padding: '0 16px 24px' }}>
         <div
           style={{
-            background: '#131629',
+            background: '#090514',
             borderRadius: '24px',
             border: '1px solid rgba(255,255,255,0.08)',
             overflow: 'hidden',
@@ -290,7 +290,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             onClick={handleSave}
             style={{
               flex: 1,
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '13px',
@@ -308,7 +308,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             onClick={handleShare}
             style={{
               flex: 1,
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '13px',

@@ -157,7 +157,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '32px' }}>
           You'll see increased visibility and analytics in your dashboard.
         </p>
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', width: '100%', marginBottom: '24px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', width: '100%', marginBottom: '24px' }}>
           {plan.perks.map((perk) => (
             <div key={perk} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
               <CheckCircle size={14} color="#10B981" />
@@ -178,7 +178,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <div>
@@ -203,7 +203,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>SELECT EVENT</p>
         <div style={{ marginBottom: '24px' }}>
           {events.length === 0 ? (
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontSize: '13px' }}>
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontSize: '13px' }}>
               No events found. Please create an event first.
             </div>
           ) : (
@@ -212,7 +212,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
               onChange={(e) => setSelectedEventId(e.target.value)}
               style={{
                 width: '100%',
-                background: '#131629',
+                background: '#090514',
                 border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: '12px',
                 padding: '12px 14px',
@@ -306,7 +306,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         </div>
 
         {/* Price summary */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{plan.label}</span>
             <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{formatPrice(price)}</span>

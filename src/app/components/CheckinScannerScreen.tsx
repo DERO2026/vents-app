@@ -236,7 +236,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 20px 14px', background: '#020005', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
-        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <div style={{ flex: 1 }}>
@@ -254,7 +254,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
 
       {/* ── Stats bar ──────────────────────────────────────────────────────── */}
       <div style={{ padding: '12px 20px', flexShrink: 0 }}>
-        <div style={{ background: '#131629', borderRadius: '14px', padding: '12px 16px', border: '1px solid rgba(255,255,255,0.05)' }}>
+        <div style={{ background: '#090514', borderRadius: '14px', padding: '12px 16px', border: '1px solid rgba(255,255,255,0.05)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <span style={{ color: '#8B8FA8', fontSize: '12px' }}>Check-ins</span>
             <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>
@@ -291,7 +291,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
                 borderRadius: '20px',
                 overflow: 'hidden',
                 border: '2px solid rgba(167,139,250,0.3)',
-                background: '#0A0C1A',
+                background: '#090514',
               }}
             />
             {!scannerReady && (

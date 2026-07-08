@@ -177,7 +177,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   return (
     <div
       style={{
-        background: '#131629',
+        background: '#090514',
         border: '1px solid rgba(255,255,255,0.06)',
         borderRadius: '18px',
         padding: '16px',
@@ -358,7 +358,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
         <button
           onClick={onBack}
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -400,7 +400,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
                   key={label}
                   style={{
                     flex: 1,
-                    background: '#131629',
+                    background: '#090514',
                     border: '1px solid rgba(255,255,255,0.06)',
                     borderRadius: '16px',
                     padding: '14px',
@@ -444,7 +444,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
             {/* Key insights */}
             <div
               style={{
-                background: '#131629',
+                background: '#090514',
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '18px',
                 padding: '16px',

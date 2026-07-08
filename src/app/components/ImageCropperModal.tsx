@@ -97,7 +97,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           justifyContent: 'between',
           padding: '8px 16px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
-          background: '#131629',
+          background: '#090514',
         }}
       >
         <button
@@ -156,7 +156,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
       <div
         style={{
           padding: '12px 16px',
-          background: '#131629',
+          background: '#090514',
           borderTop: '1px solid rgba(255, 255, 255, 0.08)',
           display: 'flex',
           flexDirection: 'column',

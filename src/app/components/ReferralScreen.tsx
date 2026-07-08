@@ -51,9 +51,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [referrals, setReferrals] = useState<ReferralRow[]>([]);
   const [balance, setBalance] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [sending, setSending] = useState(false);
-  const [sendError, setSendError] = useState('');
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
@@ -115,7 +112,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   }, [currentUser?.id]);
 
   const joinedCount = referrals.filter((r) => r.status === 'joined').length;
-  const canInviteMore = referrals.length < MAX_REFERRALS;
 
   async function handleCancelInvite(id: string) {
     setCancellingId(id);
@@ -130,38 +126,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     }
   }
 
-  async function handleSendInvite() {
-    if (!currentUser?.id) return;
-    const email = inviteEmail.trim().toLowerCase();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { setSendError('Enter a valid email address.'); return; }
-    if (!canInviteMore) { setSendError(`You've reached the ${MAX_REFERRALS}-invite limit.`); return; }
-    if (referrals.some((r) => r.invitee_email === email)) { setSendError('You already invited this person.'); return; }
-    setSending(true); setSendError('');
-    try {
-      let emailHash = '';
-      try {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(email));
-        emailHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch { /* ignore */ }
-      const fp = [navigator.userAgent, navigator.language, screen.width, screen.height].join('|');
-      let fpHash = fp.slice(0, 64);
-      try {
-        const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(fp));
-        fpHash = Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-      } catch { /* ignore */ }
-      const { data: result, error } = await insforge.database.rpc('create_referral' as any, {
-        p_invitee_email: email, p_email_hash: emailHash, p_fingerprint: fpHash,
-      });
-      if (error) throw error;
-      if (result === 'limit_reached') { setSendError('You have reached the maximum referral limit.'); return; }
-      if (result === 'velocity_cap') { setSendError('You can only send 3 invites per 24 hours.'); return; }
-      if (result === 'already_referred') { setSendError('This email has already been invited by someone else.'); return; }
-      setReferrals((prev) => [{ id: Date.now().toString(), invitee_email: email, status: 'pending', created_at: new Date().toISOString() }, ...prev]);
-      setInviteEmail('');
-    } catch (err: any) {
-      setSendError(err?.message || 'Failed to send invite. Try again.');
-    } finally { setSending(false); }
-  }
 
   async function handleEnterDraw() {
     if (drawEntries >= 3) { setDrawMsg('You have used all 3 entries for this month.'); return; }
@@ -233,7 +197,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       <style>{`input::placeholder{color:#555C7A;} .vc-scroll::-webkit-scrollbar{display:none;}`}</style>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Vents Cents</h1>
@@ -267,7 +231,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── PRIZE DRAW ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,184,48,0.2)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,184,48,0.2)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <Trophy size={18} color="#FFB830" />
             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Monthly Prize Draw</span>
@@ -316,7 +280,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── BADGES ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <Star size={18} color="#A78BFA" />
             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Profile Badges</span>
@@ -356,7 +320,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── FEATURED IN PEOPLE ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <Zap size={18} color="#60A5FA" />
             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Featured in People</span>
@@ -383,7 +347,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── EARN VC GUIDE ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>HOW TO EARN VENTS CENTS</p>
           {[
             { label: 'Invite a friend (you)', amount: '+300 VC', icon: '👥' },
@@ -403,7 +367,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── PROFILE BONUS ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
             <span style={{ fontSize: '18px' }}>✅</span>
             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Complete Profile Bonus</span>
@@ -427,7 +391,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── REFERRAL SECTION ─── */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={16} color="#A855F7" />
@@ -445,7 +409,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           {/* Copy link */}
           <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '6px' }}>YOUR REFERRAL LINK</p>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
-            <div style={{ flex: 1, background: '#0D0F1E', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 12px', color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <div style={{ flex: 1, background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '10px', padding: '10px 12px', color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {referralLink}
             </div>
             <button onClick={copyLink} style={{ background: copied ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.12)', border: `1px solid ${copied ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.3)'}`, borderRadius: '10px', padding: '10px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', color: copied ? '#10B981' : '#A855F7', fontSize: '12px', fontWeight: 700, flexShrink: 0 }}>
@@ -453,22 +417,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
               {copied ? 'Copied!' : 'Copy'}
             </button>
           </div>
-
-          {/* Send by email */}
-          {canInviteMore && (
-            <>
-              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '6px' }}>INVITE BY EMAIL ({MAX_REFERRALS - referrals.length} left)</p>
-              <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-                <input type="email" value={inviteEmail} onChange={(e) => { setInviteEmail(e.target.value); setSendError(''); }} placeholder="friend@example.com"
-                  style={{ flex: 1, background: '#0D0F1E', border: `1px solid ${sendError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.07)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif' }} />
-                <button onClick={handleSendInvite} disabled={sending || !inviteEmail.trim()}
-                  style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '10px', padding: '10px 16px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: sending ? 'default' : 'pointer', opacity: sending ? 0.6 : 1, flexShrink: 0 }}>
-                  {sending ? '...' : 'Invite'}
-                </button>
-              </div>
-              {sendError && <p style={{ color: '#EF4444', fontSize: '12px' }}>{sendError}</p>}
-            </>
-          )}
         </div>
 
         {/* Invite list */}
@@ -478,7 +426,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {confirmCancel && (
                 <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100, padding: '24px' }}>
-                  <div style={{ background: '#131629', borderRadius: '20px', padding: '24px', maxWidth: '320px', width: '100%', border: '1px solid rgba(239,68,68,0.2)' }}>
+                  <div style={{ background: '#090514', borderRadius: '20px', padding: '24px', maxWidth: '320px', width: '100%', border: '1px solid rgba(239,68,68,0.2)' }}>
                     <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '8px' }}>Cancel invite?</p>
                     <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px' }}>This slot will not be returned. The invite will be removed.</p>
                     <div style={{ display: 'flex', gap: '10px' }}>
@@ -491,7 +439,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
                 </div>
               )}
               {referrals.map((ref) => (
-                <div key={ref.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                <div key={ref.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ref.invitee_email}</p>
                     <p style={{ color: '#555C7A', fontSize: '11px', marginTop: '2px' }}>{new Date(ref.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>

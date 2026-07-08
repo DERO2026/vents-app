@@ -48,7 +48,7 @@ export function ReportModal({ reporterId, targetType, targetId, targetName, onCl
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ width: '100%', maxWidth: '390px', background: '#131629', borderRadius: '24px 24px 0 0', padding: '20px 16px 36px', border: '1px solid rgba(255,255,255,0.08)' }}
+        style={{ width: '100%', maxWidth: '390px', background: '#090514', borderRadius: '24px 24px 0 0', padding: '20px 16px 36px', border: '1px solid rgba(255,255,255,0.08)' }}
       >
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>

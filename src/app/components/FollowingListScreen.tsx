@@ -129,7 +129,7 @@ export function FollowingListScreen({
         <button
           onClick={onBack}
           style={{
-            background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
+            background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%', width: '36px', height: '36px',
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',
           }}
@@ -170,7 +170,7 @@ export function FollowingListScreen({
       {/* Search */}
       <div style={{ padding: '6px 20px 10px' }}>
         <div style={{
-          display: 'flex', alignItems: 'center', background: '#131629',
+          display: 'flex', alignItems: 'center', background: '#090514',
           borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)',
           padding: '10px 14px', gap: '10px',
         }}>
@@ -209,7 +209,7 @@ export function FollowingListScreen({
                   key={user.id}
                   onClick={() => onUserPress?.({ id: user.id, name: displayName, username: user.username || '', bio: '', city: '', avatarColor: '#7B2FF7', avatarInitials: initials, avatar_url: user.avatar_url || undefined, eventsCreated: 0, followers: 0, following: 0, attendees: 0, role: 'user' })}
                   style={{
-                    display: 'flex', alignItems: 'center', background: '#131629',
+                    display: 'flex', alignItems: 'center', background: '#090514',
                     border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px',
                     padding: '12px 14px', gap: '12px', cursor: 'pointer',
                   }}

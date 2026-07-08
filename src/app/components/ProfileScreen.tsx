@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
 import BadgeChip from './BadgeChip';
-import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
 import {
   Settings,
   Bell,
@@ -57,8 +56,7 @@ export function ProfileScreen({
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
-  const [highlightData, setHighlightData] = useState<{ groups: any[]; startGroupIndex: number } | null>(null);
-  const [highlightRefresh, setHighlightRefresh] = useState(0);
+  const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
   const [orgRequestReason, setOrgRequestReason] = useState('');
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
@@ -81,7 +79,7 @@ export function ProfileScreen({
     pullStartY.current = null;
     if (dy > 400 && !pullRefreshing) {
       setPullRefreshing(true);
-      try { setHighlightRefresh(r => r + 1); } finally { setPullRefreshing(false); }
+      try { setProfileRefreshKey(r => r + 1); } finally { setPullRefreshing(false); }
     }
   };
 
@@ -125,7 +123,7 @@ export function ProfileScreen({
       }
     }
     fetchStats();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, profileRefreshKey]);
 
   useEffect(() => {
     async function checkOrgRequest() {
@@ -437,25 +435,6 @@ export function ProfileScreen({
           </div>
         </div>
 
-        {/* Highlights strip — own profile */}
-        {currentUser?.id && (
-          <div style={{ marginBottom: '4px' }}>
-            <HighlightsStrip
-              userId={currentUser.id}
-              isOwnProfile={true}
-              onHighlightClick={(groups, startGroupIndex) => setHighlightData({ groups, startGroupIndex })}
-              refreshTrigger={highlightRefresh}
-            />
-          </div>
-        )}
-        {highlightData && (
-          <HighlightsModal
-            groups={highlightData.groups}
-            startGroupIndex={highlightData.startGroupIndex}
-            onClose={() => { setHighlightData(null); setHighlightRefresh(r => r + 1); }}
-          />
-        )}
-
         {/* Menu items */}
         <div className="px-4 mb-4">
           <div
@@ -589,7 +568,7 @@ export function ProfileScreen({
         {showOrgRequestModal && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
             onClick={() => setShowOrgRequestModal(false)}>
-            <div style={{ background: '#131629', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
+            <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
               onClick={(e) => e.stopPropagation()}>
               <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become an Organizer</h3>
               <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
@@ -600,7 +579,7 @@ export function ProfileScreen({
                 onChange={(e) => setOrgRequestReason(e.target.value)}
                 placeholder="e.g. I want to host tech meetups in Lagos..."
                 rows={4}
-                style={{ width: '100%', background: '#0D1020', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
               />
               {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
               <button

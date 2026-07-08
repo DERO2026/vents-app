@@ -4,7 +4,6 @@ import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Fla
 import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
-import { HighlightsStrip, HighlightsModal } from './HighlightsModal';
 import { ReportModal } from './ReportModal';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -43,8 +42,6 @@ export function UserProfileScreen({
   currentUserId,
   onMessage,
 }: UserProfileScreenProps) {
-  const [highlightData, setHighlightData] = useState<{ groups: any[]; startGroupIndex: number } | null>(null);
-  const [highlightRefresh, setHighlightRefresh] = useState(0);
   const [eventsCreated, setEventsCreated] = useState(0);
   const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
@@ -418,7 +415,7 @@ export function UserProfileScreen({
         style={{
           display: 'flex',
           margin: '0 16px',
-          background: '#131629',
+          background: '#090514',
           border: '1px solid rgba(255,255,255,0.06)',
           borderRadius: '16px',
           padding: '14px 0',
@@ -453,22 +450,6 @@ export function UserProfileScreen({
           </div>
         ))}
       </div>
-
-      {/* Highlights (real DB-backed) */}
-      <HighlightsStrip
-        userId={user.id}
-        isOwnProfile={isOwnProfile}
-        onHighlightClick={(groups, startGroupIndex) => setHighlightData({ groups, startGroupIndex })}
-        refreshTrigger={highlightRefresh}
-      />
-
-      {highlightData && (
-        <HighlightsModal
-          groups={highlightData.groups}
-          startGroupIndex={highlightData.startGroupIndex}
-          onClose={() => setHighlightData(null)}
-        />
-      )}
 
       {/* Interests section below */}
 
@@ -529,7 +510,7 @@ export function UserProfileScreen({
                 key={event.id}
                 onClick={() => onEventPress?.(event)}
                 style={{
-                  background: '#131629',
+                  background: '#090514',
                   border: '1px solid rgba(255,255,255,0.05)',
                   borderRadius: '16px',
                   padding: '12px',
@@ -605,7 +586,7 @@ export function UserProfileScreen({
           </div>
 
           {!isOwnProfile && currentUserId && !reviewSubmitted && (
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '12px' }}>
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '12px' }}>
               <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>Leave a Review</p>
               <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
                 {[1, 2, 3, 4, 5].map((s) => (
@@ -631,12 +612,12 @@ export function UserProfileScreen({
           )}
 
           {reviews.length === 0 ? (
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '20px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '20px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>
               No reviews yet
             </div>
           ) : (
             reviews.map((r) => (
-              <div key={r.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
+              <div key={r.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                   <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
                     {(r.reviewer as any)?.full_name || (r.reviewer as any)?.username || 'Anonymous'}

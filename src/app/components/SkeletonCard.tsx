@@ -14,7 +14,7 @@ export function SkeletonCard({ variant = 'event' }: SkeletonCardProps) {
     return (
       <div
         style={{
-          background: '#131629',
+          background: '#090514',
           border: '1px solid rgba(255,255,255,0.06)',
           borderRadius: '20px',
           overflow: 'hidden',
@@ -52,7 +52,7 @@ export function SkeletonCard({ variant = 'event' }: SkeletonCardProps) {
   return (
     <div
       style={{
-        background: '#131629',
+        background: '#090514',
         borderRadius: '20px',
         overflow: 'hidden',
         flexShrink: 0,

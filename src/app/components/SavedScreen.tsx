@@ -39,7 +39,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
           <div className="flex flex-col items-center justify-center h-full pb-20">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-4"
-              style={{ background: '#131629' }}
+              style={{ background: '#090514' }}
             >
               <Bookmark size={36} color="#2A2D3E" strokeWidth={1.5} />
             </div>
@@ -56,7 +56,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
                 onClick={() => onEventPress(event)}
                 className="flex gap-3 cursor-pointer active:opacity-90 p-3"
                 style={{
-                  background: '#131629',
+                  background: '#090514',
                   borderRadius: '16px',
                   border: '1px solid rgba(255,255,255,0.05)',
                 }}

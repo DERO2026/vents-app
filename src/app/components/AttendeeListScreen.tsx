@@ -111,7 +111,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <ArrowLeft size={16} color="#C4C9E0" />
           </button>
           <div>
@@ -119,7 +119,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
             <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{eventTitle || 'Event attendees'}</p>
           </div>
         </div>
-        <button style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+        <button style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
           <Download size={14} color="#A78BFA" />
           <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Export</span>
         </button>
@@ -137,7 +137,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         <>
           {/* Check-in progress */}
           <div style={{ padding: '0 16px 12px' }}>
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Check-in Progress</p>
                 <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 800 }}>{checkedIn} / {total}</span>
@@ -153,7 +153,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
 
           {/* Search */}
           <div style={{ padding: '0 16px 10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#131629', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '10px 14px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '10px 14px' }}>
               <Search size={16} color="#8B8FA8" />
               <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email or ticket ID..." style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }} />
             </div>
@@ -180,7 +180,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                     const sc = STATUS_CONFIG[attendee.status];
                     const StatusIcon = sc.icon;
                     return (
-                      <div key={attendee.id} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div key={attendee.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: attendee.avatarColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px', color: '#fff', fontWeight: 700, flexShrink: 0 }}>
                           {attendee.initials}
                         </div>

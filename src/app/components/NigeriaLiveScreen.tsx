@@ -65,7 +65,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
   return (
     <div
       style={{
-        background: '#06090D',
+        background: '#020005',
         width: '100%',
         height: '100%',
         position: 'relative',

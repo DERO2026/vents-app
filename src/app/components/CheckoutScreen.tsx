@@ -260,7 +260,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <button
           onClick={onBack}
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -372,7 +372,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </div>
 
         {/* Promo code */}
-        <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
           <Tag size={16} color="#8B8FA8" />
           <input placeholder="Promo code" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} style={{ ...INPUT_STYLE, flex: 1 }} />
           <button
@@ -484,7 +484,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       {/* Country picker modal */}
       {showCountryPicker && (
         <div onClick={() => setShowCountryPicker(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#131629', borderRadius: '24px 24px 0 0', maxHeight: '70%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '70%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Select Country</p>
               <button onClick={() => setShowCountryPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>

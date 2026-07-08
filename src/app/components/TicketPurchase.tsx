@@ -55,7 +55,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: '#131629' }}
+          style={{ background: '#090514' }}
         >
           <ArrowLeft size={18} color="#F0F0FF" />
         </button>
@@ -70,7 +70,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
           {/* Event summary mini card */}
           <div
             className="flex gap-3 p-3 mb-5"
-            style={{ background: '#131629', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}
+            style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <img
               src={event.image}
@@ -95,7 +95,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
                 onClick={() => setShowTicketPicker(!showTicketPicker)}
                 className="w-full flex items-center justify-between p-4"
                 style={{
-                  background: '#131629',
+                  background: '#090514',
                   borderRadius: '14px',
                   border: '1px solid rgba(255,255,255,0.08)',
                 }}
@@ -116,7 +116,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
                 <div
                   className="absolute top-full left-0 right-0 z-10 mt-1"
                   style={{
-                    background: '#1A1D2E',
+                    background: '#090514',
                     borderRadius: '14px',
                     border: '1px solid rgba(255,255,255,0.1)',
                     overflow: 'hidden',
@@ -156,7 +156,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
             </label>
             <div
               className="flex items-center justify-between mt-2 p-4"
-              style={{ background: '#131629', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.08)' }}
             >
               <button
                 onClick={() => setQuantity(Math.max(1, quantity - 1))}
@@ -193,7 +193,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
                   placeholder="Enter your full name"
                   style={{
                     width: '100%',
-                    background: '#131629',
+                    background: '#090514',
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: '12px',
                     padding: '12px 14px',
@@ -212,7 +212,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
                   type="email"
                   style={{
                     width: '100%',
-                    background: '#131629',
+                    background: '#090514',
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: '12px',
                     padding: '12px 14px',
@@ -267,7 +267,7 @@ export function TicketPurchase({ event, initialTicket, onBack, onPurchaseComplet
           {/* Order Summary */}
           <div
             className="p-4 mb-4"
-            style={{ background: '#131629', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}
+            style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }} className="mb-3">
               Order Summary

@@ -45,7 +45,7 @@ const NIGERIA_CITIES: Record<string, string[]> = {
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
-  background: '#131629',
+  background: '#090514',
   border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: '12px',
   padding: '12px 14px',
@@ -402,7 +402,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
           disabled={submitting}
           style={{
-            background: '#131629',
+            background: '#090514',
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -524,7 +524,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               onClick={() => { if (!uploadingImage && !submitting) fileInputRef.current?.click(); }}
               style={{
                 height: '260px',
-                background: '#131629',
+                background: '#090514',
                 border: imageUrl ? '1px solid rgba(167,139,250,0.4)' : '2px dashed rgba(167,139,250,0.3)',
                 borderRadius: '16px',
                 display: 'flex',
@@ -776,7 +776,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               <div
                 key={index}
                 style={{
-                  background: '#131629',
+                  background: '#090514',
                   border: '1px solid rgba(255,255,255,0.06)',
                   borderRadius: '16px',
                   padding: '14px',
@@ -904,7 +904,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             {/* Contact phone toggle */}
             <div
               style={{
-                background: '#131629',
+                background: '#090514',
                 border: showPhone ? '1px solid rgba(168,85,247,0.3)' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '14px',
                 padding: '14px',
@@ -994,7 +994,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             {/* 18+ toggle */}
             <div
               style={{
-                background: '#131629',
+                background: '#090514',
                 border: is18Plus ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '14px',
                 padding: '14px',
@@ -1084,7 +1084,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                   justifyContent: 'space-between',
                   alignItems: 'flex-start',
                   padding: '10px 14px',
-                  background: '#131629',
+                  background: '#090514',
                   borderRadius: '12px',
                   border: '1px solid rgba(255,255,255,0.05)',
                 }}
@@ -1187,7 +1187,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             </h3>
             <button
               onClick={() => setShowStateModal(false)}
-              style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
             >
               <X size={16} color="#C4C9E0" />
             </button>
@@ -1198,7 +1198,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#131629',
+              background: '#090514',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '12px 16px',

@@ -18,11 +18,9 @@ interface SettingsScreenProps {
   isDark: boolean;
   onToggleDark: () => void;
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string }) => void;
-  language?: string;
-  onLanguageChange?: (lang: string) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'language' | 'help' | 'change-password' | 'delete-account';
+type SubScreen = null | 'profile' | 'payment' | 'help' | 'change-password' | 'delete-account';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -136,7 +134,7 @@ function Divider() {
 function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-      <button onClick={onBack} style={{ background: '#1A1D2E', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+      <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
         <ArrowLeft size={15} color="#C4C9E0" />
       </button>
       <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>{title}</h2>
@@ -387,7 +385,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
-    background: '#1A1D2E',
+    background: '#090514',
     border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: '12px',
     padding: '12px 14px',
@@ -597,67 +595,6 @@ function PaymentMethodsScreen({ onBack }: { onBack: () => void }) {
   );
 }
 
-const LANGUAGES = [
-  { code: 'en',     name: 'English',         native: 'English',       flag: '🇬🇧', available: true },
-  { code: 'pcm',    name: 'Pidgin English',  native: 'Nigerian Pidgin', flag: '🇳🇬', available: true },
-  { code: 'yo',     name: 'Yoruba',          native: 'Yorùbá',        flag: '🇳🇬', available: false },
-  { code: 'ig',     name: 'Igbo',            native: 'Igbo',          flag: '🇳🇬', available: false },
-  { code: 'ha',     name: 'Hausa',           native: 'Hausa',         flag: '🇳🇬', available: false },
-];
-
-function LanguageScreen({
-  onBack,
-  selectedLanguage,
-  onSelectLanguage
-}: {
-  onBack: () => void;
-  selectedLanguage: string;
-  onSelectLanguage: (lang: string) => void;
-}) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
-      <SubHeader title="Language" onBack={onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px 32px', scrollbarWidth: 'none' }}>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px', lineHeight: 1.5 }}>
-          Select your preferred language. The app will be displayed in this language.
-        </p>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-          {LANGUAGES.map((lang) => (
-            <button
-              key={lang.code}
-              onClick={() => lang.available && onSelectLanguage(lang.code)}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '14px',
-                padding: '14px',
-                background: selectedLanguage === lang.code ? 'rgba(124,58,237,0.12)' : '#131629',
-                border: selectedLanguage === lang.code ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.05)',
-                borderRadius: '14px',
-                cursor: lang.available ? 'pointer' : 'default',
-                textAlign: 'left',
-                width: '100%',
-                opacity: lang.available ? 1 : 0.55,
-              }}
-            >
-              <span style={{ fontSize: '24px' }}>{lang.flag}</span>
-              <div style={{ flex: 1 }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{lang.name}</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{lang.available ? lang.native : 'Coming soon'}</p>
-              </div>
-              {selectedLanguage === lang.code && (
-                <div style={{ width: '22px', height: '22px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <CheckCircle size={14} color="#fff" />
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function HelpCenterScreen({ onBack }: { onBack: () => void }) {
   const articles = [
     { title: 'How to buy a ticket', category: 'Tickets', emoji: '🎟️' },
@@ -717,7 +654,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
         {categories.map((cat) => (
           <div key={cat} style={{ marginBottom: '16px' }}>
             <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>{cat.toUpperCase()}</p>
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '0 14px' }}>
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '0 14px' }}>
               {articles.filter((a) => a.category === cat).map((article, i, arr) => (
                 <div key={article.title}>
                   <button
@@ -811,7 +748,7 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
   }
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
+    width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
     borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '14px',
     outline: 'none', boxSizing: 'border-box',
   };
@@ -819,7 +756,7 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-        <button onClick={onBack} style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, margin: 0 }}>Change Password</h1>
@@ -891,8 +828,6 @@ export function SettingsScreen({
   isDark,
   onToggleDark,
   onProfileUpdated,
-  language = 'en',
-  onLanguageChange
 }: SettingsScreenProps) {
   if (!currentUser) {
     return (
@@ -956,15 +891,6 @@ export function SettingsScreen({
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
   if (subScreen === 'payment') return <PaymentMethodsScreen onBack={() => setSubScreen(null)} />;
-  if (subScreen === 'language') {
-    return (
-      <LanguageScreen
-        onBack={() => setSubScreen(null)}
-        selectedLanguage={language}
-        onSelectLanguage={onLanguageChange || (() => {})}
-      />
-    );
-  }
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
@@ -979,7 +905,7 @@ export function SettingsScreen({
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
-          style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
@@ -1018,13 +944,6 @@ export function SettingsScreen({
           <SettingRow icon={CreditCard} label="Payment Methods" onPress={() => setSubScreen('payment')} />
           <Divider />
           <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
-          <Divider />
-          <SettingRow
-            icon={Globe}
-            label="Language"
-            value={LANGUAGES.find(l => l.code === language)?.name || 'English'}
-            onPress={() => setSubScreen('language')}
-          />
         </Section>
 
         <Section title="NOTIFICATIONS">
