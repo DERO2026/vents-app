@@ -1,8 +1,23 @@
-export async function compressImage(blob: Blob, maxPx = 1200, quality = 0.8): Promise<Blob> {
+export interface CompressedImage {
+  blob: Blob;
+  mimeType: string;
+  extension: string;
+}
+
+function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => canvas.toBlob(resolve, type, quality));
+}
+
+/**
+ * Resizes and re-encodes an image, preferring WebP for smaller CDN-delivered
+ * payloads. Falls back to JPEG on browsers where canvas WebP encoding isn't
+ * supported (canvas.toBlob returns null, or silently produces a PNG).
+ */
+export async function compressImage(blob: Blob, maxPx = 1200, quality = 0.8): Promise<CompressedImage> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
-    img.onload = () => {
+    img.onload = async () => {
       URL.revokeObjectURL(url);
       let { width, height } = img;
       if (width > maxPx || height > maxPx) {
@@ -13,9 +28,20 @@ export async function compressImage(blob: Blob, maxPx = 1200, quality = 0.8): Pr
       canvas.width = width;
       canvas.height = height;
       canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((out) => resolve(out || blob), 'image/jpeg', quality);
+
+      const webpBlob = await canvasToBlob(canvas, 'image/webp', quality);
+      if (webpBlob && webpBlob.type === 'image/webp') {
+        resolve({ blob: webpBlob, mimeType: 'image/webp', extension: 'webp' });
+        return;
+      }
+
+      const jpegBlob = await canvasToBlob(canvas, 'image/jpeg', quality);
+      resolve({ blob: jpegBlob || blob, mimeType: 'image/jpeg', extension: 'jpg' });
     };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(blob); };
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      resolve({ blob, mimeType: blob.type || 'image/jpeg', extension: 'jpg' });
+    };
     img.src = url;
   });
 }

@@ -1138,7 +1138,10 @@ export function HomeScreen({
         </div>
 
         {/* Results / Feed sections */}
-        {loading ? (
+        {/* Stale-while-revalidate: only show skeletons on the very first load
+            (no cached events yet). Background revalidations keep showing the
+            already-fetched list instead of blanking it out. */}
+        {loading && dbEvents.length === 0 ? (
           <>
             {isDefaultState && (
               <>

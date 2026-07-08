@@ -172,8 +172,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const compressed = await compressImage(croppedBlob);
-      const file = new File([compressed], `flier-${Date.now()}.jpg`, { type: 'image/jpeg' });
+      const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
+      const file = new File([compressed], `flier-${Date.now()}.${extension}`, { type: mimeType });
       const formData = new FormData();
       formData.append('file', file);
       const res = await fetch(

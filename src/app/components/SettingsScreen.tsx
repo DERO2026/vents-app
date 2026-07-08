@@ -251,8 +251,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const compressed = await compressImage(croppedBlob);
-      const croppedFile = new File([compressed], 'avatar.jpg', { type: 'image/jpeg' });
+      const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
+      const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const formData = new FormData();
       formData.append('file', croppedFile);
       const res = await fetch(
@@ -303,8 +303,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setErrorMessage(null);
     try {
       const token = await getAuthToken();
-      const compressedCover = await compressImage(croppedBlob);
-      const croppedFile = new File([compressedCover], 'cover.jpg', { type: 'image/jpeg' });
+      const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
+      const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const formData = new FormData();
       formData.append('file', croppedFile);
       const res = await fetch(
