@@ -774,8 +774,14 @@ export function HomeScreen({
   }, []);
 
 
-  // Filter events locally based on requirements
-  const filteredEvents = dbEvents.filter((event) => {
+  // O(1) saved-status lookups instead of re-scanning savedEvents (O(n)) for
+  // every card on every render pass — matters once the feed is long.
+  const savedEventsSet = useMemo(() => new Set(savedEvents), [savedEvents]);
+
+  // Filter events locally based on requirements. Memoized so an unrelated
+  // re-render (e.g. toggling a save, which only changes savedEventsSet)
+  // doesn't re-run this filter+sort pass over the whole events array.
+  const filteredEvents = useMemo(() => dbEvents.filter((event) => {
     // Search matches title, category, or location
     const matchQuery =
       !searchQuery.trim() ||
@@ -825,7 +831,7 @@ export function HomeScreen({
       if (!a.isFeatured && b.isFeatured) return 1;
     }
     return 0;
-  });
+  }), [dbEvents, searchQuery, activeCategory, stateFilter, priceFilter, upcomingOnly]);
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
   const upcomingDbEvents = dbEvents.filter(e => {
@@ -1196,7 +1202,7 @@ export function HomeScreen({
                           key={`trending-${event.id}`}
                           event={event}
                           onPress={onEventPress}
-                          isSaved={savedEvents.includes(event.id)}
+                          isSaved={savedEventsSet.has(event.id)}
                           onToggleSave={onToggleSave}
                           badgeText={`${event.bookingsCount || 0} GOING`}
                           badgeColor="rgba(239, 68, 68, 0.9)"
@@ -1262,7 +1268,7 @@ export function HomeScreen({
                       <FeedCard
                         event={event}
                         onPress={onEventPress}
-                        isSaved={savedEvents.includes(event.id)}
+                        isSaved={savedEventsSet.has(event.id)}
                         onToggleSave={onToggleSave}
                       />
                     </div>

@@ -907,6 +907,28 @@ export function SettingsScreen({
   const [promoNotifs, setPromoNotifs] = useState(true);
   const [locationServices, setLocationServices] = useState(true);
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
+  const [clearingNotifs, setClearingNotifs] = useState(false);
+  const [notifsCleared, setNotifsCleared] = useState(false);
+
+  const handleClearNotifications = async () => {
+    if (!currentUser?.id || clearingNotifs) return;
+    if (!window.confirm('Clear all notification history? This cannot be undone.')) return;
+    setClearingNotifs(true);
+    try {
+      await getAuthToken();
+      const { error } = await insforge.database
+        .from('notifications')
+        .delete()
+        .eq('user_id', currentUser.id);
+      if (error) throw error;
+      setNotifsCleared(true);
+      setTimeout(() => setNotifsCleared(false), 2500);
+    } catch (err) {
+      console.error('Failed to clear notifications:', err);
+    } finally {
+      setClearingNotifs(false);
+    }
+  };
 
   // Load promotions_enabled from DB on mount
   useEffect(() => {
@@ -1011,6 +1033,12 @@ export function SettingsScreen({
           <SettingRow icon={Bell} label="Email Updates" toggle={emailNotifs} onToggle={setEmailNotifs} />
           <Divider />
           <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={handlePromoToggle} />
+          <Divider />
+          <SettingRow
+            icon={Trash2}
+            label={clearingNotifs ? 'Clearing…' : notifsCleared ? 'Cleared ✓' : 'Clear Notification History'}
+            onPress={handleClearNotifications}
+          />
         </Section>
 
         <Section title="PRIVACY & SECURITY">
