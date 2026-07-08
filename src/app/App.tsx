@@ -986,14 +986,14 @@ export default function App() {
             p_payment_status: 'paid',
           });
           if (insertError) throw insertError;
-          if (currentUser?.phone) {
+          if (currentUser?.phone_number) {
             sendSMS({
-              to: currentUser.phone,
+              to: currentUser.phone_number,
               message: `Your ticket for ${ticket.event.title} has been confirmed! Check the Vents app for your QR code. - Vents`,
             }).catch(() => {});
           }
           trackPushEvent('ticket_purchased', { eventId: ticket.event.id, eventTitle: ticket.event.title });
-          trackEvent('ticket_booked', { eventId: ticket.event.id, amount: ticket.totalPrice });
+          trackEvent('ticket_booked', { eventId: ticket.event.id, amount: ticket.totalAmount });
 
           // 3.6: Ticket confirmation notification
           insforge.database.from('notifications').insert([{
@@ -1034,7 +1034,7 @@ export default function App() {
         quantity: qty,
         totalAmount: 0,
         purchasedAt: new Date().toISOString(),
-        holderName: currentUser.name || currentUser.username || '',
+        holderName: currentUser.full_name || currentUser.username || '',
       };
       handleCheckoutSuccess(freeTicket);
       return;

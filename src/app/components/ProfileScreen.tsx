@@ -25,7 +25,7 @@ import { insforge } from '../../lib/insforge';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;

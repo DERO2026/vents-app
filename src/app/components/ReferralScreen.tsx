@@ -119,7 +119,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       await insforge.database.from('referrals').delete().eq('id', id);
       setReferrals((prev) => prev.filter((r) => r.id !== id));
     } catch (err: any) {
-      setSendError(err?.message || 'Could not cancel invite.');
+      console.error('Could not cancel invite:', err?.message || err);
     } finally {
       setCancellingId(null);
       setConfirmCancel(null);
