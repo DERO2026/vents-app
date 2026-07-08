@@ -3,6 +3,7 @@ import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react'
 import { Event, TicketType, PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
+import { trackEvent } from '../../lib/analytics';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -156,11 +157,13 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       totalAmount: 0,
       holderName: name.trim() || 'Guest',
     };
+    trackEvent('ticket_purchase_completed', { eventId: event?.id, ticketType: ticketType?.name, quantity, total: 0, free: true });
     onSuccess(ticket);
   };
 
   const handlePay = () => {
     setPayError(null);
+    trackEvent('checkout_initiated', { eventId: event?.id, ticketType: ticketType?.name, quantity, total });
 
     const payerEmail = currentUser?.email || email.trim();
     if (!payerEmail || !isValidEmail(payerEmail)) {
@@ -227,6 +230,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             totalAmount: total,
             holderName: name.trim() || currentUser?.full_name || 'Guest',
           };
+          trackEvent('ticket_purchase_completed', { eventId: event.id, ticketType: ticketType.name, quantity, total });
           onSuccess(ticket);
           setPaymentLoading(false);
         },
@@ -235,6 +239,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         },
       });
 
+      trackEvent('ticket_purchase_initiated', { eventId: event.id, ticketType: ticketType.name, quantity, total, reference });
       handler.openIframe();
     } catch (err: any) {
       setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));

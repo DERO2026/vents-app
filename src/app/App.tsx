@@ -50,6 +50,22 @@ import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
+// Bump this on every release. Compared against app_config.min_client_version
+// on launch — if this build is older, the client shows a blocking update
+// screen instead of the app.
+const APP_VERSION = '1.1.0';
+
+function isVersionOlder(current: string, minimum: string): boolean {
+  const a = current.split('.').map((n) => parseInt(n, 10) || 0);
+  const b = minimum.split('.').map((n) => parseInt(n, 10) || 0);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const av = a[i] || 0, bv = b[i] || 0;
+    if (av < bv) return true;
+    if (av > bv) return false;
+  }
+  return false;
+}
+
 const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
   explore: 'explore',
@@ -161,6 +177,7 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
+  const [updateRequired, setUpdateRequired] = useState(false);
   const [dbEvents, setDbEvents] = useState<Event[]>([]);
   const eventsPageRef = useRef(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
@@ -204,6 +221,21 @@ export default function App() {
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
+  }, []);
+
+  // Forced-update gate: compare this build against the min version an admin
+  // can raise in app_config. Runs once on mount, independent of auth state.
+  useEffect(() => {
+    insforge.database
+      .from('app_config')
+      .select('min_client_version')
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data?.min_client_version && isVersionOlder(APP_VERSION, data.min_client_version)) {
+          setUpdateRequired(true);
+        }
+      })
+      .catch(() => {});
   }, []);
 
   // Load current user and profile on mount
@@ -1050,6 +1082,7 @@ export default function App() {
     }
 
     const isSaved = savedEvents.includes(eventId);
+    trackEvent(isSaved ? 'event_unsaved' : 'event_saved', { eventId });
     // Optimistic update
     setSavedEvents((prev) =>
       isSaved ? prev.filter((id) => id !== eventId) : [...prev, eventId]
@@ -1213,6 +1246,34 @@ export default function App() {
     userRole === 'organizer' ||
     currentUser?.role === 'admin' ||
     currentUser?.id === ROOT_UID;
+
+  if (updateRequired) {
+    return (
+      <div
+        style={{
+          background: '#020005', width: '100%', height: '100vh', display: 'flex',
+          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+        }}
+      >
+        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
+          <span style={{ fontSize: '32px' }}>⬆️</span>
+        </div>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+          Update Required
+        </h1>
+        <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px', maxWidth: '300px' }}>
+          A new version of Vents is available with important fixes. Please refresh to continue.
+        </p>
+        <button
+          onClick={() => window.location.href = 'https://getvents.com'}
+          style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+        >
+          Reload Vents
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div

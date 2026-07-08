@@ -27,6 +27,7 @@ import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
+import { trackEvent } from '../../lib/analytics';
 import { ReportModal } from './ReportModal';
 
 interface EventDetailsScreenExtraProps {
@@ -302,6 +303,7 @@ export function EventDetailsScreen({
   }, [event.id, isBooked]);
 
   const handleShare = async () => {
+    trackEvent('event_share_clicked', { eventId: event.id, eventTitle: event.title });
     const deepLink = `${window.location.origin}/?event=${event.id}`;
     const text =
       `🎟️ ${event.title}\n` +

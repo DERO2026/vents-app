@@ -24,6 +24,8 @@ interface DM {
   deleted_by_sender?: boolean;
   created_at: string;
   read_at?: string | null;
+  /** Client-only: set on optimistic messages not yet confirmed by the server. */
+  _pending?: 'sending' | 'queued';
 }
 
 async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<File> {
@@ -55,8 +57,8 @@ async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<
 
 export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack, onNavigateToProfile }: ConversationScreenProps) {
   const [messages, setMessages] = useState<DM[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<DM[]>([]);
   const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [longPressId, setLongPressId] = useState<string | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
@@ -335,11 +337,15 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  async function sendMessage() {
-    const text = body.trim();
-    if (!text || sending) return;
-    setSending(true);
-    setBody('');
+  // Offline-resilient send: a message that fails (or has no connection at
+  // all) stays visible as "pending" and retries with exponential backoff,
+  // then again immediately on reconnect — never a hard "failed to send".
+  async function attemptSend(localId: string, text: string, attempt: number) {
+    if (!navigator.onLine) {
+      setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
+      return; // the 'online' listener below will retry once connectivity returns
+    }
+    setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'sending' } : m));
     try {
       await insforge.database.from('direct_messages').insert({
         sender_id: currentUser.id,
@@ -347,13 +353,41 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         event_id: eventId || null,
         body: text,
       });
+      setPendingMessages(prev => prev.filter(m => m.id !== localId));
       await load();
-    } catch (e: any) {
-      setBody(text);
-      console.error('Send failed', e);
-    } finally {
-      setSending(false);
+    } catch (e) {
+      const delay = Math.min(30000, 1000 * 2 ** attempt); // 1s, 2s, 4s... capped at 30s
+      setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
+      setTimeout(() => attemptSend(localId, text, attempt + 1), delay);
     }
+  }
+
+  useEffect(() => {
+    function flushQueueOnReconnect() {
+      setPendingMessages(prev => {
+        prev.forEach(m => attemptSend(m.id, m.body, 0));
+        return prev;
+      });
+    }
+    window.addEventListener('online', flushQueueOnReconnect);
+    return () => window.removeEventListener('online', flushQueueOnReconnect);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  async function sendMessage() {
+    const text = body.trim();
+    if (!text) return;
+    setBody('');
+    const localId = `pending_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    setPendingMessages(prev => [...prev, {
+      id: localId,
+      sender_id: currentUser.id,
+      recipient_id: otherUser.id,
+      body: text,
+      created_at: new Date().toISOString(),
+      _pending: 'sending',
+    }]);
+    attemptSend(localId, text, 0);
   }
 
   function formatTime(iso: string) {
@@ -448,11 +482,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px', scrollbarWidth: 'none' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '20px' }}>Loading…</p>
-        ) : messages.length === 0 ? (
+        ) : messages.length === 0 && pendingMessages.length === 0 ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '20px', fontSize: '13px' }}>
             No messages yet. Say hello!
           </p>
-        ) : messages.map((m) => {
+        ) : [...messages, ...pendingMessages].map((m) => {
           const isMine = m.sender_id === currentUser.id;
           const isDeleted = m.deleted_by_sender;
           let locationData: { lat: number; lng: number; label: string } | null = null;
@@ -543,8 +577,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 )}
                 {!isDeleted && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px', marginTop: '4px' }}>
-                    <span style={{ color: isMine ? 'rgba(255,255,255,0.55)' : '#8B8FA8', fontSize: '10px' }}>{formatTime(m.created_at)}</span>
-                    {isMine && (m.read_at
+                    <span style={{ color: isMine ? 'rgba(255,255,255,0.55)' : '#8B8FA8', fontSize: '10px' }}>
+                      {m._pending === 'queued' ? 'Waiting for connection…' : m._pending === 'sending' ? 'Sending…' : formatTime(m.created_at)}
+                    </span>
+                    {isMine && !m._pending && (m.read_at
                       ? <CheckCheck size={12} color="#A78BFA" />
                       : <Check size={12} color="rgba(255,255,255,0.4)" />
                     )}
@@ -618,7 +654,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             />
             <button
               onClick={sendMessage}
-              disabled={!body.trim() || sending}
+              disabled={!body.trim()}
               style={{
                 width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
                 background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E',
