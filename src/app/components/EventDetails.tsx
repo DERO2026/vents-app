@@ -109,7 +109,7 @@ export function EventDetails({ event, onBack, onGetTickets, isSaved, onToggleSav
                 <Users size={12} color="#A78BFA" />
               </div>
               <span style={{ color: '#8B8FA8', fontSize: '13px' }}>
-                {event.attendees.toLocaleString()} attending
+                {(event.attendees ?? 0).toLocaleString()} attending
               </span>
             </div>
           </div>

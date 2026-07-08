@@ -36,7 +36,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       `Date: ${ticket.event.date} at ${ticket.event.time}`,
       `Venue: ${ticket.event.venue}, ${ticket.event.city}`,
       `Ticket: ${ticket.ticketType.name} × ${ticket.quantity}`,
-      `Amount: ₦${ticket.totalAmount.toLocaleString()}`,
+      `Amount: ₦${(ticket.totalAmount ?? 0).toLocaleString()}`,
       `Booking ID: ${ticket.ticketId}`,
       `Holder: ${ticket.holderName}`,
     ].join('\n');

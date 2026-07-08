@@ -131,13 +131,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  // Forgot-password OTP step (after code is sent)
+  // Forgot-password flow: Step 1 (verification code) → Step 2 (new password),
+  // two discrete screens instead of one combined form.
   const [forgotOtpStep, setForgotOtpStep] = useState(false);
   const [forgotOtpCode, setForgotOtpCode] = useState('');
+  const [forgotVerifying, setForgotVerifying] = useState(false);
+  const [forgotPasswordStep, setForgotPasswordStep] = useState(false);
+  const [forgotExchangedToken, setForgotExchangedToken] = useState<string | null>(null);
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const forgotOtpRef = useRef<HTMLInputElement>(null);
+
+  const resetForgotFlow = () => {
+    setForgotSent(false);
+    setForgotOtpStep(false);
+    setForgotPasswordStep(false);
+    setForgotOtpCode('');
+    setForgotExchangedToken(null);
+    setForgotNewPassword('');
+    setForgotConfirmPassword('');
+    setErrorMessage(null);
+  };
 
   // TOTP 2FA prompt (shown after successful password auth when totp_enabled=true)
   const [totpPending, setTotpPending] = useState<null | { secret: string; profilePayload: Parameters<typeof onSuccess>[0] }>(null);
@@ -411,7 +426,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (existsResult?.phone_taken) throw new Error('Phone number already exists');
         if (existsResult?.username_taken) throw new Error('Username already exists');
 
-        const { data, error } = await insforge.auth.signUp({ email, password });
+        const { data, error } = await insforge.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
 
         // InsForge does not support raw_user_meta_data in signUp options.
@@ -599,7 +614,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setErrorMessage(null);
     try {
       const { data, error } = await insforge.auth.verifyEmail({
-        email,
+        email: email.trim().toLowerCase(),
         otp: verificationCode
       });
       if (error) throw error;
@@ -774,7 +789,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           onClick={() => {
             if (mode === 'forgot') {
               setMode('login');
-              setErrorMessage(null);
+              resetForgotFlow();
             } else {
               onBack();
             }
@@ -800,7 +815,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           <VentsLogo size={34} />
         </div>
 
-        {mode === 'forgot' && forgotSent && forgotOtpStep ? (
+        {mode === 'forgot' && forgotSent && forgotOtpStep && !forgotPasswordStep ? (
+          /* ── Step 1: Verification Code ── */
           <div style={{ paddingTop: '20px' }}>
             <div style={{ textAlign: 'center', marginBottom: '24px' }}>
               <div style={{ fontSize: '52px', marginBottom: '16px' }}>🔐</div>
@@ -813,12 +829,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   marginBottom: '10px',
                 }}
               >
-                Enter Reset Code
+                Enter Verification Code
               </h2>
               <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65 }}>
-                We've sent a 6-digit code to{' '}
+                We've sent a verification code to{' '}
                 <span style={{ color: '#A78BFA' }}>{email}</span>.
-                Enter the code and your new password below.
               </p>
             </div>
 
@@ -857,6 +872,74 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               autoFocus
             />
 
+            <button
+              onClick={async () => {
+                if (forgotOtpCode.length !== 6) { setErrorMessage('Please enter the 6-digit code.'); return; }
+                setForgotVerifying(true);
+                setErrorMessage(null);
+                try {
+                  // Validate the code against the backend and exchange it for a
+                  // reset token — this is the ONLY thing Step 1 does.
+                  const { data: tokenData, error: exchangeErr } = await insforge.auth.exchangeResetPasswordToken({
+                    email: email.trim().toLowerCase(),
+                    code: forgotOtpCode,
+                  });
+                  if (exchangeErr) throw exchangeErr;
+                  const resetOtp = tokenData?.token;
+                  if (!resetOtp) throw new Error('Incorrect or expired code. Please try again.');
+                  setForgotExchangedToken(resetOtp);
+                  setForgotPasswordStep(true);
+                } catch (err: any) {
+                  setErrorMessage(err.message || 'Incorrect or expired code. Please try again.');
+                } finally {
+                  setForgotVerifying(false);
+                }
+              }}
+              disabled={forgotVerifying || forgotOtpCode.length !== 6}
+              style={{
+                ...BTN_PRIMARY,
+                opacity: (forgotVerifying || forgotOtpCode.length !== 6) ? 0.6 : 1,
+                cursor: (forgotVerifying || forgotOtpCode.length !== 6) ? 'not-allowed' : 'pointer',
+                marginBottom: '16px',
+              }}
+            >
+              {forgotVerifying ? 'Verifying...' : 'Verify Code'}
+            </button>
+            <button
+              onClick={() => { setMode('login'); resetForgotFlow(); }}
+              style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', display: 'block', margin: '0 auto' }}
+            >
+              Back to Sign In
+            </button>
+          </div>
+        ) : mode === 'forgot' && forgotPasswordStep ? (
+          /* ── Step 2: New Password (only reachable after a valid code) ── */
+          <div style={{ paddingTop: '20px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+              <div style={{ fontSize: '52px', marginBottom: '16px' }}>🔑</div>
+              <h2
+                style={{
+                  color: '#F0F0FF',
+                  fontSize: '22px',
+                  fontWeight: 700,
+                  fontFamily: 'Space Grotesk, sans-serif',
+                  marginBottom: '10px',
+                }}
+              >
+                Set New Password
+              </h2>
+              <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65 }}>
+                Code verified. Choose a new password for your account.
+              </p>
+            </div>
+
+            {errorMessage && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
+                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '20px' }}>
               <InputRow
                 icon={Lock}
@@ -881,49 +964,36 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
             <button
               onClick={async () => {
-                if (forgotOtpCode.length !== 6) { setErrorMessage('Please enter the 6-digit code.'); return; }
+                if (!forgotExchangedToken) { setErrorMessage('Your session expired. Please request a new code.'); return; }
                 if (!forgotNewPassword) { setErrorMessage('Password is required.'); return; }
                 if (forgotNewPassword !== forgotConfirmPassword) { setErrorMessage('Passwords do not match.'); return; }
                 setLoading(true);
                 setErrorMessage(null);
                 try {
-                  // Step 1: exchange 6-digit code for a reset token
-                  const { data: tokenData, error: exchangeErr } = await insforge.auth.exchangeResetPasswordToken({
-                    email: email.trim().toLowerCase(),
-                    code: forgotOtpCode,
-                  });
-                  if (exchangeErr) throw exchangeErr;
-                  const resetOtp = tokenData?.token;
-                  if (!resetOtp) throw new Error('Failed to exchange code. Please try again.');
-                  // Step 2: set the new password using the token
-                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: resetOtp });
+                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: forgotExchangedToken });
                   if (error) throw error;
                   setSuccessMessage('Password reset successfully! Please sign in.');
                   setMode('login');
-                  setForgotSent(false);
-                  setForgotOtpStep(false);
-                  setForgotOtpCode('');
-                  setForgotNewPassword('');
-                  setForgotConfirmPassword('');
+                  resetForgotFlow();
                   setPassword('');
                 } catch (err: any) {
-                  setErrorMessage(err.message || 'Reset failed. Please check the code and try again.');
+                  setErrorMessage(err.message || 'Reset failed. Please try again.');
                 } finally {
                   setLoading(false);
                 }
               }}
-              disabled={loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword}
+              disabled={loading || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword}
               style={{
                 ...BTN_PRIMARY,
-                opacity: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 0.6 : 1,
-                cursor: (loading || forgotOtpCode.length !== 6 || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 'not-allowed' : 'pointer',
+                opacity: (loading || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 0.6 : 1,
+                cursor: (loading || !forgotNewPassword || forgotNewPassword !== forgotConfirmPassword) ? 'not-allowed' : 'pointer',
                 marginBottom: '16px',
               }}
             >
               {loading ? 'Resetting...' : 'Reset Password'}
             </button>
             <button
-              onClick={() => { setMode('login'); setForgotSent(false); setForgotOtpStep(false); setForgotOtpCode(''); setForgotNewPassword(''); setForgotConfirmPassword(''); setErrorMessage(null); }}
+              onClick={() => { setMode('login'); resetForgotFlow(); }}
               style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer', display: 'block', margin: '0 auto' }}
             >
               Back to Sign In
@@ -1066,9 +1136,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {mode === 'login'
                 ? 'Sign in to your VENTS account'
                 : mode === 'signup'
-                ? 'Join thousands discovering Nigerian events'
+                ? (role === 'organizer'
+                    ? 'Create and manage your events, sell tickets, and grow your audience'
+                    : 'Join thousands discovering Nigerian events')
                 : mode === 'forgot'
-                ? 'Enter your email to receive a reset link'
+                ? 'Enter your email to receive a verification code'
                 : 'Enter your new password below'}
             </p>
 
@@ -1345,7 +1417,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 : mode === 'signup'
                 ? 'Create Account'
                 : mode === 'forgot'
-                ? 'Send Reset Link'
+                ? 'Send Verification Code'
                 : 'Reset Password'}
             </button>
 

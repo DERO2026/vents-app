@@ -1,4 +1,4 @@
-export function formatPrice(amount: number): string {
-  if (amount === 0) return 'Free';
-  return `₦${amount.toLocaleString()}`;
+export function formatPrice(amount: number | null | undefined): string {
+  if (!amount) return 'Free';
+  return `₦${amount.toLocaleString?.() || amount}`;
 }
