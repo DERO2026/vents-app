@@ -8,6 +8,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
 import { trackEvent } from '../../lib/analytics';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
+import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 
 interface AuthScreenProps {
   initialMode: AuthMode;
@@ -352,6 +353,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const ageYears = Math.floor(ageDiff / (365.25 * 24 * 60 * 60 * 1000));
         if (ageYears < 13) throw new Error('You must be at least 13 years old to create an account.');
 
+        // Boundary-layer schema validation — rejects malformed/malicious
+        // payloads before any DB call is made.
+        const signupCheck = signupSchema.safeParse({
+          name: name.trim(),
+          username: username.trim(),
+          email: email.trim(),
+          phone: normalizedPhone,
+          password,
+          state: (signupState || selectedState || '').trim(),
+        });
+        if (!signupCheck.success) throw new Error(firstValidationError(signupCheck));
+
         // Block re-signup with a previously deleted email
         const { data: deletedRow } = await insforge.database
           .from('deleted_emails')
@@ -434,6 +447,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         }
 
       } else if (mode === 'login') {
+        // Boundary-layer schema validation — rejects malformed/malicious
+        // payloads before any DB call is made.
+        const loginCheck = loginSchema.safeParse({ identifier: email.trim(), password });
+        if (!loginCheck.success) throw new Error(firstValidationError(loginCheck));
+
         let loginEmail = email.trim();
         if (!isValidEmail(loginEmail)) {
           // Clear any stale token so anon key is used for this unauthenticated lookup

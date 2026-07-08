@@ -3,6 +3,7 @@ import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronD
 import { OrganizerEvent } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
+import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -222,6 +223,23 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     setErrorMessage(null);
     const safetyTimer = setTimeout(() => setSubmitting(false), 10000);
     try {
+      // Boundary-layer schema validation — rejects malformed/malicious
+      // payloads before any DB call is made.
+      const eventCheck = eventCreateSchema.safeParse({
+        title: title.trim(),
+        description: description.trim(),
+        venue: venue.trim(),
+        city: city.trim(),
+        address: address ? address.trim() : undefined,
+        ticketTypes: ticketTypes.map(t => ({
+          name: t.name.trim(),
+          description: t.description.trim(),
+          price: Number(t.price),
+          quantity: Number(t.quantity),
+        })),
+      });
+      if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
+
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
 
