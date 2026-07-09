@@ -4,8 +4,7 @@
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
 import { sendPayoutDecisionEmail } from '../lib/mailer.js';
-
-const crypto = require('crypto');
+import crypto from 'crypto';
 
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
