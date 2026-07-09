@@ -128,7 +128,7 @@ function CopyButton({ text }: { text: string }) {
 }
 
 // ─── Payouts tab ───────────────────────────────────────────────────────────────
-function PayoutsTab() {
+function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -219,10 +219,22 @@ function PayoutsTab() {
         body: JSON.stringify({ request_id: id }),
       });
       const json = await res.json().catch(() => ({}));
+      // Paystack rejections (insufficient transfer balance, invalid
+      // recipient_code, etc.) come back as a non-200 with the exact
+      // provider message in json.error — surface it verbatim rather than
+      // a generic string, and always fall through to `finally` so the
+      // button is immediately re-clickable.
       if (!res.ok) throw new Error(json.error || 'Approve failed');
       await load();
+      // Paystack only confirmed it accepted the transfer for processing
+      // here — transfer.success (the actual "money moved" signal) arrives
+      // later via webhook, which is what flips the row to COMPLETED and
+      // fires the organizer's confirmation email. Marking it complete or
+      // emailing at this point would be inaccurate for OTP-finalized
+      // transfers.
+      flash(true, 'Transfer initiated — Paystack is processing. Status will update to Completed once confirmed.');
     } catch (e: any) {
-      alert(e.message || 'Action failed');
+      flash(false, e.message || 'Approve failed');
     } finally {
       setActionLoading(null);
     }
@@ -243,8 +255,9 @@ function PayoutsTab() {
       if (!res.ok) throw new Error(json.error || 'Reject failed');
       await load();
       notifyByEmail('payout', id, 'rejected', reason.trim());
+      flash(true, 'Payout rejected and funds returned to available balance.');
     } catch (e: any) {
-      alert(e.message || 'Action failed');
+      flash(false, e.message || 'Reject failed');
     } finally {
       setActionLoading(null);
     }
@@ -1839,7 +1852,7 @@ export function AdminDashboardScreen({
       )}
 
       {/* ════════════════ PAYOUTS TAB ════════════════════════════════════ */}
-      {tab === 'payouts' && <PayoutsTab />}
+      {tab === 'payouts' && <PayoutsTab flash={flash} />}
 
       {tab === 'org-requests' && (
         <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
