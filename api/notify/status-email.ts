@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail } from '../lib/mailer';
+import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail } from '../lib/mailer.js';
 
 // Fires the approval/rejection email for an organizer-role request or a CAC
 // brand-verification request. Called by the admin client right after the
