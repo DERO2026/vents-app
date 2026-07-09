@@ -395,7 +395,9 @@ export function ProfileScreen({
                     {displayName}
                   </h2>
                   {isVerified && (
-                    <BadgeCheck size={16} color="#3B82F6" title="Verified" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+                    <span title="Verified" style={{ display: 'inline-flex' }}>
+                      <BadgeCheck size={16} color="#3B82F6" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">

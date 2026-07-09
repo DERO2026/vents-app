@@ -25,7 +25,7 @@ export async function getAuthToken(): Promise<string> {
   const hc = (insforge as any).getHttpClient?.();
 
   // 1. Try the SDK's official accessor first
-  const direct = insforge.auth.getAccessToken?.();
+  const direct = (insforge.auth as any).getAccessToken?.();
   if (direct) return direct;
 
   // 2. Fall back to the HTTP client's in-memory token
@@ -65,7 +65,7 @@ export async function getAuthToken(): Promise<string> {
       if (hc) hc.userToken = t;
       return t as string;
     }
-    const after = insforge.auth.getAccessToken?.();
+    const after = (insforge.auth as any).getAccessToken?.();
     if (after) return after;
     if (hc?.userToken) return hc.userToken as string;
   } catch { /* fall through */ }
@@ -76,7 +76,7 @@ export async function getAuthToken(): Promise<string> {
 if (typeof window !== 'undefined') {
   localStorage.removeItem('vents_auth_session');
 
-  const httpClient = insforge.getHttpClient();
+  const httpClient: any = insforge.getHttpClient();
 
   if (httpClient) {
     // Restore a previously-saved refresh token so getCurrentUser() can

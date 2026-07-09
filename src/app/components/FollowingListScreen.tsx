@@ -148,7 +148,7 @@ export function FollowingListScreen({
               return (
                 <div
                   key={user.id}
-                  onClick={() => onUserPress?.({ id: user.id, name: displayName, username: user.username || '', bio: '', city: '', avatarColor: '#7B2FF7', avatarInitials: initials, avatar_url: user.avatar_url || undefined, eventsCreated: 0, followers: 0, following: 0, attendees: 0, role: 'user' })}
+                  onClick={() => onUserPress?.({ id: user.id, name: displayName, username: user.username || '', bio: '', city: '', avatarColor: '#7B2FF7', avatarInitials: initials, avatar_url: user.avatar_url || undefined, eventsAttended: 0, followers: 0, following: 0, interests: [], role: 'user' })}
                   style={{
                     display: 'flex', alignItems: 'center', background: '#090514',
                     border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px',

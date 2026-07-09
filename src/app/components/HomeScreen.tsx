@@ -510,7 +510,7 @@ function FeaturedCarousel({
 }: {
   events: Event[];
   currentIndex: number;
-  onIndexChange: (i: number) => void;
+  onIndexChange: (i: number | ((prev: number) => number)) => void;
   onEventPress: (e: Event) => void;
   isSaved: string[];
   onToggleSave: (id: string) => void;

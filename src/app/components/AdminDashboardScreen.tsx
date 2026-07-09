@@ -596,7 +596,7 @@ export function AdminDashboardScreen({
     try {
       let q = insforge.database
         .from('users')
-        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at')
+        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until')
         .order('created_at', { ascending: false });
 
       if (searchQuery.trim()) {
@@ -1128,7 +1128,7 @@ export function AdminDashboardScreen({
                               {u.full_name || 'No Name'}
                             </h4>
                             {u.is_verified && (
-                              <BadgeCheck size={14} color="#3B82F6" title="Verified" />
+                              <span title="Verified" style={{ display: 'inline-flex' }}><BadgeCheck size={14} color="#3B82F6" /></span>
                             )}
                             {isRootUser && (
                               <span style={{ fontSize: '9px', color: '#A855F7', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', padding: '1px 5px', borderRadius: '4px', fontWeight: 700 }}>ROOT</span>

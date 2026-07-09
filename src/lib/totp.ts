@@ -33,7 +33,7 @@ async function hotp(secret: string, counter: number): Promise<string> {
   const buf = new ArrayBuffer(8);
   new DataView(buf).setUint32(4, counter >>> 0, false);
   const cryptoKey = await crypto.subtle.importKey(
-    'raw', key, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
+    'raw', key as BufferSource, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']
   );
   const sig = new Uint8Array(await crypto.subtle.sign('HMAC', cryptoKey, buf));
   const offset = sig[19] & 0xf;

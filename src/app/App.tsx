@@ -234,8 +234,7 @@ export default function App() {
         if (data?.min_client_version && isVersionOlder(APP_VERSION, data.min_client_version)) {
           setUpdateRequired(true);
         }
-      })
-      .catch(() => {});
+      }, () => {});
   }, []);
 
   // Load current user and profile on mount
@@ -293,8 +292,7 @@ export default function App() {
                 setSelectedEvent(mapDbEventToFrontend(evtData));
                 setScreen('event-details');
               }
-            })
-            .catch((err) => console.error('Deep link event fetch failed:', err));
+            }, (err) => console.error('Deep link event fetch failed:', err));
         }
 
         // 2. Fetch user session.
@@ -649,7 +647,6 @@ export default function App() {
                 available: 500
               }
             ],
-            following_id: dbEvent.following_id,
             event_date: dbEvent.event_date
           };
 
@@ -1640,7 +1637,7 @@ export default function App() {
               isDark={true}
               onToggleDark={() => {}}
               onProfileUpdated={(fields) => {
-                setCurrentUser((prev) => prev ? { ...prev, ...fields, isOrganizer: fields.role === 'organizer' || prev.isOrganizer } : null);
+                setCurrentUser((prev) => prev ? { ...prev, ...fields } : null);
               }}
             />
           )}
@@ -1769,7 +1766,7 @@ export default function App() {
                 trackEvent('event_created', { eventId: event.id });
                 setOrgEvents((prev) => [event, ...prev]);
                 fetchEvents(true);
-                setOrgTab('manage-events');
+                setOrgTab('home');
                 setScreen('manage-events');
                 setScreenStack([]);
               }}
@@ -1873,7 +1870,7 @@ export default function App() {
                 setConversationUser({
                   id: userId,
                   name: selectedUser.name,
-                  avatarUrl: selectedUser.avatar,
+                  avatarUrl: selectedUser.avatar_url,
                 });
                 setConversationEventId(undefined);
                 setConversationEventTitle(undefined);

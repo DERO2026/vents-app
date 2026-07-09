@@ -276,7 +276,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const pendingRef = sessionStorage.getItem('vents_ref_code');
         if (pendingRef) {
           sessionStorage.removeItem('vents_ref_code');
-          insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef }).catch(() => {});
+          insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef }).then(() => {}, () => {});
         }
 
         onSuccess({
@@ -440,7 +440,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             state: userMetaPayload.state,
             role: userMetaPayload.role,
             avatar_url: userMetaPayload.avatar_url || null,
-          }, { onConflict: 'id' }).catch((e: any) => console.warn('Profile upsert after signup:', e?.message));
+          }, { onConflict: 'id' }).then(() => {}, (e: any) => console.warn('Profile upsert after signup:', e?.message));
         }
 
         // Persist refresh token immediately after signup so session survives reload.

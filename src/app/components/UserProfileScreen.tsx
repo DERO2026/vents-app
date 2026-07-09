@@ -389,7 +389,9 @@ export function UserProfileScreen({
             {user.name}
           </h1>
           {isVerified && (
-            <BadgeCheck size={18} color="#3B82F6" title="Verified" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+            <span title="Verified" style={{ display: 'inline-flex' }}>
+              <BadgeCheck size={18} color="#3B82F6" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+            </span>
           )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>

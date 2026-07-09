@@ -2,10 +2,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
-import { UserProfile } from './types';
 
 interface ConversationScreenProps {
-  currentUser: UserProfile;
+  currentUser: { id: string };
   otherUser: { id: string; name: string; avatarUrl?: string; vc_badge?: string };
   eventId?: string;
   eventTitle?: string;
@@ -91,8 +90,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       .eq('recipient_id', currentUser.id)
       .eq('sender_id', otherUser.id)
       .is('read_at', null)
-      .then(() => {})
-      .catch(() => {});
+      .then(() => {}, () => {});
   }, [currentUser?.id, otherUser?.id]);
 
   useEffect(() => {

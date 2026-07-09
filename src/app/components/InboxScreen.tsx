@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, MessageCircle } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
-import { UserProfile } from './types';
 
 interface InboxScreenProps {
-  currentUser: UserProfile;
+  currentUser: { id: string };
   onBack: () => void;
   onOpenConversation: (otherUser: { id: string; name: string; avatarUrl?: string }) => void;
 }

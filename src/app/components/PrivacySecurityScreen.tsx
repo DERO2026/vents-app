@@ -41,8 +41,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
       .then(({ data }) => {
         if (data) setSettings(data as Settings);
         setLoading(false);
-      })
-      .catch(() => setLoading(false));
+      }, () => setLoading(false));
   }, [currentUser?.id]);
 
   const save = async () => {
