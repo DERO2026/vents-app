@@ -16,8 +16,11 @@ export default defineConfig(({ mode }) => ({
   base: './', // Vital for deployment
   assetsInclude: ['**/*.svg', '**/*.csv'],
   esbuild: {
-    // Strip console.* and debugger statements from production bundles
-    // so stack traces/debug output aren't shipped to the client.
-    drop: mode === 'production' ? ['console', 'debugger'] : [],
+    // Strip debugger statements from production bundles. console.* is
+    // intentionally NOT stripped — console.error calls are the only
+    // diagnostic trail we have for live auth/signup failures, and esbuild's
+    // drop option can't selectively keep console.error while dropping
+    // console.log, so we keep all of it rather than lose that visibility.
+    drop: mode === 'production' ? ['debugger'] : [],
   },
 }))

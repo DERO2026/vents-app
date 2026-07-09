@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
-import { insforge, saveRefreshToken, clearRefreshToken } from '../../lib/insforge';
+import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../../lib/insforge';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
@@ -49,6 +49,17 @@ const BTN_PRIMARY: React.CSSProperties = {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+}
+
+// Strips spaces/dashes/parens/plus signs and normalizes to +234 E.164 —
+// used everywhere a phone number is dispatched to the backend so a
+// display-formatted value (e.g. "+234 811 5515 152") never reaches the DB.
+function normalizePhoneE164(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('234')) return '+' + digits;
+  if (digits.startsWith('0')) return '+234' + digits.slice(1);
+  return '+234' + digits;
 }
 
 function InputRow({
@@ -255,7 +266,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const payload: Record<string, any> = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
-          phone_number: phone.trim(),
+          phone_number: normalizePhoneE164(phone),
           state: (signupState || selectedState || '').trim(),
           role: strictRole,
           avatar_url: avatarUrl || signupAvatarUrl
@@ -351,8 +362,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!validateUsername(username.trim())) throw new Error('Username must be 3-30 characters, letters numbers and underscores only.');
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
-        const rawDigits = phone.replace(/\D/g, '');
-        const normalizedPhone = rawDigits.startsWith('234') ? '+' + rawDigits : rawDigits.startsWith('0') ? '+234' + rawDigits.slice(1) : '+234' + rawDigits;
+        const normalizedPhone = normalizePhoneE164(phone);
         const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
         if (!NIGERIAN_PHONE_REGEX.test(normalizedPhone)) {
           throw new Error('Please enter a valid Nigerian phone number (+234 format).');
@@ -428,6 +438,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const { data, error } = await insforge.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
 
+        // Rehydrate hc.userToken immediately — the SDK doesn't always
+        // reliably populate it right after signUp, and the profile upsert
+        // below is an authenticated write gated by auth.uid() = id. Without
+        // a valid token this silently fails under RLS instead of throwing.
+        try { await getAuthToken(); } catch { /* fall through — signUp's own token may still work */ }
+
         // InsForge does not support raw_user_meta_data in signUp options.
         // Write profile fields directly to the users table after auth record is created.
         if (data?.user?.id) {
@@ -440,7 +456,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             state: userMetaPayload.state,
             role: userMetaPayload.role,
             avatar_url: userMetaPayload.avatar_url || null,
-          }, { onConflict: 'id' }).then(() => {}, (e: any) => console.warn('Profile upsert after signup:', e?.message));
+            date_of_birth: dob || null,
+          }, { onConflict: 'id' }).then(() => {}, (e: any) => console.error('Signup Failure Trace — profile upsert:', e));
         }
 
         // Persist refresh token immediately after signup so session survives reload.
@@ -547,6 +564,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const stored = JSON.parse(localStorage.getItem('auth_attempts') || '{"count":0,"timestamp":0}');
         localStorage.setItem('auth_attempts', JSON.stringify({ count: stored.count + 1, timestamp: Date.now() }));
       }
+      // Always log the raw error — the friendly-message mapping below can
+      // otherwise swallow the real cause with zero diagnostic trail.
+      console.error(`${mode === 'signup' ? 'Signup' : mode === 'login' ? 'Login' : 'Auth'} Failure Trace:`, err);
       const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
         (typeof err?.error_description === 'string' ? err.error_description : '');
       const msgL = msg.toLowerCase();
@@ -565,7 +585,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           ? 'Too many attempts. Please wait a few minutes and try again.'
           : msgL.includes('network') || msgL.includes('fetch')
           ? 'Network error. Check your connection and try again.'
-          : 'Signup failed. Please check your details and try again.';
+          // Fall back to the real backend message instead of a dead-end
+          // generic string — this is what made the last outage undiagnosable.
+          : (msg.trim() || 'Signup failed. Please check your details and try again.');
         setErrorMessage(safe);
         return;
       }
