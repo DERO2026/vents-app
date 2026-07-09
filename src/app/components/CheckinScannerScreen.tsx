@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
 
 // html5-qrcode is loaded dynamically to avoid SSR issues
@@ -110,6 +110,11 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
     setState({ status: 'scanning' });
 
     try {
+      // Ensure hc.userToken is set so auth.uid() resolves in RLS — without
+      // this, the check-in insert silently fails RLS (organizer_id check
+      // against a NULL auth.uid()) and every scan looks "invalid".
+      await getAuthToken();
+
       // 1. Fetch the ticket
       const { data: ticket, error: ticketErr } = await insforge.database
         .from('tickets')

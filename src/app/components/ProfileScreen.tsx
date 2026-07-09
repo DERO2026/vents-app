@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -62,10 +62,31 @@ export function ProfileScreen({
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
   const [orgRequestError, setOrgRequestError] = useState('');
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
+  const [freshCoverUrl, setFreshCoverUrl] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setCoverLoadFailed(false);
   }, [currentUser?.cover_url]);
+
+  // Pull the freshest cover_url directly from the DB on mount rather than
+  // trusting the currentUser prop, which can go stale if it was changed
+  // in another tab/session since login.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    (async () => {
+      try {
+        await getAuthToken();
+        const { data } = await insforge.database
+          .from('users')
+          .select('cover_url')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+        if (data?.cover_url) setFreshCoverUrl(data.cover_url);
+      } catch { /* fall back silently to the prop value */ }
+    })();
+  }, [currentUser?.id]);
+
+  const effectiveCoverUrl = freshCoverUrl ?? currentUser?.cover_url;
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -308,7 +329,7 @@ export function ProfileScreen({
               overflow: 'hidden',
             }}
           >
-            {(!currentUser?.cover_url || coverLoadFailed) && (
+            {(!effectiveCoverUrl || coverLoadFailed) && (
               <div
                 style={{
                   position: 'absolute',
@@ -323,9 +344,9 @@ export function ProfileScreen({
               />
             )}
 
-            {currentUser?.cover_url && !coverLoadFailed && (
+            {effectiveCoverUrl && !coverLoadFailed && (
               <div style={{ margin: '-20px -20px 16px', borderRadius: '20px 20px 0 0', overflow: 'hidden', height: '100px', position: 'relative' }}>
-                <img src={currentUser.cover_url} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
+                <img src={effectiveCoverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
                 <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0) 50%, rgba(26,13,46,0.85) 100%)' }} />
               </div>
             )}

@@ -3,7 +3,7 @@ import BadgeChip from './BadgeChip';
 import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2 } from 'lucide-react';
 import { UserProfile } from './types';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { ReportModal } from './ReportModal';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -58,6 +58,12 @@ export function UserProfileScreen({
   const isOwnProfile = currentUserId === user.id;
   const [showReport, setShowReport] = useState(false);
   const [userEvents, setUserEvents] = useState<any[]>([]);
+  const [coverLoadFailed, setCoverLoadFailed] = useState(false);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setCoverLoadFailed(false);
+  }, [user.cover_url]);
 
   useEffect(() => {
     setFollowers(0);
@@ -158,17 +164,24 @@ export function UserProfileScreen({
   const submitReview = async () => {
     if (!reviewRating || reviewText.trim().length < 10 || reviewSubmitting) return;
     setReviewSubmitting(true);
+    setReviewError(null);
     try {
-      await insforge.database.rpc('submit_organizer_review' as any, {
+      // Ensure hc.userToken is set so auth.uid() resolves inside the RPC —
+      // without this the RPC raises "Not authenticated" and the write
+      // silently fails with no feedback to the user.
+      await getAuthToken();
+      const { error } = await insforge.database.rpc('submit_organizer_review' as any, {
         p_organizer_id: user.id,
         p_rating: reviewRating,
         p_body: reviewText.trim(),
       });
+      if (error) throw error;
       setReviewSubmitted(true);
       setReviewRating(0);
       setReviewText('');
-    } catch (err) {
+    } catch (err: any) {
       console.error('Review submit failed:', err);
+      setReviewError(err?.message || 'Could not submit review. Please try again.');
     } finally {
       setReviewSubmitting(false);
     }
@@ -189,11 +202,12 @@ export function UserProfileScreen({
     >
       {/* Cover + back button */}
       <div style={{ position: 'relative', height: 'calc(140px + env(safe-area-inset-top))', flexShrink: 0 }}>
-        {user.cover_url ? (
+        {user.cover_url && !coverLoadFailed ? (
           <img
             src={user.cover_url}
             alt="cover"
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            onError={() => setCoverLoadFailed(true)}
           />
         ) : (
           <div
@@ -603,6 +617,9 @@ export function UserProfileScreen({
                 style={{ marginTop: '10px', width: '100%', background: reviewRating && reviewText.trim().length >= 10 ? 'linear-gradient(135deg,#7B2FBE 0%,#4F46E5 100%)' : 'rgba(123,47,190,0.2)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
                 {reviewSubmitting ? 'Posting...' : 'Post Review'}
               </button>
+              {reviewError && (
+                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px', marginBottom: 0 }}>{reviewError}</p>
+              )}
             </div>
           )}
           {reviewSubmitted && !isOwnProfile && (

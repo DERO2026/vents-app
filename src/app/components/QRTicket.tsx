@@ -86,7 +86,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       >
         <button
           onClick={onBack}
-          className="w-9 h-9 rounded-full flex items-center justify-center"
+          className="w-11 h-11 rounded-full flex items-center justify-center"
           style={{ background: '#090514' }}
         >
           <ArrowLeft size={18} color="#F0F0FF" />

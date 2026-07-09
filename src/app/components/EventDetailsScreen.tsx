@@ -403,6 +403,7 @@ export function EventDetailsScreen({
             position: 'absolute',
             inset: 0,
             background: 'linear-gradient(to top, #020005 0%, transparent 100%)',
+            pointerEvents: 'none',
           }}
         />
 
@@ -425,8 +426,8 @@ export function EventDetailsScreen({
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255,255,255,0.15)',
               borderRadius: '50%',
-              width: '38px',
-              height: '38px',
+              width: '44px',
+              height: '44px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',

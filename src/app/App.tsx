@@ -1127,18 +1127,10 @@ export default function App() {
 
     const isFollowing = followingIds.has(userId);
 
-    // Optimistically update UI
-    setFollowingIds((prev) => {
-      const next = new Set(prev);
-      if (isFollowing) next.delete(userId); else next.add(userId);
-      return next;
-    });
-
     try {
       // Ensure hc.userToken is set so auth.uid() resolves in RLS policies —
-      // without this, a follow/unfollow after a page reload can silently
-      // fail RLS (auth.uid() resolves to NULL) while the UI still shows
-      // the optimistic update reverting a moment later.
+      // without this, a follow/unfollow after a page reload silently fails
+      // RLS (auth.uid() resolves to NULL).
       await getAuthToken();
 
       if (isFollowing) {
@@ -1169,14 +1161,16 @@ export default function App() {
           if (notifyErr) console.warn('[Subscribe] Follow notify failed:', notifyErr.message);
         });
       }
-    } catch (err) {
-      console.error('[Subscribe] DB operation FAILED:', err);
-      // Revert optimistic update
+
+      // Only flip local state once the DB write is confirmed — no
+      // optimistic update, no revert-after-a-second flicker.
       setFollowingIds((prev) => {
         const next = new Set(prev);
-        if (isFollowing) next.add(userId); else next.delete(userId);
+        if (isFollowing) next.delete(userId); else next.add(userId);
         return next;
       });
+    } catch (err) {
+      console.error('[Subscribe] DB operation FAILED:', err);
     }
   }, [currentUser, followingIds, navigateTo]);
 

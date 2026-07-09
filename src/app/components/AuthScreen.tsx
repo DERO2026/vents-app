@@ -122,7 +122,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [username, setUsername] = useState('');
   const [phone, setPhone] = useState('+234');
   const [loading, setLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
 
@@ -627,19 +626,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       setErrorMessage(err.message || 'Verification failed. Please check the code and try again.');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setGoogleLoading(true);
-    setErrorMessage(null);
-    try {
-      await insforge.auth.signInWithOAuth('google', {
-        redirectTo: window.location.origin
-      });
-    } catch (err: any) {
-      setErrorMessage(err.message || 'OAuth sign in failed.');
-      setGoogleLoading(false);
     }
   };
 
@@ -1162,40 +1148,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   })}
                 </div>
 
-                {/* Static OAuth block — never shifts when fields mount/unmount below */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
-                  <button
-                    type="button"
-                    onClick={handleGoogleSignIn}
-                    disabled={googleLoading}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                      width: '100%', height: '48px', background: '#FFFFFF', border: 'none', borderRadius: '100px',
-                      color: '#1F1F1F', fontSize: '14px', fontWeight: 600, cursor: googleLoading ? 'default' : 'pointer',
-                      opacity: googleLoading ? 0.7 : 1,
-                    }}
-                  >
-                    <svg width="18" height="18" viewBox="0 0 18 18"><path fill="#4285F4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.72v2.26h2.9c1.7-1.57 2.7-3.88 2.7-6.62z"/><path fill="#34A853" d="M9 18c2.43 0 4.47-.8 5.96-2.18l-2.9-2.26c-.8.54-1.83.86-3.06.86-2.35 0-4.34-1.59-5.05-3.72H.96v2.33A9 9 0 0 0 9 18z"/><path fill="#FBBC05" d="M3.95 10.7A5.4 5.4 0 0 1 3.67 9c0-.59.1-1.17.28-1.7V4.97H.96A9 9 0 0 0 0 9c0 1.45.35 2.83.96 4.03l2.99-2.33z"/><path fill="#EA4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.58-2.58A8.64 8.64 0 0 0 9 0 9 9 0 0 0 .96 4.97l2.99 2.33C4.66 5.17 6.65 3.58 9 3.58z"/></svg>
-                    {googleLoading ? 'Please wait...' : 'Continue with Google'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setErrorMessage('Apple Sign-In is not yet configured for this app.')}
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-                      width: '100%', height: '48px', background: '#000000', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '100px',
-                      color: '#FFFFFF', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-                    }}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 384 512" fill="#FFFFFF"><path d="M318.7 268.7c-.2-36.7 16.4-64.4 50-84.8-18.8-26.9-47.2-41.7-84.7-44.6-35.5-2.8-74.3 20.7-88.5 20.7-15 0-49.4-19.7-76.4-19.7C63.3 141 4 184.8 4 273.5q0 39.3 14.4 81.2c12.8 36.7 59 126.7 107.2 125.2 25.2-.6 43-17.9 75.8-17.9 31.8 0 48.3 17.9 76.4 17.9 48.6-.7 90.4-82.5 102.6-119.3-65.2-30.7-61.7-90-61.7-91.9zm-56.6-164.2c27.3-32.4 24.8-61.9 24-72.5-24.1 1.4-52 16.4-67.9 34.9-17.5 19.8-27.8 44.3-25.6 71.9 26.1 2 49.9-11.4 69.5-34.3z"/></svg>
-                    Continue with Apple
-                  </button>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '4px 0' }}>
-                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-                    <span style={{ color: '#555C7A', fontSize: '11px', fontWeight: 600 }}>OR</span>
-                    <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.08)' }} />
-                  </div>
-                </div>
               </>
             )}
 
