@@ -84,6 +84,51 @@ export default async function handler(req, res) {
     }
   }
 
+  // ── Organizer payout transfer status ──────────────────────────────────
+  // This is the authoritative completion signal for a payout — the
+  // synchronous /transfer response only means "accepted for processing",
+  // not "money actually moved" (some accounts require OTP finalization).
+  if (event?.event === 'transfer.success' || event?.event === 'transfer.failed' || event?.event === 'transfer.reversed') {
+    const transferCode = event.data?.transfer_code;
+    const reference = event.data?.reference;
+    const lookupKey = transferCode || reference;
+
+    if (!lookupKey) {
+      console.error('[Paystack webhook] transfer event missing transfer_code/reference', event.data);
+      return res.status(200).json({ received: true });
+    }
+
+    try {
+      const baseUrl = process.env.VITE_INSFORGE_URL;
+      const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+      if (!baseUrl || !anonKey) {
+        console.error('[Paystack webhook] VITE_INSFORGE_URL or VITE_INSFORGE_ANON_KEY not set');
+        return res.status(200).json({ received: true });
+      }
+
+      const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
+      const body = event.event === 'transfer.success'
+        ? { p_request_id: lookupKey }
+        : { p_request_id: lookupKey, p_reason: event.data?.reason || event.event };
+
+      const rpcRes = await fetch(`${baseUrl}/api/database/rpc/${rpcName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
+        },
+        body: JSON.stringify(body),
+      });
+
+      const result = await rpcRes.json().catch(() => null);
+      const status = typeof result === 'string' ? result : result?.data ?? result;
+      console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, status, 'for', lookupKey);
+    } catch (err: any) {
+      console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+    }
+  }
+
   // Always 200 so Paystack does not endlessly retry.
   return res.status(200).json({ received: true });
 }

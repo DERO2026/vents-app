@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search } from 'lucide-react';
+import { insforge, getAuthToken } from '../../lib/insforge';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -10,6 +10,7 @@ interface WalletScreenProps {
 interface WalletData {
   balance_kobo: number;
   total_earned_kobo: number;
+  pending_kobo: number;
 }
 
 interface Transaction {
@@ -23,12 +24,31 @@ interface Transaction {
 interface BankAccount {
   id: string;
   bank_name: string;
+  bank_code: string | null;
   account_number: string;
   account_name: string;
+  recipient_code: string | null;
+}
+
+interface Bank {
+  name: string;
+  code: string;
 }
 
 function fmt(kobo: number) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+async function authedFetch(path: string, body: any) {
+  const token = await getAuthToken();
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Request failed');
+  return json;
 }
 
 export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
@@ -45,21 +65,29 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   // Bank account flow
   const [showAddBank, setShowAddBank] = useState(false);
-  const [bankName, setBankName] = useState('');
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [banksLoading, setBanksLoading] = useState(false);
+  const [showBankPicker, setShowBankPicker] = useState(false);
+  const [bankSearch, setBankSearch] = useState('');
+  const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
-  const [accountName, setAccountName] = useState('');
+  const [resolvedName, setResolvedName] = useState('');
+  const [resolving, setResolving] = useState(false);
+  const [resolveError, setResolveError] = useState('');
   const [savingBank, setSavingBank] = useState(false);
+  const [bankSaveError, setBankSaveError] = useState('');
+  const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
     if (!currentUser?.id) return;
     setLoading(true);
     try {
       const [wRes, tRes, bRes] = await Promise.all([
-        insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
+        insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
         insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
-        insforge.database.from('organizer_bank_accounts').select('id, bank_name, account_number, account_name').eq('organizer_id', currentUser.id).maybeSingle(),
+        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code').eq('organizer_id', currentUser.id).maybeSingle(),
       ]);
-      setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0 });
+      setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
       setTxns(tRes.data || []);
       setBankAccount(bRes.data || null);
     } catch (e) {
@@ -71,6 +99,52 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   useEffect(() => { load(); }, [currentUser?.id]);
 
+  // Live account-number resolution, debounced, as soon as a bank is picked
+  // and 10 digits are entered.
+  useEffect(() => {
+    setResolvedName('');
+    setResolveError('');
+    if (resolveTimer.current) clearTimeout(resolveTimer.current);
+    if (!selectedBank || !/^\d{10}$/.test(accountNumber)) return;
+
+    resolveTimer.current = setTimeout(async () => {
+      setResolving(true);
+      try {
+        const result = await authedFetch('/api/wallet/resolve-account', {
+          account_number: accountNumber,
+          bank_code: selectedBank.code,
+        });
+        setResolvedName(result.account_name);
+      } catch (e: any) {
+        setResolveError(e.message || 'Could not verify account');
+      } finally {
+        setResolving(false);
+      }
+    }, 500);
+    return () => { if (resolveTimer.current) clearTimeout(resolveTimer.current); };
+  }, [selectedBank, accountNumber]);
+
+  const openAddBank = async () => {
+    setBankSaveError('');
+    setSelectedBank(null);
+    setAccountNumber('');
+    setResolvedName('');
+    setResolveError('');
+    setShowAddBank(true);
+    if (banks.length === 0) {
+      setBanksLoading(true);
+      try {
+        const res = await fetch('/api/wallet/banks');
+        const json = await res.json();
+        if (res.ok) setBanks(json.banks || []);
+      } catch (e) {
+        console.error('Failed to load bank list:', e);
+      } finally {
+        setBanksLoading(false);
+      }
+    }
+  };
+
   const handleWithdraw = async () => {
     setWithdrawError('');
     const amount = parseFloat(withdrawAmount.replace(/[^0-9.]/g, ''));
@@ -81,6 +155,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
     setWithdrawing(true);
     try {
+      await getAuthToken();
       const { error } = await insforge.database.rpc('request_organizer_payout', {
         p_amount_kobo: kobo,
         p_bank_account_id: bankAccount.id,
@@ -97,27 +172,30 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   const handleSaveBank = async () => {
-    if (!bankName.trim() || !accountNumber.trim() || !accountName.trim()) return;
+    if (!selectedBank || !resolvedName || resolving) return;
     setSavingBank(true);
+    setBankSaveError('');
     try {
-      await insforge.database.from('organizer_bank_accounts').upsert({
-        organizer_id: currentUser!.id,
-        bank_name: bankName.trim(),
-        account_number: accountNumber.trim(),
-        account_name: accountName.trim(),
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'organizer_id' });
+      await authedFetch('/api/wallet/save-bank', {
+        account_number: accountNumber,
+        bank_code: selectedBank.code,
+        bank_name: selectedBank.name,
+      });
       setShowAddBank(false);
       await load();
     } catch (e: any) {
-      alert(e.message || 'Failed to save bank account');
+      setBankSaveError(e.message || 'Failed to save bank account');
     } finally {
       setSavingBank(false);
     }
   };
 
   const balance = wallet?.balance_kobo ?? 0;
+  const pending = wallet?.pending_kobo ?? 0;
   const totalEarned = wallet?.total_earned_kobo ?? 0;
+  const filteredBanks = bankSearch.trim()
+    ? banks.filter(b => b.name.toLowerCase().includes(bankSearch.toLowerCase()))
+    : banks;
 
   return (
     <div style={{ background: '#020005', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
@@ -146,6 +224,11 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <TrendingUp size={14} color="rgba(255,255,255,0.6)" />
               <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
             </div>
+            {pending > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
+                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</span>
+              </div>
+            )}
           </div>
 
           {/* Actions */}
@@ -159,7 +242,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <span style={{ color: balance > 0 ? '#A855F7' : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
             </button>
             <button
-              onClick={() => { setBankName(bankAccount?.bank_name || ''); setAccountNumber(bankAccount?.account_number || ''); setAccountName(bankAccount?.account_name || ''); setShowAddBank(true); }}
+              onClick={openAddBank}
               style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
             >
               <Plus size={18} color="#8B8FA8" />
@@ -174,6 +257,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600 }}>{bankAccount.bank_name}</p>
                 <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#8B8FA8' }}>{bankAccount.account_number} · {bankAccount.account_name}</p>
               </div>
+              {bankAccount.recipient_code && <Check size={16} color="#10B981" />}
             </div>
           )}
 
@@ -231,30 +315,91 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         </div>
       )}
 
-      {/* Add/Edit bank modal */}
+      {/* Add/Update bank modal */}
       {showAddBank && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 20px' }}>{bankAccount ? 'Update Bank Account' : 'Add Bank Account'}</p>
-            {(['Bank Name', 'Account Number', 'Account Name'] as const).map((label, i) => {
-              const vals = [bankName, accountNumber, accountName];
-              const setters = [setBankName, setAccountNumber, setAccountName];
-              return (
-                <input
-                  key={label}
-                  placeholder={label}
-                  value={vals[i]}
-                  onChange={e => setters[i](e.target.value)}
-                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
-                />
-              );
-            })}
+
+            {/* Bank picker */}
+            <button
+              onClick={() => setShowBankPicker(true)}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : '#8B8FA8', fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
+            >
+              <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : 'Select bank'}</span>
+              <ChevronDown size={16} color="#8B8FA8" />
+            </button>
+
+            <input
+              placeholder="10-digit account number"
+              value={accountNumber}
+              onChange={e => setAccountNumber(e.target.value.replace(/\D/g, '').slice(0, 10))}
+              inputMode="numeric"
+              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
+            />
+
+            {resolving && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
+            {resolveError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                <AlertCircle size={14} color="#EF4444" />
+                <span style={{ color: '#EF4444', fontSize: '13px' }}>{resolveError}</span>
+              </div>
+            )}
+            {resolvedName && !resolving && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '10px' }}>
+                <Check size={16} color="#10B981" />
+                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
+              </div>
+            )}
+
+            {bankSaveError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                <AlertCircle size={14} color="#EF4444" />
+                <span style={{ color: '#EF4444', fontSize: '13px' }}>{bankSaveError}</span>
+              </div>
+            )}
+
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
               <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={handleSaveBank} disabled={savingBank} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: savingBank ? 'not-allowed' : 'pointer', opacity: savingBank ? 0.6 : 1 }}>
+              <button
+                onClick={handleSaveBank}
+                disabled={savingBank || !resolvedName || resolving}
+                style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (savingBank || !resolvedName) ? 'not-allowed' : 'pointer', opacity: (savingBank || !resolvedName) ? 0.6 : 1 }}
+              >
                 {savingBank ? 'Saving…' : 'Save'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bank picker modal */}
+      {showBankPicker && (
+        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9500, display: 'flex', flexDirection: 'column', padding: 'calc(20px + env(safe-area-inset-top)) 20px 20px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <p style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Select Bank</p>
+            <button onClick={() => { setShowBankPicker(false); setBankSearch(''); }} style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer' }}>Close</button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', padding: '10px 16px', marginBottom: '14px' }}>
+            <Search size={16} color="#8B8FA8" />
+            <input
+              placeholder="Search banks…"
+              value={bankSearch}
+              onChange={e => setBankSearch(e.target.value)}
+              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '14px' }}
+              autoFocus
+            />
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {filteredBanks.map(bank => (
+              <button
+                key={bank.code}
+                onClick={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
+                style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '14px 4px', color: '#fff', fontSize: '15px', cursor: 'pointer' }}
+              >
+                {bank.name}
+              </button>
+            ))}
           </div>
         </div>
       )}

@@ -5,7 +5,7 @@ import {
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
 } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
 import { extractEventsFromText, publishEvents, type ImportedEvent } from '../../lib/eventImporter';
 
@@ -122,17 +122,20 @@ function PayoutsTab() {
 
   const load = async () => {
     setLoading(true);
-    let q = insforge.database
-      .from('organizer_withdrawal_requests')
-      .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email)')
-      .order('created_at', { ascending: false })
-      .limit(50);
-    if (statusFilter === 'pending') q = q.eq('status', 'pending');
     const [{ data: reqs }, { data: walsRaw }] = await Promise.all([
-      q,
+      // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
+      // it joins organizer + bank metadata server-side in one call, so the
+      // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
+      statusFilter === 'pending'
+        ? insforge.database.rpc('admin_list_pending_payouts' as any)
+        : insforge.database
+            .from('organizer_withdrawal_requests')
+            .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email, phone_number)')
+            .order('created_at', { ascending: false })
+            .limit(50),
       insforge.database
         .from('organizer_wallets')
-        .select('organizer_id, balance_kobo, total_earned_kobo, total_withdrawn_kobo')
+        .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
         .order('balance_kobo', { ascending: false })
         .limit(100),
     ]);
@@ -149,20 +152,66 @@ function PayoutsTab() {
       (userRows || []).forEach((u: any) => { userMap[u.id] = u; });
       wals = wals.map((w: any) => ({ ...w, users: userMap[w.organizer_id] || null }));
     }
-    setRequests(reqs || []);
+    // Normalize both response shapes (RPC returns flat columns; the 'all'
+    // fallback query returns nested embeds) into one shape for rendering.
+    const normalized = (reqs || []).map((r: any) => {
+      if ('request_id' in r) return r; // already flat, from admin_list_pending_payouts
+      const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
+      const bank = r.organizer_bank_accounts;
+      return {
+        request_id: r.id,
+        organizer_id: r.organizer_id,
+        organizer_name: org?.full_name || org?.username,
+        organizer_email: org?.email,
+        organizer_phone: org?.phone_number,
+        amount_kobo: r.amount_kobo,
+        bank_name: bank?.bank_name,
+        account_number: bank?.account_number,
+        account_name: bank?.account_name,
+        recipient_code: bank?.recipient_code,
+        status: r.status,
+        created_at: r.created_at,
+      };
+    });
+    setRequests(normalized);
     setWallets(wals);
     setLoading(false);
   };
 
   useEffect(() => { load(); }, [statusFilter]);
 
-  const handleUpdateStatus = async (id: string, status: 'approved' | 'rejected' | 'paid', note?: string) => {
+  const handleApprove = async (id: string) => {
     setActionLoading(id);
     try {
-      await insforge.database
-        .from('organizer_withdrawal_requests')
-        .update({ status, admin_note: note || null, updated_at: new Date().toISOString() })
-        .eq('id', id);
+      const token = await getAuthToken();
+      const res = await fetch('/api/wallet/admin-approve-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_id: id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Approve failed');
+      await load();
+    } catch (e: any) {
+      alert(e.message || 'Action failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    const reason = window.prompt('Reason for rejecting this payout? (shown to the organizer)');
+    if (!reason || !reason.trim()) return;
+    setActionLoading(id);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/wallet/admin-reject-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_id: id, reason: reason.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Reject failed');
       await load();
     } catch (e: any) {
       alert(e.message || 'Action failed');
@@ -174,7 +223,7 @@ function PayoutsTab() {
   const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 
   const statusColor: Record<string, string> = {
-    pending: '#F59E0B', approved: '#60A5FA', paid: '#10B981', rejected: '#EF4444',
+    pending: '#F59E0B', processing: '#60A5FA', completed: '#10B981', failed: '#EF4444', rejected: '#EF4444',
   };
 
   const totalPending = requests.filter(r => r.status === 'pending').reduce((s: number, r: any) => s + r.amount_kobo, 0);
@@ -222,6 +271,9 @@ function PayoutsTab() {
                 <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{u?.username || u?.full_name || w.organizer_id.slice(0, 8)}</p>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', color: '#A78BFA' }}>Balance: <strong>{fmt(w.balance_kobo)}</strong></span>
+                  {(w.pending_kobo ?? 0) > 0 && (
+                    <span style={{ fontSize: '12px', color: '#F59E0B' }}>Pending: {fmt(w.pending_kobo)}</span>
+                  )}
                   <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Earned: {fmt(w.total_earned_kobo)}</span>
                   <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Withdrawn: {fmt(w.total_withdrawn_kobo ?? 0)}</span>
                 </div>
@@ -233,40 +285,35 @@ function PayoutsTab() {
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No {statusFilter === 'pending' ? 'pending ' : ''}withdrawal requests</p>
       ) : (
         requests.map((r: any) => {
-          const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
-          const bank = r.organizer_bank_accounts;
           return (
-            <div key={r.id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <div key={r.request_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{org?.username || org?.full_name || r.organizer_id.slice(0,8)}</p>
-                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{org?.email}</p>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{r.organizer_name || r.organizer_id?.slice(0, 8)}</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{r.organizer_email}{r.organizer_phone ? ` · ${r.organizer_phone}` : ''}</p>
                 </div>
                 <span style={{ fontSize: '11px', fontWeight: 700, color: statusColor[r.status] || '#8B8FA8', background: `${statusColor[r.status]}22`, borderRadius: '6px', padding: '3px 8px' }}>{r.status.toUpperCase()}</span>
               </div>
               <p style={{ margin: 0, fontSize: '20px', fontWeight: 800, color: '#A855F7' }}>{fmt(r.amount_kobo)}</p>
-              {bank && (
-                <p style={{ margin: 0, fontSize: '12px', color: '#8B8FA8' }}>{bank.bank_name} · {bank.account_number} · {bank.account_name}</p>
+              {r.bank_name && (
+                <p style={{ margin: 0, fontSize: '12px', color: '#8B8FA8' }}>{r.bank_name} · {r.account_number} · {r.account_name}</p>
+              )}
+              {r.recipient_code && (
+                <p style={{ margin: 0, fontSize: '10px', color: '#6B7280', fontFamily: 'monospace' }}>{r.recipient_code}</p>
               )}
               <p style={{ margin: 0, fontSize: '11px', color: '#6B7280' }}>{new Date(r.created_at).toLocaleString('en-NG')}</p>
               {r.status === 'pending' && (
                 <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                   <button
-                    onClick={() => handleUpdateStatus(r.id, 'approved')}
-                    disabled={actionLoading === r.id}
-                    style={{ flex: 1, background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: '10px', padding: '8px', color: '#60A5FA', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-                    Approve
+                    onClick={() => handleApprove(r.request_id)}
+                    disabled={actionLoading === r.request_id}
+                    style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
+                    {actionLoading === r.request_id ? 'Processing…' : 'Approve & Pay'}
                   </button>
                   <button
-                    onClick={() => handleUpdateStatus(r.id, 'paid')}
-                    disabled={actionLoading === r.id}
-                    style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-                    Mark Paid
-                  </button>
-                  <button
-                    onClick={() => handleUpdateStatus(r.id, 'rejected')}
-                    disabled={actionLoading === r.id}
-                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+                    onClick={() => handleReject(r.request_id)}
+                    disabled={actionLoading === r.request_id}
+                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
                     Reject
                   </button>
                 </div>
