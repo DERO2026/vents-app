@@ -61,6 +61,39 @@ export function ProfileScreen({
   const [orgRequestReason, setOrgRequestReason] = useState('');
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
   const [orgRequestError, setOrgRequestError] = useState('');
+  const [hasOrgDraft, setHasOrgDraft] = useState(false);
+
+  // Draft persistence for the organizer-onboarding textarea — if the user
+  // closes the modal or navigates away before hitting "Submit Request", the
+  // in-progress text survives (per-user key so it doesn't leak across
+  // accounts on a shared device). Nothing is ever written to the database
+  // until the explicit submit click.
+  const orgDraftKey = currentUser?.id ? `vents_org_request_draft_${currentUser.id}` : null;
+
+  useEffect(() => {
+    if (!orgDraftKey) return;
+    try {
+      const saved = localStorage.getItem(orgDraftKey);
+      if (saved) {
+        setOrgRequestReason(saved);
+        setHasOrgDraft(true);
+      }
+    } catch { /* ignore */ }
+  }, [orgDraftKey]);
+
+  const handleOrgReasonChange = (value: string) => {
+    setOrgRequestReason(value);
+    if (!orgDraftKey) return;
+    try {
+      if (value.trim()) {
+        localStorage.setItem(orgDraftKey, value);
+        setHasOrgDraft(true);
+      } else {
+        localStorage.removeItem(orgDraftKey);
+        setHasOrgDraft(false);
+      }
+    } catch { /* ignore */ }
+  };
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [freshCoverUrl, setFreshCoverUrl] = useState<string | undefined>(undefined);
 
@@ -170,6 +203,8 @@ export function ProfileScreen({
         .from('organizer_requests')
         .insert([{ user_id: currentUser.id, reason: orgRequestReason.trim() || null }]);
       if (error) throw error;
+      if (orgDraftKey) { try { localStorage.removeItem(orgDraftKey); } catch { /* ignore */ } }
+      setHasOrgDraft(false);
       setOrgRequestStatus('sent');
       setShowOrgRequestModal(false);
     } catch (err: any) {
@@ -583,6 +618,11 @@ export function ProfileScreen({
               <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>
                 {orgRequestStatus === 'already' ? 'Request Pending Review' : orgRequestStatus === 'sent' ? 'Organizer Request Submitted' : 'Become an Organizer'}
               </span>
+              {orgRequestStatus === 'idle' && hasOrgDraft && (
+                <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
+                  PENDING COMPLETION
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -599,7 +639,7 @@ export function ProfileScreen({
               </p>
               <textarea
                 value={orgRequestReason}
-                onChange={(e) => setOrgRequestReason(e.target.value)}
+                onChange={(e) => handleOrgReasonChange(e.target.value)}
                 placeholder="e.g. I want to host tech meetups in Lagos..."
                 rows={4}
                 style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}

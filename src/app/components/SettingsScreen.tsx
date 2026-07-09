@@ -11,7 +11,7 @@ import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
 
 interface SettingsScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
   onBack: () => void;
   onSignOut: () => void;
   onNavigate?: (screen: string) => void;
@@ -20,7 +20,7 @@ interface SettingsScreenProps {
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string }) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'help' | 'change-password' | 'delete-account';
+type SubScreen = null | 'profile' | 'payment' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -143,6 +143,174 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
 }
 
 // ── Sub-screens ──────────────────────────────────────────────────
+
+function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBack: () => void }) {
+  const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
+  const [rejectReason, setRejectReason] = useState<string | null>(null);
+
+  const [companyName, setCompanyName] = useState('');
+  const [cacNumber, setCacNumber] = useState('');
+  const [businessAddress, setBusinessAddress] = useState(currentUser?.state ? `${currentUser.state}, Nigeria` : '');
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%',
+    background: '#090514',
+    border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px',
+    padding: '12px 14px',
+    color: '#F0F0FF',
+    fontSize: '14px',
+    outline: 'none',
+    fontFamily: 'Inter, sans-serif',
+    boxSizing: 'border-box',
+  };
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    (async () => {
+      try {
+        await getAuthToken();
+        const { data } = await insforge.database.rpc('my_latest_organizer_verification' as any);
+        const row = Array.isArray(data) ? data[0] : data;
+        if (row?.status === 'pending') { setStatus('pending'); return; }
+        if (row?.status === 'rejected') { setRejectReason(row.admin_note || null); setStatus('rejected'); return; }
+        setStatus('form');
+      } catch {
+        setStatus('form');
+      }
+    })();
+  }, [currentUser?.id]);
+
+  const handleSubmit = async () => {
+    setError('');
+    if (!companyName.trim() || !cacNumber.trim() || !businessAddress.trim()) {
+      setError('All fields are required.');
+      return;
+    }
+    if (!file) {
+      setError('Please upload your Certificate of Incorporation.');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await getAuthToken();
+      setUploading(true);
+      const { data: uploadData, error: uploadError } = await insforge.storage.from('verification-docs').uploadAuto(file);
+      setUploading(false);
+      if (uploadError) throw uploadError;
+      if (!uploadData?.url) throw new Error('Upload failed — no URL returned.');
+
+      const { error: rpcError } = await insforge.database.rpc('submit_organizer_verification' as any, {
+        p_company_name: companyName.trim(),
+        p_cac_number: cacNumber.trim(),
+        p_business_address: businessAddress.trim(),
+        p_document_url: uploadData.url,
+      });
+      if (rpcError) throw new Error(rpcError.message);
+      setStatus('pending');
+    } catch (err: any) {
+      setError(err?.message || 'Submission failed.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700 }}>Get Verified</h1>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 40px' }}>
+        {status === 'loading' && (
+          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>Loading…</p>
+        )}
+
+        {status === 'pending' && (
+          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '16px', padding: '20px', textAlign: 'center', marginTop: '20px' }}>
+            <ShieldCheck size={32} color="#F59E0B" style={{ marginBottom: '10px' }} />
+            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>Verification Pending</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>Your brand verification request is under review. We'll email you once a decision is made.</p>
+          </div>
+        )}
+
+        {status === 'rejected' && (
+          <div style={{ marginTop: '8px' }}>
+            <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+              <p style={{ color: '#EF4444', fontSize: '13px', fontWeight: 700, margin: '0 0 6px' }}>Previous request not approved</p>
+              {rejectReason && <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>{rejectReason}</p>}
+            </div>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>You can submit a new request below.</p>
+            <CACForm />
+          </div>
+        )}
+
+        {status === 'form' && <CACForm />}
+      </div>
+    </div>
+  );
+
+  function CACForm() {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: status === 'form' ? '8px' : 0 }}>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
+          Verify your organization with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Company Legal Registered Name</label>
+          <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
+          <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
+          <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Certificate of Incorporation</label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*,application/pdf"
+            onChange={e => setFile(e.target.files?.[0] || null)}
+            style={{ display: 'none' }}
+          />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '16px', color: file ? '#10B981' : '#8B8FA8', fontSize: '13px', cursor: 'pointer', textAlign: 'center' }}
+          >
+            {file ? `✓ ${file.name}` : 'Tap to upload document (image or PDF)'}
+          </button>
+        </div>
+
+        {error && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{error}</p>}
+
+        <button
+          onClick={handleSubmit}
+          disabled={submitting}
+          style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+        >
+          {uploading ? 'Uploading document…' : submitting ? 'Submitting…' : 'Submit for Verification'}
+        </button>
+      </div>
+    );
+  }
+}
 
 function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
   if (!currentUser) {
@@ -894,6 +1062,7 @@ export function SettingsScreen({
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
+  if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
@@ -937,6 +1106,29 @@ export function SettingsScreen({
             Edit
           </button>
         </div>
+
+        {currentUser?.role === 'organizer' && (
+          currentUser?.is_verified ? (
+            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <ShieldCheck size={20} color="#10B981" />
+              <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
+            </div>
+          ) : (
+            <div
+              onClick={() => setSubScreen('cac-verify')}
+              style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(79,70,229,0.18))', border: '1px solid rgba(168,85,247,0.35)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
+            >
+              <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <ShieldCheck size={19} color="#fff" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <p style={{ margin: 0, color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</p>
+                <p style={{ margin: '2px 0 0', color: '#A78BFA', fontSize: '12px' }}>Submit your CAC details for a verified badge</p>
+              </div>
+              <ChevronRight size={16} color="#A78BFA" />
+            </div>
+          )
+        )}
 
         <Section title="ACCOUNT">
           <SettingRow icon={User} label="Profile Details" onPress={() => setSubScreen('profile')} />

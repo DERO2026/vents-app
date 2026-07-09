@@ -401,6 +401,11 @@ export function AdminDashboardScreen({
   // Organizer Verification tab state
   const [pendingOrgs, setPendingOrgs] = useState<any[]>([]);
   const [pendingOrgsLoading, setPendingOrgsLoading] = useState(false);
+  const [verifySection, setVerifySection] = useState<'cac' | 'unverified'>('cac');
+  const [cacRequests, setCacRequests] = useState<any[]>([]);
+  const [cacRequestsLoading, setCacRequestsLoading] = useState(false);
+  const [expandedCacId, setExpandedCacId] = useState<string | null>(null);
+  const [cacActionLoading, setCacActionLoading] = useState<string | null>(null);
 
   // Organizer Requests tab state
   const [orgRequests, setOrgRequests] = useState<any[]>([]);
@@ -513,6 +518,57 @@ export function AdminDashboardScreen({
       .limit(50)
       .then(({ data }) => { setPendingOrgs(data || []); setPendingOrgsLoading(false); });
   }, [tab]);
+
+  const loadCacRequests = useCallback(async () => {
+    setCacRequestsLoading(true);
+    const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any);
+    if (error) {
+      console.error('CAC requests fetch error:', error);
+      setCacRequests([]);
+    } else {
+      setCacRequests(data || []);
+    }
+    setCacRequestsLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'verify') return;
+    loadCacRequests();
+  }, [tab, loadCacRequests]);
+
+  const handleApproveCac = async (requestId: string) => {
+    setCacActionLoading(requestId);
+    try {
+      const { error } = await insforge.database.rpc('admin_approve_organizer_verification' as any, { p_request_id: requestId });
+      if (error) throw new Error(error.message);
+      flash(true, 'Brand verified ✓');
+      setExpandedCacId(null);
+      await loadCacRequests();
+      notifyByEmail('cac', requestId, 'approved');
+    } catch (e: any) {
+      flash(false, e.message || 'Approval failed');
+    } finally {
+      setCacActionLoading(null);
+    }
+  };
+
+  const handleRejectCac = async (requestId: string) => {
+    const reason = window.prompt('Reason for rejecting this brand verification? (shown to the organizer)');
+    if (!reason || !reason.trim()) return;
+    setCacActionLoading(requestId);
+    try {
+      const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason.trim() });
+      if (error) throw new Error(error.message);
+      flash(false, 'Verification rejected');
+      setExpandedCacId(null);
+      await loadCacRequests();
+      notifyByEmail('cac', requestId, 'rejected', reason.trim());
+    } catch (e: any) {
+      flash(false, e.message || 'Rejection failed');
+    } finally {
+      setCacActionLoading(null);
+    }
+  };
 
   const handleVcUserSearch = async () => {
     const q = vcSearch.trim();
@@ -670,7 +726,7 @@ export function AdminDashboardScreen({
       if (userIds.length > 0) {
         const { data: users } = await insforge.database
           .from('users')
-          .select('id, username, full_name, email, phone')
+          .select('id, username, full_name, email, phone_number, state')
           .in('id', userIds);
         (users || []).forEach((u: any) => { usersMap[u.id] = u; });
       }
@@ -678,6 +734,19 @@ export function AdminDashboardScreen({
       setOrgRequestsLoading(false);
     })();
   }, [tab, currentUser?.id, isRoot]);
+
+  const notifyByEmail = async (requestType: 'organizer' | 'cac', requestId: string, decision: 'approved' | 'rejected', reason?: string) => {
+    try {
+      const token = await getAuthToken();
+      await fetch('/api/notify/status-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_type: requestType, request_id: requestId, decision, reason }),
+      });
+    } catch (err) {
+      console.error('Notification email failed:', err);
+    }
+  };
 
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
     const { error } = await insforge.database
@@ -692,20 +761,21 @@ export function AdminDashboardScreen({
         if (req?.user_id) {
           await insforge.database.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
         }
-        if (req?.users?.phone) {
+        if (req?.users?.phone_number) {
           sendSMS({
-            to: req.users.phone,
+            to: req.users.phone_number,
             message: `Congratulations! Your request to become an organizer on Vents has been approved. You can now create and manage events. - Vents`,
           }).catch(() => {});
         }
       } else if (status === 'rejected') {
-        if (req?.users?.phone) {
+        if (req?.users?.phone_number) {
           sendSMS({
-            to: req.users.phone,
+            to: req.users.phone_number,
             message: `Your organizer request on Vents was not approved at this time. Contact support@getvents.com for more information. - Vents`,
           }).catch(() => {});
         }
       }
+      notifyByEmail('organizer', id, status, adminNote);
     }
   };
 
@@ -1645,8 +1715,61 @@ export function AdminDashboardScreen({
       {/* ════════════════ ORGANIZER VERIFICATION TAB ══════════════════════ */}
       {tab === 'verify' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>{pendingOrgs.length} unverified organizer{pendingOrgs.length !== 1 ? 's' : ''}</p>
-          {pendingOrgsLoading ? (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+            {(['cac', 'unverified'] as const).map(s => (
+              <button key={s} onClick={() => setVerifySection(s)}
+                style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: verifySection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: verifySection === s ? '#A855F7' : '#8B8FA8' }}>
+                {s === 'cac' ? 'CAC Requests' : 'Unverified Organizers'}
+              </button>
+            ))}
+          </div>
+
+          {verifySection === 'cac' ? (
+            cacRequestsLoading ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
+            ) : cacRequests.length === 0 ? (
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No pending brand verification requests</div>
+            ) : cacRequests.map((r: any) => {
+              const expanded = expandedCacId === r.request_id;
+              return (
+                <div key={r.request_id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <div onClick={() => setExpandedCacId(expanded ? null : r.request_id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}>
+                    <div>
+                      <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name}</div>
+                      <div style={{ color: '#8B8FA8', fontSize: '12px' }}>{r.full_name || 'No Name'} · {r.state || 'No state'}</div>
+                      <div style={{ color: '#555C7A', fontSize: '11px' }}>{r.email}</div>
+                    </div>
+                    <span style={{ fontSize: '10px', color: '#F59E0B', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>PENDING</span>
+                  </div>
+                  <div style={{ color: '#555C7A', fontSize: '10px' }}>Submitted {new Date(r.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
+                  {expanded && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address}</p>
+                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Phone:</strong> {r.phone_number || '—'}</p>
+                      <a href={r.document_url} target="_blank" rel="noopener noreferrer" style={{ color: '#A855F7', fontSize: '12px', fontWeight: 600, textDecoration: 'underline' }}>View uploaded CAC document ↗</a>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      onClick={() => handleApproveCac(r.request_id)}
+                      disabled={cacActionLoading === r.request_id}
+                      style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
+                    >
+                      {cacActionLoading === r.request_id ? 'Processing…' : 'Approve & Verify Brand'}
+                    </button>
+                    <button
+                      onClick={() => handleRejectCac(r.request_id)}
+                      disabled={cacActionLoading === r.request_id}
+                      style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
+                    >
+                      Reject Verification
+                    </button>
+                  </div>
+                </div>
+              );
+            })
+          ) : pendingOrgsLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
           ) : pendingOrgs.length === 0 ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>All organizers verified ✓</div>
@@ -1716,6 +1839,11 @@ export function AdminDashboardScreen({
                       {req.status}
                     </span>
                   </div>
+                  {(user?.email || user?.phone_number || user?.state) && (
+                    <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 8px' }}>
+                      {[user?.email, user?.phone_number, user?.state].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   {req.reason && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px', lineHeight: 1.4 }}>{req.reason}</p>}
                   <p style={{ color: '#555C7A', fontSize: '11px', margin: '0 0 10px' }}>{new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                   {req.status === 'pending' && (
