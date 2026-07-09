@@ -228,6 +228,11 @@ function PayoutsTab() {
 
   const totalPending = requests.filter(r => r.status === 'pending').reduce((s: number, r: any) => s + r.amount_kobo, 0);
 
+  // Map organizer_id -> their pending request, so wallet cards (which have
+  // no request_id of their own) can still expose Approve/Reject controls.
+  const pendingByOrganizer: Record<string, any> = {};
+  requests.filter(r => r.status === 'pending').forEach(r => { pendingByOrganizer[r.organizer_id] = r; });
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
       {/* Total pending banner */}
@@ -266,8 +271,9 @@ function PayoutsTab() {
         ) : (
           wallets.map((w: any) => {
             const u = w.users;
+            const pendingReq = (w.pending_kobo ?? 0) > 0 ? pendingByOrganizer[w.organizer_id] : null;
             return (
-              <div key={w.organizer_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <div key={w.organizer_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                 <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{u?.username || u?.full_name || w.organizer_id.slice(0, 8)}</p>
                 <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '12px', color: '#A78BFA' }}>Balance: <strong>{fmt(w.balance_kobo)}</strong></span>
@@ -277,6 +283,22 @@ function PayoutsTab() {
                   <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Earned: {fmt(w.total_earned_kobo)}</span>
                   <span style={{ fontSize: '12px', color: '#8B8FA8' }}>Withdrawn: {fmt(w.total_withdrawn_kobo ?? 0)}</span>
                 </div>
+                {pendingReq && (
+                  <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
+                    <button
+                      onClick={() => handleApprove(pendingReq.request_id)}
+                      disabled={actionLoading === pendingReq.request_id}
+                      style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === pendingReq.request_id ? 0.6 : 1 }}>
+                      {actionLoading === pendingReq.request_id ? 'Processing…' : 'Approve & Pay'}
+                    </button>
+                    <button
+                      onClick={() => handleReject(pendingReq.request_id)}
+                      disabled={actionLoading === pendingReq.request_id}
+                      style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === pendingReq.request_id ? 0.6 : 1 }}>
+                      Reject & Refund
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })
@@ -314,7 +336,7 @@ function PayoutsTab() {
                     onClick={() => handleReject(r.request_id)}
                     disabled={actionLoading === r.request_id}
                     style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
-                    Reject
+                    Reject & Refund
                   </button>
                 </div>
               )}

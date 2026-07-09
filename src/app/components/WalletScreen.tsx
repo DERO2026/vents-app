@@ -198,7 +198,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     : banks;
 
   return (
-    <div style={{ background: '#020005', minHeight: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
+    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
@@ -212,7 +212,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <span style={{ color: '#8B8FA8' }}>Loading…</span>
         </div>
       ) : (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
           {/* Balance card */}
           <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
