@@ -1033,9 +1033,9 @@ export function HomeScreen({
         }}
       >
         {/* Logo + tagline */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-          <VentsLogo />
-          <div style={{ fontSize: '10px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
+          <VentsLogo size={28} />
+          <div style={{ fontSize: '9px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
             Discover Nigeria's Best Events through VENTS
           </div>
         </div>

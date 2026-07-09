@@ -50,6 +50,11 @@ export const eventCreateSchema = z.object({
   })).min(1),
 });
 
+export const reviewSchema = z.object({
+  body: safeText(10, 1000),
+  rating: z.number().min(1).max(5),
+});
+
 /** Returns the first validation error message, or null if the payload is clean. */
 export function firstValidationError(result: { success: boolean; error?: { issues: { message: string }[] } }): string | null {
   if (result.success) return null;

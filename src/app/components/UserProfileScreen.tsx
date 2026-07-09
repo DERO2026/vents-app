@@ -5,6 +5,7 @@ import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { ReportModal } from './ReportModal';
+import { reviewSchema, firstValidationError } from '../../lib/schemas';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -163,6 +164,8 @@ export function UserProfileScreen({
 
   const submitReview = async () => {
     if (!reviewRating || reviewText.trim().length < 10 || reviewSubmitting) return;
+    const check = reviewSchema.safeParse({ body: reviewText.trim(), rating: reviewRating });
+    if (!check.success) { setReviewError(firstValidationError(check)); return; }
     setReviewSubmitting(true);
     setReviewError(null);
     try {

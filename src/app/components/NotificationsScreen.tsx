@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Bell, Loader } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Bell, Loader, Trash2 } from 'lucide-react';
 import { Notification } from './types';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();
@@ -33,6 +33,9 @@ export function NotificationsScreen({
 }) {
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [clearing, setClearing] = useState(false);
+  const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
+  const swipeStartX = useRef<number | null>(null);
 
   const fetchNotifications = async () => {
     if (!currentUser?.id) return;
@@ -102,6 +105,58 @@ export function NotificationsScreen({
     }
   };
 
+  const deleteNotification = async (id: string) => {
+    const prevItems = items;
+    setItems((prev) => prev.filter((n) => n.id !== id));
+    setSwipe(null);
+    try {
+      await getAuthToken();
+      const { error } = await insforge.database.from('notifications').delete().eq('id', id);
+      if (error) throw error;
+      onRefreshUnread?.();
+    } catch (err) {
+      console.error("Failed to delete notification:", err);
+      setItems(prevItems);
+    }
+  };
+
+  const clearAllNotifications = async () => {
+    if (!currentUser?.id || clearing) return;
+    if (!window.confirm('Clear all notifications? This cannot be undone.')) return;
+    setClearing(true);
+    const prevItems = items;
+    setItems([]);
+    try {
+      await getAuthToken();
+      const { error } = await insforge.database.from('notifications').delete().eq('user_id', currentUser.id);
+      if (error) throw error;
+      onRefreshUnread?.();
+    } catch (err) {
+      console.error("Failed to clear notifications:", err);
+      setItems(prevItems);
+    } finally {
+      setClearing(false);
+    }
+  };
+
+  const handleSwipeStart = (id: string, x: number) => {
+    swipeStartX.current = x;
+    setSwipe({ id, offsetX: 0 });
+  };
+  const handleSwipeMove = (id: string, x: number) => {
+    if (swipeStartX.current === null) return;
+    const delta = Math.min(0, x - swipeStartX.current); // only allow left swipe
+    setSwipe({ id, offsetX: Math.max(delta, -90) });
+  };
+  const handleSwipeEnd = (id: string) => {
+    swipeStartX.current = null;
+    if (swipe && swipe.id === id && swipe.offsetX < -60) {
+      deleteNotification(id);
+    } else {
+      setSwipe(null);
+    }
+  };
+
   return (
     <div
       style={{
@@ -147,23 +202,48 @@ export function NotificationsScreen({
             )}
           </div>
         </div>
-        {unreadCount > 0 && (
-          <button
-            onClick={markAllRead}
-            style={{
-              background: 'rgba(167,139,250,0.1)',
-              border: '1px solid rgba(167,139,250,0.2)',
-              borderRadius: '10px',
-              padding: '6px 12px',
-              color: '#A78BFA',
-              fontSize: '12px',
-              fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Mark all read
-          </button>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {unreadCount > 0 && (
+            <button
+              onClick={markAllRead}
+              style={{
+                background: 'rgba(167,139,250,0.1)',
+                border: '1px solid rgba(167,139,250,0.2)',
+                borderRadius: '10px',
+                padding: '6px 12px',
+                color: '#A78BFA',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              Mark all read
+            </button>
+          )}
+          {items.length > 0 && (
+            <button
+              onClick={clearAllNotifications}
+              disabled={clearing}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '5px',
+                background: 'rgba(239,68,68,0.1)',
+                border: '1px solid rgba(239,68,68,0.25)',
+                borderRadius: '10px',
+                padding: '6px 12px',
+                color: '#EF4444',
+                fontSize: '12px',
+                fontWeight: 500,
+                cursor: clearing ? 'not-allowed' : 'pointer',
+                opacity: clearing ? 0.6 : 1,
+              }}
+            >
+              <Trash2 size={12} />
+              Clear All
+            </button>
+          )}
+        </div>
       </div>
 
       {/* List */}
@@ -208,24 +288,36 @@ export function NotificationsScreen({
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {items.map((notif) => {
               const accent = TYPE_COLORS[notif.type] ?? '#A855F7';
+              const offsetX = swipe?.id === notif.id ? swipe.offsetX : 0;
               return (
-                <div
-                  key={notif.id}
-                  onClick={() => markRead(notif.id)}
-                  style={{
-                    background: notif.read ? '#131629' : 'rgba(168,85,247,0.07)',
-                    border: notif.read
-                      ? '1px solid rgba(255,255,255,0.05)'
-                      : '1px solid rgba(168,85,247,0.22)',
-                    borderRadius: '16px',
-                    padding: '14px',
-                    display: 'flex',
-                    gap: '12px',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    transition: 'opacity 0.15s ease',
-                  }}
-                >
+                <div key={notif.id} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden' }}>
+                  {/* Delete-reveal background */}
+                  <div style={{
+                    position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 20px',
+                  }}>
+                    <Trash2 size={18} color="#EF4444" />
+                  </div>
+                  <div
+                    onClick={() => { if (offsetX === 0) markRead(notif.id); }}
+                    onTouchStart={(e) => handleSwipeStart(notif.id, e.touches[0].clientX)}
+                    onTouchMove={(e) => handleSwipeMove(notif.id, e.touches[0].clientX)}
+                    onTouchEnd={() => handleSwipeEnd(notif.id)}
+                    style={{
+                      background: notif.read ? '#131629' : 'rgba(168,85,247,0.07)',
+                      border: notif.read
+                        ? '1px solid rgba(255,255,255,0.05)'
+                        : '1px solid rgba(168,85,247,0.22)',
+                      borderRadius: '16px',
+                      padding: '14px',
+                      display: 'flex',
+                      gap: '12px',
+                      cursor: 'pointer',
+                      position: 'relative',
+                      transform: `translateX(${offsetX}px)`,
+                      transition: swipe?.id === notif.id ? 'none' : 'transform 0.2s ease, opacity 0.15s ease',
+                    }}
+                  >
                   {/* Icon bubble */}
                   <div
                     style={{
@@ -299,6 +391,7 @@ export function NotificationsScreen({
                   </div>
 
                   {/* Unread dot moved inline with timestamp above */}
+                  </div>
                 </div>
               );
             })}
