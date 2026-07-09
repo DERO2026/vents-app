@@ -135,10 +135,17 @@ function PayoutsTab() {
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
-    const [{ data: reqs }, { data: walsRaw }] = await Promise.all([
+    setLoadError(null);
+    // InsForge's SDK doesn't always keep hc.userToken reliably populated —
+    // without this, admin_list_pending_payouts (is_admin()-gated) can fail
+    // silently under RLS and render as an empty state with no error shown.
+    try { await getAuthToken(); } catch { /* fall through — surfaced below if the queries also fail */ }
+
+    const [reqRes, walRes] = await Promise.all([
       // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
       // it joins organizer + bank metadata server-side in one call, so the
       // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
@@ -155,6 +162,12 @@ function PayoutsTab() {
         .order('balance_kobo', { ascending: false })
         .limit(100),
     ]);
+    const { data: reqs, error: reqError } = reqRes;
+    const { data: walsRaw, error: walError } = walRes;
+    if (reqError || walError) {
+      console.error('PayoutsTab load error:', reqError || walError);
+      setLoadError((reqError || walError)?.message || 'Failed to load payouts.');
+    }
     // organizer_wallets FK points to auth.users — PostgREST can't embed it.
     // Look up usernames from public.users separately.
     let wals = walsRaw || [];
@@ -260,25 +273,28 @@ function PayoutsTab() {
         </div>
       )}
 
-      {/* Section tabs */}
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+      {/* Section tabs — always visible, never conditionally hidden */}
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
         {(['requests', 'wallets'] as const).map(s => (
           <button key={s} onClick={() => setActiveSection(s)}
             style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: activeSection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: activeSection === s ? '#A855F7' : '#8B8FA8' }}>
             {s === 'requests' ? 'Requests' : 'All Wallets'}
           </button>
         ))}
-        {activeSection === 'requests' && (
-          <>
-            {(['pending', 'all'] as const).map(f => (
-              <button key={f} onClick={() => setStatusFilter(f)}
-                style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: statusFilter === f ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', color: statusFilter === f ? '#60A5FA' : '#6B7280' }}>
-                {f === 'pending' ? 'Pending' : 'All'}
-              </button>
-            ))}
-          </>
-        )}
+        <div style={{ width: '1px', background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
+        {(['pending', 'all'] as const).map(f => (
+          <button key={f} onClick={() => { setStatusFilter(f); setActiveSection('requests'); }}
+            style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: activeSection === 'requests' && statusFilter === f ? 'rgba(96,165,250,0.15)' : 'rgba(255,255,255,0.03)', color: activeSection === 'requests' && statusFilter === f ? '#60A5FA' : '#6B7280' }}>
+            {f === 'pending' ? 'Pending' : 'All'}
+          </button>
+        ))}
       </div>
+
+      {loadError && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px' }}>
+          <p style={{ margin: 0, fontSize: '12px', color: '#EF4444' }}>{loadError}</p>
+        </div>
+      )}
 
       {loading ? (
         <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
