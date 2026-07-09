@@ -98,6 +98,22 @@ async function writeAuditLog(adminId: string, action: string, targetUserId: stri
     .insert([{ admin_id: adminId, action, target_user_id: targetUserId, details }]);
 }
 
+// Fires the confirmation/rejection email after an admin action succeeds.
+// Module-scope (not tied to a specific component) since both PayoutsTab and
+// the main AdminDashboardScreen component call it.
+async function notifyByEmail(requestType: 'organizer' | 'cac' | 'payout', requestId: string, decision: 'approved' | 'rejected', reason?: string) {
+  try {
+    const token = await getAuthToken();
+    await fetch('/api/notify/status-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ request_type: requestType, request_id: requestId, decision, reason }),
+    });
+  } catch (err) {
+    console.error('Notification email failed:', err);
+  }
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -213,6 +229,7 @@ function PayoutsTab() {
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Reject failed');
       await load();
+      notifyByEmail('payout', id, 'rejected', reason.trim());
     } catch (e: any) {
       alert(e.message || 'Action failed');
     } finally {
@@ -735,18 +752,6 @@ export function AdminDashboardScreen({
     })();
   }, [tab, currentUser?.id, isRoot]);
 
-  const notifyByEmail = async (requestType: 'organizer' | 'cac', requestId: string, decision: 'approved' | 'rejected', reason?: string) => {
-    try {
-      const token = await getAuthToken();
-      await fetch('/api/notify/status-email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ request_type: requestType, request_id: requestId, decision, reason }),
-      });
-    } catch (err) {
-      console.error('Notification email failed:', err);
-    }
-  };
 
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
     const { error } = await insforge.database

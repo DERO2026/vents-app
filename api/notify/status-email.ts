@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail } from '../lib/mailer.js';
+import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail, sendPayoutDecisionEmail } from '../lib/mailer.js';
+
+function fmtNaira(kobo: number): string {
+  return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
+}
 
 // Fires the approval/rejection email for an organizer-role request or a CAC
 // brand-verification request. Called by the admin client right after the
@@ -21,14 +25,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
   const { request_type, request_id, decision, reason } = req.body || {};
-  if (!['organizer', 'cac'].includes(request_type)) {
-    return res.status(400).json({ error: 'request_type must be "organizer" or "cac"' });
+  if (!['organizer', 'cac', 'payout'].includes(request_type)) {
+    return res.status(400).json({ error: 'request_type must be "organizer", "cac", or "payout"' });
   }
   if (!request_id || typeof request_id !== 'string') {
     return res.status(400).json({ error: 'request_id is required' });
   }
-  if (!['approved', 'rejected'].includes(decision)) {
-    return res.status(400).json({ error: 'decision must be "approved" or "rejected"' });
+  if (!['approved', 'rejected', 'completed', 'failed'].includes(decision)) {
+    return res.status(400).json({ error: 'Invalid decision' });
   }
 
   const baseUrl = process.env.VITE_INSFORGE_URL;
@@ -38,18 +42,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const insforgeHeaders = { Authorization: authHeader, apikey: anonKey };
 
   try {
-    const table = request_type === 'organizer' ? 'organizer_requests' : 'organizer_verification_requests';
+    const table = request_type === 'organizer' ? 'organizer_requests'
+      : request_type === 'cac' ? 'organizer_verification_requests'
+      : 'organizer_withdrawal_requests';
+    const ownerCol = request_type === 'payout' ? 'organizer_id' : 'user_id';
+    const extraSelect = request_type === 'cac' ? ',company_name' : request_type === 'payout' ? ',amount_kobo' : '';
     const reqRes = await fetch(
-      `${baseUrl}/api/database/records/${table}?id=eq.${encodeURIComponent(request_id)}&select=user_id${request_type === 'cac' ? ',company_name' : ''}`,
+      `${baseUrl}/api/database/records/${table}?id=eq.${encodeURIComponent(request_id)}&select=${ownerCol}${extraSelect}`,
       { headers: insforgeHeaders }
     );
     if (!reqRes.ok) return res.status(reqRes.status).json({ error: 'Could not load request' });
     const reqRows = await reqRes.json();
     const reqRow = Array.isArray(reqRows) ? reqRows[0] : null;
-    if (!reqRow?.user_id) return res.status(404).json({ error: 'Request not found' });
+    const ownerId = reqRow?.[ownerCol];
+    if (!ownerId) return res.status(404).json({ error: 'Request not found' });
 
     const userRes = await fetch(
-      `${baseUrl}/api/database/records/users?id=eq.${encodeURIComponent(reqRow.user_id)}&select=full_name,email`,
+      `${baseUrl}/api/database/records/users?id=eq.${encodeURIComponent(ownerId)}&select=full_name,email`,
       { headers: insforgeHeaders }
     );
     if (!userRes.ok) return res.status(userRes.status).json({ error: 'Could not load user' });
@@ -61,15 +70,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       ? await sendOrganizerRequestDecisionEmail({
           to: user.email,
           name: user.full_name || 'there',
-          decision,
+          decision: decision as 'approved' | 'rejected',
           reason: decision === 'rejected' ? reason : undefined,
         })
-      : await sendOrganizerVerificationDecisionEmail({
+      : request_type === 'cac'
+      ? await sendOrganizerVerificationDecisionEmail({
           to: user.email,
           name: user.full_name || 'there',
           companyName: reqRow.company_name || 'your organization',
-          decision,
+          decision: decision as 'approved' | 'rejected',
           reason: decision === 'rejected' ? reason : undefined,
+        })
+      : await sendPayoutDecisionEmail({
+          to: user.email,
+          name: user.full_name || 'there',
+          amountNaira: fmtNaira(Number(reqRow.amount_kobo) || 0),
+          decision: decision as 'completed' | 'rejected' | 'failed',
+          reason: decision !== 'completed' ? reason : undefined,
         });
     return res.status(200).json({ sent });
   } catch (err: any) {

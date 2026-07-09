@@ -3,7 +3,13 @@
 // Verifies Paystack webhook HMAC-SHA512 signature before processing.
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
+import { sendPayoutDecisionEmail } from '../lib/mailer.js';
+
 const crypto = require('crypto');
+
+function fmtNaira(kobo) {
+  return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
+}
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
@@ -122,8 +128,22 @@ export default async function handler(req, res) {
       });
 
       const result = await rpcRes.json().catch(() => null);
-      const status = typeof result === 'string' ? result : result?.data ?? result;
-      console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, status, 'for', lookupKey);
+      const rows = Array.isArray(result) ? result : result?.data ?? result;
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
+
+      // Fire the payout email only on a genuine, first-time state change —
+      // never on 'not_found'/'already_completed'/'already_finalized', which
+      // would otherwise re-send on Paystack's webhook retries.
+      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed')) {
+        sendPayoutDecisionEmail({
+          to: row.organizer_email,
+          name: row.organizer_name || 'there',
+          amountNaira: fmtNaira(Number(row.amount_kobo) || 0),
+          decision: row.status,
+          reason: row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
+        }).catch((e) => console.error('[Paystack webhook] payout email failed:', e?.message || e));
+      }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
     }

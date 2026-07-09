@@ -112,6 +112,36 @@ export async function sendOrganizerVerificationDecisionEmail(params: {
   );
 }
 
+export async function sendPayoutDecisionEmail(params: {
+  to: string;
+  name: string;
+  amountNaira: string;
+  decision: 'completed' | 'rejected' | 'failed';
+  reason?: string;
+}): Promise<boolean> {
+  const { to, name, amountNaira, decision, reason } = params;
+  if (decision === 'completed') {
+    return sendEmail(
+      to,
+      `Your withdrawal of ${amountNaira} has been sent 💸`,
+      wrapTemplate('Withdrawal sent', `
+        <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Hi ${escapeHtml(name)},</p>
+        <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Your withdrawal of <strong>${escapeHtml(amountNaira)}</strong> has been approved and sent to your bank account.</p>
+        <a href="https://getvents.com" style="display: inline-block; margin-top: 12px; background: linear-gradient(135deg,#7C3AED,#A855F7); color: #fff; text-decoration: none; padding: 12px 20px; border-radius: 10px; font-weight: 700; font-size: 14px;">Open Vents</a>
+      `)
+    );
+  }
+  return sendEmail(
+    to,
+    `Update on your withdrawal of ${amountNaira}`,
+    wrapTemplate(decision === 'rejected' ? 'Withdrawal rejected' : 'Withdrawal failed', `
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Hi ${escapeHtml(name)},</p>
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Your withdrawal request of <strong>${escapeHtml(amountNaira)}</strong> ${decision === 'rejected' ? 'was not approved' : 'could not be completed'}. The full amount has been returned to your available balance.</p>
+      ${reason ? `<p style="color: #C4C9E0; font-size: 14px; line-height: 1.6; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 12px 14px;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>` : ''}
+    `)
+  );
+}
+
 function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }
