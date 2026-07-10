@@ -140,71 +140,77 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const load = async () => {
     setLoading(true);
     setLoadError(null);
-    // InsForge's SDK doesn't always keep hc.userToken reliably populated —
-    // without this, admin_list_pending_payouts (is_admin()-gated) can fail
-    // silently under RLS and render as an empty state with no error shown.
-    try { await getAuthToken(); } catch { /* fall through — surfaced below if the queries also fail */ }
+    try {
+      // InsForge's SDK doesn't always keep hc.userToken reliably populated —
+      // without this, admin_list_pending_payouts (is_admin()-gated) can fail
+      // silently under RLS and render as an empty state with no error shown.
+      try { await getAuthToken(); } catch { /* fall through — surfaced below if the queries also fail */ }
 
-    const [reqRes, walRes] = await Promise.all([
-      // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
-      // it joins organizer + bank metadata server-side in one call, so the
-      // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
-      statusFilter === 'pending'
-        ? insforge.database.rpc('admin_list_pending_payouts' as any)
-        : insforge.database
-            .from('organizer_withdrawal_requests')
-            .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email, phone_number)')
-            .order('created_at', { ascending: false })
-            .limit(50),
-      insforge.database
-        .from('organizer_wallets')
-        .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
-        .order('balance_kobo', { ascending: false })
-        .limit(100),
-    ]);
-    const { data: reqs, error: reqError } = reqRes;
-    const { data: walsRaw, error: walError } = walRes;
-    if (reqError || walError) {
-      console.error('PayoutsTab load error:', reqError || walError);
-      setLoadError((reqError || walError)?.message || 'Failed to load payouts.');
+      const [reqRes, walRes] = await Promise.all([
+        // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
+        // it joins organizer + bank metadata server-side in one call, so the
+        // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
+        statusFilter === 'pending'
+          ? insforge.database.rpc('admin_list_pending_payouts' as any)
+          : insforge.database
+              .from('organizer_withdrawal_requests')
+              .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email, phone_number)')
+              .order('created_at', { ascending: false })
+              .limit(50),
+        insforge.database
+          .from('organizer_wallets')
+          .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
+          .order('balance_kobo', { ascending: false })
+          .limit(100),
+      ]);
+      const { data: reqs, error: reqError } = reqRes;
+      const { data: walsRaw, error: walError } = walRes;
+      if (reqError || walError) {
+        console.error('PayoutsTab load error:', reqError || walError);
+        setLoadError((reqError || walError)?.message || 'Failed to load payouts.');
+      }
+      // organizer_wallets FK points to auth.users — PostgREST can't embed it.
+      // Look up usernames from public.users separately.
+      let wals = walsRaw || [];
+      if (wals.length > 0) {
+        const ids = wals.map((w: any) => w.organizer_id);
+        const { data: userRows } = await insforge.database
+          .from('users')
+          .select('id, username, full_name')
+          .in('id', ids);
+        const userMap: Record<string, any> = {};
+        (userRows || []).forEach((u: any) => { userMap[u.id] = u; });
+        wals = wals.map((w: any) => ({ ...w, users: userMap[w.organizer_id] || null }));
+      }
+      // Normalize both response shapes (RPC returns flat columns; the 'all'
+      // fallback query returns nested embeds) into one shape for rendering.
+      const normalized = (reqs || []).map((r: any) => {
+        if ('request_id' in r) return r; // already flat, from admin_list_pending_payouts
+        const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
+        const bank = r.organizer_bank_accounts;
+        return {
+          request_id: r.id,
+          organizer_id: r.organizer_id,
+          organizer_name: org?.full_name || org?.username,
+          organizer_email: org?.email,
+          organizer_phone: org?.phone_number,
+          amount_kobo: r.amount_kobo,
+          bank_name: bank?.bank_name,
+          account_number: bank?.account_number,
+          account_name: bank?.account_name,
+          recipient_code: bank?.recipient_code,
+          status: r.status,
+          created_at: r.created_at,
+        };
+      });
+      setRequests(normalized);
+      setWallets(wals);
+    } catch (err: any) {
+      console.error('PayoutsTab load threw:', err);
+      setLoadError(err?.message || 'Failed to load payouts.');
+    } finally {
+      setLoading(false);
     }
-    // organizer_wallets FK points to auth.users — PostgREST can't embed it.
-    // Look up usernames from public.users separately.
-    let wals = walsRaw || [];
-    if (wals.length > 0) {
-      const ids = wals.map((w: any) => w.organizer_id);
-      const { data: userRows } = await insforge.database
-        .from('users')
-        .select('id, username, full_name')
-        .in('id', ids);
-      const userMap: Record<string, any> = {};
-      (userRows || []).forEach((u: any) => { userMap[u.id] = u; });
-      wals = wals.map((w: any) => ({ ...w, users: userMap[w.organizer_id] || null }));
-    }
-    // Normalize both response shapes (RPC returns flat columns; the 'all'
-    // fallback query returns nested embeds) into one shape for rendering.
-    const normalized = (reqs || []).map((r: any) => {
-      if ('request_id' in r) return r; // already flat, from admin_list_pending_payouts
-      const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
-      const bank = r.organizer_bank_accounts;
-      return {
-        request_id: r.id,
-        organizer_id: r.organizer_id,
-        organizer_name: org?.full_name || org?.username,
-        organizer_email: org?.email,
-        organizer_phone: org?.phone_number,
-        amount_kobo: r.amount_kobo,
-        bank_name: bank?.bank_name,
-        account_number: bank?.account_number,
-        account_name: bank?.account_name,
-        recipient_code: bank?.recipient_code,
-        status: r.status,
-        created_at: r.created_at,
-      };
-    });
-    setRequests(normalized);
-    setWallets(wals);
-    setLoading(false);
   };
 
   useEffect(() => { load(); }, [statusFilter]);
@@ -474,7 +480,10 @@ export function AdminDashboardScreen({
       .select('id, user_id, amount, type, status, reference_id, created_at')
       .order('created_at', { ascending: false })
       .limit(100)
-      .then(({ data }) => { setVcTxns(data || []); setVcLoading(false); });
+      .then(
+        ({ data }) => { setVcTxns(data || []); setVcLoading(false); },
+        (err) => { console.error('VC transactions fetch error:', err); setVcLoading(false); }
+      );
   }, [tab]);
 
   const loadDrawData = async (month: string) => {
@@ -562,19 +571,24 @@ export function AdminDashboardScreen({
       .eq('is_verified', false)
       .order('created_at', { ascending: false })
       .limit(50)
-      .then(({ data }) => { setPendingOrgs(data || []); setPendingOrgsLoading(false); });
+      .then(
+        ({ data }) => { setPendingOrgs(data || []); setPendingOrgsLoading(false); },
+        (err) => { console.error('Pending orgs fetch error:', err); setPendingOrgsLoading(false); }
+      );
   }, [tab]);
 
   const loadCacRequests = useCallback(async () => {
     setCacRequestsLoading(true);
-    const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any);
-    if (error) {
-      console.error('CAC requests fetch error:', error);
-      setCacRequests([]);
-    } else {
+    try {
+      const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any);
+      if (error) throw error;
       setCacRequests(data || []);
+    } catch (err) {
+      console.error('CAC requests fetch error:', err);
+      setCacRequests([]);
+    } finally {
+      setCacRequestsLoading(false);
     }
-    setCacRequestsLoading(false);
   }, []);
 
   useEffect(() => {
@@ -755,29 +769,30 @@ export function AdminDashboardScreen({
     if (currentUser?.role !== 'admin' && !isRoot) return;
     setOrgRequestsLoading(true);
     (async () => {
-      const { data: reqs, error } = await insforge.database
-        .from('organizer_requests')
-        .select('id, user_id, reason, status, admin_note, created_at')
-        .order('created_at', { ascending: false })
-        .limit(100);
-      if (error) {
+      try {
+        const { data: reqs, error } = await insforge.database
+          .from('organizer_requests')
+          .select('id, user_id, reason, status, admin_note, created_at')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const rows = reqs || [];
+        const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
+        let usersMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: users } = await insforge.database
+            .from('users')
+            .select('id, username, full_name, email, phone_number, state')
+            .in('id', userIds);
+          (users || []).forEach((u: any) => { usersMap[u.id] = u; });
+        }
+        setOrgRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
+      } catch (error: any) {
         console.error('Org requests fetch error:', error);
-        flash(false, 'Failed to load requests: ' + (error.message || JSON.stringify(error)));
+        flash(false, 'Failed to load requests: ' + (error?.message || JSON.stringify(error)));
+      } finally {
         setOrgRequestsLoading(false);
-        return;
       }
-      const rows = reqs || [];
-      const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
-      let usersMap: Record<string, any> = {};
-      if (userIds.length > 0) {
-        const { data: users } = await insforge.database
-          .from('users')
-          .select('id, username, full_name, email, phone_number, state')
-          .in('id', userIds);
-        (users || []).forEach((u: any) => { usersMap[u.id] = u; });
-      }
-      setOrgRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
-      setOrgRequestsLoading(false);
     })();
   }, [tab, currentUser?.id, isRoot]);
 
@@ -841,10 +856,13 @@ export function AdminDashboardScreen({
       .select('*')
       .order('created_at', { ascending: false })
       .limit(100)
-      .then(({ data, error }) => {
-        if (!error) setReports(data || []);
-        setReportsLoading(false);
-      });
+      .then(
+        ({ data, error }) => {
+          if (!error) setReports(data || []);
+          setReportsLoading(false);
+        },
+        (err) => { console.error('Reports fetch error:', err); setReportsLoading(false); }
+      );
   }, [tab, currentUser, isRoot]);
 
   const handleUpdateReport = async (id: string, status: string) => {

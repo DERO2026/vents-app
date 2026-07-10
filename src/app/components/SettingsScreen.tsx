@@ -201,7 +201,6 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
       await getAuthToken();
       setUploading(true);
       const { data: uploadData, error: uploadError } = await insforge.storage.from('verification-docs').uploadAuto(file);
-      setUploading(false);
       if (uploadError) throw uploadError;
       if (!uploadData?.url) throw new Error('Upload failed — no URL returned.');
 
@@ -216,6 +215,7 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
     } catch (err: any) {
       setError(err?.message || 'Submission failed.');
     } finally {
+      setUploading(false);
       setSubmitting(false);
     }
   };
@@ -539,7 +539,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           full_name: sanitize(name),
           username: sanitize(username).toLowerCase(),
           bio: sanitize(bio),
-          phone_number: cleanPhone || phone.trim()
+          phone_number: cleanPhone
         });
       }
       setSaved(true);

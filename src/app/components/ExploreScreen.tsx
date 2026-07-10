@@ -88,30 +88,35 @@ export function ExploreScreen({
       .limit(200)
       .then(async ({ data, error }) => {
         if (error || !data) { setLoadingChats(false); return; }
-        const seen = new Map<string, any>();
-        const unreadCounts = new Map<string, number>();
-        for (const msg of data) {
-          const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
-          if (!seen.has(partnerId)) seen.set(partnerId, msg);
-          if (msg.sender_id !== currentUserId && !msg.read_at) {
-            unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
+        try {
+          const seen = new Map<string, any>();
+          const unreadCounts = new Map<string, number>();
+          for (const msg of data) {
+            const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
+            if (!seen.has(partnerId)) seen.set(partnerId, msg);
+            if (msg.sender_id !== currentUserId && !msg.read_at) {
+              unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
+            }
           }
+          const partnerIds = [...seen.keys()];
+          if (partnerIds.length === 0) { setConversations([]); return; }
+          const { data: profiles } = await insforge.database
+            .from('public_profiles')
+            .select('id, full_name, username, avatar_url, vc_badge')
+            .in('id', partnerIds);
+          const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+          setConversations(partnerIds.map(pid => ({
+            partnerId: pid,
+            lastMsg: seen.get(pid),
+            profile: profileMap.get(pid) || null,
+            unreadCount: unreadCounts.get(pid) || 0,
+          })));
+        } catch (err) {
+          console.error('Failed to build conversation list:', err);
+        } finally {
+          setLoadingChats(false);
         }
-        const partnerIds = [...seen.keys()];
-        if (partnerIds.length === 0) { setConversations([]); setLoadingChats(false); return; }
-        const { data: profiles } = await insforge.database
-          .from('public_profiles')
-          .select('id, full_name, username, avatar_url, vc_badge')
-          .in('id', partnerIds);
-        const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
-        setConversations(partnerIds.map(pid => ({
-          partnerId: pid,
-          lastMsg: seen.get(pid),
-          profile: profileMap.get(pid) || null,
-          unreadCount: unreadCounts.get(pid) || 0,
-        })));
-        setLoadingChats(false);
-      });
+      }, (err) => { console.error('Direct messages fetch error:', err); setLoadingChats(false); });
   }, [currentUserId, chatRefreshKey, localRefreshKey]);
 
   // ── People search ────────────────────────────────────────────────────────────

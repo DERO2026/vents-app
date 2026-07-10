@@ -351,20 +351,32 @@ export default function App() {
 
         // If we got the user from the manual refresh, skip SDK call
         if (!sessionUserId) {
+          // A thrown error or non-401 statusCode here is a transient
+          // network/cold-start failure, not proof the session is invalid —
+          // treating it as "logged out" on the first try is what caused
+          // users to be intermittently dropped back to the Welcome screen
+          // on refresh. Only a genuine 401/403 means "not authenticated";
+          // anything else gets one retry before giving up.
           let getCurrentUserData: any = null;
           let getCurrentUserError: any = null;
-          try {
-            const result = await insforge.auth.getCurrentUser();
-            getCurrentUserData = result.data;
-            getCurrentUserError = result.error;
-          } catch (err: any) {
-            console.warn("GetCurrentUser threw:", err?.message || err);
-            setCurrentUser(null);
-            setAuthLoading(false);
-            return;
+          for (let attempt = 0; attempt < 2; attempt++) {
+            try {
+              const result = await insforge.auth.getCurrentUser();
+              getCurrentUserData = result.data;
+              getCurrentUserError = result.error;
+            } catch (err: any) {
+              getCurrentUserError = err;
+            }
+            const statusCode = getCurrentUserError?.statusCode;
+            const isDefinitelyUnauthenticated = statusCode === 401 || statusCode === 403;
+            if (!getCurrentUserError || isDefinitelyUnauthenticated) break;
+            if (attempt === 0) {
+              console.warn('GetCurrentUser failed, retrying once:', getCurrentUserError?.message || getCurrentUserError);
+              await new Promise((r) => setTimeout(r, 800));
+            }
           }
           if (getCurrentUserError) {
-            console.warn("GetCurrentUser failed:", getCurrentUserError?.statusCode);
+            console.warn("GetCurrentUser failed after retry:", getCurrentUserError?.statusCode || getCurrentUserError?.message);
             setCurrentUser(null);
             setAuthLoading(false);
             return;
