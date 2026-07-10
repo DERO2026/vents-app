@@ -137,6 +137,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
+  const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -290,10 +291,33 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     }
   };
 
+  const handleCancelConfirmed = async (id: string) => {
+    setCancelConfirmId(null);
+    const reason = window.prompt('Reason for cancelling this payout? (required for the audit trail, shown to the organizer)');
+    if (!reason || !reason.trim()) return;
+    setActionLoading(id);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/wallet/admin-cancel-payout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ request_id: id, reason: reason.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Cancel failed');
+      await load();
+      flash(true, 'Payout cancelled and funds returned to available balance.');
+    } catch (e: any) {
+      flash(false, e.message || 'Cancel failed');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 
   const statusColor: Record<string, string> = {
-    pending: '#F59E0B', processing: '#60A5FA', completed: '#10B981', failed: '#EF4444', rejected: '#EF4444',
+    pending: '#F59E0B', processing: '#60A5FA', completed: '#10B981', failed: '#EF4444', rejected: '#EF4444', cancelled: '#EF4444',
   };
 
   const totalPending = requests.filter(r => r.status === 'pending').reduce((s: number, r: any) => s + r.amount_kobo, 0);
@@ -419,6 +443,27 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
                     Reject & Refund
                   </button>
                 </div>
+              )}
+              {r.status === 'processing' && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                  <button
+                    onClick={() => setCancelConfirmId(r.request_id)}
+                    disabled={actionLoading === r.request_id}
+                    title="Use this if this request is stuck in Processing and doesn't actually exist on Paystack — e.g. the 'Reconcile Processing' check couldn't find it"
+                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
+                    {actionLoading === r.request_id ? 'Cancelling…' : 'Cancel & Refund'}
+                  </button>
+                </div>
+              )}
+              {cancelConfirmId === r.request_id && (
+                <ConfirmModal
+                  title="Cancel this payout?"
+                  message="Are you sure you want to cancel this payout? This will refund the amount to the user."
+                  confirmLabel="Yes, cancel"
+                  danger
+                  onConfirm={() => handleCancelConfirmed(r.request_id)}
+                  onCancel={() => setCancelConfirmId(null)}
+                />
               )}
             </div>
           );
