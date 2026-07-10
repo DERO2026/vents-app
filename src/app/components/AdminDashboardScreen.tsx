@@ -136,6 +136,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reconciling, setReconciling] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -269,6 +270,26 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     }
   };
 
+  const handleReconcile = async () => {
+    setReconciling(true);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/wallet/reconcile-payouts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Reconcile failed');
+      const resolved = (json.results || []).filter((r: any) => r.outcome === 'completed' || r.outcome === 'failed').length;
+      flash(true, `Checked ${json.checked ?? 0} processing payout(s) against Paystack — ${resolved} resolved.`);
+      await load();
+    } catch (e: any) {
+      flash(false, e.message || 'Reconcile failed');
+    } finally {
+      setReconciling(false);
+    }
+  };
+
   const fmt = (kobo: number) => '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 
   const statusColor: Record<string, string> = {
@@ -307,6 +328,13 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
             {f === 'pending' ? 'Pending' : 'All'}
           </button>
         ))}
+        <button
+          onClick={handleReconcile}
+          disabled={reconciling}
+          title="Poll Paystack directly for any payout stuck in Processing and resolve it — a fallback for when the transfer.success webhook doesn't fire"
+          style={{ marginLeft: 'auto', padding: '6px 14px', borderRadius: '8px', border: '1px solid rgba(96,165,250,0.3)', cursor: reconciling ? 'wait' : 'pointer', fontWeight: 600, fontSize: '12px', background: 'rgba(96,165,250,0.1)', color: '#60A5FA', opacity: reconciling ? 0.6 : 1 }}>
+          {reconciling ? 'Reconciling…' : '⟳ Reconcile Processing'}
+        </button>
       </div>
 
       {loadError && (
