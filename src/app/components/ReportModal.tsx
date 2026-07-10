@@ -3,7 +3,7 @@ import { X } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 
-const REASONS = ['Spam', 'Inappropriate content', 'Fake event', 'Harassment', 'Other'];
+const REASONS = ['Spam', 'Inappropriate content', 'Scam/Fraud', 'Fake event', 'Harassment', 'Other'];
 
 interface Props {
   reporterId: string;

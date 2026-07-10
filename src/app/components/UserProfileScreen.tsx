@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2 } from 'lucide-react';
+import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
@@ -61,6 +61,37 @@ export function UserProfileScreen({
   const [userEvents, setUserEvents] = useState<any[]>([]);
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [isBlocked, setIsBlocked] = useState(false);
+  const [blockLoading, setBlockLoading] = useState(false);
+  const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
+
+  useEffect(() => {
+    if (!currentUserId || isOwnProfile || !user?.id) return;
+    insforge.database
+      .from('blocked_users')
+      .select('id')
+      .eq('blocker_id', currentUserId)
+      .eq('blocked_id', user.id)
+      .maybeSingle()
+      .then(({ data }) => setIsBlocked(!!data), () => {});
+  }, [currentUserId, user.id, isOwnProfile]);
+
+  const handleToggleBlock = async () => {
+    if (!currentUserId || blockLoading) return;
+    setBlockLoading(true);
+    try {
+      await getAuthToken();
+      const { error } = isBlocked
+        ? await insforge.database.rpc('unblock_user' as any, { p_blocked_id: user.id })
+        : await insforge.database.rpc('block_user' as any, { p_blocked_id: user.id });
+      if (error) throw error;
+      setIsBlocked(!isBlocked);
+    } catch (err: any) {
+      console.error('Block/unblock failed:', err);
+    } finally {
+      setBlockLoading(false);
+    }
+  };
 
   useEffect(() => {
     setCoverLoadFailed(false);
@@ -370,6 +401,27 @@ export function UserProfileScreen({
             }}
           >
             <Flag size={16} color="#8B8FA8" />
+          </button>
+        )}
+        {!isOwnProfile && currentUserId && isOrganizerProfile && (
+          <button
+            onClick={handleToggleBlock}
+            disabled={blockLoading}
+            title={isBlocked ? 'Unblock organizer' : 'Block organizer'}
+            style={{
+              background: isBlocked ? 'rgba(239,68,68,0.15)' : 'rgba(255,255,255,0.06)',
+              border: isBlocked ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '50%',
+              width: '38px',
+              height: '38px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: blockLoading ? 'wait' : 'pointer',
+              opacity: blockLoading ? 0.6 : 1,
+            }}
+          >
+            <Ban size={16} color={isBlocked ? '#EF4444' : '#8B8FA8'} />
           </button>
         )}
       </div>

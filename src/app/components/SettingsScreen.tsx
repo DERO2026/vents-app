@@ -1295,6 +1295,7 @@ function DeleteAccountScreen({
               <ul style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.8, marginTop: '8px', paddingLeft: '20px' }}>
                 <li>Anonymize your name, email, username, and profile photo</li>
                 <li>Remove your bio, phone number, and cover photo</li>
+                <li>Delete reviews you have written and messages you have sent</li>
                 <li>Cancel any pending ticket reservations</li>
                 <li>Block future sign-up with this email address</li>
               </ul>
@@ -1303,7 +1304,7 @@ function DeleteAccountScreen({
               <p style={{ color: '#10B981', fontSize: '13px', fontWeight: 600, marginBottom: '6px' }}>What is kept:</p>
               <ul style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.8, paddingLeft: '20px' }}>
                 <li>Ticket purchase history (required by Nigerian law for 7 years)</li>
-                <li>Reviews you have written</li>
+                <li>Organizer wallet balance and transaction history, if any — for financial record-keeping. Contact support to withdraw a remaining balance first.</li>
               </ul>
             </div>
             <button onClick={() => setStep('confirm')} style={{ width: '100%', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '14px', padding: '14px', color: '#EF4444', fontSize: '15px', fontWeight: 700, cursor: 'pointer', marginBottom: '8px' }}>

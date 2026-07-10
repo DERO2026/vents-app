@@ -554,6 +554,37 @@ export default function App() {
     fetchFollows();
   }, [currentUser?.id]);
 
+  const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+
+  // Fetch the user's blocked-organizer list so the main feed can exclude
+  // their events (App Store Guideline 1.2 UGC requirement).
+  useEffect(() => {
+    async function fetchBlocked() {
+      if (!currentUser?.id) {
+        setBlockedIds(new Set());
+        return;
+      }
+      try {
+        const { data, error } = await insforge.database
+          .from('blocked_users')
+          .select('blocked_id')
+          .eq('blocker_id', currentUser.id);
+        if (error) throw error;
+        if (data) setBlockedIds(new Set(data.map((b: any) => b.blocked_id)));
+      } catch (err) {
+        console.error('Failed to fetch blocked users:', err);
+      }
+    }
+    fetchBlocked();
+  }, [currentUser?.id]);
+
+  // fetchEvents below is a useCallback with a stable [] dependency array, so
+  // it can't read blockedIds from closure without going stale — mirror it
+  // into a ref instead (same technique the function already uses for
+  // lastFetchRef).
+  const blockedIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => { blockedIdsRef.current = blockedIds; }, [blockedIds]);
+
   // Fetch user's saved events from database
   useEffect(() => {
     async function fetchSavedEvents() {
@@ -704,6 +735,13 @@ export default function App() {
       // Hide 18+ events from underage users
       if (userAgeYears < 18) {
         eventsQuery = (eventsQuery as any).eq('is_18_plus', false);
+      }
+
+      // Hide events from organizers this user has blocked (App Store
+      // Guideline 1.2 UGC requirement).
+      const blockedNow = blockedIdsRef.current;
+      if (blockedNow.size > 0) {
+        eventsQuery = (eventsQuery as any).not('organizer_id', 'in', `(${[...blockedNow].join(',')})`);
       }
 
       const { data: dbEventsData, error: dbEventsError } = await eventsQuery.range(start, end);
