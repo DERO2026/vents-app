@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.1",
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
     "@emotion/react": "11.14.0",
     "@emotion/styled": "11.14.1",
     "@insforge/sdk": "^1.4.0",
