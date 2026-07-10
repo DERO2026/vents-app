@@ -365,7 +365,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const normalizedPhone = normalizePhoneE164(phone);
         const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
         if (!NIGERIAN_PHONE_REGEX.test(normalizedPhone)) {
-          throw new Error('Please enter a valid Nigerian phone number (+234 format).');
+          throw new Error('Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678');
         }
         if (!password) throw new Error('Password is required.');
         if (!validatePassword(password)) throw new Error('Password must be at least 8 characters.');

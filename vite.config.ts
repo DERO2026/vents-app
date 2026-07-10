@@ -15,6 +15,15 @@ export default defineConfig(({ mode }) => ({
   },
   base: './', // Vital for deployment
   assetsInclude: ['**/*.svg', '**/*.csv'],
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+        },
+      },
+    },
+  },
   esbuild: {
     // Strip debugger statements from production bundles. console.* is
     // intentionally NOT stripped — console.error calls are the only

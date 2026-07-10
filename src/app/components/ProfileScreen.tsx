@@ -62,6 +62,15 @@ export function ProfileScreen({
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
   const [orgRequestError, setOrgRequestError] = useState('');
   const [hasOrgDraft, setHasOrgDraft] = useState(false);
+  const [vcBalance, setVcBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!currentUser?.id) { setVcBalance(null); return; }
+    insforge.database.rpc('get_my_vc_balance' as any).then(
+      ({ data }: any) => setVcBalance(data?.spendable ?? 0),
+      () => setVcBalance(null)
+    );
+  }, [currentUser?.id]);
 
   // Draft persistence for the organizer-onboarding textarea — if the user
   // closes the modal or navigates away before hitting "Submit Request", the
@@ -456,6 +465,25 @@ export function ProfileScreen({
                     </span>
                   </div>
                   <BadgeChip tier={currentUser?.vc_badge} />
+                  {vcBalance !== null && (
+                    <div
+                      onClick={() => onNavigate('referral')}
+                      style={{
+                        background: 'rgba(245,158,11,0.12)',
+                        border: '1px solid rgba(245,158,11,0.3)',
+                        borderRadius: '5px',
+                        padding: '2px 7px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '3px',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#F59E0B' }}>
+                        ⭐ {vcBalance.toLocaleString()} VC
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
