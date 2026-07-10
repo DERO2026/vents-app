@@ -154,7 +154,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           ? insforge.database.rpc('admin_list_pending_payouts' as any)
           : insforge.database
               .from('organizer_withdrawal_requests')
-              .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_fkey(username, full_name, email, phone_number)')
+              .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_public_users_fkey(username, full_name, email, phone_number)')
               .order('created_at', { ascending: false })
               .limit(50),
         insforge.database
@@ -186,7 +186,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
       // fallback query returns nested embeds) into one shape for rendering.
       const normalized = (reqs || []).map((r: any) => {
         if ('request_id' in r) return r; // already flat, from admin_list_pending_payouts
-        const org = r['users!organizer_withdrawal_requests_organizer_id_fkey'];
+        const org = r['users!organizer_withdrawal_requests_organizer_id_public_users_fkey'];
         const bank = r.organizer_bank_accounts;
         return {
           request_id: r.id,
