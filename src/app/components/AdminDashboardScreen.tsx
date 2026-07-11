@@ -1044,7 +1044,8 @@ export function AdminDashboardScreen({
   // ── User actions ─────────────────────────────────────────────────────────────
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (userId === ROOT_UID) { flash(false, 'Root admin role cannot be changed.'); return; }
-    if (!['attendee', 'organizer'].includes(newRole)) { flash(false, 'Invalid role.'); return; }
+    const allowedRoles = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+    if (!allowedRoles.includes(newRole)) { flash(false, 'Invalid role.'); return; }
     const target = users.find(u => u.id === userId);
     if (isSubAdmin && target && ['admin', 'sub-admin'].includes(target.role)) {
       flash(false, 'Sub-Admins cannot alter Admin/Sub-Admin accounts.'); return;
@@ -1496,18 +1497,28 @@ export function AdminDashboardScreen({
                             <Shield size={12} /> Root — role locked
                           </span>
                         ) : (
-                          <select
-                            value={['attendee', 'organizer'].includes(u.role) ? u.role : ''}
-                            onChange={e => handleRoleChange(u.id, e.target.value)}
-                            disabled={isBusy}
-                            style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
-                          >
-                            {!['attendee', 'organizer'].includes(u.role) && (
-                              <option value="" disabled>{u.role}</option>
-                            )}
-                            <option value="attendee">Attendee</option>
-                            <option value="organizer">Organizer</option>
-                          </select>
+                          // Root sees Sub-Admin as an assignable option (so a
+                          // demoted deputy can be re-promoted); Sub-Admins
+                          // viewing the console are strictly capped at
+                          // attendee/organizer — no self-escalation path.
+                          (() => {
+                            const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+                            return (
+                              <select
+                                value={roleOptions.includes(u.role) ? u.role : ''}
+                                onChange={e => handleRoleChange(u.id, e.target.value)}
+                                disabled={isBusy}
+                                style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
+                              >
+                                {!roleOptions.includes(u.role) && (
+                                  <option value="" disabled>{u.role}</option>
+                                )}
+                                <option value="attendee">Attendee</option>
+                                <option value="organizer">Organizer</option>
+                                {isRoot && <option value="sub-admin">Sub-Admin</option>}
+                              </select>
+                            );
+                          })()
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

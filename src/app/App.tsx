@@ -261,6 +261,29 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
+  // Keep currentUser.role in sync with the DB. Without this, a role change
+  // made server-side (e.g. Root promoting someone to Sub-Admin from the
+  // Admin Console) would never be reflected client-side until the affected
+  // user fully logs out and back in — the Sub-Admin badge and Admin
+  // Dashboard link would keep rendering against the stale cached role.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    const syncRole = () => {
+      insforge.database
+        .from('users')
+        .select('role')
+        .eq('id', currentUser.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled || !data?.role || data.role === currentUser.role) return;
+          setCurrentUser(prev => (prev ? { ...prev, role: data.role } : prev));
+        }, () => {});
+    };
+    const interval = setInterval(syncRole, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [currentUser?.id, currentUser?.role]);
+
   // Load current user and profile on mount
   useEffect(() => {
     async function hydrateAuth() {
