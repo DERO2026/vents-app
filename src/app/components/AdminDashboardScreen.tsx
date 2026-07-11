@@ -4,7 +4,7 @@ import {
   UserX, Trash2, RefreshCw, ClipboardList, Users,
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
-  Mic, Image as ImageIcon,
+  Mic, Image as ImageIcon, Activity,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
@@ -793,6 +793,8 @@ export function AdminDashboardScreen({
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
+  const [isPinging, setIsPinging] = useState(false);
+  const [healthResult, setHealthResult] = useState<{ ok: boolean; latencyMs: number; detail: string } | null>(null);
 
   const [confirmModal, setConfirmModal] = useState<null | {
     title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void;
@@ -1271,6 +1273,27 @@ export function AdminDashboardScreen({
         } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); }
       },
     });
+  };
+
+  const handleHealthPing = async () => {
+    setIsPinging(true);
+    setHealthResult(null);
+    const started = performance.now();
+    try {
+      const { data, error } = await insforge.database.rpc('admin_health_ping' as any);
+      if (error) throw error;
+      const latencyMs = Math.round(performance.now() - started);
+      const result = data as any;
+      setHealthResult({
+        ok: true,
+        latencyMs,
+        detail: `DB reachable · ${result?.users_reachable ?? 0} users · ${result?.events_reachable ?? 0} events`,
+      });
+    } catch (err: any) {
+      setHealthResult({ ok: false, latencyMs: Math.round(performance.now() - started), detail: err?.message || 'Health ping failed.' });
+    } finally {
+      setIsPinging(false);
+    }
   };
 
   // ── Access guard ─────────────────────────────────────────────────────────────
@@ -2447,6 +2470,38 @@ export function AdminDashboardScreen({
             >
               🚫 Suspend All Unverified Accounts
             </button>
+          </div>
+
+          {/* Server Health Ping */}
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Activity size={17} color="#10B981" />
+              </div>
+              <div>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Server Health Ping</p>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>Round-trip through auth, DB and RLS</p>
+              </div>
+            </div>
+            <button
+              onClick={handleHealthPing}
+              disabled={isPinging}
+              style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '12px', color: '#10B981', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              {isPinging ? 'Pinging…' : 'Run Health Ping'}
+            </button>
+            {healthResult && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '10px',
+                background: healthResult.ok ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)',
+                border: `1px solid ${healthResult.ok ? 'rgba(16,185,129,0.25)' : 'rgba(239,68,68,0.25)'}`,
+              }}>
+                <span style={{ color: healthResult.ok ? '#10B981' : '#EF4444', fontSize: '12px', fontWeight: 700 }}>
+                  {healthResult.ok ? `Healthy — ${healthResult.latencyMs}ms` : `Unhealthy — ${healthResult.latencyMs}ms`}
+                </span>
+                <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{healthResult.detail}</span>
+              </div>
+            )}
           </div>
 
           {/* Footer */}
