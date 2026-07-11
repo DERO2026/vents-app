@@ -264,7 +264,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
             { label: 'Invite a friend (you)', amount: '+300 VC', icon: '👥' },
             { label: 'Friend joins (them)', amount: '+150 VC', icon: '🎉' },
             { label: 'Buy a ticket', amount: '+50 VC', icon: '🎟️' },
-            { label: 'Leave a review', amount: '+25 VC', icon: '⭐' },
             { label: 'Complete profile', amount: '+100 VC', icon: '✅' },
           ].map(item => (
             <div key={item.label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>

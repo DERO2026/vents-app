@@ -1,10 +1,9 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, BadgeCheck, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
+import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { ReportModal } from './ReportModal';
-import { reviewSchema, firstValidationError } from '../../lib/schemas';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -41,19 +40,10 @@ export function UserProfileScreen({
   const [eventsCreated, setEventsCreated] = useState(0);
   const [attendees, setAttendees] = useState(0);
   const [eventsAttended, setEventsAttended] = useState(0);
-  const [reviews, setReviews] = useState<{ id: string; reviewer_id: string; rating: number; body: string; created_at: string; reviewer?: { full_name?: string; username?: string } }[]>([]);
-  const [reviewRating, setReviewRating] = useState(0);
-  const [reviewHover, setReviewHover] = useState(0);
-  const [reviewText, setReviewText] = useState('');
-  const [reviewSubmitted, setReviewSubmitted] = useState(false);
-  const [reviewSubmitting, setReviewSubmitting] = useState(false);
-  const [avgRating, setAvgRating] = useState(0);
-  const [hasTicketFromOrganizer, setHasTicketFromOrganizer] = useState(false);
   const isVerified = user.is_verified || user.id === ROOT_UID;
   const isOwnProfile = currentUserId === user.id;
   const [showReport, setShowReport] = useState(false);
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
-  const [reviewError, setReviewError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
@@ -139,60 +129,6 @@ export function UserProfileScreen({
     }
     fetchStats();
   }, [user.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    insforge.database
-      .from('organizer_reviews')
-      .select('*, reviewer:reviewer_id(full_name, username)')
-      .eq('organizer_id', user.id)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => {
-        if (data) {
-          setReviews(data as any);
-          const avg = data.length ? data.reduce((s: number, r: any) => s + r.rating, 0) / data.length : 0;
-          setAvgRating(Math.round(avg * 10) / 10);
-          if (currentUserId) setReviewSubmitted(data.some((r: any) => r.reviewer_id === currentUserId));
-        }
-      });
-
-    if (currentUserId && currentUserId !== user.id) {
-      insforge.database
-        .from('tickets')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', currentUserId)
-        .eq('status', 'active')
-        .then(({ count }) => setHasTicketFromOrganizer((count || 0) > 0));
-    }
-  }, [user.id, currentUserId]);
-
-  const submitReview = async () => {
-    if (!reviewRating || reviewText.trim().length < 10 || reviewSubmitting) return;
-    const check = reviewSchema.safeParse({ body: reviewText.trim(), rating: reviewRating });
-    if (!check.success) { setReviewError(firstValidationError(check)); return; }
-    setReviewSubmitting(true);
-    setReviewError(null);
-    try {
-      // Ensure hc.userToken is set so auth.uid() resolves inside the RPC —
-      // without this the RPC raises "Not authenticated" and the write
-      // silently fails with no feedback to the user.
-      await getAuthToken();
-      const { error } = await insforge.database.rpc('submit_organizer_review' as any, {
-        p_organizer_id: user.id,
-        p_rating: reviewRating,
-        p_body: reviewText.trim(),
-      });
-      if (error) throw error;
-      setReviewSubmitted(true);
-      setReviewRating(0);
-      setReviewText('');
-    } catch (err: any) {
-      console.error('Review submit failed:', err);
-      setReviewError(err?.message || 'Could not submit review. Please try again.');
-    } finally {
-      setReviewSubmitting(false);
-    }
-  };
 
   return (
     <div
@@ -505,76 +441,6 @@ export function UserProfileScreen({
       </div>
       )}
 
-      {/* Organizer Reviews */}
-      {(user.role === 'organizer' || user.role === 'organiser') && (
-        <div style={{ margin: '0 16px 80px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-            <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Reviews</span>
-            {avgRating > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Star size={13} fill="#FFB830" color="#FFB830" />
-                <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700 }}>{avgRating}</span>
-                <span style={{ color: '#8B8FA8', fontSize: '12px' }}>({reviews.length})</span>
-              </div>
-            )}
-          </div>
-
-          {!isOwnProfile && currentUserId && !reviewSubmitted && (
-            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '12px' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>Leave a Review</p>
-              <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-                {[1, 2, 3, 4, 5].map((s) => (
-                  <button key={s} onClick={() => setReviewRating(s)} onMouseEnter={() => setReviewHover(s)} onMouseLeave={() => setReviewHover(0)}
-                    style={{ background: 'none', border: 'none', padding: '2px', cursor: 'pointer' }}>
-                    <Star size={26} fill={(reviewHover || reviewRating) >= s ? '#FFB830' : '#2A2D3E'} color={(reviewHover || reviewRating) >= s ? '#FFB830' : '#2A2D3E'} />
-                  </button>
-                ))}
-              </div>
-              <textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)}
-                placeholder="Share your experience (min 10 characters)..." rows={3}
-                style={{ width: '100%', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: '#F0F0FF', fontSize: '13px', resize: 'none', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box' }} />
-              <button onClick={submitReview} disabled={!reviewRating || reviewText.trim().length < 10 || reviewSubmitting}
-                style={{ marginTop: '10px', width: '100%', background: reviewRating && reviewText.trim().length >= 10 ? 'linear-gradient(135deg,#7B2FBE 0%,#4F46E5 100%)' : 'rgba(123,47,190,0.2)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
-                {reviewSubmitting ? 'Posting...' : 'Post Review'}
-              </button>
-              {reviewError && (
-                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px', marginBottom: 0 }}>{reviewError}</p>
-              )}
-            </div>
-          )}
-          {reviewSubmitted && !isOwnProfile && (
-            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px', color: '#10B981', fontSize: '13px', fontWeight: 600 }}>
-              ✓ Your review has been submitted
-            </div>
-          )}
-
-          {reviews.length === 0 ? (
-            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '20px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>
-              No reviews yet
-            </div>
-          ) : (
-            reviews.map((r) => (
-              <div key={r.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '14px', padding: '14px', marginBottom: '10px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
-                    {(r.reviewer as any)?.full_name || (r.reviewer as any)?.username || 'Anonymous'}
-                    {r.reviewer_id === currentUserId && <span style={{ color: '#A855F7', fontSize: '10px', marginLeft: '6px' }}>You</span>}
-                  </span>
-                  <div style={{ display: 'flex', gap: '2px' }}>
-                    {Array.from({ length: 5 }).map((_, i) => (
-                      <Star key={i} size={11} fill={i < r.rating ? '#FFB830' : '#2A2D3E'} color={i < r.rating ? '#FFB830' : '#2A2D3E'} />
-                    ))}
-                  </div>
-                </div>
-                <p style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.5 }}>{r.body}</p>
-                <span style={{ color: '#8B8FA8', fontSize: '11px', display: 'block', marginTop: '6px' }}>
-                  {new Date(r.created_at).toLocaleDateString()}
-                </span>
-              </div>
-            ))
-          )}
-        </div>
-      )}
       {showReport && currentUserId && (
         <ReportModal
           reporterId={currentUserId}

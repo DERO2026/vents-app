@@ -182,6 +182,7 @@ export default function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
   const [updateRequired, setUpdateRequired] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const [dbEvents, setDbEvents] = useState<Event[]>([]);
   const eventsPageRef = useRef(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
@@ -236,18 +237,28 @@ export default function App() {
     setSplashMinTimePassed(true);
   }, []);
 
-  // Forced-update gate: compare this build against the min version an admin
-  // can raise in app_config. Runs once on mount, independent of auth state.
+  // Forced-update gate + maintenance-mode gate: both read from the same
+  // app_config singleton an admin can flip. Polled (not just fetched once)
+  // so a maintenance toggle takes effect for already-open tabs without
+  // requiring a manual reload.
   useEffect(() => {
-    insforge.database
-      .from('app_config')
-      .select('min_client_version')
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.min_client_version && isVersionOlder(APP_VERSION, data.min_client_version)) {
-          setUpdateRequired(true);
-        }
-      }, () => {});
+    let cancelled = false;
+    const checkAppConfig = () => {
+      insforge.database
+        .from('app_config')
+        .select('min_client_version, maintenance_mode')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (cancelled) return;
+          if (data?.min_client_version && isVersionOlder(APP_VERSION, data.min_client_version)) {
+            setUpdateRequired(true);
+          }
+          setMaintenanceMode(!!data?.maintenance_mode);
+        }, () => {});
+    };
+    checkAppConfig();
+    const interval = setInterval(checkAppConfig, 15000);
+    return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
   // Load current user and profile on mount
@@ -1246,6 +1257,33 @@ export default function App() {
         >
           Reload Vents
         </button>
+      </div>
+    );
+  }
+
+  // Maintenance-mode gate: locks the app for everyone except admins/root,
+  // who always bypass so the platform can be managed while it's "down" for
+  // everyone else. Held off until auth has resolved so we know whether the
+  // current user qualifies for the bypass before deciding to block them.
+  const isMaintenanceBypass = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
+  if (maintenanceMode && !authLoading && !isMaintenanceBypass) {
+    return (
+      <div
+        style={{
+          background: '#020005', width: '100%', height: '100vh', display: 'flex',
+          flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+        }}
+      >
+        <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
+          <span style={{ fontSize: '32px' }}>🛠️</span>
+        </div>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+          Under Maintenance
+        </h1>
+        <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, maxWidth: '300px' }}>
+          Vents is temporarily down for scheduled maintenance. We'll be back shortly — thanks for your patience.
+        </p>
       </div>
     );
   }

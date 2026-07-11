@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Share2,
   Heart,
-  Star,
   MapPin,
   Calendar,
   Clock,
@@ -1028,24 +1027,8 @@ export function EventDetailsScreen({
         )}
 
         {/* Organizer actions */}
-        {event.organizer_id && (onOrganizerPress || onMessageOrganizer) && (
+        {event.organizer_id && onMessageOrganizer && (
           <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {onOrganizerPress && (
-              <button
-                onClick={() => onOrganizerPress(event.organizer_id!)}
-                style={{
-                  width: '100%', background: '#090514',
-                  border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px',
-                  padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-                }}
-              >
-                <Star size={16} color="#FFB830" />
-                <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
-                  See organizer reviews
-                </span>
-                <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>View →</span>
-              </button>
-            )}
             {onMessageOrganizer && currentUserId && currentUserId !== event.organizer_id && (
               <button
                 onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}

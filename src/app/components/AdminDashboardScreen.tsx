@@ -514,6 +514,9 @@ export function AdminDashboardScreen({
   const [vcSearchResults, setVcSearchResults] = useState<any[]>([]);
   const [vcSearching, setVcSearching] = useState(false);
   const [vcSelectedUser, setVcSelectedUser] = useState<any | null>(null);
+  const [vcDebit, setVcDebit] = useState({ amount: '', reason: '' });
+  const [vcDebitBusy, setVcDebitBusy] = useState(false);
+  const [vcDebitMsg, setVcDebitMsg] = useState<string | null>(null);
 
   // Stats tab state
   const [stats, setStats] = useState<any | null>(null);
@@ -735,6 +738,40 @@ export function AdminDashboardScreen({
     }
   };
 
+  const handleVcAdminDebit = async () => {
+    const uid = vcTransfer.userId.trim();
+    if (!uid || !vcDebit.amount || Number(vcDebit.amount) <= 0) {
+      setVcDebitMsg('Search and select a user first, then enter a positive amount.'); return;
+    }
+    if (!vcDebit.reason.trim()) {
+      setVcDebitMsg('A reason is required for admin debits.'); return;
+    }
+    setVcDebitBusy(true); setVcDebitMsg(null);
+    try {
+      const { error } = await insforge.database.rpc('admin_debit_vents_cents' as any, {
+        p_user_id: uid,
+        p_amount: Number(vcDebit.amount),
+        p_reason: vcDebit.reason.trim(),
+      });
+      if (error) throw error;
+      await writeAuditLog(currentUser.id, 'admin_vc_debit', uid, {
+        amount: Number(vcDebit.amount),
+        reason: vcDebit.reason.trim(),
+        target: vcSelectedUser?.username || uid.slice(0, 8),
+      });
+      setVcDebitMsg(`✓ ${vcDebit.amount} VC debited from ${vcSelectedUser?.username || uid.slice(0, 8)}…`);
+      setVcDebit({ amount: '', reason: '' });
+      setVcTransfer({ userId: '', amount: '', reason: '' });
+      setVcSelectedUser(null);
+      setVcSearch('');
+      setVcSearchResults([]);
+    } catch (e: any) {
+      setVcDebitMsg(e.message || 'Debit failed.');
+    } finally {
+      setVcDebitBusy(false);
+    }
+  };
+
   // System Controller state
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   // MVP launch kill switches for chat voice notes / image sharing
@@ -745,11 +782,6 @@ export function AdminDashboardScreen({
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
 
-  // Vents Cents credit state
-  const [creditTargetId, setCreditTargetId] = useState('');
-  const [creditAmount, setCreditAmount] = useState('');
-  const [creditReason, setCreditReason] = useState('');
-  const [isCreditSending, setIsCreditSending] = useState(false);
   const [confirmModal, setConfirmModal] = useState<null | {
     title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void;
   }>(null);
@@ -1139,12 +1171,12 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         setIsCleaning(true);
         try {
-          // Remove saved_events where event no longer exists
-          await insforge.database.rpc('cleanup_orphaned_records' as any);
-          await writeAuditLog(currentUser.id, 'ROOT_orphan_cleanup', null, { triggered_at: new Date().toISOString() });
-          flash(true, 'Orphaned records cleaned.');
-        } catch {
-          flash(false, 'Cleanup function not found — run the SQL cleanup migration first.');
+          const { data, error } = await insforge.database.rpc('cleanup_orphaned_records' as any);
+          if (error) throw error;
+          const result = data as any;
+          flash(true, `Cleaned up ${result?.tickets_cancelled ?? 0} orphaned ticket(s) and ${result?.saves_removed ?? 0} orphaned save(s).`);
+        } catch (err: any) {
+          flash(false, err?.message || 'Cleanup failed.');
         } finally { setIsCleaning(false); }
       },
     });
@@ -1171,28 +1203,6 @@ export function AdminDashboardScreen({
         } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); }
       },
     });
-  };
-
-  const handleCreditVentsCents = async () => {
-    const amount = parseInt(creditAmount, 10);
-    if (!creditTargetId.trim()) { flash(false, 'Enter a target user ID.'); return; }
-    if (!amount || amount <= 0) { flash(false, 'Amount must be a positive number.'); return; }
-    const reason = creditReason.trim() || 'Admin credit';
-    setIsCreditSending(true);
-    try {
-      const { data, error } = await insforge.database.rpc('admin_credit_vents_cents' as any, {
-        p_target_user_id: creditTargetId.trim(),
-        p_amount: amount,
-        p_reason: reason,
-      });
-      if (error) throw error;
-      await writeAuditLog(currentUser.id, 'ROOT_credit_vents_cents', creditTargetId.trim(), { amount, reason });
-      setCreditTargetId('');
-      setCreditAmount('');
-      setCreditReason('');
-      flash(true, `Credited ${amount} Vents Cents. New balance: ${(data as any)?.new_target_balance ?? '?'}`);
-    } catch (err: any) { flash(false, err?.message || 'Credit failed.'); }
-    finally { setIsCreditSending(false); }
   };
 
   // ── Access guard ─────────────────────────────────────────────────────────────
@@ -1375,7 +1385,7 @@ export function AdminDashboardScreen({
                       {/* Row: dates + verified status */}
                       <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                         <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                          📅 {new Date(u.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
+                          Joined {new Date(u.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
                         </span>
                         <span style={{ color: u.is_verified ? '#3B82F6' : '#6B7280', fontSize: '11px' }}>
                           {u.is_verified ? '✓ Email Verified' : '✗ Unverified'}
@@ -1610,7 +1620,7 @@ export function AdminDashboardScreen({
               { label: 'Credits', value: vcTxns.filter(t => t.type === 'credit').length.toString() },
               { label: 'Debits', value: vcTxns.filter(t => t.type === 'debit').length.toString() },
             ].map(card => (
-              <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '14px 16px' }}>
+              <div key={card.label} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', boxSizing: 'border-box' }}>
                 <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
                 <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
               </div>
@@ -1618,7 +1628,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* VC Transactions log */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', overflow: 'hidden' }}>
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', boxSizing: 'border-box' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Transactions (last 100)</div>
             {vcLoading ? (
               <div style={{ padding: '24px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
@@ -1642,7 +1652,7 @@ export function AdminDashboardScreen({
           </div>
 
           {/* VC Purchases */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', overflow: 'hidden' }}>
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', boxSizing: 'border-box' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Purchases</div>
             <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
               {vcTxns.filter(t => t.type === 'credit' && t.reference_id?.startsWith('purchase')).length === 0 ? (
@@ -1657,26 +1667,29 @@ export function AdminDashboardScreen({
           </div>
 
           {/* Admin Transfer */}
-          <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
             <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>Admin Transfer</div>
 
             {/* User search */}
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <input
                 placeholder="Search by name, @username, email, or UUID"
                 value={vcSearch}
                 onChange={e => setVcSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleVcUserSearch()}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+                style={{ flex: 1, minWidth: '160px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
               />
               <button onClick={handleVcUserSearch} disabled={vcSearching} style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '10px', padding: '0 12px', color: '#A78BFA', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
                 {vcSearching ? '…' : 'Find'}
               </button>
             </div>
 
-            {/* Search results */}
+            {/* Search results — capped and internally scrollable, matching
+                the VC Transactions/Purchases lists below, so an unbounded
+                result set can't push the Amount/Reason inputs and submit
+                button down the page. */}
             {vcSearchResults.length > 0 && (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', overflow: 'hidden' }}>
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', maxHeight: '240px', overflowY: 'auto' }}>
                 {vcSearchResults.map(u => (
                   <button
                     key={u.id}
@@ -1721,13 +1734,13 @@ export function AdminDashboardScreen({
               min="1"
               value={vcTransfer.amount}
               onChange={e => setVcTransfer(v => ({ ...v, amount: e.target.value }))}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
             />
             <input
               placeholder="Reason (required)"
               value={vcTransfer.reason}
               onChange={e => setVcTransfer(v => ({ ...v, reason: e.target.value }))}
-              style={{ background: 'rgba(255,255,255,0.05)', border: `1px solid ${vcTransfer.reason.trim() ? 'rgba(255,255,255,0.1)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: `1px solid ${vcTransfer.reason.trim() ? 'rgba(255,255,255,0.1)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
             />
             {vcMsg && <div style={{ color: vcMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{vcMsg}</div>}
             <button
@@ -1736,6 +1749,34 @@ export function AdminDashboardScreen({
               style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: (vcTransferBusy || !vcTransfer.userId || !vcTransfer.reason.trim()) ? 'not-allowed' : 'pointer', opacity: (vcTransferBusy || !vcTransfer.userId || !vcTransfer.reason.trim()) ? 0.5 : 1 }}
             >
               {vcTransferBusy ? 'Transferring…' : 'Credit VC to User'}
+            </button>
+          </div>
+
+          {/* Admin Debit / Claw-back — reuses the same search/select above */}
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', boxSizing: 'border-box' }}>
+            <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '4px' }}>Admin Debit / Claw-back</div>
+            <div style={{ color: '#8B8FA8', fontSize: '11px' }}>Uses the user selected above. Fails if their balance is insufficient.</div>
+            <input
+              placeholder="Amount (VC)"
+              type="number"
+              min="1"
+              value={vcDebit.amount}
+              onChange={e => setVcDebit(v => ({ ...v, amount: e.target.value }))}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+            />
+            <input
+              placeholder="Reason (required)"
+              value={vcDebit.reason}
+              onChange={e => setVcDebit(v => ({ ...v, reason: e.target.value }))}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: `1px solid ${vcDebit.reason.trim() ? 'rgba(255,255,255,0.1)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box' }}
+            />
+            {vcDebitMsg && <div style={{ color: vcDebitMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{vcDebitMsg}</div>}
+            <button
+              onClick={handleVcAdminDebit}
+              disabled={vcDebitBusy || !vcTransfer.userId || !vcDebit.reason.trim()}
+              style={{ background: 'linear-gradient(135deg, #DC2626, #B91C1C)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: (vcDebitBusy || !vcTransfer.userId || !vcDebit.reason.trim()) ? 'not-allowed' : 'pointer', opacity: (vcDebitBusy || !vcTransfer.userId || !vcDebit.reason.trim()) ? 0.5 : 1 }}
+            >
+              {vcDebitBusy ? 'Debiting…' : 'Debit VC from User'}
             </button>
           </div>
 
@@ -2194,51 +2235,6 @@ export function AdminDashboardScreen({
               style={{ background: broadcastMsg.trim() ? 'rgba(168,85,247,0.15)' : 'rgba(255,255,255,0.03)', border: `1px solid ${broadcastMsg.trim() ? 'rgba(168,85,247,0.4)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', padding: '12px', color: broadcastMsg.trim() ? '#A855F7' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: broadcastMsg.trim() ? 'pointer' : 'default', boxShadow: broadcastMsg.trim() ? '0 0 16px rgba(168,85,247,0.2)' : 'none' }}
             >
               {isSending ? 'Sending…' : '📡 Send Broadcast'}
-            </button>
-          </div>
-
-          {/* Vents Cents Credit */}
-          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={17} color="#10B981" />
-              </div>
-              <div>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Credit Vents Cents</p>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>Manually credit Vents Cents to a user (non-withdrawable)</p>
-              </div>
-            </div>
-            <input
-              value={creditTargetId}
-              onChange={e => setCreditTargetId(e.target.value)}
-              placeholder="Target User ID (UUID)"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'monospace' }}
-            />
-            <input
-              value={creditAmount}
-              onChange={e => setCreditAmount(e.target.value.replace(/[^0-9]/g, ''))}
-              placeholder="Amount (e.g. 500)"
-              inputMode="numeric"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
-            />
-            <input
-              value={creditReason}
-              onChange={e => setCreditReason(e.target.value)}
-              placeholder="Reason (optional)"
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
-            />
-            <button
-              onClick={handleCreditVentsCents}
-              disabled={isCreditSending || !creditTargetId.trim() || !creditAmount}
-              style={{
-                background: (creditTargetId.trim() && creditAmount) ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.03)',
-                border: `1px solid ${(creditTargetId.trim() && creditAmount) ? 'rgba(16,185,129,0.4)' : 'rgba(255,255,255,0.08)'}`,
-                borderRadius: '12px', padding: '12px',
-                color: (creditTargetId.trim() && creditAmount) ? '#10B981' : '#555C7A',
-                fontSize: '14px', fontWeight: 700, cursor: (creditTargetId.trim() && creditAmount) ? 'pointer' : 'default',
-              }}
-            >
-              {isCreditSending ? 'Crediting…' : 'Credit Vents Cents'}
             </button>
           </div>
 
