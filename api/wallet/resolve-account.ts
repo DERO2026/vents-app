@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession } from '../lib/verifyAuth.js';
-import { applyCors } from '../lib/cors.js';
+import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { applyCors } from '../_lib/cors.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);

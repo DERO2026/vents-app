@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { sendPayoutDecisionEmail } from '../lib/mailer.js';
-import { applyCors } from '../lib/cors.js';
+import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
+import { applyCors } from '../_lib/cors.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });

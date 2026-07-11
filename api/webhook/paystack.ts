@@ -3,7 +3,7 @@
 // Verifies Paystack webhook HMAC-SHA512 signature before processing.
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
-import { sendPayoutDecisionEmail } from '../lib/mailer.js';
+import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import crypto from 'crypto';
 
 function fmtNaira(kobo) {
