@@ -1,16 +1,25 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifyInsforgeSession } from './lib/verifyAuth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // This endpoint spends a paid Anthropic API call per request — must be a
+  // live, validated VENTS session, not just any non-empty header.
+  const session = await verifyInsforgeSession(req.headers.authorization);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
   const { text } = req.body || {};
   if (!text || typeof text !== 'string') {
     return res.status(400).json({ error: 'text field required' });
+  }
+  if (text.length > 20000) {
+    return res.status(400).json({ error: 'text field too long (max 20000 characters)' });
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '';

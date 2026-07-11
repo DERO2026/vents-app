@@ -263,14 +263,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
             <span style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Simulator Mode</span>
           </div>
           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 8px' }}>
-            Dev-only. Inject a ticket UUID or signed token to exercise the full verify_entry_pass RPC loop without a camera.
+            Dev-only. Inject a signed "ticket_id.signature" token to exercise the full verify_entry_pass RPC loop without a camera — bare ticket IDs are rejected, same as a real scan.
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
               value={simulatorInput}
               onChange={e => setSimulatorInput(e.target.value)}
-              placeholder="ticket_id or ticket_id.signature"
+              placeholder="ticket_id.signature"
               style={{ flex: 1, minWidth: 0, background: '#060A12', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', fontFamily: 'monospace' }}
             />
             <button

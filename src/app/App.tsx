@@ -619,6 +619,15 @@ export default function App() {
   const blockedIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => { blockedIdsRef.current = blockedIds; }, [blockedIds]);
 
+  // Same stale-closure hazard as blockedIdsRef above: fetchEvents is a
+  // stable useCallback ([] deps) and would otherwise permanently close over
+  // whatever currentUser was at first render — usually null, before auth
+  // hydrates — silently disabling the 18+ content filter for the entire
+  // session. Mirror date_of_birth into a ref so fetchEvents always reads
+  // the current value.
+  const currentUserDobRef = useRef<string | undefined>(undefined);
+  useEffect(() => { currentUserDobRef.current = (currentUser as any)?.date_of_birth; }, [currentUser]);
+
   // Fetch user's saved events from database
   useEffect(() => {
     async function fetchSavedEvents() {
@@ -753,8 +762,9 @@ export default function App() {
       const start = nextPage * 20;
       const end = start + 19;
 
-      // Calculate user's age for 18+ filtering
-      const userDob = (currentUser as any)?.date_of_birth;
+      // Calculate user's age for 18+ filtering. Read from the ref, not the
+      // closed-over currentUser — see currentUserDobRef above.
+      const userDob = currentUserDobRef.current;
       const userAgeYears = userDob
         ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : 99;
@@ -1085,12 +1095,15 @@ export default function App() {
         if (checkError) throw checkError;
 
         if (!existingTicket) {
+          // p_payment_status is no longer accepted from the client — the RPC
+          // now derives paid/pending purely from the event's own server-side
+          // price, and only confirm_ticket_payment (webhook-verified) can
+          // ever flip a priced ticket to 'paid'.
           const { error: insertError } = await insforge.database.rpc('purchase_ticket', {
             p_event_id: ticket.event.id,
             p_ticket_type: ticket.ticketType?.name ?? 'General',
             p_quantity: ticket.quantity,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
-            p_payment_status: 'paid',
           });
           if (insertError) throw insertError;
           if (currentUser?.phone_number) {

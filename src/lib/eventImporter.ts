@@ -1,3 +1,5 @@
+import { getAuthToken } from './insforge';
+
 export interface ImportedEvent {
   title: string;
   description: string;
@@ -15,9 +17,10 @@ export interface ImportedEvent {
 
 export async function extractEventsFromText(rawText: string): Promise<ImportedEvent[]> {
   try {
+    const token = await getAuthToken();
     const response = await fetch('/api/extract-events', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ text: rawText }),
     });
 

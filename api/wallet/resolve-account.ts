@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifyInsforgeSession } from '../lib/verifyAuth.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -9,9 +10,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // Require the caller to be a signed-in Vents user — this endpoint spends
-  // a Paystack API call per request, no reason to leave it open to anyone.
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
+  // a Paystack API call per request. A non-empty header alone proves
+  // nothing; this actually round-trips to InsForge and verifies the token
+  // is a live session before we spend anything.
+  const session = await verifyInsforgeSession(req.headers.authorization);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
   const { account_number, bank_code } = req.body || {};
   if (!account_number || typeof account_number !== 'string' || !/^\d{10}$/.test(account_number)) {

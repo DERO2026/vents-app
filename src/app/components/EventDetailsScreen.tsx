@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, memo } from 'react';
 import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
@@ -170,6 +170,33 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
     </div>
   );
 }
+
+// Isolates the 1-second countdown tick into its own memoized subtree.
+// useCountdown used to be called directly inside the (1000+ line,
+// non-memoized) EventDetailsScreen component, so every tick re-rendered the
+// entire screen — organizer info, ticket cards, related-events carousel,
+// everything — once a second for as long as the page stayed open. Wrapping
+// it here means a tick only re-renders this small block.
+const EventCountdown = memo(function EventCountdown({ event_date, date, time }: { event_date?: string; date?: string; time?: string }) {
+  const countdown = useCountdown(event_date, date, time);
+  if (!countdown) return null;
+  return (
+    <div style={{ marginBottom: '16px' }}>
+      <div style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
+        EVENT STARTS IN
+      </div>
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+        <CountdownUnit value={countdown.d} label="Days" />
+        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <CountdownUnit value={countdown.h} label="Hours" />
+        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <CountdownUnit value={countdown.m} label="Mins" />
+        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <CountdownUnit value={countdown.s} label="Secs" />
+      </div>
+    </div>
+  );
+});
 
 interface Review {
   id: string;
@@ -343,7 +370,6 @@ export function EventDetailsScreen({
     setShowReviewForm(false);
     setReviewSubmitted(true);
   }
-  const countdown = useCountdown(event.event_date, event.date, event.time);
 
   const openMap = (provider: 'google' | 'apple') => {
     const query = encodeURIComponent(`${event.venue}, ${event.area}, ${event.city}, Nigeria`);
@@ -357,6 +383,47 @@ export function EventDetailsScreen({
   const lowestPrice = event.ticketTypes && event.ticketTypes.length > 0
     ? Math.min(...event.ticketTypes.map((t) => t.price))
     : event.price || 0;
+
+  // "Add to Calendar" ICS content — memoized so it's computed once per
+  // event, not on every render (this screen re-renders often).
+  const icsContent = useMemo(() => {
+    const eventDateRaw = (event as any).event_date || event.date;
+    if (!eventDateRaw) return null;
+    const dtStart = new Date(eventDateRaw);
+    if (isNaN(dtStart.getTime())) return null;
+    const dtEnd = (event as any).end_time
+      ? (() => {
+          const [h, m] = ((event as any).end_time as string).split(':').map(Number);
+          const d = new Date(dtStart);
+          d.setHours(h, m || 0, 0, 0);
+          return d;
+        })()
+      : new Date(dtStart.getTime() + 2 * 60 * 60 * 1000);
+    const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+    return [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VENTS//EN',
+      'BEGIN:VEVENT',
+      `DTSTART:${fmt(dtStart)}`,
+      `DTEND:${fmt(dtEnd)}`,
+      `SUMMARY:${(event.title || '').replace(/,/g, '\\,')}`,
+      `LOCATION:${(event.venue || '').replace(/,/g, '\\,')}`,
+      `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n').replace(/,/g, '\\,')}`,
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n');
+  }, [(event as any).event_date, event.date, (event as any).end_time, event.title, event.venue, event.description]);
+
+  // Object URL is created once per icsContent change and explicitly
+  // revoked on the next change/unmount — previously this was recreated on
+  // every single render with no revocation at all, leaking a blob URL
+  // per render for as long as the page stayed open.
+  const [icsUrl, setIcsUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!icsContent) { setIcsUrl(null); return; }
+    const blob = new Blob([icsContent], { type: 'text/calendar' });
+    const url = URL.createObjectURL(blob);
+    setIcsUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [icsContent]);
 
   return (
     <div
@@ -634,61 +701,22 @@ export function EventDetailsScreen({
           </button>
         </div>
 
-        {/* Add to Calendar */}
-        {(() => {
-          const eventDateRaw = (event as any).event_date || event.date;
-          if (!eventDateRaw) return null;
-          const dtStart = new Date(eventDateRaw);
-          if (isNaN(dtStart.getTime())) return null;
-          const dtEnd = (event as any).end_time
-            ? (() => {
-                const [h, m] = ((event as any).end_time as string).split(':').map(Number);
-                const d = new Date(dtStart);
-                d.setHours(h, m || 0, 0, 0);
-                return d;
-              })()
-            : new Date(dtStart.getTime() + 2 * 60 * 60 * 1000);
-          const fmt = (d: Date) => d.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
-          const icsContent = [
-            'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//VENTS//EN',
-            'BEGIN:VEVENT',
-            `DTSTART:${fmt(dtStart)}`,
-            `DTEND:${fmt(dtEnd)}`,
-            `SUMMARY:${(event.title || '').replace(/,/g, '\\,')}`,
-            `LOCATION:${(event.venue || '').replace(/,/g, '\\,')}`,
-            `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n').replace(/,/g, '\\,')}`,
-            'END:VEVENT', 'END:VCALENDAR',
-          ].join('\r\n');
-          const blob = new Blob([icsContent], { type: 'text/calendar' });
-          const url = URL.createObjectURL(blob);
-          return (
-            <button
-              onClick={() => { const a = document.createElement('a'); a.href = url; a.download = `${event.title || 'event'}.ics`; a.click(); }}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '14px', padding: '12px', cursor: 'pointer', marginBottom: '16px' }}
-            >
-              <CalendarPlus size={16} color="#10B981" />
-              <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Add to Calendar</span>
-            </button>
-          );
-        })()}
-
-        {/* Countdown */}
-        {countdown && (
-          <div style={{ marginBottom: '16px' }}>
-            <div style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
-              EVENT STARTS IN
-            </div>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <CountdownUnit value={countdown.d} label="Days" />
-              <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-              <CountdownUnit value={countdown.h} label="Hours" />
-              <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-              <CountdownUnit value={countdown.m} label="Mins" />
-              <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
-              <CountdownUnit value={countdown.s} label="Secs" />
-            </div>
-          </div>
+        {/* Add to Calendar — icsUrl is memoized + explicitly revoked (see
+            icsContent/icsUrl above), not recreated on every render. */}
+        {icsUrl && (
+          <button
+            onClick={() => { const a = document.createElement('a'); a.href = icsUrl; a.download = `${event.title || 'event'}.ics`; a.click(); }}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '14px', padding: '12px', cursor: 'pointer', marginBottom: '16px' }}
+          >
+            <CalendarPlus size={16} color="#10B981" />
+            <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Add to Calendar</span>
+          </button>
         )}
+
+        {/* Countdown — isolated into its own memoized component so the
+            1-second tick doesn't re-render this whole screen (see
+            EventCountdown above). */}
+        <EventCountdown event_date={event.event_date} date={event.date} time={event.time} />
 
         {/* Capacity */}
         <div

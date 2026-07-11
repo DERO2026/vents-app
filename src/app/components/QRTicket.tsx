@@ -28,11 +28,14 @@ function writeTokenCache(ticketId: string, token: string) {
   } catch { /* storage unavailable — token just won't persist across sessions */ }
 }
 
-// Encodes the ticket_id by default; upgrades to an HMAC-signed "id.signature"
-// token as soon as one can be minted, so the scanner can cryptographically
-// verify the QR wasn't hand-crafted from a guessed ticket_id.
-function useSignedTicketToken(ticketId: string): string {
-  const [token, setToken] = useState<string>(() => readTokenCache()[ticketId] || ticketId);
+// Only ever returns a signed "id.signature" token — the scanner (as of this
+// security fix) strictly rejects a bare/unsigned ticket_id, so there is no
+// safe fallback to the raw ID here anymore. Returns null until a signed
+// token is available (from cache, or freshly minted), so the caller can
+// show a "generating…" state instead of rendering a QR that would be
+// rejected at the door.
+function useSignedTicketToken(ticketId: string): string | null {
+  const [token, setToken] = useState<string | null>(() => readTokenCache()[ticketId] || null);
 
   useEffect(() => {
     let cancelled = false;
@@ -43,7 +46,7 @@ function useSignedTicketToken(ticketId: string): string {
           writeTokenCache(ticketId, data as string);
           setToken(data as string);
         },
-        () => { /* offline or not yet authenticated — cached/bare id still scans fine */ },
+        () => { /* offline or not yet authenticated — cached token (if any) still stands */ },
       );
     return () => { cancelled = true; };
   }, [ticketId]);
@@ -87,11 +90,13 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const [showConfetti] = useState(true);
   const ticketCardRef = useRef<HTMLDivElement>(null);
   const signedToken = useSignedTicketToken(ticket.ticketId);
-  const isSigned = signedToken.includes('.');
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
   const handleShare = async () => {
-    const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nMy ticket: ${ticket.ticketId}`;
+    // Never include the raw ticket_id — only the signed token is ever a
+    // valid entry credential, and it isn't meant to be typed/forwarded as
+    // text anyway. Share plain event details instead.
+    const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nSee you there!`;
     if (navigator.share) {
       await navigator.share({ title: ticket.event.title, text }).catch(() => {});
     } else {
@@ -100,23 +105,24 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   };
 
   const handleSave = () => {
-    // Encode ticket details as a data-URI download
+    // Encode ticket details as a data-URI download. Deliberately does NOT
+    // include the raw ticket_id or the signed token as text — the token is
+    // only meaningful as the QR image already rendered on this screen.
     const canvas = document.createElement('canvas');
     canvas.width = 400;
-    canvas.height = 120;
+    canvas.height = 100;
     const ctx = canvas.getContext('2d')!;
     ctx.fillStyle = '#020005';
-    ctx.fillRect(0, 0, 400, 120);
+    ctx.fillRect(0, 0, 400, 100);
     ctx.fillStyle = '#F0F0FF';
     ctx.font = 'bold 16px Inter, sans-serif';
     ctx.fillText(ticket.event.title, 16, 32);
     ctx.fillStyle = '#8B8FA8';
     ctx.font = '12px Inter, sans-serif';
     ctx.fillText(`${ticket.event.date} · ${ticket.event.venue}`, 16, 54);
-    ctx.fillText(`Ticket ID: ${ticket.ticketId}`, 16, 76);
-    ctx.fillText(`${ticket.ticketType.name} · x${ticket.quantity}`, 16, 98);
+    ctx.fillText(`${ticket.ticketType.name} · x${ticket.quantity}`, 16, 76);
     const link = document.createElement('a');
-    link.download = `vents-ticket-${ticket.ticketId}.png`;
+    link.download = `vents-ticket-${Date.now()}.png`;
     link.href = canvas.toDataURL();
     link.click();
   };
@@ -247,26 +253,31 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   />
                 </div>
 
-                {/* QR Code */}
+                {/* QR Code — only ever renders once a signed token exists.
+                    A bare ticket_id is no longer a valid credential (the
+                    scanner strictly rejects it), so there is nothing safe
+                    to show until the signed token is ready. */}
                 <div className="flex flex-col items-center py-2">
                   <div
-                    className="p-3 mb-3"
+                    className="p-3 mb-3 flex items-center justify-center"
                     style={{
                       background: 'rgba(255,255,255,0.04)',
                       borderRadius: '16px',
                       border: '1px solid rgba(34,211,238,0.25)',
                       boxShadow: '0 0 24px rgba(34,211,238,0.15)',
+                      width: '170px',
+                      height: '170px',
+                      boxSizing: 'border-box',
                     }}
                   >
-                    <QRCodeDisplay value={signedToken} size={170} />
+                    {signedToken
+                      ? <QRCodeDisplay value={signedToken} size={170} />
+                      : <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
                   </div>
-                  <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
-                    {ticket.ticketId}
-                  </p>
                   <div className="flex items-center gap-1.5" style={{ marginTop: '4px' }}>
-                    <Zap size={11} color={isSigned ? '#22D3EE' : '#555C7A'} />
-                    <p style={{ color: isSigned ? '#22D3EE' : '#8B8FA8', fontSize: '10px', fontWeight: 600 }}>
-                      {isSigned ? 'Cryptographically signed' : 'Show this QR code at the entrance'}
+                    <Zap size={11} color={signedToken ? '#22D3EE' : '#555C7A'} />
+                    <p style={{ color: signedToken ? '#22D3EE' : '#8B8FA8', fontSize: '10px', fontWeight: 600 }}>
+                      {signedToken ? 'Cryptographically signed — show this QR code at the entrance' : 'Connect to the internet once to activate this ticket'}
                     </p>
                   </div>
                 </div>
