@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
 
 // html5-qrcode is loaded dynamically to avoid SSR issues
-type ScanResult = 'idle' | 'scanning' | 'valid' | 'already_used' | 'invalid' | 'wrong_event';
+type ScanResult = 'idle' | 'scanning' | 'valid' | 'already_scanned' | 'denied';
 
 interface CheckinScannerScreenProps {
   onBack: () => void;
@@ -18,6 +18,14 @@ interface CheckinState {
   ticketType?: string;
   checkinTime?: string;
   errorMsg?: string;
+  originalScannerId?: string;
+}
+
+// Web Vibration API — the browser/Capacitor-WebView equivalent of native
+// haptics. No-ops silently on platforms without support (e.g. iOS Safari).
+function triggerHaptic(kind: 'success' | 'error') {
+  if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
+  try { navigator.vibrate(kind === 'success' ? 40 : [30, 60, 30]); } catch { /* ignore */ }
 }
 
 export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: CheckinScannerScreenProps) {
@@ -25,8 +33,12 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
   const [stats, setStats] = useState({ checkedIn: 0, total: 0 });
   const [scannerReady, setScannerReady] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [simulatorInput, setSimulatorInput] = useState('');
   const scannerRef = useRef<any>(null);
   const scannerDivId = 'vents-qr-scanner';
+  // Vite's dev-build flag — the web/Capacitor equivalent of React Native's
+  // __DEV__. Stripped out of production bundles entirely at build time.
+  const isDevEnvironment = import.meta.env.DEV;
   const processingRef = useRef(false);
 
   // Access guard
@@ -110,73 +122,49 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
     setState({ status: 'scanning' });
 
     try {
-      // Ensure hc.userToken is set so auth.uid() resolves in RLS — without
-      // this, the check-in insert silently fails RLS (organizer_id check
-      // against a NULL auth.uid()) and every scan looks "invalid".
+      // Ensure hc.userToken is set so auth.uid() resolves in RLS/SECURITY
+      // DEFINER checks — without this, every scan would look unauthorized.
       await getAuthToken();
 
-      // 1. Fetch the ticket
-      const { data: ticket, error: ticketErr } = await insforge.database
-        .from('tickets')
-        .select('id, event_id, user_id, status, quantity, users(full_name)')
-        .eq('id', ticketId)
-        .maybeSingle();
-
-      if (ticketErr || !ticket) {
-        setState({ status: 'invalid', errorMsg: 'Ticket not found in system.' });
-        return;
-      }
-
-      if (ticket.status !== 'active') {
-        setState({ status: 'invalid', errorMsg: 'This ticket has been cancelled.' });
-        return;
-      }
-
-      // 2. Check it belongs to the right event
-      if (selectedEvent && ticket.event_id !== selectedEvent.id) {
-        setState({ status: 'wrong_event', errorMsg: 'This ticket is for a different event.' });
-        return;
-      }
-
-      // 3. Check for existing check-in
-      const { data: existing } = await insforge.database
-        .from('checkins')
-        .select('id, checked_in_at')
-        .eq('ticket_id', ticketId)
-        .maybeSingle();
-
-      if (existing) {
-        const time = new Date(existing.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' });
-        setState({
-          status: 'already_used',
-          errorMsg: `Already checked in at ${time}`,
-          holderName: (ticket as any).users?.full_name || 'Unknown',
-        });
-        return;
-      }
-
-      // 4. Insert check-in
-      const { error: insertErr } = await insforge.database
-        .from('checkins')
-        .insert([{
-          ticket_id: ticketId,
-          event_id: ticket.event_id,
-          scanned_by: currentUser.id,
-        }]);
-
-      if (insertErr) throw insertErr;
-
-      setState({
-        status: 'valid',
-        holderName: (ticket as any).users?.full_name || 'Verified Attendee',
-        checkinTime: new Date().toLocaleTimeString('en-NG', { timeStyle: 'short' }),
+      // Single atomic RPC: existence -> relational ownership (403 if the
+      // ticket's event isn't this organizer's) -> not-already-checked-in ->
+      // atomic checked_in write. No client-side race between separate
+      // read/insert round trips, and accepts either a bare ticket_id or an
+      // HMAC-signed "id.signature" token straight off the QR.
+      const { data, error } = await insforge.database.rpc('verify_entry_pass' as any, {
+        p_ticket_id: ticketId,
+        p_organizer_id: currentUser.id,
       });
 
-      // Refresh stats
-      loadStats();
+      if (error) throw error;
+      const result = data as any;
 
+      if (result?.ok) {
+        triggerHaptic('success');
+        setState({
+          status: 'valid',
+          holderName: result.holder_name || 'Verified Attendee',
+          ticketType: result.ticket_type || undefined,
+          checkinTime: new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }),
+        });
+      } else if (result?.reason === 'already_scanned') {
+        triggerHaptic('error');
+        const time = result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : 'an earlier time';
+        setState({
+          status: 'already_scanned',
+          errorMsg: `Already scanned at ${time}`,
+          checkinTime: result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined,
+          originalScannerId: result.scanner_id || undefined,
+        });
+      } else {
+        triggerHaptic('error');
+        setState({ status: 'denied', errorMsg: result?.message || 'This ticket could not be validated.' });
+      }
+
+      loadStats();
     } catch (err: any) {
-      setState({ status: 'invalid', errorMsg: err?.message || 'Database error. Try again.' });
+      triggerHaptic('error');
+      setState({ status: 'denied', errorMsg: err?.message || 'Database error. Try again.' });
     }
 
     // Auto-reset after 3 seconds
@@ -205,31 +193,25 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
       bg: 'rgba(16,185,129,0.15)',
       border: 'rgba(16,185,129,0.4)',
       icon: <CheckCircle size={52} color="#10B981" />,
-      headline: '✅ Check-In Successful',
+      headline: 'ENTRY APPROVED',
     },
-    already_used: {
+    already_scanned: {
       bg: 'rgba(245,158,11,0.15)',
       border: 'rgba(245,158,11,0.4)',
       icon: <XCircle size={52} color="#F59E0B" />,
-      headline: '⚠️ Already Checked In',
+      headline: 'ALREADY SCANNED',
     },
-    invalid: {
+    denied: {
       bg: 'rgba(239,68,68,0.15)',
       border: 'rgba(239,68,68,0.4)',
       icon: <XCircle size={52} color="#EF4444" />,
-      headline: '❌ Invalid Ticket',
-    },
-    wrong_event: {
-      bg: 'rgba(239,68,68,0.15)',
-      border: 'rgba(239,68,68,0.4)',
-      icon: <XCircle size={52} color="#EF4444" />,
-      headline: '❌ Wrong Event',
+      headline: 'ENTRY DENIED',
     },
     scanning: {
       bg: 'rgba(167,139,250,0.15)',
       border: 'rgba(167,139,250,0.4)',
       icon: <ScanLine size={52} color="#A78BFA" />,
-      headline: '🔍 Validating…',
+      headline: 'Validating…',
     },
   };
 
@@ -272,6 +254,35 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
           </div>
         </div>
       </div>
+
+      {/* ── Simulator Mode (dev builds only) ──────────────────────────────── */}
+      {isDevEnvironment && (
+        <div style={{ margin: '0 20px 12px', flexShrink: 0, background: 'rgba(245,158,11,0.08)', border: '1px dashed rgba(245,158,11,0.4)', borderRadius: '14px', padding: '12px 14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+            <FlaskConical size={13} color="#F59E0B" />
+            <span style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Simulator Mode</span>
+          </div>
+          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 8px' }}>
+            Dev-only. Inject a ticket UUID or signed token to exercise the full verify_entry_pass RPC loop without a camera.
+          </p>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="text"
+              value={simulatorInput}
+              onChange={e => setSimulatorInput(e.target.value)}
+              placeholder="ticket_id or ticket_id.signature"
+              style={{ flex: 1, minWidth: 0, background: '#060A12', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', fontFamily: 'monospace' }}
+            />
+            <button
+              onClick={() => { if (simulatorInput.trim()) handleScan(simulatorInput.trim()); }}
+              disabled={!simulatorInput.trim() || state.status === 'scanning'}
+              style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '8px', padding: '0 14px', color: '#F59E0B', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
+            >
+              Simulate Scan
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Camera / Scanner area ──────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
@@ -320,17 +331,27 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
         >
           <div style={{ background: overlay.bg, border: `2px solid ${overlay.border}`, borderRadius: '28px', padding: '40px 32px', maxWidth: '300px', width: '100%' }}>
             {overlay.icon}
-            <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: '16px 0 8px' }}>
+            <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 900, letterSpacing: '0.03em', margin: '16px 0 8px' }}>
               {overlay.headline}
             </h2>
-            {state.holderName && (
+            {state.status === 'valid' && state.holderName && (
               <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, margin: '4px 0' }}>
                 {state.holderName}
               </p>
             )}
+            {state.status === 'valid' && state.ticketType && (
+              <span style={{ display: 'inline-block', color: '#FFB830', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'rgba(255,184,48,0.12)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px', padding: '3px 12px', margin: '4px 0' }}>
+                {state.ticketType}
+              </span>
+            )}
             {state.checkinTime && (
               <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '4px 0' }}>
-                Checked in at {state.checkinTime}
+                {state.status === 'valid' ? 'Checked in at' : 'Originally scanned at'} {state.checkinTime}
+              </p>
+            )}
+            {state.status === 'already_scanned' && state.originalScannerId && (
+              <p style={{ color: '#555C7A', fontSize: '11px', margin: '2px 0', fontFamily: 'monospace' }}>
+                Scanner ID: {state.originalScannerId.slice(0, 8)}…
               </p>
             )}
             {state.errorMsg && (

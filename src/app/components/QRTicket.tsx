@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Download, Share2, CheckCircle, Calendar, MapPin, Clock } from 'lucide-react';
+import { ArrowLeft, Download, Share2, CheckCircle, MapPin, Clock, Zap } from 'lucide-react';
 import QRCode from 'qrcode';
+import { insforge } from '../../lib/insforge';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 
@@ -8,6 +9,46 @@ interface QRTicketProps {
   ticket: PurchasedTicket;
   onBack: () => void;
   onGoHome: () => void;
+}
+
+// ─── Offline-first signed-token cache ────────────────────────────────────────
+// The QR is re-rendered from this cache instantly on load (no network wait),
+// then silently upgraded to a freshly-minted HMAC-signed token when online —
+// so the pass is fully usable offline at the door.
+const TOKEN_CACHE_KEY = 'vents_ticket_token_cache_v1';
+
+function readTokenCache(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(TOKEN_CACHE_KEY) || '{}'); } catch { return {}; }
+}
+function writeTokenCache(ticketId: string, token: string) {
+  try {
+    const cache = readTokenCache();
+    cache[ticketId] = token;
+    localStorage.setItem(TOKEN_CACHE_KEY, JSON.stringify(cache));
+  } catch { /* storage unavailable — token just won't persist across sessions */ }
+}
+
+// Encodes the ticket_id by default; upgrades to an HMAC-signed "id.signature"
+// token as soon as one can be minted, so the scanner can cryptographically
+// verify the QR wasn't hand-crafted from a guessed ticket_id.
+function useSignedTicketToken(ticketId: string): string {
+  const [token, setToken] = useState<string>(() => readTokenCache()[ticketId] || ticketId);
+
+  useEffect(() => {
+    let cancelled = false;
+    insforge.database.rpc('generate_ticket_token' as any, { p_ticket_id: ticketId })
+      .then(
+        ({ data, error }: any) => {
+          if (cancelled || error || !data) return;
+          writeTokenCache(ticketId, data as string);
+          setToken(data as string);
+        },
+        () => { /* offline or not yet authenticated — cached/bare id still scans fine */ },
+      );
+    return () => { cancelled = true; };
+  }, [ticketId]);
+
+  return token;
 }
 
 // ─── Real scannable QR canvas renderer ───────────────────────────────────────
@@ -45,6 +86,9 @@ function QRCodeDisplay({ value, size = 180 }: { value: string; size?: number }) 
 export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const [showConfetti] = useState(true);
   const ticketCardRef = useRef<HTMLDivElement>(null);
+  const signedToken = useSignedTicketToken(ticket.ticketId);
+  const isSigned = signedToken.includes('.');
+  const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
   const handleShare = async () => {
     const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nMy ticket: ${ticket.ticketId}`;
@@ -118,110 +162,114 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
           </div>
         </div>
 
-        {/* Ticket card */}
+        {/* Ticket card — "Midnight Neon" digital pass */}
         <div className="px-4">
           <div
             style={{
-              background: '#090514',
-              borderRadius: '24px',
-              overflow: 'hidden',
-              border: '1px solid rgba(255,255,255,0.08)',
-              boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5, #22D3EE)',
+              borderRadius: '26px',
+              padding: '1.5px',
+              boxShadow: '0 0 40px rgba(123,47,190,0.35), 0 20px 60px rgba(0,0,0,0.55)',
             }}
           >
-            {/* Event image header */}
-            <div className="relative" style={{ height: '140px' }}>
-              <img src={ticket.event.image} alt={ticket.event.title} className="w-full h-full object-cover" />
-              <div
-                className="absolute inset-0"
-                style={{ background: 'linear-gradient(to bottom, rgba(15,19,34,0) 0%, rgba(15,19,34,0.95) 100%)' }}
-              />
-              <div className="absolute bottom-3 left-4 right-4">
-                <h2 style={{ color: '#fff', fontSize: '17px', fontWeight: 800, lineHeight: 1.2 }}>
-                  {ticket.event.title}
-                </h2>
-              </div>
-            </div>
-
-            {/* Ticket details */}
-            <div className="px-4 py-4">
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Date</p>
-                  <div className="flex items-center gap-1.5">
-                    <Calendar size={12} color="#A78BFA" />
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{ticket.event.date}</p>
-                  </div>
-                </div>
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Time</p>
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={12} color="#A78BFA" />
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{ticket.event.time}</p>
-                  </div>
-                </div>
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Venue</p>
-                  <div className="flex items-center gap-1.5">
-                    <MapPin size={12} color="#A78BFA" />
-                    <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }} className="truncate">{ticket.event.venue}</p>
-                  </div>
-                </div>
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Type</p>
-                  <p style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700 }}>{ticket.ticketType.name}</p>
-                </div>
-              </div>
-
-              {/* Ticket holder */}
-              <div
-                className="flex items-center justify-between p-3 mb-4"
-                style={{ background: '#090514', borderRadius: '12px' }}
-              >
-                <div>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Holder</p>
-                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{ticket.holderName}</p>
-                </div>
-                <div className="text-right">
-                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Qty</p>
-                  <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>×{ticket.quantity}</p>
-                </div>
-              </div>
-
-              {/* Tear line */}
-              <div className="relative flex items-center my-4">
+            <div
+              style={{
+                background: '#07030F',
+                borderRadius: '24.5px',
+                overflow: 'hidden',
+              }}
+            >
+              {/* Event image header */}
+              <div className="relative" style={{ height: '140px' }}>
+                <img src={ticket.event.image} alt={ticket.event.title} className="w-full h-full object-cover" />
                 <div
-                  className="absolute -left-8 w-8 h-8 rounded-full"
-                  style={{ background: '#020005' }}
+                  className="absolute inset-0"
+                  style={{ background: 'linear-gradient(to bottom, rgba(7,3,15,0) 0%, rgba(7,3,15,0.97) 100%)' }}
                 />
-                <div
-                  className="flex-1 border-t-2 border-dashed"
-                  style={{ borderColor: 'rgba(255,255,255,0.1)' }}
-                />
-                <div
-                  className="absolute -right-8 w-8 h-8 rounded-full"
-                  style={{ background: '#020005' }}
-                />
+                <div className="absolute bottom-3 left-4 right-4">
+                  <h2 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, lineHeight: 1.2, textShadow: '0 0 20px rgba(167,139,250,0.6)' }}>
+                    {ticket.event.title}
+                  </h2>
+                </div>
               </div>
 
-              {/* QR Code */}
-              <div className="flex flex-col items-center py-2">
+              {/* Ticket details */}
+              <div className="px-4 py-4">
+                <div className="flex items-center justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Clock size={13} color="#22D3EE" />
+                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }} className="truncate">{timestamp}</p>
+                  </div>
+                  <span
+                    style={{
+                      color: '#FFB830', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+                      background: 'rgba(255,184,48,0.12)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px',
+                      padding: '4px 12px', flexShrink: 0, boxShadow: '0 0 14px rgba(255,184,48,0.25)',
+                    }}
+                  >
+                    {ticket.ticketType.name}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-1.5 mb-4">
+                  <MapPin size={12} color="#A78BFA" />
+                  <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500 }} className="truncate">{ticket.event.venue}</p>
+                </div>
+
+                {/* Ticket holder */}
                 <div
-                  className="p-3 mb-3"
-                  style={{
-                    background: 'rgba(255,255,255,0.04)',
-                    borderRadius: '16px',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                  }}
+                  className="flex items-center justify-between p-3 mb-4"
+                  style={{ background: 'rgba(123,47,190,0.08)', borderRadius: '12px', border: '1px solid rgba(123,47,190,0.15)' }}
                 >
-                  <QRCodeDisplay value={JSON.stringify({ ticketId: ticket.ticketId, eventId: (ticket as any).eventId, userId: (ticket as any).userId, v: 1 })} size={170} />
+                  <div>
+                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Holder</p>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{ticket.holderName}</p>
+                  </div>
+                  <div className="text-right">
+                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Qty</p>
+                    <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>×{ticket.quantity}</p>
+                  </div>
                 </div>
-                <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
-                  {ticket.ticketId}
-                </p>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>
-                  Show this QR code at the entrance
-                </p>
+
+                {/* Tear line */}
+                <div className="relative flex items-center my-4">
+                  <div
+                    className="absolute -left-8 w-8 h-8 rounded-full"
+                    style={{ background: '#020005' }}
+                  />
+                  <div
+                    className="flex-1 border-t-2 border-dashed"
+                    style={{ borderColor: 'rgba(255,255,255,0.1)' }}
+                  />
+                  <div
+                    className="absolute -right-8 w-8 h-8 rounded-full"
+                    style={{ background: '#020005' }}
+                  />
+                </div>
+
+                {/* QR Code */}
+                <div className="flex flex-col items-center py-2">
+                  <div
+                    className="p-3 mb-3"
+                    style={{
+                      background: 'rgba(255,255,255,0.04)',
+                      borderRadius: '16px',
+                      border: '1px solid rgba(34,211,238,0.25)',
+                      boxShadow: '0 0 24px rgba(34,211,238,0.15)',
+                    }}
+                  >
+                    <QRCodeDisplay value={signedToken} size={170} />
+                  </div>
+                  <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
+                    {ticket.ticketId}
+                  </p>
+                  <div className="flex items-center gap-1.5" style={{ marginTop: '4px' }}>
+                    <Zap size={11} color={isSigned ? '#22D3EE' : '#555C7A'} />
+                    <p style={{ color: isSigned ? '#22D3EE' : '#8B8FA8', fontSize: '10px', fontWeight: 600 }}>
+                      {isSigned ? 'Cryptographically signed' : 'Show this QR code at the entrance'}
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
