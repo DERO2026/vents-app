@@ -8,8 +8,6 @@ import { SkeletonCard } from './SkeletonCard';
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
   currentUserId?: string;
-  following?: string[];
-  onToggleFollow?: (userId: string) => void;
   onOpenConversation?: (userId: string, userName: string, avatarUrl?: string, vcBadge?: string) => void;
   chatRefreshKey?: number;
   initialTab?: 'people' | 'chats';
@@ -32,8 +30,6 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     city: dbUser.state || 'Lagos',
     bio: dbUser.bio || 'Hello, I am using Vents!',
     eventsAttended: 0,
-    followers: 0,
-    following: 0,
     interests: Array.isArray(dbUser.interests) ? dbUser.interests : [],
     avatar_url: dbUser.avatar_url,
     cover_url: dbUser.cover_url,
@@ -47,8 +43,6 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
 export function ExploreScreen({
   onUserPress,
   currentUserId,
-  following = [],
-  onToggleFollow,
   onOpenConversation,
   chatRefreshKey,
 }: ExploreScreenProps) {
@@ -132,7 +126,7 @@ export function ExploreScreen({
         const like = `%${q.toLowerCase()}%`;
         const { data } = await insforge.database
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
           .limit(20);
         setSearchedUsers((data || []).map(mapDbUserToUserProfile));
@@ -243,16 +237,6 @@ export function ExploreScreen({
                           </div>
                           <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
                         </div>
-                        <button
-                          onClick={e => { e.stopPropagation(); onToggleFollow?.(u.id); }}
-                          style={{
-                            background: following.includes(u.id) ? 'transparent' : 'linear-gradient(135deg,#7B2FBE,#4F46E5)',
-                            border: following.includes(u.id) ? '1px solid rgba(255,255,255,0.15)' : 'none',
-                            borderRadius: '100px', padding: '5px 12px',
-                            color: following.includes(u.id) ? '#94A3B8' : '#FFFFFF',
-                            fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0,
-                          }}
-                        >{following.includes(u.id) ? 'Subscribed' : 'Subscribe'}</button>
                       </div>
                     ))}
                   </div>

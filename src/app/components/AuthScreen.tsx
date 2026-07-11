@@ -15,7 +15,7 @@ interface AuthScreenProps {
   userRole?: string;
   selectedState?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
   resetToken?: string;
 }
 
@@ -301,6 +301,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
           isOrganizer: strictRole === 'organizer',
           is_verified: finalProfile.is_verified === true,
+          vc_badge: finalProfile.vc_badge,
         });
         return;
       }
@@ -544,6 +545,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
             isOrganizer: dbRole === 'organizer',
             is_verified: profile?.is_verified === true,
+            vc_badge: profile?.vc_badge,
           };
 
           // 3.1: If TOTP is enabled, show the 2FA prompt before completing login

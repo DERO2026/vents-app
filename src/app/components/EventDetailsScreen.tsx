@@ -46,8 +46,6 @@ interface EventDetailsScreenProps {
   onBook?: () => void;
   bookingLoading?: boolean;
   onEventPress?: (event: Event) => void;
-  following: string[];
-  onToggleFollow: (userId: string) => void;
   currentUserId?: string;
   onOrganizerPress?: (organizerId: string) => void;
   onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
@@ -194,8 +192,6 @@ export function EventDetailsScreen({
   onBook,
   bookingLoading = false,
   onEventPress,
-  following,
-  onToggleFollow,
   currentUserId,
   onOrganizerPress,
   onMessageOrganizer,
@@ -203,7 +199,6 @@ export function EventDetailsScreen({
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [flyerFullScreen, setFlyerFullScreen] = useState(false);
-  const isFollowingOrg = Array.isArray(following) && following.includes(event.organizer_id || '');
   const [userReviews, setUserReviews] = useState<Review[]>([]);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
@@ -420,7 +415,7 @@ export function EventDetailsScreen({
           }}
         >
           <button
-            onClick={onBack}
+            onClick={(e) => { e.stopPropagation(); onBack(); }}
             style={{
               background: 'rgba(0,0,0,0.5)',
               backdropFilter: 'blur(10px)',
@@ -438,7 +433,7 @@ export function EventDetailsScreen({
           </button>
           <div style={{ display: 'flex', gap: '10px' }}>
             <button
-              onClick={handleShare}
+              onClick={(e) => { e.stopPropagation(); handleShare(); }}
               style={{
                 background: 'rgba(0,0,0,0.5)',
                 backdropFilter: 'blur(10px)',
@@ -455,7 +450,7 @@ export function EventDetailsScreen({
               <Share2 size={17} color="#fff" />
             </button>
             <button
-              onClick={onToggleSave}
+              onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
               style={{
                 background: 'rgba(0,0,0,0.5)',
                 backdropFilter: 'blur(10px)',
@@ -477,7 +472,7 @@ export function EventDetailsScreen({
             </button>
             {currentUserId && (
               <button
-                onClick={() => setShowReport(true)}
+                onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
                 style={{
                   background: 'rgba(0,0,0,0.5)',
                   backdropFilter: 'blur(10px)',
@@ -796,23 +791,6 @@ export function EventDetailsScreen({
               {organizerProfile?.role || 'Event Organizer'}
             </span>
           </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); onToggleFollow && onToggleFollow(event.organizer_id || ''); }}
-            style={{
-              marginLeft: 'auto',
-              background: isFollowingOrg ? 'rgba(16,185,129,0.1)' : 'rgba(167,139,250,0.1)',
-              border: `1px solid ${isFollowingOrg ? 'rgba(16,185,129,0.3)' : 'rgba(167,139,250,0.2)'}`,
-              borderRadius: '10px',
-              padding: '7px 12px',
-              color: isFollowingOrg ? '#10B981' : '#A78BFA',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              transition: 'all 0.2s ease',
-            }}
-          >
-            {isFollowingOrg ? '✓ Subscribed' : 'Subscribe'}
-          </button>
         </div>
 
         {/* Contact number (if organizer chose to show it) */}

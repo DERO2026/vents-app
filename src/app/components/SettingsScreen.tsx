@@ -1,11 +1,12 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
-  ChevronRight, Globe, Star, CreditCard, Plus, Trash2, CheckCircle,
-  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp, Camera, Music,
+  ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
+  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
 } from 'lucide-react';
+import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -20,7 +21,7 @@ interface SettingsScreenProps {
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string }) => void;
 }
 
-type SubScreen = null | 'profile' | 'payment' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
+type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -110,6 +111,20 @@ function SettingRow({
       ) : onPress ? (
         <ChevronRight size={16} color="#94A3B8" />
       ) : null}
+    </div>
+  );
+}
+
+// Same row layout/sizing as SettingRow, but with a brand-colored icon
+// swatch (for platform recognition) instead of the fixed purple one.
+function SocialRow({ icon: Icon, label, background, onPress }: { icon: React.ElementType; label: string; background: string; onPress: () => void }) {
+  return (
+    <div onClick={onPress} style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', padding: '14px 0', cursor: 'pointer' }}>
+      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={16} color="#fff" />
+      </div>
+      <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>{label}</span>
+      <ChevronRight size={16} color="#94A3B8" />
     </div>
   );
 }
@@ -403,6 +418,20 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     loadProfile();
   }, [currentUser]);
 
+  const closeCropper = useCallback(() => {
+    setCropImageSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
+  const closeCoverCropper = useCallback(() => {
+    setCoverCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
   const handleUploadPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !currentUser?.id) return;
@@ -412,7 +441,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
   const handleCropComplete = async (croppedBlob: Blob) => {
     if (!currentUser?.id) return;
-    setCropImageSrc(null);
+    closeCropper();
     setSaving(true);
     setErrorMessage(null);
     try {
@@ -456,15 +485,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
-    const reader = new FileReader();
-    reader.onload = () => { if (typeof reader.result === 'string') setCoverCropSrc(reader.result); };
-    reader.readAsDataURL(file);
+    setCoverCropSrc(URL.createObjectURL(file));
     if (coverInputRef.current) coverInputRef.current.value = '';
   };
 
   const handleCoverCropComplete = async (croppedBlob: Blob) => {
     if (!currentUser?.id) return;
-    setCoverCropSrc(null);
+    closeCoverCropper();
     setSaving(true);
     setErrorMessage(null);
     try {
@@ -728,7 +755,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         <ImageCropperModal
           imageSrc={cropImageSrc}
           onCropComplete={handleCropComplete}
-          onClose={() => setCropImageSrc(null)}
+          onClose={closeCropper}
         />
       )}
 
@@ -736,29 +763,12 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         <ImageCropperModal
           imageSrc={coverCropSrc}
           onCropComplete={handleCoverCropComplete}
-          onClose={() => setCoverCropSrc(null)}
+          onClose={closeCoverCropper}
           aspect={16 / 9}
           cropShape="rect"
           title="Crop Cover Photo"
         />
       )}
-    </div>
-  );
-}
-
-function PaymentMethodsScreen({ onBack }: { onBack: () => void }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>
-      <SubHeader title="Payment Methods" onBack={onBack} />
-      <div style={{ flex: 1, overflowY: 'auto', padding: '32px 24px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
-        <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(123,47,190,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
-          <CreditCard size={28} color="#A78BFA" />
-        </div>
-        <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>No payment methods saved yet</h3>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, maxWidth: '280px' }}>
-          Save your cards or link mobile money wallets during checkout for a faster payment experience.
-        </p>
-      </div>
     </div>
   );
 }
@@ -1058,7 +1068,6 @@ export function SettingsScreen({
   };
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
-  if (subScreen === 'payment') return <PaymentMethodsScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
@@ -1133,8 +1142,6 @@ export function SettingsScreen({
         <Section title="ACCOUNT">
           <SettingRow icon={User} label="Profile Details" onPress={() => setSubScreen('profile')} />
           <Divider />
-          <SettingRow icon={CreditCard} label="Payment Methods" onPress={() => setSubScreen('payment')} />
-          <Divider />
           <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
         </Section>
 
@@ -1171,46 +1178,13 @@ export function SettingsScreen({
         </Section>
 
         <Section title="RESOURCES">
-          <SettingRow icon={Star} label="Rate this App" onPress={() => window.open('https://apps.apple.com/app/vents', '_blank')} />
-          <Divider />
           <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => window.open('mailto:support@getvents.com')} />
           <Divider />
-          {/* Instagram */}
-          <div
-            onClick={() => window.open('https://instagram.com/TheVentsApp', '_blank')}
-            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
-          >
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: 'linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Camera size={16} color="#fff" />
-            </div>
-            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on Instagram</span>
-            <ChevronRight size={16} color="#94A3B8" />
-          </div>
+          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => window.open('https://instagram.com/TheVentsApp', '_blank')} />
           <Divider />
-          {/* Twitter/X */}
-          <div
-            onClick={() => window.open('https://twitter.com/TheVentsApp', '_blank')}
-            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
-          >
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 900, lineHeight: 1 }}>X</span>
-            </div>
-            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on Twitter/X</span>
-            <ChevronRight size={16} color="#94A3B8" />
-          </div>
+          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => window.open('https://twitter.com/TheVentsApp', '_blank')} />
           <Divider />
-          {/* TikTok */}
-          <div
-            onClick={() => window.open('https://tiktok.com/@TheVentsApp', '_blank')}
-            style={{ display: 'flex', alignItems: 'center', gap: '14px', padding: '13px 0', cursor: 'pointer' }}
-          >
-            <div style={{ width: '32px', height: '32px', borderRadius: '8px', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative' }}>
-              <Music size={16} color="#fff" />
-              <span style={{ position: 'absolute', bottom: '4px', right: '4px', width: '7px', height: '7px', borderRadius: '50%', background: '#69C9D0', border: '1px solid #000' }} />
-            </div>
-            <span style={{ flex: 1, color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>Follow on TikTok</span>
-            <ChevronRight size={16} color="#94A3B8" />
-          </div>
+          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => window.open('https://tiktok.com/@TheVentsApp', '_blank')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

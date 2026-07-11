@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import {
   ArrowLeft,
   DollarSign,
-  Users,
   Ticket,
   Inbox,
   Sparkles,
@@ -37,7 +36,6 @@ export function OrganizerDashboard({
   const [loading, setLoading] = useState(true);
   const [revenue, setRevenue] = useState(0);
   const [ticketsSold, setTicketsSold] = useState(0);
-  const [followers, setFollowers] = useState(0);
   const [orgEvents, setOrgEvents] = useState<any[]>([]);
   const [chartData, setChartData] = useState<{ name: string; sold: number; goal: number }[]>([]);
 
@@ -59,17 +57,7 @@ export function OrganizerDashboard({
         if (eventsData) {
           setOrgEvents(eventsData);
 
-          // 2. Fetch followers count (rows where following_id = currentUser.id)
-          const { count: followersCount, error: followsError } = await insforge.database
-            .from('follows')
-            .select('id', { count: 'exact', head: true })
-            .eq('following_id', currentUser.id);
-
-          if (!followsError && followersCount !== null) {
-            setFollowers(followersCount);
-          }
-
-          // 3. Real revenue = SUM(amount) and tickets sold = COUNT where payment_status='paid'
+          // 2. Real revenue = SUM(amount) and tickets sold = COUNT where payment_status='paid'
           if (eventsData.length > 0) {
             const eventIds = eventsData.map((e: any) => e.id);
             const { data: ticketsData, error: ticketsError } = await insforge.database
@@ -246,7 +234,7 @@ export function OrganizerDashboard({
         <style>{`
           .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 12px;
             margin-bottom: 28px;
           }
@@ -345,50 +333,6 @@ export function OrganizerDashboard({
             </span>
             <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {ticketsSold}
-            </span>
-          </div>
-
-          {/* Card 3: Followers */}
-          <div
-            style={{
-              background: '#090514',
-              border: '1px solid rgba(255, 255, 255, 0.05)',
-              borderRadius: '20px',
-              padding: '20px 16px',
-              position: 'relative',
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              transition: 'transform 0.2s ease, border-color 0.2s ease',
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.transform = 'translateY(-2px)';
-              e.currentTarget.style.borderColor = 'rgba(168, 85, 247, 0.2)';
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.transform = 'translateY(0)';
-              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-            }}
-          >
-            <div
-              style={{
-                width: '38px',
-                height: '38px',
-                borderRadius: '10px',
-                background: 'rgba(168, 85, 247, 0.1)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: '14px',
-              }}
-            >
-              <Users size={18} color="#A855F7" />
-            </div>
-            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
-              Followers
-            </span>
-            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
-              {followers}
             </span>
           </div>
         </div>
@@ -722,7 +666,7 @@ export function OrganizerDashboard({
                     maxWidth: '280px',
                   }}
                 >
-                  Publish your first event and start selling tickets globally.
+                  Publish your first event and start selling tickets on Vents.
                 </p>
               </div>
             );

@@ -15,7 +15,6 @@ import {
   BadgeCheck,
   Gift,
   Camera,
-  Receipt,
   Wallet,
 } from 'lucide-react';
 import { PurchasedTicket } from './types';
@@ -29,10 +28,8 @@ interface ProfileScreenProps {
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
-  followingCount: number;
   onViewTicket: (ticket: PurchasedTicket) => void;
   onNavigate: (screen: string) => void;
-  onNavigateToFollowingFilter?: (filter: 'following' | 'followers' | 'attendees' | 'all') => void;
   setActiveView: (view: 'attendee' | 'organizer') => void;
   onBecomeOrganizer?: () => void;
   userRole?: 'attendee' | 'organizer';
@@ -44,17 +41,14 @@ export function ProfileScreen({
   onSignOut,
   tickets,
   savedCount,
-  followingCount,
   onViewTicket,
   onNavigate,
-  onNavigateToFollowingFilter,
   setActiveView,
   onBecomeOrganizer,
   userRole,
   unreadNotificationsCount = 0,
 }: ProfileScreenProps) {
   const [eventsCreated, setEventsCreated] = useState(0);
-  const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
   const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
@@ -157,14 +151,7 @@ export function ProfileScreen({
           .eq('organizer_id', currentUser.id);
         setEventsCreated(eCount || 0);
 
-        // 2. Followers count (follows where following_id = currentUser.id)
-        const { count: fCount } = await insforge.database
-          .from('follows')
-          .select('following_id', { count: 'exact', head: true })
-          .eq('following_id', currentUser.id);
-        setFollowers(fCount || 0);
-
-        // 3. Attendees count (sum of active tickets sold for their created events)
+        // 2. Attendees count (sum of active tickets sold for their created events)
         const { data: userEvents } = await insforge.database
           .from('events')
           .select('id')
@@ -268,7 +255,6 @@ export function ProfileScreen({
       color: '#EC4899',
       screen: 'saved',
     },
-    { icon: Receipt, label: 'Transactions', sublabel: 'Last 90 days', color: '#06B6D4', screen: 'transactions' },
     {
       icon: Gift,
       label: 'Vents Cents',
@@ -486,35 +472,6 @@ export function ProfileScreen({
                   )}
                 </div>
               </div>
-            </div>
-
-            {/* Stats tab bar — role-specific */}
-            <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none', background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '10px' }}>
-              {[
-                { label: 'Subscribers', value: followers, onClick: () => onNavigateToFollowingFilter?.('followers') },
-                { label: 'Subscribed', value: followingCount, onClick: () => onNavigateToFollowingFilter?.('following') },
-              ].map((stat) => (
-                <div
-                  key={stat.label}
-                  onClick={stat.onClick}
-                  style={{
-                    flex: '1 0 0',
-                    minWidth: '72px',
-                    textAlign: 'center',
-                    padding: '10px 6px',
-                    background: 'transparent',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
-                    {stat.value}
-                  </p>
-                  <p style={{ color: '#94A3B8', fontSize: '11px', marginTop: '2px', margin: 0, textTransform: 'uppercase' }}>
-                    {stat.label}
-                  </p>
-                </div>
-              ))}
             </div>
 
             {/* Organizer/admin: switching is now via the Create tab FAB or the banner */}

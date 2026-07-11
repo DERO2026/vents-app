@@ -36,11 +36,9 @@ import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
-import { FollowingListScreen } from './components/FollowingListScreen';
 import { AdminDashboardScreen } from './components/AdminDashboardScreen';
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
-import { TransactionsScreen } from './components/TransactionsScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacyScreen } from './components/PrivacyScreen';
 import { TermsScreen } from './components/TermsScreen';
@@ -172,6 +170,12 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
+  // Tracks events viewed via the in-page "Related Events" carousel while
+  // already on the event-details screen. navigateTo('event-details') is a
+  // no-op for `screen` when it's already that value (React bails the
+  // update), so without this, Back had nothing to actually restore — the
+  // view got stuck on whichever related event was tapped last.
+  const [eventHistoryStack, setEventHistoryStack] = useState<Event[]>([]);
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -184,7 +188,6 @@ export default function App() {
   const [loadingEvents, setLoadingEvents] = useState(true);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
-  const [followingFilter, setFollowingFilter] = useState<'following' | 'followers' | 'attendees' | 'all'>('following');
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
 
@@ -208,6 +211,16 @@ export default function App() {
   }, [currentUser, screen]);
 
   const goBack = useCallback(() => {
+    // Returning from a "Related Events" hop: restore the previously viewed
+    // event instead of trying to change `screen` (which is already
+    // 'event-details' and wouldn't trigger a re-render on its own).
+    if (screen === 'event-details' && eventHistoryStack.length > 0) {
+      const previousEvent = eventHistoryStack[eventHistoryStack.length - 1];
+      setEventHistoryStack((s) => s.slice(0, -1));
+      setScreenStack((s) => s.slice(0, -1));
+      setSelectedEvent(previousEvent);
+      return;
+    }
     const prev = screenStack[screenStack.length - 1];
     if (screen === 'conversation') setChatRefreshKey((k) => k + 1);
     if (prev) {
@@ -217,7 +230,7 @@ export default function App() {
       setScreen('home');
       setActiveTab('home');
     }
-  }, [screenStack, screen, userRole]);
+  }, [screenStack, screen, userRole, eventHistoryStack]);
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
@@ -540,31 +553,6 @@ export default function App() {
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
 
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
-  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
-
-  // Fetch user's follows from database — dependency is currentUser?.id only so
-  // object-reference churn from setCurrentUser({...prev}) doesn't cause races.
-  useEffect(() => {
-    async function fetchFollows() {
-      if (!currentUser?.id) {
-        setFollowingIds(new Set());
-        return;
-      }
-      try {
-        const { data, error } = await insforge.database
-          .from('follows')
-          .select('following_id')
-          .eq('follower_id', currentUser.id);
-        if (error) throw error;
-        if (data) {
-          setFollowingIds(new Set(data.map((f: any) => f.following_id)));
-        }
-      } catch (err) {
-        console.error("Failed to fetch follows:", err);
-      }
-    }
-    fetchFollows();
-  }, [currentUser?.id]);
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
 
@@ -1033,9 +1021,15 @@ export default function App() {
 
   const handleEventPress = useCallback((event: Event) => {
     trackEvent('event_viewed', { eventId: event.id });
+    // Jumping straight from one event's details to another (e.g. tapping a
+    // "Related Events" card) — stash the current event so Back can restore
+    // it instead of getting stuck (see eventHistoryStack above).
+    if (screen === 'event-details' && selectedEvent && selectedEvent.id !== event.id) {
+      setEventHistoryStack((s) => [...s, selectedEvent]);
+    }
     setSelectedEvent(event);
     navigateTo('event-details');
-  }, [navigateTo]);
+  }, [navigateTo, screen, selectedEvent]);
 
   const handleGetTickets = useCallback((ticketType: TicketType) => {
     setSelectedTicketType(ticketType);
@@ -1161,66 +1155,6 @@ export default function App() {
     }
   }, [currentUser, savedEvents]);
 
-  const handleToggleFollow = useCallback(async (userId: string) => {
-    if (!currentUser) {
-      console.error('[Subscribe] No currentUser — redirecting to auth');
-      navigateTo('auth');
-      return;
-    }
-    if (userId === currentUser.id) {
-      console.warn('[Subscribe] Cannot follow yourself');
-      return;
-    }
-
-    const isFollowing = followingIds.has(userId);
-
-    try {
-      // Ensure hc.userToken is set so auth.uid() resolves in RLS policies —
-      // without this, a follow/unfollow after a page reload silently fails
-      // RLS (auth.uid() resolves to NULL).
-      await getAuthToken();
-
-      if (isFollowing) {
-        const { error } = await insforge.database
-          .from('follows')
-          .delete()
-          .eq('follower_id', currentUser.id)
-          .eq('following_id', userId);
-        if (error) throw error;
-      } else {
-        const { error } = await insforge.database
-          .from('follows')
-          .insert([{
-            follower_id: currentUser.id,
-            following_id: userId
-          }]);
-        if (error) throw error;
-        trackPushEvent('user_followed', { targetId: userId });
-        trackEvent('user_followed');
-        const displayName = currentUser.username ? `@${currentUser.username}` : (currentUser.full_name || 'Someone');
-        insforge.database.rpc('notify_user' as any, {
-          p_user_id: userId,
-          p_type: 'social',
-          p_title: 'New follower',
-          p_body: `${displayName} started following you`,
-          p_icon: '👤',
-        }).then(({ error: notifyErr }: any) => {
-          if (notifyErr) console.warn('[Subscribe] Follow notify failed:', notifyErr.message);
-        });
-      }
-
-      // Only flip local state once the DB write is confirmed — no
-      // optimistic update, no revert-after-a-second flicker.
-      setFollowingIds((prev) => {
-        const next = new Set(prev);
-        if (isFollowing) next.delete(userId); else next.add(userId);
-        return next;
-      });
-    } catch (err) {
-      console.error('[Subscribe] DB operation FAILED:', err);
-    }
-  }, [currentUser, followingIds, navigateTo]);
-
   const handleProfileNavigate = useCallback((target: string) => {
     if (target === 'welcome') {
       setScreen('welcome');
@@ -1242,7 +1176,7 @@ export default function App() {
     navigateTo(target as Screen);
   }, [navigateTo]);
 
-  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
     const enriched = {
       ...userProfile,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
@@ -1478,7 +1412,7 @@ export default function App() {
               onUserPress={async (u) => {
                 const { data } = await insforge.database
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', u.id)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -1502,8 +1436,6 @@ export default function App() {
                 navigateTo('user-profile');
               }}
               currentUserId={currentUser?.id}
-              following={[...followingIds]}
-              onToggleFollow={handleToggleFollow}
               onOpenConversation={(userId, userName, avatarUrl, vcBadge) => {
                 setConversationUser({ id: userId, name: userName, avatarUrl, vc_badge: vcBadge });
                 setExploreTab('chats');
@@ -1530,16 +1462,11 @@ export default function App() {
               onSignOut={handleSignOut}
               tickets={allTickets}
               savedCount={savedEvents.length}
-              followingCount={followingIds.size}
               onViewTicket={(ticket) => {
                 setPurchasedTicket(ticket);
                 navigateTo('payment-success');
               }}
               onNavigate={handleProfileNavigate}
-              onNavigateToFollowingFilter={(filter) => {
-                setFollowingFilter(filter);
-                navigateTo('following-list');
-              }}
               unreadNotificationsCount={unreadCount}
               onBecomeOrganizer={async () => {
                 setUserRole('organizer');
@@ -1630,19 +1557,6 @@ export default function App() {
               }}
             />
           )}
-          {screen === 'following-list' && (
-            <FollowingListScreen
-              following={[...followingIds]}
-              onToggleFollow={handleToggleFollow}
-              onBack={goBack}
-              currentUserId={currentUser?.id}
-              initialFilter={followingFilter}
-              onUserPress={(user) => {
-                setSelectedUser(user);
-                navigateTo('user-profile');
-              }}
-            />
-          )}
           {screen === 'admin-dashboard' && (
             <AdminDashboardScreen
               onBack={goBack}
@@ -1707,6 +1621,7 @@ export default function App() {
           {/* ── EVENT FLOW ── */}
           {screen === 'event-details' && selectedEvent && (
             <EventDetailsScreen
+              key={selectedEvent.id}
               event={selectedEvent}
               onBack={goBack}
               onGetTickets={handleTicketContinue}
@@ -1716,13 +1631,11 @@ export default function App() {
               onBook={() => handleBookEvent(selectedEvent)}
               bookingLoading={bookingLoading}
               onEventPress={handleEventPress}
-              following={[...followingIds]}
-              onToggleFollow={handleToggleFollow}
               currentUserId={currentUser?.id}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', organizerId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -1862,10 +1775,6 @@ export default function App() {
             <ReferralScreen onBack={goBack} currentUser={currentUser} />
           )}
 
-          {screen === 'transactions' && (
-            <TransactionsScreen onBack={goBack} />
-          )}
-
           {/* ── INBOX ── */}
           {screen === 'inbox' && currentUser && (
             <InboxScreen
@@ -1894,7 +1803,7 @@ export default function App() {
               onNavigateToProfile={async (userId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', userId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -1911,8 +1820,6 @@ export default function App() {
           {screen === 'user-profile' && selectedUser && (
             <UserProfileScreen
               user={selectedUser}
-              isFollowing={followingIds.has(selectedUser.id)}
-              onToggleFollow={() => handleToggleFollow(selectedUser.id)}
               onBack={goBack}
               onEventPress={handleEventPress}
               currentUserId={currentUser?.id}

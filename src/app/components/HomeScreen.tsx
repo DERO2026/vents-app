@@ -825,12 +825,10 @@ export function HomeScreen({
 
     return matchQuery && matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
   }).sort((a, b) => {
-    // On non-All tabs, featured events float to the top
-    if (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') {
-      if (a.isFeatured && !b.isFeatured) return -1;
-      if (!a.isFeatured && b.isFeatured) return 1;
-    }
-    return 0;
+    // Nearest date to furthest across the board.
+    const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
+    const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
+    return dtA - dtB;
   }), [dbEvents, searchQuery, activeCategory, stateFilter, priceFilter, upcomingOnly]);
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
@@ -839,10 +837,23 @@ export function HomeScreen({
     return d && d >= todayStart;
   });
 
-  // Trending events (sort by bookingsCount DESC)
+  const matchesStateFilter = (event: any) =>
+    stateFilter === 'all' || event.state?.toLowerCase() === stateFilter.toLowerCase();
+
+  const byNearestDate = (a: any, b: any) => {
+    const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
+    const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
+    return dtA - dtB;
+  };
+
+  // Trending events: selection stays popularity-based (top 5 by bookingsCount),
+  // display order is nearest-date-first, and the state filter now applies
+  // here too instead of only on the Explore grid.
   const trendingEvents = [...upcomingDbEvents]
+    .filter(matchesStateFilter)
     .sort((a, b) => (b.bookingsCount || 0) - (a.bookingsCount || 0))
-    .slice(0, 5);
+    .slice(0, 5)
+    .sort(byNearestDate);
 
   // Recently created events (sort by created_at DESC)
   const recentlyCreatedEvents = [...dbEvents]
@@ -853,20 +864,18 @@ export function HomeScreen({
     })
     .slice(0, 5);
 
-  // Featured events (is_featured=true, upcoming only, randomized order)
+  // Featured events: selection stays isFeatured + upcoming, but display
+  // order is now nearest-date-first (previously randomized), and the
+  // state filter now applies here too.
   const featuredEvents = useMemo(() => {
     const start = new Date(new Date().toISOString().split('T')[0]);
-    const arr = dbEvents.filter(e => {
+    return dbEvents.filter(e => {
       if (!e.isFeatured) return false;
+      if (!matchesStateFilter(e)) return false;
       const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
       return d && d >= start;
-    });
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [arr[i], arr[j]] = [arr[j], arr[i]];
-    }
-    return arr;
-  }, [dbEvents]);
+    }).sort(byNearestDate);
+  }, [dbEvents, stateFilter]);
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 

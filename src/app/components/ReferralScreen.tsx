@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, Check, Gift, Users, Coins, Trophy, Star, Zap, Crown } from 'lucide-react';
+import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 
 const MAX_REFERRALS = 5;
@@ -17,15 +17,6 @@ interface ReferralRow {
   created_at: string;
 }
 
-interface Winner {
-  id: string;
-  draw_month: string;
-  prize_description: string;
-  drawn_at: string;
-  delivered: boolean;
-  users?: { full_name: string; username: string; avatar_url?: string };
-}
-
 const BADGE_TIERS = ['bronze', 'silver', 'gold', 'platinum', 'elite', 'legend'] as const;
 type BadgeTier = typeof BADGE_TIERS[number];
 
@@ -38,15 +29,6 @@ const BADGE_CONFIG: { type: BadgeTier; label: string; cost: number; color: strin
   { type: 'legend',   label: 'Legend',   cost: 25000, color: '#EC4899', chipBg: '', chipColor: '#fff', chipGradient: 'linear-gradient(135deg,#7B2FF7,#F107A3)' },
 ];
 
-function monthCountdown(): string {
-  const now = new Date();
-  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
-  const diff = end.getTime() - now.getTime();
-  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-  const hrs = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-  return `${days}d ${hrs}h`;
-}
-
 export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [referrals, setReferrals] = useState<ReferralRow[]>([]);
   const [balance, setBalance] = useState(0);
@@ -54,12 +36,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [copied, setCopied] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState<string | null>(null);
-
-  // Prize draw state
-  const [drawEntries, setDrawEntries] = useState(0);
-  const [drawBusy, setDrawBusy] = useState(false);
-  const [drawMsg, setDrawMsg] = useState<string | null>(null);
-  const [winners, setWinners] = useState<Winner[]>([]);
 
   // Badge state
   const [currentBadge, setCurrentBadge] = useState<string | null>(null);
@@ -78,19 +54,16 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
   const referralLink = `https://getvents.com/?ref=${referralCode}`;
-  const currentMonth = new Date().toISOString().slice(0, 7);
 
   useEffect(() => {
     if (!currentUser?.id) return;
     async function load() {
       setLoading(true);
       try {
-        const [refsRes, walletRes, userRes, entriesRes, winnersRes, bonusRes] = await Promise.all([
+        const [refsRes, walletRes, userRes, bonusRes] = await Promise.all([
           insforge.database.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
           insforge.database.rpc('get_my_vc_balance' as any),
           insforge.database.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
-          insforge.database.from('prize_draw_entries').select('id').eq('user_id', currentUser!.id).eq('draw_month', currentMonth),
-          insforge.database.from('prize_draw_winners').select('*, users(full_name, username, avatar_url)').order('drawn_at', { ascending: false }).limit(3),
           insforge.database.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
         ]);
         if (refsRes.data) setReferrals(refsRes.data);
@@ -99,8 +72,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           setCurrentBadge(userRes.data.vc_badge ?? null);
           setFeaturedUntil(userRes.data.vc_featured_until ?? null);
         }
-        setDrawEntries(entriesRes.data?.length ?? 0);
-        if (winnersRes.data) setWinners(winnersRes.data as Winner[]);
         setProfileBonusClaimed(!!(bonusRes.data));
       } catch (err) {
         console.error('Failed to load VC data:', err);
@@ -126,21 +97,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     }
   }
 
-
-  async function handleEnterDraw() {
-    if (drawEntries >= 3) { setDrawMsg('You have used all 3 entries for this month.'); return; }
-    if (balance < 500) { setDrawMsg('You need at least 500 VC to enter.'); return; }
-    setDrawBusy(true); setDrawMsg(null);
-    try {
-      const { error } = await insforge.database.rpc('enter_prize_draw' as any, { p_month: currentMonth });
-      if (error) throw error;
-      setDrawEntries((prev) => prev + 1);
-      setBalance((prev) => prev - 500);
-      setDrawMsg(`Entry ${drawEntries + 1}/3 confirmed!`);
-    } catch (err: any) {
-      setDrawMsg(err?.message || 'Entry failed. Try again.');
-    } finally { setDrawBusy(false); }
-  }
 
   async function handlePurchaseBadge(type: BadgeTier, cost: number) {
     setBadgeBusy(true); setBadgeMsg(null);
@@ -228,55 +184,6 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           <div style={{ background: 'rgba(255,184,48,0.07)', border: '1px solid rgba(255,184,48,0.15)', borderRadius: '8px', padding: '8px 10px', marginTop: '10px' }}>
             <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600 }}>⚠ Vents Cents are not withdrawable or convertible to cash.</p>
           </div>
-        </div>
-
-        {/* ─── PRIZE DRAW ─── */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,184,48,0.2)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-            <Trophy size={18} color="#FFB830" />
-            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Monthly Prize Draw</span>
-            <span style={{ marginLeft: 'auto', color: '#8B8FA8', fontSize: '11px' }}>Draw in {monthCountdown()}</span>
-          </div>
-          <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
-            {[1,2,3].map(n => (
-              <div key={n} style={{ flex: 1, height: '6px', borderRadius: '3px', background: drawEntries >= n ? '#FFB830' : 'rgba(255,255,255,0.07)' }} />
-            ))}
-          </div>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>
-            <span style={{ color: '#FFB830', fontWeight: 700 }}>{drawEntries}/3</span> entries this month · 500 VC each
-          </p>
-          <button
-            onClick={handleEnterDraw}
-            disabled={drawBusy || drawEntries >= 3 || balance < 500}
-            style={{
-              width: '100%', background: drawEntries >= 3 ? 'rgba(255,255,255,0.05)' : 'linear-gradient(135deg, #B8860B, #FFB830)',
-              border: 'none', borderRadius: '12px', padding: '12px',
-              color: drawEntries >= 3 ? '#555C7A' : '#000',
-              fontSize: '14px', fontWeight: 700, cursor: drawEntries >= 3 || balance < 500 ? 'not-allowed' : 'pointer',
-            }}
-          >
-            {drawBusy ? 'Entering…' : drawEntries >= 3 ? 'All entries used' : `Enter Draw · 500 VC`}
-          </button>
-          {drawMsg && <p style={{ color: drawMsg.includes('confirmed') ? '#10B981' : '#EF4444', fontSize: '12px', marginTop: '8px', textAlign: 'center' }}>{drawMsg}</p>}
-
-          {/* Past winners */}
-          {winners.length > 0 && (
-            <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '8px' }}>PAST WINNERS</p>
-              {winners.map(w => (
-                <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,184,48,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Trophy size={14} color="#FFB830" />
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{(w.users as any)?.username || (w.users as any)?.full_name || 'Anonymous'}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{w.draw_month} · {w.prize_description}</p>
-                  </div>
-                  {w.delivered && <span style={{ color: '#10B981', fontSize: '10px', fontWeight: 700, background: 'rgba(16,185,129,0.1)', borderRadius: '6px', padding: '2px 8px' }}>Delivered</span>}
-                </div>
-              ))}
-            </div>
-          )}
         </div>
 
         {/* ─── BADGES ─── */}

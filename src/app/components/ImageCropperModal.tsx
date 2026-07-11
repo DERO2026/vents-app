@@ -11,17 +11,35 @@ interface ImageCropperModalProps {
   title?: string;
 }
 
+// Mobile camera photos routinely carry EXIF orientation metadata (portrait
+// shots especially) rather than physically-rotated pixel data. Decoding via
+// createImageBitmap with imageOrientation: 'from-image' explicitly asks the
+// browser to bake that rotation into the decoded bitmap before we ever draw
+// it — the source of the classic "cropped photo comes out sideways" bug,
+// since a plain canvas drawImage(<img>) does not reliably apply it the same
+// way across engines/versions. Falls back to the old <img> path if the
+// browser doesn't support createImageBitmap or the orientation option.
+async function decodeImage(imageSrc: string): Promise<CanvasImageSource & { width: number; height: number }> {
+  try {
+    const blob = await fetch(imageSrc).then((r) => r.blob());
+    return await createImageBitmap(blob, { imageOrientation: 'from-image' });
+  } catch {
+    const image = new Image();
+    image.src = imageSrc;
+    image.crossOrigin = 'anonymous';
+    await new Promise((resolve, reject) => {
+      image.onload = resolve;
+      image.onerror = reject;
+    });
+    return image;
+  }
+}
+
 async function getCroppedImg(
   imageSrc: string,
   pixelCrop: { x: number; y: number; width: number; height: number }
 ): Promise<Blob> {
-  const image = new Image();
-  image.src = imageSrc;
-  image.crossOrigin = 'anonymous';
-  await new Promise((resolve, reject) => {
-    image.onload = resolve;
-    image.onerror = reject;
-  });
+  const image = await decodeImage(imageSrc);
 
   const canvas = document.createElement('canvas');
   const ctx = canvas.getContext('2d');
@@ -94,8 +112,8 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'between',
-          padding: '8px 16px',
+          justifyContent: 'space-between',
+          padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           background: '#090514',
         }}

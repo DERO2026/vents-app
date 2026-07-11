@@ -64,8 +64,6 @@ export interface UserProfile {
   city: string;
   bio: string;
   eventsAttended: number;
-  followers: number;
-  following: number;
   interests: string[];
   avatar_url?: string;
   cover_url?: string;
@@ -115,10 +113,8 @@ export type Screen =
   | 'user-profile'
   | 'promote-event'
   | 'nigeria-live'
-  | 'following-list'
   | 'admin-dashboard'
   | 'checkin-scanner'
-  | 'transactions'
   | 'inbox'
   | 'conversation'
   | 'wallet';

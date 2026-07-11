@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, UserPlus, UserCheck, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
+import { ArrowLeft, MapPin, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
@@ -11,8 +11,6 @@ const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface UserProfileScreenProps {
   user: UserProfile & { is_verified?: boolean };
-  isFollowing: boolean;
-  onToggleFollow: () => void;
   onBack: () => void;
   onEventPress?: (event: import('./types').Event) => void;
   currentUserId?: string;
@@ -36,15 +34,12 @@ const INTEREST_COLORS: Record<string, string> = {
 
 export function UserProfileScreen({
   user,
-  isFollowing,
-  onToggleFollow,
   onBack,
   onEventPress,
   currentUserId,
   onMessage,
 }: UserProfileScreenProps) {
   const [eventsCreated, setEventsCreated] = useState(0);
-  const [followers, setFollowers] = useState(0);
   const [attendees, setAttendees] = useState(0);
   const [eventsAttended, setEventsAttended] = useState(0);
   const [reviews, setReviews] = useState<{ id: string; reviewer_id: string; rating: number; body: string; created_at: string; reviewer?: { full_name?: string; username?: string } }[]>([]);
@@ -98,7 +93,6 @@ export function UserProfileScreen({
   }, [user.cover_url]);
 
   useEffect(() => {
-    setFollowers(0);
     setEventsCreated(0);
     setAttendees(0);
     setEventsAttended(0);
@@ -127,14 +121,7 @@ export function UserProfileScreen({
           .eq('organizer_id', user.id);
         setEventsCreated(eCount || 0);
 
-        // 2. Followers count
-        const { count: fCount } = await insforge.database
-          .from('follows')
-          .select('following_id', { count: 'exact', head: true })
-          .eq('following_id', user.id);
-        setFollowers(fCount || 0);
-
-        // 3. Attendees count
+        // 2. Attendees count
         const { data: userEvents } = await insforge.database
           .from('events')
           .select('id')
@@ -312,37 +299,6 @@ export function UserProfileScreen({
           )}
         </div>
 
-        <button
-          onClick={onToggleFollow}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '7px',
-            padding: '10px 20px',
-            borderRadius: '24px',
-            border: isFollowing ? '1px solid rgba(167,139,250,0.3)' : 'none',
-            background: isFollowing
-              ? 'rgba(167,139,250,0.1)'
-              : '#7B2FF7',
-            cursor: 'pointer',
-            boxShadow: isFollowing ? 'none' : '0 4px 16px rgba(123,47,247,0.4)',
-          }}
-        >
-          {isFollowing ? (
-            <UserCheck size={15} color="#A78BFA" />
-          ) : (
-            <UserPlus size={15} color="#fff" />
-          )}
-          <span
-            style={{
-              color: isFollowing ? '#A78BFA' : '#fff',
-              fontSize: '14px',
-              fontWeight: 700,
-            }}
-          >
-            {isFollowing ? 'Subscribed' : 'Subscribe'}
-          </span>
-        </button>
         {/* Share button */}
         <button
           onClick={async () => {
@@ -495,7 +451,6 @@ export function UserProfileScreen({
       >
         {[
           { label: 'Events', value: String(eventsCreated) },
-          { label: 'Subscribers', value: String(followers + (isFollowing ? 1 : 0)) },
           { label: 'Attended', value: String(eventsAttended) },
           { label: 'Attendees', value: String(attendees) },
         ].map(({ label, value }, i, arr) => (

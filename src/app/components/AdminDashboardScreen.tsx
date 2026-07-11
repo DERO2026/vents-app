@@ -4,6 +4,7 @@ import {
   UserX, Trash2, RefreshCw, ClipboardList, Users,
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
+  Mic, Image as ImageIcon,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
@@ -320,7 +321,13 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     pending: '#F59E0B', processing: '#60A5FA', completed: '#10B981', failed: '#EF4444', rejected: '#EF4444', cancelled: '#EF4444',
   };
 
-  const totalPending = requests.filter(r => r.status === 'pending').reduce((s: number, r: any) => s + r.amount_kobo, 0);
+  // Funds requested but not yet released are still held (in pending_kobo)
+  // through both 'pending' and 'processing' — Paystack only confirms
+  // "money actually moved" via webhook/reconciliation, which is what flips
+  // a row to 'completed'. Excluding 'processing' here made this banner
+  // under-report the instant an admin approved a payout, even though the
+  // funds hadn't gone anywhere yet.
+  const totalPending = requests.filter(r => r.status === 'pending' || r.status === 'processing').reduce((s: number, r: any) => s + r.amount_kobo, 0);
 
   // Map organizer_id -> their pending request, so wallet cards (which have
   // no request_id of their own) can still expose Approve/Reject controls.
@@ -508,17 +515,6 @@ export function AdminDashboardScreen({
   const [vcSearching, setVcSearching] = useState(false);
   const [vcSelectedUser, setVcSelectedUser] = useState<any | null>(null);
 
-  // Prize draw management state
-  const [drawMonth, setDrawMonth] = useState(() => new Date().toISOString().slice(0, 7));
-  const [drawEntries, setDrawEntries] = useState<any[]>([]);
-  const [drawWinners, setDrawWinners] = useState<any[]>([]);
-  const [drawLoading, setDrawLoading] = useState(false);
-  const [pickWinnerUserId, setPickWinnerUserId] = useState('');
-  const [pickWinnerPrize, setPickWinnerPrize] = useState('');
-  const [pickWinnerBusy, setPickWinnerBusy] = useState(false);
-  const [drawMsg, setDrawMsg] = useState<string | null>(null);
-  const [deliverBusy, setDeliverBusy] = useState<string | null>(null);
-
   // Stats tab state
   const [stats, setStats] = useState<any | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -559,62 +555,7 @@ export function AdminDashboardScreen({
       );
   }, [tab]);
 
-  const loadDrawData = async (month: string) => {
-    setDrawLoading(true); setDrawMsg(null);
-    try {
-      const [entriesRes, winnersRes] = await Promise.all([
-        insforge.database
-          .from('prize_draw_entries')
-          .select('id, user_id, draw_month, entry_number, vc_spent, created_at, users(username, full_name)')
-          .eq('draw_month', month)
-          .order('created_at', { ascending: false })
-          .limit(100),
-        insforge.database
-          .from('prize_draw_winners')
-          .select('id, user_id, draw_month, prize_description, drawn_at, delivered, users(username, full_name)')
-          .order('drawn_at', { ascending: false })
-          .limit(20),
-      ]);
-      setDrawEntries(entriesRes.data || []);
-      setDrawWinners(winnersRes.data || []);
-    } catch { /* ignore */ }
-    finally { setDrawLoading(false); }
-  };
-
-  useEffect(() => { if (tab === 'vc') loadDrawData(drawMonth); }, [tab, drawMonth]);
-
-  const handlePickWinner = async () => {
-    if (!pickWinnerUserId.trim() || !pickWinnerPrize.trim()) {
-      setDrawMsg('Enter a user ID and prize description.'); return;
-    }
-    setPickWinnerBusy(true); setDrawMsg(null);
-    try {
-      const { error } = await insforge.database.rpc('admin_pick_draw_winner' as any, {
-        p_month: drawMonth,
-        p_user_id: pickWinnerUserId.trim(),
-        p_prize_description: pickWinnerPrize.trim(),
-      });
-      if (error) throw error;
-      setDrawMsg(`✓ Winner picked for ${drawMonth}`);
-      setPickWinnerUserId(''); setPickWinnerPrize('');
-      loadDrawData(drawMonth);
-    } catch (e: any) { setDrawMsg('Error: ' + (e?.message || 'unknown')); }
-    finally { setPickWinnerBusy(false); }
-  };
-
-  const handleMarkDelivered = async (month: string) => {
-    setDeliverBusy(month); setDrawMsg(null);
-    try {
-      const { error } = await insforge.database.rpc('admin_mark_winner_delivered' as any, { p_draw_month: month });
-      if (error) throw error;
-      setDrawMsg(`✓ Marked ${month} as delivered`);
-      loadDrawData(drawMonth);
-    } catch (e: any) { setDrawMsg('Error: ' + (e?.message || 'unknown')); }
-    finally { setDeliverBusy(null); }
-  };
-
-  useEffect(() => {
-    if (tab !== 'stats') return;
+  const loadStats = useCallback(() => {
     setStatsLoading(true);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
@@ -632,7 +573,38 @@ export function AdminDashboardScreen({
       setStats({ users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal, revenue, newThisWeek: weekRes.count ?? 0, newThisMonth: monthRes.count ?? 0 });
       setStatsLoading(false);
     }).catch(() => setStatsLoading(false));
-  }, [tab]);
+  }, []);
+
+  useEffect(() => { if (tab === 'stats') loadStats(); }, [tab, loadStats]);
+
+  // Live stats: the backend publishes 'admin_stats_changed' on the
+  // 'admin:stats' channel whenever a transaction, payout, or signup
+  // happens (see migrations/20260710181449_realtime-admin-stats.sql).
+  // Subscribed for the lifetime of the dashboard, not just while the Stats
+  // tab is open, so numbers are already fresh the moment an admin looks —
+  // debounced since several rows (e.g. a batch of ticket sales) can land
+  // in quick succession.
+  const tabRef = useRef(tab);
+  useEffect(() => { tabRef.current = tab; }, [tab]);
+
+  useEffect(() => {
+    let subscribed = false;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    insforge.realtime.connect().then(() => {
+      insforge.realtime.subscribe('admin:stats').then(() => { subscribed = true; });
+    }).catch(() => {});
+    const onStatsChanged = () => {
+      if (tabRef.current !== 'stats') return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadStats, 300);
+    };
+    insforge.realtime.on('admin_stats_changed', onStatsChanged);
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      insforge.realtime.off?.('admin_stats_changed', onStatsChanged);
+      if (subscribed) insforge.realtime.unsubscribe('admin:stats');
+    };
+  }, [loadStats]);
 
   useEffect(() => {
     if (tab !== 'verify') return;
@@ -765,6 +737,10 @@ export function AdminDashboardScreen({
 
   // System Controller state
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  // MVP launch kill switches for chat voice notes / image sharing
+  // (see migrations/20260710185537_media-feature-toggles.sql)
+  const [voiceNotesEnabled, setVoiceNotesEnabled] = useState(false);
+  const [imageSharingEnabled, setImageSharingEnabled] = useState(true);
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -818,11 +794,15 @@ export function AdminDashboardScreen({
     finally { setLogsLoading(false); }
   }, []);
 
-  // ── Load app_config for maintenance mode ─────────────────────────────────────
+  // ── Load app_config for maintenance mode + media feature toggles ────────────
   const loadConfig = useCallback(async () => {
     try {
-      const { data } = await insforge.database.from('app_config').select('maintenance_mode').single();
-      if (data) setMaintenanceMode(data.maintenance_mode);
+      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled').single();
+      if (data) {
+        setMaintenanceMode(data.maintenance_mode);
+        setVoiceNotesEnabled(data.voice_notes_enabled);
+        setImageSharingEnabled(data.image_sharing_enabled);
+      }
     } catch { /* ignore */ }
   }, []);
 
@@ -1079,6 +1059,48 @@ export function AdminDashboardScreen({
           setMaintenanceMode(next);
           flash(true, `Maintenance mode ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update maintenance mode.'); }
+      },
+    });
+  };
+
+  const handleToggleVoiceNotes = () => {
+    const next = !voiceNotesEnabled;
+    setConfirmModal({
+      title: next ? 'Enable Voice Notes' : 'Disable Voice Notes',
+      message: next
+        ? 'This will let all users record and send voice notes in chat again. Continue?'
+        : 'This will hide the voice-note button and block recording for all users.',
+      confirmLabel: next ? 'Enable' : 'Disable',
+      danger: !next,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await insforge.database.from('app_config').update({ voice_notes_enabled: next, updated_by: currentUser.id }).eq('id', true);
+          await writeAuditLog(currentUser.id, next ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off', null, {});
+          setVoiceNotesEnabled(next);
+          flash(true, `Voice notes ${next ? 'enabled' : 'disabled'}.`);
+        } catch (err: any) { flash(false, err?.message || 'Failed to update voice notes toggle.'); }
+      },
+    });
+  };
+
+  const handleToggleImageSharing = () => {
+    const next = !imageSharingEnabled;
+    setConfirmModal({
+      title: next ? 'Enable Image Sharing' : 'Disable Image Sharing',
+      message: next
+        ? 'This will let all users send images in chat again. Continue?'
+        : 'This will hide the image button and block sending images for all users.',
+      confirmLabel: next ? 'Enable' : 'Disable',
+      danger: !next,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await insforge.database.from('app_config').update({ image_sharing_enabled: next, updated_by: currentUser.id }).eq('id', true);
+          await writeAuditLog(currentUser.id, next ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off', null, {});
+          setImageSharingEnabled(next);
+          flash(true, `Image sharing ${next ? 'enabled' : 'disabled'}.`);
+        } catch (err: any) { flash(false, err?.message || 'Failed to update image sharing toggle.'); }
       },
     });
   };
@@ -1717,92 +1739,6 @@ export function AdminDashboardScreen({
             </button>
           </div>
 
-          {/* ── Prize Draw Management ── */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', paddingBottom: '4px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-              Prize Draw Management
-            </div>
-
-            {/* Month selector */}
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <input
-                type="month"
-                value={drawMonth}
-                onChange={e => setDrawMonth(e.target.value)}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
-              />
-              <button onClick={() => loadDrawData(drawMonth)} style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '10px', padding: '10px 14px', color: '#A78BFA', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}>
-                {drawLoading ? '…' : 'Load'}
-              </button>
-            </div>
-
-            {/* This month's entries */}
-            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Entries for {drawMonth} ({drawEntries.length})</div>
-            {drawEntries.length === 0 && !drawLoading && (
-              <div style={{ color: '#555C7A', fontSize: '12px', textAlign: 'center', padding: '12px 0' }}>No entries yet</div>
-            )}
-            {drawEntries.slice(0, 20).map(e => (
-              <div key={e.id} style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ color: '#C4C9E0', fontSize: '12px' }}>{(e as any).users?.username || (e as any).users?.full_name || e.user_id?.slice(0, 12)}</div>
-                  <div style={{ color: '#555C7A', fontSize: '11px' }}>Entry #{e.entry_number} · {e.vc_spent} VC</div>
-                </div>
-                <div style={{ color: '#555C7A', fontSize: '11px' }}>{new Date(e.created_at).toLocaleDateString()}</div>
-              </div>
-            ))}
-
-            {/* Pick winner */}
-            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>Pick Winner for {drawMonth}</div>
-            <input
-              placeholder="Winner User ID"
-              value={pickWinnerUserId}
-              onChange={e => setPickWinnerUserId(e.target.value)}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'monospace' }}
-            />
-            <input
-              placeholder="Prize description (e.g. ₦50,000 gift card)"
-              value={pickWinnerPrize}
-              onChange={e => setPickWinnerPrize(e.target.value)}
-              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
-            />
-            {drawMsg && <div style={{ color: drawMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{drawMsg}</div>}
-            <button
-              onClick={handlePickWinner}
-              disabled={pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()}
-              style={{ background: 'linear-gradient(135deg, #F59E0B, #D97706)', border: 'none', borderRadius: '12px', padding: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: (pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()) ? 'not-allowed' : 'pointer', opacity: (pickWinnerBusy || !pickWinnerUserId.trim() || !pickWinnerPrize.trim()) ? 0.5 : 1 }}
-            >
-              {pickWinnerBusy ? 'Saving…' : 'Pick Winner'}
-            </button>
-
-            {/* Past winners */}
-            <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginTop: '4px' }}>Past Winners</div>
-            {drawWinners.length === 0 ? (
-              <div style={{ color: '#555C7A', fontSize: '12px', textAlign: 'center', padding: '8px 0' }}>No winners yet</div>
-            ) : drawWinners.map(w => (
-              <div key={w.id} style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${w.delivered ? 'rgba(16,185,129,0.2)' : 'rgba(245,158,11,0.2)'}`, borderRadius: '10px', padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{w.draw_month}</div>
-                    <div style={{ color: '#C4C9E0', fontSize: '11px' }}>{w.prize_description}</div>
-                    <div style={{ color: '#555C7A', fontSize: '11px' }}>User: {(w as any).users?.username || (w as any).users?.full_name || w.user_id?.slice(0, 12)}</div>
-                  </div>
-                  <div style={{ padding: '3px 8px', borderRadius: '6px', background: w.delivered ? 'rgba(16,185,129,0.15)' : 'rgba(245,158,11,0.15)', color: w.delivered ? '#10B981' : '#F59E0B', fontSize: '10px', fontWeight: 700 }}>
-                    {w.delivered ? 'DELIVERED' : 'PENDING'}
-                  </div>
-                </div>
-                {!w.delivered && (
-                  <button
-                    onClick={() => handleMarkDelivered(w.draw_month)}
-                    disabled={deliverBusy === w.draw_month}
-                    style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 600, cursor: 'pointer', alignSelf: 'flex-start' }}
-                  >
-                    {deliverBusy === w.draw_month ? '…' : 'Mark as Delivered'}
-                  </button>
-                )}
-              </div>
-            ))}
-          </div>
-
         </div>
       )}
 
@@ -1829,7 +1765,7 @@ export function AdminDashboardScreen({
                   </div>
                 ))}
               </div>
-              <p style={{ color: '#555C7A', fontSize: '11px', textAlign: 'center', marginTop: '8px' }}>Live counts from database. Refresh tab to update.</p>
+              <p style={{ color: '#555C7A', fontSize: '11px', textAlign: 'center', marginTop: '8px' }}>Live — updates automatically as transactions, payouts, and signups happen.</p>
             </>
           ) : (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No data.</div>
@@ -2184,6 +2120,51 @@ export function AdminDashboardScreen({
               >
                 {maintenanceMode
                   ? <ToggleRight size={32} color="#F59E0B" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          {/* Voice Notes toggle (MVP launch kill switch — off by default, see
+              migrations/20260710185537_media-feature-toggles.sql) */}
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: voiceNotesEnabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Mic size={17} color={voiceNotesEnabled ? '#10B981' : '#C4C9E0'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Voice Notes</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {voiceNotesEnabled ? 'Enabled — users can record voice notes' : 'Disabled for MVP launch stability'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={handleToggleVoiceNotes} style={{ cursor: 'pointer' }}>
+                {voiceNotesEnabled
+                  ? <ToggleRight size={32} color="#10B981" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          {/* Image Sharing toggle */}
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: imageSharingEnabled ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ImageIcon size={17} color={imageSharingEnabled ? '#10B981' : '#C4C9E0'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Image Sharing</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {imageSharingEnabled ? 'Enabled — users can send images in chat' : 'Disabled'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={handleToggleImageSharing} style={{ cursor: 'pointer' }}>
+                {imageSharingEnabled
+                  ? <ToggleRight size={32} color="#10B981" />
                   : <ToggleLeft size={32} color="#555C7A" />}
               </div>
             </div>

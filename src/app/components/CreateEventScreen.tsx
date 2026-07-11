@@ -106,7 +106,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   // General states
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  
+  const [published, setPublished] = useState(false);
+  const publishedEventRef = useRef<OrganizerEvent | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Role permissions guard
@@ -166,8 +168,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     { num: 4, label: 'Review' },
   ];
 
+  const closeCropper = useCallback(() => {
+    setCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+  }, []);
+
   const handleCroppedFlier = useCallback(async (croppedBlob: Blob) => {
-    setCropSrc(null);
+    closeCropper();
     setUploadingImage(true);
     setErrorMessage(null);
     try {
@@ -197,7 +206,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     } finally {
       setUploadingImage(false);
     }
-  }, []);
+  }, [closeCropper]);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (uploadingImage) return;
@@ -213,9 +222,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       return;
     }
 
-    const reader = new FileReader();
-    reader.onload = () => setCropSrc(reader.result as string);
-    reader.readAsDataURL(file);
+    // An object URL avoids loading a full-size camera photo (often several
+    // MB) into React state as a base64 string, which is heavier to hold
+    // and re-decode on lower-end Android WebViews than a lightweight blob
+    // reference. Revoked in closeCropper() once the crop is done/cancelled.
+    setCropSrc(URL.createObjectURL(file));
   };
 
   const submitEvent = async (eventStatus: 'live' | 'draft') => {
@@ -274,30 +285,35 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
 
       if (error) throw error;
 
-      if (eventStatus === 'live') {
-        confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
-      }
+      const createdEvent: OrganizerEvent = {
+        id: data?.[0]?.id || (() => { throw new Error('Event created but no ID returned from DB'); })(),
+        title: title.trim(),
+        category,
+        description: description.trim(),
+        date,
+        startTime,
+        venue: venue.trim(),
+        city: city.trim(),
+        capacity,
+        ticketName: ticketTypes[0]?.name || 'Regular',
+        ticketPrice: ticketTypes[0]?.price || '0',
+        ticketQty: ticketTypes[0]?.quantity || '500',
+        contactPhone: showPhone ? contactPhone : '',
+        showPhone,
+        status: eventStatus,
+        createdAt: Date.now(),
+      };
 
-      setTimeout(() => {
-        onCreated({
-          id: data?.[0]?.id || (() => { throw new Error('Event created but no ID returned from DB'); })(),
-          title: title.trim(),
-          category,
-          description: description.trim(),
-          date,
-          startTime,
-          venue: venue.trim(),
-          city: city.trim(),
-          capacity,
-          ticketName: ticketTypes[0]?.name || 'Regular',
-          ticketPrice: ticketTypes[0]?.price || '0',
-          ticketQty: ticketTypes[0]?.quantity || '500',
-          contactPhone: showPhone ? contactPhone : '',
-          showPhone,
-          status: eventStatus,
-          createdAt: Date.now(),
-        });
-      }, eventStatus === 'live' ? 1500 : 500);
+      if (eventStatus === 'live') {
+        // Published events get a dedicated success state — no more silent
+        // auto-redirect. The user explicitly chooses when to leave via the
+        // "Return to Home Page" button (handleReturnHome).
+        confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+        publishedEventRef.current = createdEvent;
+        setPublished(true);
+      } else {
+        setTimeout(() => onCreated(createdEvent), 500);
+      }
 
     } catch (err: any) {
       console.error('Failed to save event:', err);
@@ -374,6 +390,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     await submitEvent('draft');
   };
 
+  const handleReturnHome = () => {
+    if (publishedEventRef.current) onCreated(publishedEventRef.current);
+  };
+
   return (
     <div
       style={{
@@ -398,24 +418,28 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         }}
       >
-        <button
-          onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
-          disabled={submitting}
-          style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '50%',
-            width: '36px',
-            height: '36px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            cursor: submitting ? 'not-allowed' : 'pointer',
-          }}
-        >
-          <ArrowLeft size={16} color="#C4C9E0" />
-        </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Create Event</h1>
+        {/* No way back once the event is published — there's nothing left
+            to navigate back to (it's already live). */}
+        {!published && (
+          <button
+            onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
+            disabled={submitting}
+            style={{
+              background: '#090514',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '50%',
+              width: '36px',
+              height: '36px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: submitting ? 'not-allowed' : 'pointer',
+            }}
+          >
+            <ArrowLeft size={16} color="#C4C9E0" />
+          </button>
+        )}
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{published ? 'Event Published' : 'Create Event'}</h1>
       </div>
 
       {/* Step indicator */}
@@ -514,7 +538,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               <ImageCropperModal
                 imageSrc={cropSrc}
                 onCropComplete={handleCroppedFlier}
-                onClose={() => setCropSrc(null)}
+                onClose={closeCropper}
                 aspect={3 / 4}
                 cropShape="rect"
                 title="Upload Event Flyer"
@@ -1121,11 +1145,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
         }}
       >
         <button
-          onClick={handleNext}
-          disabled={submitting || uploadingImage}
+          onClick={published ? undefined : handleNext}
+          disabled={submitting || uploadingImage || published}
           style={{
             width: '100%',
-            background: (submitting || uploadingImage)
+            background: published
+              ? 'linear-gradient(135deg, #059669 0%, #10B981 100%)'
+              : (submitting || uploadingImage)
               ? 'rgba(123,47,190,0.4)'
               : 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
@@ -1135,36 +1161,59 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: (submitting || uploadingImage) ? 'not-allowed' : 'pointer',
-            boxShadow: (submitting || uploadingImage) ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
+            cursor: (submitting || uploadingImage || published) ? 'not-allowed' : 'pointer',
+            boxShadow: published ? '0 6px 24px rgba(16,185,129,0.4)' : (submitting || uploadingImage) ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
           }}
         >
-          {submitting
+          {published
+            ? '✓ Published'
+            : submitting
             ? 'Saving...'
             : step === 4
             ? 'Publish Event'
             : `Next: ${STEPS[step].label}`}
         </button>
         {step === 4 && !submitting && (
-          <button
-            onClick={handleSaveAsDraft}
-            disabled={submitting || uploadingImage}
-            style={{
-              width: '100%',
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '14px',
-              padding: '12px',
-              color: '#8B8FA8',
-              fontSize: '14px',
-              fontWeight: 600,
-              fontFamily: 'Space Grotesk, sans-serif',
-              cursor: 'pointer',
-              marginTop: '10px',
-            }}
-          >
-            Save as Draft
-          </button>
+          published ? (
+            <button
+              onClick={handleReturnHome}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '14px',
+                padding: '12px',
+                color: '#C4C9E0',
+                fontSize: '14px',
+                fontWeight: 600,
+                fontFamily: 'Space Grotesk, sans-serif',
+                cursor: 'pointer',
+                marginTop: '10px',
+              }}
+            >
+              Return to Home Page
+            </button>
+          ) : (
+            <button
+              onClick={handleSaveAsDraft}
+              disabled={submitting || uploadingImage}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: '1px solid rgba(255,255,255,0.12)',
+                borderRadius: '14px',
+                padding: '12px',
+                color: '#8B8FA8',
+                fontSize: '14px',
+                fontWeight: 600,
+                fontFamily: 'Space Grotesk, sans-serif',
+                cursor: 'pointer',
+                marginTop: '10px',
+              }}
+            >
+              Save as Draft
+            </button>
+          )
         )}
       </div>
 

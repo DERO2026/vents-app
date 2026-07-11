@@ -15,11 +15,23 @@ interface WalletData {
 
 interface Transaction {
   id: string;
-  type: 'credit' | 'debit' | 'payout';
+  type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund';
   amount_kobo: number;
   description: string | null;
+  withdrawal_request_id: string | null;
+  metadata: { bank_name?: string; account_number?: string; account_name?: string } | null;
   created_at: string;
 }
+
+// Money actually leaving the wallet vs. coming into/back into it — used to
+// pick the icon, color, and +/- sign for each transaction row.
+const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund']);
+const TYPE_LABELS: Record<string, string> = {
+  credit: 'Credit',
+  debit: 'Withdrawal',
+  payout: 'Payout',
+  cancelled_payout_refund: 'Payout Cancelled — Refunded',
+};
 
 interface BankAccount {
   id: string;
@@ -56,6 +68,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
   const [loading, setLoading] = useState(true);
+  // null while loading; the RPC checks auth.users.email_verified for the
+  // caller — the same platform flag InsForge itself gates login on. Wallet
+  // actions are also enforced server-side (request_organizer_payout /
+  // upsert_organizer_bank_account reject unverified callers); this is the
+  // UI-side reflection of that gate.
+  const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
 
   // Withdraw flow
   const [showWithdraw, setShowWithdraw] = useState(false);
@@ -82,14 +100,16 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     if (!currentUser?.id) return;
     setLoading(true);
     try {
-      const [wRes, tRes, bRes] = await Promise.all([
+      const [wRes, tRes, bRes, vRes] = await Promise.all([
         insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
-        insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
+        insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
         insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code').eq('organizer_id', currentUser.id).maybeSingle(),
+        insforge.database.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
       setTxns(tRes.data || []);
       setBankAccount(bRes.data || null);
+      setEmailVerified(vRes.data === true);
     } catch (e) {
       console.error('Wallet load error:', e);
     } finally {
@@ -147,6 +167,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   const handleWithdraw = async () => {
     setWithdrawError('');
+    if (!emailVerified) { setWithdrawError('Please verify your email before requesting a withdrawal'); return; }
     const amount = parseFloat(withdrawAmount.replace(/[^0-9.]/g, ''));
     if (!amount || amount < 100) { setWithdrawError('Minimum withdrawal is ₦100'); return; }
     const kobo = Math.floor(amount * 100);
@@ -173,6 +194,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   const handleSaveBank = async () => {
     if (!selectedBank || !resolvedName || resolving) return;
+    if (!emailVerified) { setBankSaveError('Please verify your email before adding a payout bank account'); return; }
     setSavingBank(true);
     setBankSaveError('');
     try {
@@ -213,6 +235,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+          {emailVerified === false && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
+              <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
+              <span style={{ color: '#F59E0B', fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
+            </div>
+          )}
           {/* Balance card */}
           <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
@@ -235,15 +263,18 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
             <button
               onClick={() => setShowWithdraw(true)}
-              style={{ flex: 1, background: balance > 0 ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '100px', padding: '14px', cursor: balance > 0 ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              disabled={balance === 0}
+              style={{ flex: 1, background: balance > 0 && emailVerified !== false ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '100px', padding: '14px', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              disabled={balance === 0 || emailVerified === false}
+              title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
             >
-              <ArrowDownCircle size={18} color={balance > 0 ? '#A855F7' : '#555'} />
-              <span style={{ color: balance > 0 ? '#A855F7' : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
+              <ArrowDownCircle size={18} color={balance > 0 && emailVerified !== false ? '#A855F7' : '#555'} />
+              <span style={{ color: balance > 0 && emailVerified !== false ? '#A855F7' : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
             </button>
             <button
               onClick={openAddBank}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: emailVerified === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: emailVerified === false ? 0.5 : 1 }}
+              disabled={emailVerified === false}
+              title={emailVerified === false ? 'Verify your email to add a payout bank account' : undefined}
             >
               <Plus size={18} color="#8B8FA8" />
               <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>{bankAccount ? 'Update Bank' : 'Add Bank'}</span>
@@ -267,20 +298,29 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {txns.map(t => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)' }}>
-                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: t.type === 'credit' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <span style={{ fontSize: '16px' }}>{t.type === 'credit' ? '↓' : '↑'}</span>
+              {txns.map(t => {
+                const isCredit = CREDIT_TYPES.has(t.type);
+                const bank = t.metadata;
+                return (
+                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
+                      {t.type === 'payout' && bank?.bank_name && (
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          Paid to {bank.bank_name}{bank.account_number ? ` · ${bank.account_number}` : ''}{bank.account_name ? ` · ${bank.account_name}` : ''}
+                        </p>
+                      )}
+                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                    </div>
+                    <span style={{ color: isCredit ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                      {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
+                    </span>
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || (t.type === 'credit' ? 'Credit' : 'Withdrawal')}</p>
-                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
-                  </div>
-                  <span style={{ color: t.type === 'credit' ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
-                    {t.type === 'credit' ? '+' : '-'}{fmt(t.amount_kobo)}
-                  </span>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

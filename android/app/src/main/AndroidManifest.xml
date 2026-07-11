@@ -38,4 +38,12 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Required for chat voice notes (getUserMedia/MediaRecorder in the
+         WebView). Declared ahead of re-enabling voice_notes_enabled in
+         app_config so no further native changes are needed then — voice
+         notes are disabled by default for MVP launch (see
+         migrations/20260710185537_media-feature-toggles.sql), and without
+         this permission getUserMedia would fail outright regardless. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
 </manifest>

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ArrowLeft, Plus, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone, MoreVertical, Trash2, EyeOff, Eye } from 'lucide-react';
+import { ArrowLeft, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone, MoreVertical, Trash2, EyeOff, Eye } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
@@ -148,23 +148,14 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
       <style>{`input::placeholder, textarea::placeholder { color: #8B8FA8; }`}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={onBack}
-            style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-          >
-            <ArrowLeft size={16} color="#C4C9E0" />
-          </button>
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>My Events</h1>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
-          onClick={() => onNavigate('create-event')}
-          style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}
+          onClick={onBack}
+          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          <Plus size={14} color="#fff" />
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Create</span>
+          <ArrowLeft size={16} color="#C4C9E0" />
         </button>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>My Events</h1>
       </div>
 
       {/* Search */}

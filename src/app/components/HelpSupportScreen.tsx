@@ -36,7 +36,7 @@ const FAQS = [
   },
   {
     q: 'What are Vents Cents?',
-    a: 'Vents Cents (VC) are in-app loyalty points — not money. You cannot withdraw, convert, or transfer them to cash or any external account.\n\nHow to EARN VC:\n• 300 VC when a friend you refer signs up (they get 150 VC too)\n• 100 VC for completing your profile\n• 50 VC per ticket you purchase\n\nHow to SPEND VC:\n• Enter monthly prize draws (prizes vary each month)\n• Unlock exclusive badges and profile features\n• Boost event visibility (organizers)\n\nVC expires 12 months after they are earned. They hold no cash value and cannot be used to pay for tickets.',
+    a: 'Vents Cents (VC) are in-app loyalty points — not money. You cannot withdraw, convert, or transfer them to cash or any external account.\n\nHow to EARN VC:\n• 300 VC when a friend you refer signs up (they get 150 VC too)\n• 100 VC for completing your profile\n• 50 VC per ticket you purchase\n\nHow to SPEND VC:\n• Unlock exclusive badges and profile features\n• Boost event visibility (organizers)\n\nVC expires 12 months after they are earned. They hold no cash value and cannot be used to pay for tickets.',
   },
   {
     q: 'How do organisers withdraw their earnings?',

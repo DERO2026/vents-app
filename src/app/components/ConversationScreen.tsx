@@ -70,6 +70,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const pendingLocationRef = useRef(false);
   const [audioError, setAudioError] = useState<string | null>(null);
+  // MVP launch kill switches (public.app_config) — default true so a
+  // failed/slow config fetch fails open rather than silently hiding a
+  // feature; the real launch default lives in the DB column default.
+  const [voiceNotesEnabled, setVoiceNotesEnabled] = useState(true);
+  const [imageSharingEnabled, setImageSharingEnabled] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -92,6 +97,20 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       .is('read_at', null)
       .then(() => {}, () => {});
   }, [currentUser?.id, otherUser?.id]);
+
+  useEffect(() => {
+    insforge.database
+      .from('app_config')
+      .select('voice_notes_enabled, image_sharing_enabled')
+      .maybeSingle()
+      .then(
+        ({ data }: any) => {
+          if (typeof data?.voice_notes_enabled === 'boolean') setVoiceNotesEnabled(data.voice_notes_enabled);
+          if (typeof data?.image_sharing_enabled === 'boolean') setImageSharingEnabled(data.image_sharing_enabled);
+        },
+        () => {}
+      );
+  }, []);
 
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
@@ -124,6 +143,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [currentUser?.id, otherUser?.id]);
 
   const sendImageMessage = useCallback(async (file: File) => {
+    if (!imageSharingEnabled) {
+      setVoiceToast('Image sharing is temporarily unavailable.');
+      setTimeout(() => setVoiceToast(null), 3000);
+      return;
+    }
     setUploadingImg(true);
     try {
       const token = await getAuthToken();
@@ -143,9 +167,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         event_id: eventId || null, body: '', image_url: url, media_type: 'image',
       });
       await load();
-    } catch (e) { console.error('Image send failed', e); }
+    } catch (e) {
+      console.error('Image send failed', e);
+      setVoiceToast('Failed to send image');
+      setTimeout(() => setVoiceToast(null), 3000);
+    }
     finally { setUploadingImg(false); }
-  }, [currentUser.id, otherUser.id, eventId]);
+  }, [currentUser.id, otherUser.id, eventId, imageSharingEnabled]);
 
   const doGetLocation = useCallback(async () => {
     if (!navigator.geolocation) {
@@ -180,6 +208,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [doGetLocation]);
 
   const startRecording = useCallback(async () => {
+    if (!voiceNotesEnabled) {
+      setVoiceToast('Voice messages are temporarily unavailable.');
+      setTimeout(() => setVoiceToast(null), 3000);
+      return;
+    }
     if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setVoiceToast('Voice messages are not supported on your current browser. Please use Chrome or update your browser.');
       setTimeout(() => setVoiceToast(null), 5000);
@@ -253,7 +286,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       setRecordingSeconds(secs);
       if (secs >= 60) stopRecording();
     }, 100);
-  }, [currentUser.id, otherUser.id, eventId]);
+  }, [currentUser.id, otherUser.id, eventId, voiceNotesEnabled]);
 
   const stopRecording = useCallback(() => {
     if (recordingTimerRef.current) { clearInterval(recordingTimerRef.current); recordingTimerRef.current = null; }
@@ -263,6 +296,19 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setRecording(false);
     setRecordingSeconds(0);
   }, []);
+
+  // Release the mic/timer immediately if the screen unmounts mid-recording
+  // (swipe-back, OS back button, an incoming call) instead of leaving the
+  // mic hot for up to 60s with no UI, and pause+remove cached voice-note
+  // <audio> elements that would otherwise stay attached to document.body
+  // (and keep playing) after leaving the conversation.
+  useEffect(() => {
+    return () => {
+      stopRecording();
+      Object.values(audioCacheRef.current).forEach(a => { a.pause(); a.remove(); });
+      audioCacheRef.current = {};
+    };
+  }, [stopRecording]);
 
   // toggleAudio: storage URLs redirect 302 → CDN signed URL, no auth header needed.
   // Cache Audio elements per message id so repeated taps don't re-fetch.
@@ -535,6 +581,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 ) : m.image_url ? (
                   <img
                     src={m.image_url} alt="Sent image"
+                    loading="lazy" decoding="async"
                     onClick={() => setLightboxUrl(m.image_url!)}
                     style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '14px', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
                   />
@@ -615,23 +662,27 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           </div>
         ) : (
           <>
-            <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
-              <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
-            </button>
+            {imageSharingEnabled && (
+              <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+                <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
+              </button>
+            )}
             <button onClick={sendLocation} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
               <MapPin size={20} color="#8B8FA8" />
             </button>
-            <button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onMouseLeave={stopRecording}
-              onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
-              onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}
-              title="Hold to record voice message"
-            >
-              <Mic size={20} color="#8B8FA8" />
-            </button>
+            {voiceNotesEnabled && (
+              <button
+                onMouseDown={startRecording}
+                onMouseUp={stopRecording}
+                onMouseLeave={stopRecording}
+                onTouchStart={(e) => { e.preventDefault(); startRecording(); }}
+                onTouchEnd={(e) => { e.preventDefault(); stopRecording(); }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}
+                title="Hold to record voice message"
+              >
+                <Mic size={20} color="#8B8FA8" />
+              </button>
+            )}
           </>
         )}
         {!recording && (
