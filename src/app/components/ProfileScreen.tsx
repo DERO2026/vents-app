@@ -291,8 +291,9 @@ export function ProfileScreen({
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
   const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
+  const isSubAdmin = currentUser?.role === 'sub-admin';
   const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
-  const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : 'Attendee';
+  const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Attendee';
   
   const filteredMenuItems = menuItems.filter(item => {
     if (isOrganizer) {
@@ -562,8 +563,8 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* Admin Dashboard (ROOT_UID only) */}
-        {isAdmin && (
+        {/* Admin Dashboard (Admin/Sub-Admin/Root) */}
+        {(isAdmin || isSubAdmin) && (
           <div className="px-4 mb-3">
             <button
               onClick={() => onNavigate('admin-dashboard')}
@@ -585,7 +586,7 @@ export function ProfileScreen({
         )}
 
         {/* Become an Organizer — only for attendees */}
-        {!isOrganizer && !isAdmin && (
+        {!isOrganizer && !isAdmin && !isSubAdmin && (
           <div className="px-4 mb-3">
             <button
               onClick={() => {

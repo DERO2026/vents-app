@@ -1265,7 +1265,7 @@ export default function App() {
   // who always bypass so the platform can be managed while it's "down" for
   // everyone else. Held off until auth has resolved so we know whether the
   // current user qualifies for the bypass before deciding to block them.
-  const isMaintenanceBypass = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
+  const isMaintenanceBypass = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
   if (maintenanceMode && !authLoading && !isMaintenanceBypass) {
     return (
       <div

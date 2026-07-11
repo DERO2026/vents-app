@@ -26,6 +26,7 @@ interface UserRow {
   is_verified: boolean;
   created_at: string;
   banned_until: string | null;
+  deleted_at?: string | null;
 }
 
 interface AuditLog {
@@ -35,9 +36,10 @@ interface AuditLog {
   created_at: string;
   admin_id: string;
   target_user_id: string | null;
+  actor_role?: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events';
+type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -47,6 +49,9 @@ interface EventRow {
   hidden_at: string | null;
   created_at: string;
   status: string | null;
+  image_url: string | null;
+  event_date: string | null;
+  'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
 // ─── Confirm Modal ─────────────────────────────────────────────────────────────
@@ -93,10 +98,13 @@ function ConfirmModal({
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-async function writeAuditLog(adminId: string, action: string, targetUserId: string | null, details: Record<string, any>) {
+// Takes the acting user's row so every audit entry can explicitly flag their
+// authorization level (Admin / Sub-Admin / Root) alongside the raw admin_id.
+async function writeAuditLog(actor: { id: string; role?: string }, action: string, targetUserId: string | null, details: Record<string, any>) {
+  const actorRole = actor.id === ROOT_UID ? 'root' : actor.role || 'unknown';
   await insforge.database
     .from('admin_logs')
-    .insert([{ admin_id: adminId, action, target_user_id: targetUserId, details }]);
+    .insert([{ admin_id: actor.id, action, target_user_id: targetUserId, details, actor_role: actorRole }]);
 }
 
 // Fires the confirmation/rejection email after an admin action succeeds.
@@ -489,6 +497,8 @@ export function AdminDashboardScreen({
   currentUser: any;
 }) {
   const isRoot = currentUser?.id === ROOT_UID;
+  const isSubAdmin = currentUser?.role === 'sub-admin';
+  const isAdminOrSubAdmin = currentUser?.role === 'admin' || isSubAdmin || isRoot;
   const [tab, setTab] = useState<Tab>('users');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -499,6 +509,10 @@ export function AdminDashboardScreen({
   const [logsLoading, setLogsLoading] = useState(false);
   const [reports, setReports] = useState<any[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportedUsers, setReportedUsers] = useState<Record<string, any>>({});
+  const [reportedEvents, setReportedEvents] = useState<Record<string, any>>({});
+  const [deletedUsers, setDeletedUsers] = useState<UserRow[]>([]);
+  const [deletedUsersLoading, setDeletedUsersLoading] = useState(false);
   const [eventSearch, setEventSearch] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -721,7 +735,7 @@ export function AdminDashboardScreen({
         p_reason: vcTransfer.reason.trim(),
       });
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'admin_vc_transfer', uid, {
+      await writeAuditLog(currentUser,'admin_vc_transfer', uid, {
         amount: Number(vcTransfer.amount),
         reason: vcTransfer.reason.trim(),
         recipient: vcSelectedUser?.username || uid.slice(0, 8),
@@ -754,11 +768,9 @@ export function AdminDashboardScreen({
         p_reason: vcDebit.reason.trim(),
       });
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'admin_vc_debit', uid, {
-        amount: Number(vcDebit.amount),
-        reason: vcDebit.reason.trim(),
-        target: vcSelectedUser?.username || uid.slice(0, 8),
-      });
+      // admin_debit_vents_cents already writes its own admin_logs row
+      // server-side (with an authoritative actor_role) — no client-side
+      // writeAuditLog call needed here.
       setVcDebitMsg(`✓ ${vcDebit.amount} VC debited from ${vcSelectedUser?.username || uid.slice(0, 8)}…`);
       setVcDebit({ amount: '', reason: '' });
       setVcTransfer({ userId: '', amount: '', reason: '' });
@@ -793,7 +805,8 @@ export function AdminDashboardScreen({
     try {
       let q = insforge.database
         .from('users')
-        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until')
+        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
+        .neq('status', 'deleted')
         .order('created_at', { ascending: false });
 
       if (searchQuery.trim()) {
@@ -811,13 +824,36 @@ export function AdminDashboardScreen({
     }
   }, [searchQuery]);
 
+  // ── Load soft-deleted users (Deleted Users tab) ──────────────────────────────
+  const loadDeletedUsers = useCallback(async () => {
+    setDeletedUsersLoading(true);
+    try {
+      const { data, error } = await insforge.database
+        .from('users')
+        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
+        .not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false });
+      if (error) throw error;
+      setDeletedUsers(data || []);
+    } catch (err: any) {
+      flash(false, err?.message || 'Failed to load deleted users.');
+    } finally {
+      setDeletedUsersLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminOrSubAdmin || tab !== 'deleted') return;
+    loadDeletedUsers();
+  }, [tab, isAdminOrSubAdmin, loadDeletedUsers]);
+
   // ── Load audit logs ──────────────────────────────────────────────────────────
   const loadLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
       const { data, error } = await insforge.database
         .from('admin_logs')
-        .select('id, action, details, created_at, admin_id, target_user_id')
+        .select('id, action, details, created_at, admin_id, target_user_id, actor_role')
         .order('created_at', { ascending: false })
         .limit(100);
       if (error) throw error;
@@ -839,19 +875,19 @@ export function AdminDashboardScreen({
   }, []);
 
   useEffect(() => {
-    if (currentUser?.role !== 'admin' && !isRoot) return;
+    if (!isAdminOrSubAdmin) return;
     loadUsers();
     if (isRoot) loadConfig();
   }, [loadUsers, currentUser, isRoot, loadConfig]);
 
   useEffect(() => {
-    if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'logs') return;
+    if ((!isAdminOrSubAdmin) || tab !== 'logs') return;
     loadLogs();
   }, [tab, loadLogs, currentUser, isRoot]);
 
   useEffect(() => {
     if (tab !== 'org-requests') return;
-    if (currentUser?.role !== 'admin' && !isRoot) return;
+    if (!isAdminOrSubAdmin) return;
     setOrgRequestsLoading(true);
     (async () => {
       try {
@@ -918,7 +954,7 @@ export function AdminDashboardScreen({
     try {
       const { data, error } = await insforge.database
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -929,26 +965,50 @@ export function AdminDashboardScreen({
   }, []);
 
   useEffect(() => {
-    if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'events') return;
+    if ((!isAdminOrSubAdmin) || tab !== 'events') return;
     loadEvents();
   }, [tab, loadEvents, currentUser, isRoot]);
 
   useEffect(() => {
-    if ((currentUser?.role !== 'admin' && !isRoot) || tab !== 'reports') return;
+    if ((!isAdminOrSubAdmin) || tab !== 'reports') return;
     setReportsLoading(true);
-    insforge.database
-      .from('reports')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(100)
-      .then(
-        ({ data, error }) => {
-          if (!error) setReports(data || []);
-          setReportsLoading(false);
-        },
-        (err) => { console.error('Reports fetch error:', err); setReportsLoading(false); }
-      );
-  }, [tab, currentUser, isRoot]);
+    (async () => {
+      try {
+        const { data, error } = await insforge.database
+          .from('reports')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const reportsData = data || [];
+        setReports(reportsData);
+
+        // Fetch full relational data for reported users/events so the
+        // Reports view shows more than raw UUIDs.
+        const userIds = [...new Set(reportsData.filter(r => r.target_type === 'user').map(r => r.target_id))];
+        const eventIds = [...new Set(reportsData.filter(r => r.target_type === 'event').map(r => r.target_id))];
+
+        if (userIds.length > 0) {
+          const { data: usersData } = await insforge.database
+            .from('users')
+            .select('id, username, full_name, email, avatar_url, is_verified, role, status')
+            .in('id', userIds);
+          setReportedUsers(Object.fromEntries((usersData || []).map((u: any) => [u.id, u])));
+        }
+        if (eventIds.length > 0) {
+          const { data: eventsData } = await insforge.database
+            .from('events')
+            .select('id, title, image_url, hidden_by_admin')
+            .in('id', eventIds);
+          setReportedEvents(Object.fromEntries((eventsData || []).map((e: any) => [e.id, e])));
+        }
+      } catch (err) {
+        console.error('Reports fetch error:', err);
+      } finally {
+        setReportsLoading(false);
+      }
+    })();
+  }, [tab, isAdminOrSubAdmin]);
 
   const handleUpdateReport = async (id: string, status: string) => {
     const { error } = await insforge.database.from('reports').update({ status }).eq('id', id);
@@ -983,6 +1043,10 @@ export function AdminDashboardScreen({
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (userId === ROOT_UID) { flash(false, 'Root admin role cannot be changed.'); return; }
     if (!['attendee', 'organizer'].includes(newRole)) { flash(false, 'Invalid role.'); return; }
+    const target = users.find(u => u.id === userId);
+    if (isSubAdmin && target && ['admin', 'sub-admin'].includes(target.role)) {
+      flash(false, 'Sub-Admins cannot alter Admin/Sub-Admin accounts.'); return;
+    }
     setBusyId(userId);
     try {
       const { error } = await insforge.database.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
@@ -1002,7 +1066,7 @@ export function AdminDashboardScreen({
       try {
         const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null }).eq('id', u.id);
         if (error) throw error;
-        await writeAuditLog(currentUser.id, 'unsuspend_user', u.id, { target_email: u.email });
+        await writeAuditLog(currentUser,'unsuspend_user', u.id, { target_email: u.email });
         setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
         flash(true, 'User reactivated.');
       } catch (err: any) {
@@ -1016,7 +1080,7 @@ export function AdminDashboardScreen({
     try {
       const { error } = await insforge.database.from('users').update({ status: 'suspended', banned_until: bannedUntil }).eq('id', u.id);
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'suspend_user', u.id, { target_email: u.email, ban_days: banDays ?? 'permanent', banned_until: bannedUntil });
+      await writeAuditLog(currentUser,'suspend_user', u.id, { target_email: u.email, ban_days: banDays ?? 'permanent', banned_until: bannedUntil });
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'suspended', banned_until: bannedUntil } : x));
       flash(true, banDays ? `Banned for ${banDays} day(s).` : 'Permanently banned.');
     } catch (err: any) {
@@ -1034,11 +1098,14 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         setBusyId(u.id);
         try {
-          const { error } = await insforge.database.from('users').update({ status: 'deleted' }).eq('id', u.id);
+          const deletedAt = new Date().toISOString();
+          const { error } = await insforge.database.from('users').update({ status: 'deleted', deleted_at: deletedAt }).eq('id', u.id);
           if (error) throw error;
-          await writeAuditLog(currentUser.id, 'delete_user', u.id, { target_email: u.email });
-          setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'deleted' } : x));
-          flash(true, 'User deleted. Use Reinstate to restore.');
+          await writeAuditLog(currentUser,'delete_user', u.id, { target_email: u.email });
+          // Deleted users no longer show in the main Users list — they move
+          // to the dedicated Deleted Users tab (queried on deleted_at).
+          setUsers(prev => prev.filter(x => x.id !== u.id));
+          flash(true, 'User deleted. Use Reinstate (Deleted Users tab) to restore.');
         } catch (err: any) {
           flash(false, err?.message || 'Failed to delete user.');
         } finally { setBusyId(null); }
@@ -1049,10 +1116,11 @@ export function AdminDashboardScreen({
   const handleReinstate = async (u: UserRow) => {
     setBusyId(u.id);
     try {
-      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null }).eq('id', u.id);
+      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null, deleted_at: null }).eq('id', u.id);
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'reinstate_user', u.id, { target_email: u.email, previous_status: u.status });
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
+      await writeAuditLog(currentUser,'reinstate_user', u.id, { target_email: u.email, previous_status: u.status });
+      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null, deleted_at: null } : x));
+      setDeletedUsers(prev => prev.filter(x => x.id !== u.id));
       flash(true, 'User reinstated.');
     } catch (err: any) {
       flash(false, err?.message || 'Failed to reinstate user.');
@@ -1065,7 +1133,7 @@ export function AdminDashboardScreen({
     try {
       const { error } = await insforge.database.from('users').update({ is_verified: newVerified }).eq('id', u.id);
       if (error) throw error;
-      await writeAuditLog(currentUser.id, 'toggle_verification', u.id, { is_verified: newVerified, target_email: u.email });
+      await writeAuditLog(currentUser,'toggle_verification', u.id, { is_verified: newVerified, target_email: u.email });
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_verified: newVerified } : x));
       flash(true, `User ${newVerified ? 'verified ✓' : 'unverified'}.`);
     } catch (err: any) {
@@ -1087,7 +1155,7 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         try {
           await insforge.database.from('app_config').update({ maintenance_mode: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser.id, next ? 'ROOT_maintenance_on' : 'ROOT_maintenance_off', null, {});
+          await writeAuditLog(currentUser,next ? 'ROOT_maintenance_on' : 'ROOT_maintenance_off', null, {});
           setMaintenanceMode(next);
           flash(true, `Maintenance mode ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update maintenance mode.'); }
@@ -1108,7 +1176,7 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         try {
           await insforge.database.from('app_config').update({ voice_notes_enabled: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser.id, next ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off', null, {});
+          await writeAuditLog(currentUser,next ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off', null, {});
           setVoiceNotesEnabled(next);
           flash(true, `Voice notes ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update voice notes toggle.'); }
@@ -1129,7 +1197,7 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         try {
           await insforge.database.from('app_config').update({ image_sharing_enabled: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser.id, next ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off', null, {});
+          await writeAuditLog(currentUser,next ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off', null, {});
           setImageSharingEnabled(next);
           flash(true, `Image sharing ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update image sharing toggle.'); }
@@ -1152,7 +1220,7 @@ export function AdminDashboardScreen({
             .rpc('admin_broadcast', { p_title: 'Announcement from VENTS', p_body: broadcastMsg, p_type: 'promo' });
           if (broadcastErr) throw broadcastErr;
           const allUsers = { length: recipientCount ?? 0 };
-          await writeAuditLog(currentUser.id, 'ROOT_broadcast', null, { message: broadcastMsg, recipients: allUsers?.length ?? 0 });
+          await writeAuditLog(currentUser,'ROOT_broadcast', null, { message: broadcastMsg, recipients: allUsers?.length ?? 0 });
           setBroadcastMsg('');
           flash(true, `Broadcast sent to ${allUsers?.length ?? 0} users.`);
         } catch (err: any) { console.error('Broadcast error:', JSON.stringify(err), err?.message, err?.code, err?.details); flash(false, err?.message || 'Failed to broadcast.'); }
@@ -1197,7 +1265,7 @@ export function AdminDashboardScreen({
             .eq('status', 'active')
             .neq('id', ROOT_UID);
           if (error) throw error;
-          await writeAuditLog(currentUser.id, 'ROOT_bulk_suspend_unverified', null, {});
+          await writeAuditLog(currentUser,'ROOT_bulk_suspend_unverified', null, {});
           flash(true, 'Unverified accounts suspended.');
           loadUsers();
         } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); }
@@ -1206,7 +1274,7 @@ export function AdminDashboardScreen({
   };
 
   // ── Access guard ─────────────────────────────────────────────────────────────
-  if (currentUser?.role !== 'admin' && !isRoot) {
+  if (!isAdminOrSubAdmin) {
     return (
       <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
         <Shield size={48} color="#EF4444" style={{ marginBottom: '16px' }} />
@@ -1224,6 +1292,7 @@ export function AdminDashboardScreen({
   // ── Colour helpers ────────────────────────────────────────────────────────────
   const roleBg = (role: string) => ({
     admin: { text: '#EF4444', bg: 'rgba(239,68,68,0.1)' },
+    'sub-admin': { text: '#F59E0B', bg: 'rgba(245,158,11,0.1)' },
     organizer: { text: '#A78BFA', bg: 'rgba(167,139,250,0.1)' },
     attendee: { text: '#60A5FA', bg: 'rgba(96,165,250,0.1)' },
   }[role] ?? { text: '#10B981', bg: 'rgba(16,185,129,0.1)' });
@@ -1233,6 +1302,7 @@ export function AdminDashboardScreen({
 
   const tabs = [
     { key: 'users' as Tab, label: 'Users', icon: <Users size={14} /> },
+    { key: 'deleted' as Tab, label: 'Deleted Users', icon: <Trash2 size={14} /> },
     { key: 'events' as Tab, label: 'Events', icon: <Shield size={14} /> },
     { key: 'logs' as Tab, label: 'Audit Log', icon: <ClipboardList size={14} /> },
     { key: 'reports' as Tab, label: 'Reports', icon: <Flag size={14} /> },
@@ -1269,6 +1339,7 @@ export function AdminDashboardScreen({
           <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
             Admin Console
             {isRoot && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#A855F7', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>ROOT</span>}
+            {isSubAdmin && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>SUB-ADMIN</span>}
           </h1>
           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>Secure user management & audit trail</p>
         </div>
@@ -1397,17 +1468,24 @@ export function AdminDashboardScreen({
 
                       {/* Actions row */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid rgba(255,255,255,0.03)', paddingTop: '10px' }}>
-                        <select
-                          value={u.role}
-                          onChange={e => handleRoleChange(u.id, e.target.value)}
-                          disabled={isBusy || isRootUser}
-                          style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
-                        >
-                          <option value="user">User</option>
-                          <option value="attendee">Attendee</option>
-                          <option value="organizer">Organizer</option>
-                          <option value="admin">Admin</option>
-                        </select>
+                        {isRootUser ? (
+                          <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Shield size={12} /> Root — role locked
+                          </span>
+                        ) : (
+                          <select
+                            value={['attendee', 'organizer'].includes(u.role) ? u.role : ''}
+                            onChange={e => handleRoleChange(u.id, e.target.value)}
+                            disabled={isBusy}
+                            style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
+                          >
+                            {!['attendee', 'organizer'].includes(u.role) && (
+                              <option value="" disabled>{u.role}</option>
+                            )}
+                            <option value="attendee">Attendee</option>
+                            <option value="organizer">Organizer</option>
+                          </select>
+                        )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                           {/* Verify toggle */}
@@ -1420,17 +1498,8 @@ export function AdminDashboardScreen({
                             <BadgeCheck size={13} />
                           </button>
 
-                          {/* Ban / Unban / Reinstate */}
-                          {u.status === 'deleted' ? (
-                            <button
-                              onClick={() => handleReinstate(u)}
-                              disabled={isBusy || isRootUser}
-                              title="Reinstate deleted account"
-                              style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '5px 8px', color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 600 }}
-                            >
-                              <UserCheck size={13} /> Reinstate
-                            </button>
-                          ) : u.status === 'suspended' ? (
+                          {/* Ban / Unban */}
+                          {u.status === 'suspended' ? (
                             <button
                               onClick={() => handleSuspend(u)}
                               disabled={isBusy || isRootUser}
@@ -1459,15 +1528,18 @@ export function AdminDashboardScreen({
                             </select>
                           )}
 
-                          {/* Delete */}
-                          <button
-                            onClick={() => handleSoftDelete(u)}
-                            disabled={isBusy || u.id === currentUser?.id || isRootUser}
-                            title="Delete account"
-                            style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '5px 8px', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                          >
-                            <Trash2 size={13} />
-                          </button>
+                          {/* Delete — unmounted entirely for the Root account,
+                              not merely disabled, per immutable-root policy */}
+                          {!isRootUser && (
+                            <button
+                              onClick={() => handleSoftDelete(u)}
+                              disabled={isBusy || u.id === currentUser?.id}
+                              title="Delete account"
+                              style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '8px', padding: '5px 8px', color: '#EF4444', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1477,6 +1549,44 @@ export function AdminDashboardScreen({
             )}
           </div>
         </>
+      )}
+
+      {/* ════════════════ DELETED USERS TAB ═══════════════════════════════ */}
+      {tab === 'deleted' && (
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px' }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: 0, marginBottom: '12px' }}>
+            Soft-deleted accounts (deleted_at set). Reinstating restores login and visibility immediately.
+          </p>
+          {deletedUsersLoading ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading deleted users…</div>
+          ) : deletedUsers.length === 0 ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No deleted users.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {deletedUsers.map(u => {
+                const isBusy = busyId === u.id;
+                return (
+                  <div key={u.id} style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(239,68,68,0.15)', padding: '14px', display: 'flex', flexDirection: 'column', gap: '8px', opacity: isBusy ? 0.6 : 1 }}>
+                    <div>
+                      <h4 style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0 }}>{u.full_name || 'No Name'}</h4>
+                      <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>@{u.username || 'no_username'} · {u.email}</p>
+                    </div>
+                    <p style={{ color: '#EF4444', fontSize: '11px', margin: 0 }}>
+                      Deleted {u.deleted_at ? new Date(u.deleted_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' }) : 'unknown time'}
+                    </p>
+                    <button
+                      onClick={() => handleReinstate(u)}
+                      disabled={isBusy}
+                      style={{ alignSelf: 'flex-start', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '6px 12px', color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 600 }}
+                    >
+                      <UserCheck size={13} /> Reinstate
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ════════════════ EVENTS TAB ══════════════════════════════════════ */}
@@ -1507,14 +1617,30 @@ export function AdminDashboardScreen({
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No events found.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).map(ev => (
-                <div key={ev.id} style={{ background: '#090514', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).map(ev => {
+                const organizer = ev['users!events_organizer_id_fkey'];
+                return (
+                <div key={ev.id} style={{ background: '#090514', borderRadius: '14px', border: `1px solid ${ev.hidden_by_admin ? 'rgba(239,68,68,0.2)' : 'rgba(255,255,255,0.04)'}`, padding: '12px 14px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {ev.image_url
+                      ? <img src={ev.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <Shield size={18} color="#555C7A" />}
+                  </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {ev.title || '(Untitled)'}
                     </span>
-                    <span style={{ color: '#555C7A', fontSize: '11px' }}>
-                      {ev.hidden_by_admin ? '🚫 Hidden' : '✅ Visible'} · {new Date(ev.created_at).toLocaleDateString()}
+                    <span style={{ color: '#8B8FA8', fontSize: '11px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#10B981', fontWeight: 600 }}>
+                        {ev.hidden_by_admin ? 'Hidden' : 'Visible'}
+                      </span>
+                      · {organizer?.username ? `@${organizer.username}` : 'Unknown organizer'}
+                      {organizer?.is_verified && <BadgeCheck size={12} color="#3B82F6" />}
+                    </span>
+                    <span style={{ color: '#555C7A', fontSize: '10px', display: 'block', marginTop: '2px' }}>
+                      Created {new Date(ev.created_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
+                      {ev.event_date && ` · Event date ${new Date(ev.event_date).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}`}
+                      {ev.hidden_by_admin && ev.hidden_at && ` · Hidden ${new Date(ev.hidden_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}`}
                     </span>
                   </div>
                   <button
@@ -1524,7 +1650,8 @@ export function AdminDashboardScreen({
                     {ev.hidden_by_admin ? 'Reinstate' : 'Hide'}
                   </button>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1553,6 +1680,16 @@ export function AdminDashboardScreen({
                         {new Date(log.created_at).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short' })}
                       </span>
                     </div>
+                    {log.actor_role && (
+                      <span style={{
+                        alignSelf: 'flex-start', fontSize: '9px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+                        color: log.actor_role === 'root' ? '#A855F7' : log.actor_role === 'sub-admin' ? '#F59E0B' : '#EF4444',
+                        background: log.actor_role === 'root' ? 'rgba(168,85,247,0.12)' : log.actor_role === 'sub-admin' ? 'rgba(245,158,11,0.12)' : 'rgba(239,68,68,0.12)',
+                        padding: '2px 6px', borderRadius: '4px',
+                      }}>
+                        Executed by: {log.actor_role === 'root' ? 'Root' : log.actor_role === 'sub-admin' ? 'Sub-Admin' : log.actor_role === 'admin' ? 'Admin' : log.actor_role}
+                      </span>
+                    )}
                     {Object.keys(log.details).length > 0 && (
                       <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0, wordBreak: 'break-all' }}>
                         {Object.entries(log.details).map(([k, v]) => `${k}: ${v}`).join(' · ')}
@@ -1580,6 +1717,8 @@ export function AdminDashboardScreen({
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {reports.map(r => {
                 const statusColor = r.status === 'pending' ? '#F59E0B' : r.status === 'actioned' ? '#EF4444' : r.status === 'dismissed' ? '#6B7280' : '#10B981';
+                const reportedUser = r.target_type === 'user' ? reportedUsers[r.target_id] : null;
+                const reportedEvent = r.target_type === 'event' ? reportedEvents[r.target_id] : null;
                 return (
                   <div key={r.id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
@@ -1587,12 +1726,45 @@ export function AdminDashboardScreen({
                         <span style={{ fontSize: '11px', fontWeight: 700, color: statusColor, background: `${statusColor}20`, padding: '2px 8px', borderRadius: '6px' }}>{r.status}</span>
                         <span style={{ fontSize: '11px', color: '#A78BFA', marginLeft: '8px', background: 'rgba(167,139,250,0.12)', padding: '2px 8px', borderRadius: '6px' }}>{r.target_type}</span>
                       </div>
-                      <span style={{ color: '#555C7A', fontSize: '10px' }}>{new Date(r.created_at).toLocaleDateString()}</span>
+                      <span style={{ color: '#555C7A', fontSize: '10px' }}>{new Date(r.created_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}</span>
                     </div>
+
+                    {/* Reported entity — full relational data instead of a raw UUID */}
+                    {reportedUser ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '8px 10px', margin: '0 0 8px' }}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                          {reportedUser.avatar_url
+                            ? <img src={reportedUser.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700 }}>{(reportedUser.full_name || reportedUser.username || '?')[0].toUpperCase()}</span>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{reportedUser.full_name || reportedUser.username || 'Unknown'}</span>
+                            {reportedUser.is_verified && <BadgeCheck size={12} color="#3B82F6" />}
+                            <span style={{ fontSize: '9px', color: statusColour(reportedUser.status), fontWeight: 600 }}>● {reportedUser.status}</span>
+                          </div>
+                          <span style={{ color: '#8B8FA8', fontSize: '11px' }}>@{reportedUser.username} · {reportedUser.email}</span>
+                        </div>
+                      </div>
+                    ) : reportedEvent ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '8px 10px', margin: '0 0 8px' }}>
+                        <div style={{ width: '28px', height: '28px', borderRadius: '8px', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {reportedEvent.image_url
+                            ? <img src={reportedEvent.image_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            : <Shield size={13} color="#555C7A" />}
+                        </div>
+                        <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>
+                          {reportedEvent.title || '(Untitled event)'}{reportedEvent.hidden_by_admin ? ' · Hidden' : ''}
+                        </span>
+                      </div>
+                    ) : (
+                      <p style={{ color: '#555C7A', fontSize: '10px', margin: '0 0 8px', fontFamily: 'monospace' }}>Target: {r.target_id}</p>
+                    )}
+
                     <p style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 600, margin: '0 0 4px' }}>{r.reason}</p>
                     {r.details && <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 6px' }}>{r.details}</p>}
                     <p style={{ color: '#555C7A', fontSize: '10px', margin: '0 0 10px' }}>
-                      Target: {r.target_id?.slice(0, 8)}… · Reporter: {r.reporter_id?.slice(0, 8)}…
+                      Reporter: {r.reporter_id?.slice(0, 8)}…
                     </p>
                     {r.status === 'pending' && (
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -1891,7 +2063,7 @@ export function AdminDashboardScreen({
                   onClick={async () => {
                     const { error } = await insforge.database.from('users').update({ is_verified: true }).eq('id', u.id);
                     if (!error) {
-                      await writeAuditLog(currentUser.id, 'verify_organizer', u.id, { username: u.username, email: u.email });
+                      await writeAuditLog(currentUser,'verify_organizer', u.id, { username: u.username, email: u.email });
                       setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
                       flash(true, `@${u.username} verified ✓`);
                     } else flash(false, error.message);
@@ -1904,7 +2076,7 @@ export function AdminDashboardScreen({
                   onClick={async () => {
                     const { error } = await insforge.database.from('users').update({ role: 'attendee' }).eq('id', u.id);
                     if (!error) {
-                      await writeAuditLog(currentUser.id, 'reject_organizer', u.id, { username: u.username });
+                      await writeAuditLog(currentUser,'reject_organizer', u.id, { username: u.username });
                       setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
                       flash(false, `@${u.username} demoted to attendee.`);
                     } else flash(false, error.message);
