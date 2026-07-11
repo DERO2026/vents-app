@@ -44,6 +44,7 @@ export function UserProfileScreen({
   const isOwnProfile = currentUserId === user.id;
   const [showReport, setShowReport] = useState(false);
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
   const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
@@ -79,6 +80,10 @@ export function UserProfileScreen({
   useEffect(() => {
     setCoverLoadFailed(false);
   }, [user.cover_url]);
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [user.avatar_url]);
 
   useEffect(() => {
     setEventsCreated(0);
@@ -203,7 +208,7 @@ export function UserProfileScreen({
             width: '72px',
             height: '72px',
             borderRadius: '20px',
-            background: user.avatar_url ? 'transparent' : user.avatarColor,
+            background: (user.avatar_url && !avatarLoadFailed) ? 'transparent' : user.avatarColor,
             border: '3px solid #020005',
             display: 'flex',
             alignItems: 'center',
@@ -212,8 +217,13 @@ export function UserProfileScreen({
             overflow: 'hidden',
           }}
         >
-          {user.avatar_url ? (
-            <img src={user.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          {user.avatar_url && !avatarLoadFailed ? (
+            <img
+              src={user.avatar_url}
+              alt="Avatar"
+              style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              onError={() => setAvatarLoadFailed(true)}
+            />
           ) : (
             <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>
               {user.avatarInitials}
@@ -345,19 +355,21 @@ export function UserProfileScreen({
         {user.bio}
       </p>
 
-      {/* Location */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '5px',
-          padding: '0 16px',
-          marginBottom: '16px',
-        }}
-      >
-        <MapPin size={13} color="#8B8FA8" />
-        <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{user.city}, Nigeria</span>
-      </div>
+      {/* Location — hidden entirely when unset rather than showing a fake/blank state */}
+      {user.city && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '5px',
+            padding: '0 16px',
+            marginBottom: '16px',
+          }}
+        >
+          <MapPin size={13} color="#8B8FA8" />
+          <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{user.city}, Nigeria</span>
+        </div>
+      )}
 
       {/* Stats row */}
       <div

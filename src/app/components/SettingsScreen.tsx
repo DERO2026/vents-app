@@ -10,6 +10,7 @@ import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
+import { NIGERIA_STATES } from './StateSelectScreen';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
@@ -18,7 +19,7 @@ interface SettingsScreenProps {
   onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
-  onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string }) => void;
+  onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
 }
 
 type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
@@ -340,6 +341,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
   const [phone, setPhone] = useState('');
+  const [stateValue, setStateValue] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -406,6 +408,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           setUsername(data.username || '');
           setBio(data.bio || '');
           setPhone(data.phone_number || '');
+          setStateValue(data.state || '');
           setAvatarUrl(data.avatar_url || '');
           setCoverUrl(data.cover_url || '');
         }
@@ -556,7 +559,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           full_name: sanitize(name),
           username: sanitize(username).toLowerCase(),
           bio: sanitize(bio),
-          phone_number: cleanPhone
+          phone_number: cleanPhone,
+          state: stateValue || null,
         })
         .eq('id', currentUser.id);
 
@@ -566,7 +570,8 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           full_name: sanitize(name),
           username: sanitize(username).toLowerCase(),
           bio: sanitize(bio),
-          phone_number: cleanPhone
+          phone_number: cleanPhone,
+          state: stateValue || undefined,
         });
       }
       setSaved(true);
@@ -716,6 +721,19 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                     Enter a valid Nigerian number (e.g. +234 801 234 5678)
                   </p>
                 )}
+              </div>
+              <div>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Location</p>
+                <select
+                  value={stateValue}
+                  onChange={(e) => setStateValue(e.target.value)}
+                  style={{ ...inputStyle, cursor: 'pointer', appearance: 'none' as const }}
+                >
+                  <option value="">Select your state</option>
+                  {NIGERIA_STATES.map((st) => (
+                    <option key={st.name} value={st.name}>{st.name}</option>
+                  ))}
+                </select>
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Bio</p>

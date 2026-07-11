@@ -96,11 +96,16 @@ export function ProfileScreen({
     } catch { /* ignore */ }
   };
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
+  const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [freshCoverUrl, setFreshCoverUrl] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     setCoverLoadFailed(false);
   }, [currentUser?.cover_url]);
+
+  useEffect(() => {
+    setAvatarLoadFailed(false);
+  }, [currentUser?.avatar_url]);
 
   // currentUser.cover_url is now populated immediately at login/signup (see
   // AuthScreen.tsx), so this DB round-trip is only needed as a fallback for
@@ -399,8 +404,13 @@ export function ProfileScreen({
                     boxSizing: 'border-box',
                   }}
                 >
-                  {currentUser?.avatar_url ? (
-                    <img src={currentUser.avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  {currentUser?.avatar_url && !avatarLoadFailed ? (
+                    <img
+                      src={currentUser.avatar_url}
+                      alt="Avatar"
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={() => setAvatarLoadFailed(true)}
+                    />
                   ) : (
                     <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>{initial}</span>
                   )}
@@ -435,7 +445,16 @@ export function ProfileScreen({
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
                   <MapPin size={12} color="#8B8FA8" />
-                  <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{currentUser?.state || 'Lagos'}, Nigeria</span>
+                  {currentUser?.state ? (
+                    <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{currentUser.state}, Nigeria</span>
+                  ) : (
+                    <button
+                      onClick={() => onNavigate('settings')}
+                      style={{ background: 'none', border: 'none', padding: 0, color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Add your state
+                    </button>
+                  )}
                 </div>
                 <div className="flex items-center gap-1 mt-1" style={{ flexWrap: 'wrap', gap: '6px' }}>
                   <div

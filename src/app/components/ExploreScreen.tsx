@@ -27,7 +27,7 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     username: dbUser.username || (dbUser.email ? dbUser.email.split('@')[0] : null) || dbUser.id?.slice(0, 8) || 'user',
     avatarColor,
     avatarInitials: initials,
-    city: dbUser.state || 'Lagos',
+    city: dbUser.state || '',
     bio: dbUser.bio || 'Hello, I am using Vents!',
     eventsAttended: 0,
     interests: Array.isArray(dbUser.interests) ? dbUser.interests : [],

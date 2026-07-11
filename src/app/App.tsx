@@ -284,9 +284,13 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval); };
   }, [currentUser?.id, currentUser?.role]);
 
-  // Load current user and profile on mount
-  useEffect(() => {
-    async function hydrateAuth() {
+  // Load current user and profile. Extracted as a stable callback (not just
+  // inline in the mount effect) so it can also be re-run on bfcache restore
+  // (see the pageshow effect below) — without that, backgrounding the app on
+  // mobile and returning to it could show a frozen, stale-role snapshot of
+  // the page indefinitely, since bfcache restores the DOM without re-running
+  // React effects.
+  const hydrateAuth = useCallback(async () => {
       try {
         const params = new URLSearchParams(window.location.search);
         
@@ -482,9 +486,25 @@ export default function App() {
       } finally {
         setAuthLoading(false);
       }
-    }
-    hydrateAuth();
   }, []);
+
+  useEffect(() => { hydrateAuth(); }, [hydrateAuth]);
+
+  // Re-validate the session whenever the page is restored from the
+  // back/forward cache (bfcache) — e.g. a mobile browser backgrounded and
+  // resumed. Without this, the user could briefly (or indefinitely, until
+  // some other effect happens to re-fire) see whatever role-gated UI was
+  // frozen into the cached snapshot before it was backgrounded.
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        setAuthLoading(true);
+        hydrateAuth();
+      }
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
+  }, [hydrateAuth]);
 
   // Item 4: Load organizer's events from DB on mount/user change
   useEffect(() => {

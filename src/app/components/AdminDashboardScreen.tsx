@@ -1522,44 +1522,49 @@ export function AdminDashboardScreen({
                         )}
 
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          {/* Verify toggle */}
-                          <button
-                            onClick={() => handleToggleVerify(u)}
-                            disabled={isBusy || isRootUser}
-                            title={u.is_verified ? 'Remove verification' : 'Verify account'}
-                            style={{ background: u.is_verified ? 'rgba(59,130,246,0.12)' : 'rgba(107,114,128,0.12)', border: `1px solid ${u.is_verified ? 'rgba(59,130,246,0.3)' : 'rgba(107,114,128,0.3)'}`, borderRadius: '8px', padding: '5px 8px', color: u.is_verified ? '#3B82F6' : '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                          >
-                            <BadgeCheck size={13} />
-                          </button>
-
-                          {/* Ban / Unban */}
-                          {u.status === 'suspended' ? (
+                          {/* Verify toggle — unmounted entirely (not merely
+                              disabled) for a Sub-Admin viewing the Root row */}
+                          {!(isSubAdmin && isRootUser) && (
                             <button
-                              onClick={() => handleSuspend(u)}
+                              onClick={() => handleToggleVerify(u)}
                               disabled={isBusy || isRootUser}
-                              title={u.banned_until ? `Banned until ${new Date(u.banned_until).toLocaleDateString()}` : 'Permanently banned — click to unban'}
-                              style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '5px 8px', color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              title={u.is_verified ? 'Remove verification' : 'Verify account'}
+                              style={{ background: u.is_verified ? 'rgba(59,130,246,0.12)' : 'rgba(107,114,128,0.12)', border: `1px solid ${u.is_verified ? 'rgba(59,130,246,0.3)' : 'rgba(107,114,128,0.3)'}`, borderRadius: '8px', padding: '5px 8px', color: u.is_verified ? '#3B82F6' : '#6B7280', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             >
-                              <UserCheck size={13} />
+                              <BadgeCheck size={13} />
                             </button>
-                          ) : (
-                            <select
-                              disabled={isBusy || isRootUser}
-                              defaultValue=""
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                if (!val) return;
-                                e.target.value = '';
-                                handleSuspend(u, val === 'permanent' ? null : Number(val));
-                              }}
-                              style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: 'pointer', outline: 'none' }}
-                            >
-                              <option value="" disabled>🚫 Ban</option>
-                              <option value="1">1 day</option>
-                              <option value="7">7 days</option>
-                              <option value="30">30 days</option>
-                              <option value="permanent">Permanent</option>
-                            </select>
+                          )}
+
+                          {/* Ban / Unban / Suspend — same guardrail */}
+                          {!(isSubAdmin && isRootUser) && (
+                            u.status === 'suspended' ? (
+                              <button
+                                onClick={() => handleSuspend(u)}
+                                disabled={isBusy || isRootUser}
+                                title={u.banned_until ? `Banned until ${new Date(u.banned_until).toLocaleDateString()}` : 'Permanently banned — click to unban'}
+                                style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '5px 8px', color: '#10B981', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                              >
+                                <UserCheck size={13} />
+                              </button>
+                            ) : (
+                              <select
+                                disabled={isBusy || isRootUser}
+                                defaultValue=""
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  if (!val) return;
+                                  e.target.value = '';
+                                  handleSuspend(u, val === 'permanent' ? null : Number(val));
+                                }}
+                                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: 'pointer', outline: 'none' }}
+                              >
+                                <option value="" disabled>🚫 Ban</option>
+                                <option value="1">1 day</option>
+                                <option value="7">7 days</option>
+                                <option value="30">30 days</option>
+                                <option value="permanent">Permanent</option>
+                              </select>
+                            )
                           )}
 
                           {/* Delete — unmounted entirely for the Root account,
@@ -1766,10 +1771,11 @@ export function AdminDashboardScreen({
                     {/* Reported entity — full relational data instead of a raw UUID */}
                     {reportedUser ? (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '8px 10px', margin: '0 0 8px' }}>
-                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
-                          {reportedUser.avatar_url
-                            ? <img src={reportedUser.avatar_url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            : <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700 }}>{(reportedUser.full_name || reportedUser.username || '?')[0].toUpperCase()}</span>}
+                        <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', position: 'relative' }}>
+                          <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700 }}>{(reportedUser.full_name || reportedUser.username || '?')[0].toUpperCase()}</span>
+                          {reportedUser.avatar_url && (
+                            <img src={reportedUser.avatar_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                          )}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1902,11 +1908,11 @@ export function AdminDashboardScreen({
                     onClick={() => { setVcSelectedUser(u); setVcTransfer(v => ({ ...v, userId: u.id })); setVcSearchResults([]); setVcSearch(''); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', textAlign: 'left' }}
                   >
-                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      {u.avatar_url
-                        ? <img src={u.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                        : <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(u.full_name || u.username || '?')[0].toUpperCase()}</span>
-                      }
+                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                      <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(u.full_name || u.username || '?')[0].toUpperCase()}</span>
+                      {u.avatar_url && (
+                        <img src={u.avatar_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                      )}
                     </div>
                     <div>
                       <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{u.full_name || u.username || 'Unknown'}</div>
@@ -1920,11 +1926,11 @@ export function AdminDashboardScreen({
             {/* Selected user preview */}
             {vcSelectedUser && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '10px', padding: '10px 12px' }}>
-                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {vcSelectedUser.avatar_url
-                    ? <img src={vcSelectedUser.avatar_url} style={{ width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }} />
-                    : <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(vcSelectedUser.full_name || vcSelectedUser.username || '?')[0].toUpperCase()}</span>
-                  }
+                <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                  <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(vcSelectedUser.full_name || vcSelectedUser.username || '?')[0].toUpperCase()}</span>
+                  {vcSelectedUser.avatar_url && (
+                    <img src={vcSelectedUser.avatar_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                  )}
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>✓ {vcSelectedUser.full_name || vcSelectedUser.username}</div>

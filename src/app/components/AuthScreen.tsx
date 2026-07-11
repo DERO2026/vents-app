@@ -557,7 +557,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             return;
           }
 
-          const dbRole = (profile?.role === 'admin') ? 'admin' : (profile?.role === 'organizer' || profile?.role === 'organiser') ? 'organizer' : 'attendee';
+          // Reflect the real role from the DB as-is — narrowing this to only
+          // 'admin'/'organizer'/'attendee' silently demoted every other real
+          // role (e.g. 'sub-admin', or the legacy 'user' default) to
+          // 'attendee' on every single login.
+          const dbRole = profile?.role || 'attendee';
           const profilePayload = {
             id: data.user.id,
             email: data.user.email,
@@ -568,7 +572,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             state: profile?.state || data.user.user_metadata?.state,
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
             cover_url: profile?.cover_url,
-            isOrganizer: dbRole === 'organizer',
+            isOrganizer: dbRole === 'organizer' || dbRole === 'organiser',
             is_verified: profile?.is_verified === true,
             vc_badge: profile?.vc_badge,
           };

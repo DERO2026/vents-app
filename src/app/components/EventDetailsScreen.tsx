@@ -780,30 +780,32 @@ export function EventDetailsScreen({
             cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
           }}
         >
-          {organizerProfile?.avatar_url ? (
-            <img
-              src={organizerProfile.avatar_url}
-              alt=""
-              style={{ width: '44px', height: '44px', borderRadius: '12px', objectFit: 'cover', flexShrink: 0 }}
-            />
-          ) : (
-            <div
-              style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-                {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
-              </span>
-            </div>
-          )}
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
+            </span>
+            {organizerProfile?.avatar_url && (
+              <img
+                src={organizerProfile.avatar_url}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            )}
+          </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
               <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
