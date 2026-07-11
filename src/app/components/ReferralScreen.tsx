@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
+import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 
 const MAX_REFERRALS = 5;
 const CENTS_PER_REFERRAL = 300;
@@ -60,14 +61,14 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     async function load() {
       setLoading(true);
       try {
-        const [refsRes, walletRes, userRes, bonusRes] = await Promise.all([
+        const [refsRes, walletResult, userRes, bonusRes] = await Promise.all([
           insforge.database.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
-          insforge.database.rpc('get_my_vc_balance' as any),
+          getVcBalance(currentUser!.id),
           insforge.database.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
           insforge.database.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
         ]);
         if (refsRes.data) setReferrals(refsRes.data);
-        setBalance((walletRes.data as any)?.spendable ?? 0);
+        setBalance(walletResult?.spendable ?? 0);
         if (userRes.data) {
           setCurrentBadge(userRes.data.vc_badge ?? null);
           setFeaturedUntil(userRes.data.vc_featured_until ?? null);
@@ -103,6 +104,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     try {
       const { error } = await insforge.database.rpc('purchase_badge' as any, { p_badge_type: type });
       if (error) throw error;
+      invalidateVcBalanceCache();
       setCurrentBadge(type);
       setBalance((prev) => prev - cost);
       setBadgeMsg(`${type.charAt(0).toUpperCase() + type.slice(1)} badge activated!`);
@@ -117,6 +119,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       const { data, error } = await insforge.database.rpc('claim_profile_bonus' as any);
       if (error) throw error;
       if ((data as any)?.success) {
+        invalidateVcBalanceCache();
         setProfileBonusClaimed(true);
         setBalance((prev) => prev + 100);
         setProfileBonusMsg('+100 VC awarded!');
@@ -133,6 +136,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     try {
       const { error } = await insforge.database.rpc('feature_in_people_vc' as any);
       if (error) throw error;
+      invalidateVcBalanceCache();
       setBalance((prev) => prev - 150);
       const newUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
       setFeaturedUntil(newUntil);

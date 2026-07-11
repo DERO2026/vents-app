@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, BadgeCheck, Calendar, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
+import { ArrowLeft, MapPin, BadgeCheck, Star, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
-import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { ReportModal } from './ReportModal';
 import { reviewSchema, firstValidationError } from '../../lib/schemas';
@@ -53,7 +52,6 @@ export function UserProfileScreen({
   const isVerified = user.is_verified || user.id === ROOT_UID;
   const isOwnProfile = currentUserId === user.id;
   const [showReport, setShowReport] = useState(false);
-  const [userEvents, setUserEvents] = useState<any[]>([]);
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [reviewError, setReviewError] = useState<string | null>(null);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -96,18 +94,6 @@ export function UserProfileScreen({
     setEventsCreated(0);
     setAttendees(0);
     setEventsAttended(0);
-  }, [user.id]);
-
-  useEffect(() => {
-    if (!user?.id) return;
-    insforge.database
-      .from('events')
-      .select('id, title, event_date, image_url, category, price, status')
-      .eq('organizer_id', user.id)
-      .in('status', ['live', 'published', 'approved'])
-      .order('event_date', { ascending: false })
-      .limit(6)
-      .then(({ data }) => setUserEvents(data || []));
   }, [user.id]);
 
   useEffect(() => {
@@ -452,7 +438,9 @@ export function UserProfileScreen({
         {[
           { label: 'Events', value: String(eventsCreated) },
           { label: 'Attended', value: String(eventsAttended) },
-          { label: 'Attendees', value: String(attendees) },
+          // Only meaningful for organizer profiles (count of ticket-buyers
+          // across their events) -- hidden for standard/attendee profiles.
+          ...(isOrganizerProfile ? [{ label: 'Attendees', value: String(attendees) }] : []),
         ].map(({ label, value }, i, arr) => (
           <div
             key={label}
@@ -515,86 +503,6 @@ export function UserProfileScreen({
           })}
         </div>
       </div>
-      )}
-
-      {/* Events they'd like */}
-      {userEvents.length > 0 && (
-        <div style={{ padding: '0 16px 32px' }}>
-          <p
-            style={{
-              color: '#F0F0FF',
-              fontSize: '16px',
-              fontWeight: 700,
-              marginBottom: '12px',
-            }}
-          >
-            Events by {user.name.split(' ')[0]}
-          </p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {userEvents.map((event) => (
-              <div
-                key={event.id}
-                onClick={() => onEventPress?.(event)}
-                style={{
-                  background: '#090514',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '16px',
-                  padding: '12px',
-                  display: 'flex',
-                  gap: '12px',
-                  cursor: onEventPress ? 'pointer' : 'default',
-                }}
-              >
-                <img
-                  src={event.image_url || event.image || ''}
-                  alt={event.title}
-                  style={{
-                    width: '64px',
-                    height: '64px',
-                    borderRadius: '12px',
-                    objectFit: 'cover',
-                    flexShrink: 0,
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <span
-                    style={{
-                      color: '#A78BFA',
-                      fontSize: '10px',
-                      fontWeight: 600,
-                      background: 'rgba(167,139,250,0.1)',
-                      padding: '2px 6px',
-                      borderRadius: '4px',
-                    }}
-                  >
-                    {event.category}
-                  </span>
-                  <p
-                    style={{
-                      color: '#F0F0FF',
-                      fontSize: '13px',
-                      fontWeight: 600,
-                      marginTop: '4px',
-                      marginBottom: '2px',
-                    }}
-                    className="truncate"
-                  >
-                    {event.title}
-                  </p>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <Calendar size={11} color="#8B8FA8" />
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.event_date ? new Date(event.event_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' }) : event.date}</span>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '2px' }}>
-                    <span style={{ color: '#FFB830', fontSize: '12px', fontWeight: 700 }}>
-                      {formatPrice(event.price)}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
 
       {/* Organizer Reviews */}

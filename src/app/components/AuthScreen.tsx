@@ -15,7 +15,7 @@ interface AuthScreenProps {
   userRole?: string;
   selectedState?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
   resetToken?: string;
 }
 
@@ -263,12 +263,20 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
       if (profile) {
         const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
+
+        // Role changes must go through this SECURITY DEFINER RPC —
+        // check_user_role_update() rejects a plain UPDATE/upsert touching
+        // `role` from an authenticated-role caller. Awaited and checked so
+        // a rejected role change is visible instead of silently reverting
+        // to the trigger-assigned default on next login.
+        const { error: roleError } = await insforge.database.rpc('set_signup_role' as any, { p_role: strictRole });
+        if (roleError) console.error('Signup Failure Trace — role set:', roleError);
+
         const payload: Record<string, any> = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
           phone_number: normalizePhoneE164(phone),
           state: (signupState || selectedState || '').trim(),
-          role: strictRole,
           avatar_url: avatarUrl || signupAvatarUrl
         };
         if (dob) payload.date_of_birth = dob;
@@ -282,24 +290,37 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           .maybeSingle();
 
         const finalProfile = verifiedProfile || profile;
+        // Reflect whatever role actually landed in the DB, not the client's
+        // pre-write guess — if set_signup_role failed above, this correctly
+        // shows the trigger-assigned 'attendee' rather than masking it.
+        const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'attendee';
 
-        // Apply referral code if user signed up via ?ref= link
+        // Apply referral code if user signed up via ?ref= link. Awaited and
+        // only cleared from sessionStorage once we get a definitive
+        // response — a transient failure now leaves the code in place to
+        // retry on the next load, instead of being silently lost forever.
         const pendingRef = sessionStorage.getItem('vents_ref_code');
         if (pendingRef) {
-          sessionStorage.removeItem('vents_ref_code');
-          insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef }).then(() => {}, () => {});
+          try {
+            const { error: refError } = await insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef });
+            if (refError) console.error('Referral completion failed:', refError);
+            else sessionStorage.removeItem('vents_ref_code');
+          } catch (e) {
+            console.error('Referral completion threw:', e);
+          }
         }
 
         onSuccess({
           id: userId,
           email: userEmail,
           full_name: finalProfile.full_name || payload.full_name,
-          role: strictRole, 
+          role: verifiedRole,
           username: finalProfile.username || payload.username,
           phone_number: finalProfile.phone_number || payload.phone_number,
           state: finalProfile.state || payload.state,
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
-          isOrganizer: strictRole === 'organizer',
+          cover_url: finalProfile.cover_url,
+          isOrganizer: verifiedRole === 'organizer',
           is_verified: finalProfile.is_verified === true,
           vc_badge: finalProfile.vc_badge,
         });
@@ -447,6 +468,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
         // InsForge does not support raw_user_meta_data in signUp options.
         // Write profile fields directly to the users table after auth record is created.
+        // `role` is deliberately NOT included here — check_user_role_update()
+        // rejects any direct role write from an authenticated caller; the
+        // actual role change happens via the set_signup_role() RPC in
+        // fetchProfileAndSucceed below, which runs as SECURITY DEFINER.
         if (data?.user?.id) {
           await insforge.database.from('users').upsert({
             id: data.user.id,
@@ -455,7 +480,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             username: userMetaPayload.username,
             phone_number: userMetaPayload.phone_number,
             state: userMetaPayload.state,
-            role: userMetaPayload.role,
             avatar_url: userMetaPayload.avatar_url || null,
             date_of_birth: dob || null,
           }, { onConflict: 'id' }).then(() => {}, (e: any) => console.error('Signup Failure Trace — profile upsert:', e));
@@ -543,6 +567,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             phone_number: profile?.phone_number || data.user.user_metadata?.phone_number,
             state: profile?.state || data.user.user_metadata?.state,
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
+            cover_url: profile?.cover_url,
             isOrganizer: dbRole === 'organizer',
             is_verified: profile?.is_verified === true,
             vc_badge: profile?.vc_badge,

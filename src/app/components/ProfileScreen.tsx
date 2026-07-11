@@ -20,6 +20,7 @@ import {
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { getVcBalance } from '../../lib/vcBalanceCache';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -60,10 +61,7 @@ export function ProfileScreen({
 
   useEffect(() => {
     if (!currentUser?.id) { setVcBalance(null); return; }
-    insforge.database.rpc('get_my_vc_balance' as any).then(
-      ({ data }: any) => setVcBalance(data?.spendable ?? 0),
-      () => setVcBalance(null)
-    );
+    getVcBalance(currentUser.id).then((result) => setVcBalance(result?.spendable ?? null));
   }, [currentUser?.id]);
 
   // Draft persistence for the organizer-onboarding textarea — if the user
@@ -104,11 +102,15 @@ export function ProfileScreen({
     setCoverLoadFailed(false);
   }, [currentUser?.cover_url]);
 
-  // Pull the freshest cover_url directly from the DB on mount rather than
-  // trusting the currentUser prop, which can go stale if it was changed
-  // in another tab/session since login.
+  // currentUser.cover_url is now populated immediately at login/signup (see
+  // AuthScreen.tsx), so this DB round-trip is only needed as a fallback for
+  // the rare case where the prop is genuinely missing — not on every single
+  // mount of this screen (it fully unmounts/remounts per tab visit), which
+  // was the actual source of the visible cover-photo-rendering delay: the
+  // prop already renders instantly, this fetch just used to run pointlessly
+  // in the background on top of it every time.
   useEffect(() => {
-    if (!currentUser?.id) return;
+    if (!currentUser?.id || currentUser?.cover_url) return;
     (async () => {
       try {
         await getAuthToken();
@@ -120,7 +122,7 @@ export function ProfileScreen({
         if (data?.cover_url) setFreshCoverUrl(data.cover_url);
       } catch { /* fall back silently to the prop value */ }
     })();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, currentUser?.cover_url]);
 
   const effectiveCoverUrl = freshCoverUrl ?? currentUser?.cover_url;
 
