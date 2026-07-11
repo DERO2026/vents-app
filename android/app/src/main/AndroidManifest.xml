@@ -46,4 +46,12 @@
          this permission getUserMedia would fail outright regardless. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Required for the organizer ticket check-in scanner (getUserMedia
+         video in the WebView via html5-qrcode). Without this, the OS denies
+         camera access outright before the WebView ever gets a chance to
+         prompt — the scanner screen would show a black box with no camera
+         permission dialog and no visible error. -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>

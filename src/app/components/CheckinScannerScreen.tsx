@@ -67,58 +67,78 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
     loadStats();
   }, [selectedEvent?.id]);
 
-  // Initialise html5-qrcode scanner
+  // Initialise the camera directly via the low-level Html5Qrcode API.
+  //
+  // We deliberately do NOT use Html5QrcodeScanner (the high-level, auto-UI
+  // class) — it never starts the camera on its own. On first use it injects
+  // its own unstyled "Request Camera Permissions" button into the target div
+  // and waits for an explicit click, followed by a second manual "Start
+  // Scanning" step. Wrapped inside our dark, overflow:hidden container that
+  // control is easy to miss entirely, which reads to an organizer as "the
+  // scanner is just broken." Driving Html5Qrcode.start() ourselves triggers
+  // the real camera permission prompt immediately and starts decoding the
+  // instant the stream is live — no hidden UI, no extra taps.
   useEffect(() => {
     if (!isOrganizer) return;
 
     let mounted = true;
+    let html5QrCode: any = null;
 
-    import('html5-qrcode').then(({ Html5QrcodeScanner }) => {
+    import('html5-qrcode').then(async ({ Html5Qrcode }) => {
       if (!mounted) return;
 
-      const scanner = new Html5QrcodeScanner(
-        scannerDivId,
-        {
-          fps: 10,
-          qrbox: { width: 240, height: 240 },
-          aspectRatio: 1.0,
-          showTorchButtonIfSupported: true,
-          showZoomSliderIfSupported: true,
-          defaultZoomValueIfSupported: 2,
-        },
-        /* verbose */ false,
-      );
+      html5QrCode = new Html5Qrcode(scannerDivId, /* verbose */ false);
+      scannerRef.current = html5QrCode;
 
-      scanner.render(
-        async (decodedText: string) => {
-          if (processingRef.current) return;
-          processingRef.current = true;
-          await handleScan(decodedText);
-          setTimeout(() => { processingRef.current = false; }, 3000);
-        },
-        (errorMessage: string) => {
-          // QR scan errors are expected (camera looking for QR) — suppress
-          if (!errorMessage.includes('No MultiFormat Readers')) {
-            setCameraError(errorMessage);
-          }
-        },
-      );
-
-      scannerRef.current = scanner;
-      setScannerReady(true);
+      try {
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+          async (decodedText: string) => {
+            if (processingRef.current) return;
+            processingRef.current = true;
+            await handleScan(decodedText);
+            setTimeout(() => { processingRef.current = false; }, 3000);
+          },
+          (errorMessage: string) => {
+            // Per-frame "no QR found in this frame" noise — expected while
+            // the camera is just looking for a code. Not a real error.
+          },
+        );
+        if (!mounted) return;
+        setScannerReady(true);
+      } catch (err: any) {
+        if (!mounted) return;
+        const raw = String(err?.name || err?.message || err || '');
+        let friendly = 'Could not start the camera. Please try again.';
+        if (/NotAllowedError|Permission denied|permission/i.test(raw)) {
+          friendly = 'Camera access denied. Enable camera permission for Vents in your device/browser settings, then reopen the scanner.';
+        } else if (/NotFoundError|no camera|DevicesNotFound/i.test(raw)) {
+          friendly = 'No camera was found on this device.';
+        } else if (/NotReadableError|TrackStartError|in use/i.test(raw)) {
+          friendly = 'The camera is already in use by another app. Close it and try again.';
+        } else if (/OverconstrainedError/i.test(raw)) {
+          friendly = 'This device has no rear-facing camera available.';
+        }
+        setCameraError(friendly);
+      }
     }).catch(err => {
-      setCameraError('Could not load scanner: ' + err.message);
+      if (!mounted) return;
+      setCameraError('Could not load the scanner module: ' + (err?.message || err));
     });
 
     return () => {
       mounted = false;
-      if (scannerRef.current) {
-        scannerRef.current.clear().catch(() => {});
+      if (html5QrCode && html5QrCode.isScanning) {
+        html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
       }
     };
   }, [isOrganizer]);
 
-  const handleScan = async (ticketId: string) => {
+  const handleScan = async (rawTicketId: string) => {
+    // Defensive trim — some camera/QR decoders append trailing
+    // whitespace/newlines to the decoded payload.
+    const ticketId = rawTicketId.trim();
     setState({ status: 'scanning' });
 
     try {
