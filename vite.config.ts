@@ -13,6 +13,14 @@ export default defineConfig(({ mode }) => ({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  server: {
+    // Pinned to match .claude/launch.json's expected port — without this,
+    // Vite defaults to 5173 (or auto-increments if taken) while the preview
+    // harness proxies 5175, causing chrome-error://chromewebdata/ regardless
+    // of app code correctness.
+    port: 5175,
+    strictPort: false,
+  },
   base: './', // Vital for deployment
   assetsInclude: ['**/*.svg', '**/*.csv'],
   build: {
