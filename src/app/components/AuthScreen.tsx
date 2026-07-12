@@ -9,6 +9,25 @@ import { verifyTOTP } from '../../lib/totp';
 import { trackEvent } from '../../lib/analytics';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
+import { REGION } from '../../lib/regionConfig';
+
+// Best-effort abuse guard for traffic going through this screen — InsForge's
+// own /api/auth/* endpoints run outside our schema, so this can't stop a
+// scripted attacker who skips our UI and calls them directly. It does stop
+// the overwhelmingly common case: a script or bot hammering our actual
+// login/signup/reset form. Dual-keyed server-side (per-identifier and
+// per-IP) inside check_auth_rate_limit(); throws a friendly message rather
+// than letting the raw 'rate_limited' RPC error reach the user.
+async function checkAuthRateLimit(action: 'login' | 'signup' | 'password_reset', identifier: string) {
+  const { error } = await insforge.database.rpc('check_auth_rate_limit', { p_action: action, p_identifier: identifier });
+  if (error) {
+    if (String((error as any)?.message || error).includes('rate_limited')) {
+      throw new Error('Too many attempts. Please wait a few minutes and try again.');
+    }
+    // Fail open — a rate-limit check failing for an unrelated reason (e.g.
+    // a transient network blip) shouldn't block a legitimate login.
+  }
+}
 
 interface AuthScreenProps {
   initialMode: AuthMode;
@@ -57,9 +76,10 @@ function isValidEmail(email: string): boolean {
 function normalizePhoneE164(raw: string): string {
   const digits = raw.replace(/\D/g, '');
   if (!digits) return '';
-  if (digits.startsWith('234')) return '+' + digits;
-  if (digits.startsWith('0')) return '+234' + digits.slice(1);
-  return '+234' + digits;
+  const cc = REGION.phoneCountryCode.replace('+', '');
+  if (digits.startsWith(cc)) return '+' + digits;
+  if (digits.startsWith('0')) return REGION.phoneCountryCode + digits.slice(1);
+  return REGION.phoneCountryCode + digits;
 }
 
 function InputRow({
@@ -131,7 +151,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState('+234');
+  const [phone, setPhone] = useState<string>(REGION.phoneCountryCode);
   const [loading, setLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -356,6 +376,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     try {
       if (mode === 'forgot') {
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
+        await checkAuthRateLimit('password_reset', email.trim().toLowerCase());
         const { error } = await insforge.auth.sendResetPasswordEmail({
           email: email.trim().toLowerCase(),
         });
@@ -386,8 +407,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
         const normalizedPhone = normalizePhoneE164(phone);
-        const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
-        if (!NIGERIAN_PHONE_REGEX.test(normalizedPhone)) {
+        if (!REGION.phoneRegex.test(normalizedPhone)) {
           throw new Error('Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678');
         }
         if (!password) throw new Error('Password is required.');
@@ -458,6 +478,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (existsResult?.phone_taken) throw new Error('Phone number already exists');
         if (existsResult?.username_taken) throw new Error('Username already exists');
 
+        await checkAuthRateLimit('signup', normalizedEmail);
         const { data, error } = await insforge.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
 
@@ -509,6 +530,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // payloads before any DB call is made.
         const loginCheck = loginSchema.safeParse({ identifier: email.trim(), password });
         if (!loginCheck.success) throw new Error(firstValidationError(loginCheck));
+
+        await checkAuthRateLimit('login', email.trim().toLowerCase());
 
         let loginEmail = email.trim();
         if (!isValidEmail(loginEmail)) {

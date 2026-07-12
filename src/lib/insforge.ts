@@ -150,7 +150,7 @@ if (typeof window !== 'undefined') {
           // Persist the rotated refresh token if the SDK returns one
           if (response?.refreshToken) {
             httpClient.refreshToken = response.refreshToken;
-            saveRefreshToken(response.refreshToken);
+            await saveRefreshToken(response.refreshToken);
           }
           return response;
         } finally {

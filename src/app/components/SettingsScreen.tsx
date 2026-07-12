@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
+import { REGION } from '../../lib/regionConfig';
 import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
@@ -547,8 +548,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       let cleanPhone = '';
       if (rawDigits) {
         cleanPhone = rawDigits.startsWith('234') ? '+' + rawDigits : '+234' + (rawDigits.startsWith('0') ? rawDigits.slice(1) : rawDigits);
-        const NIGERIAN_PHONE_REGEX = /^\+234[789][01]\d{8}$/;
-        if (!NIGERIAN_PHONE_REGEX.test(cleanPhone)) {
+        if (!REGION.phoneRegex.test(cleanPhone)) {
           throw new Error("Please enter a valid Nigerian phone number (+234 format).");
         }
       }

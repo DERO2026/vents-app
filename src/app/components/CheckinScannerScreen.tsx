@@ -201,7 +201,11 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
       loadStats();
     } catch (err: any) {
       triggerHaptic('error');
-      setState({ status: 'denied', errorMsg: err?.message || 'Database error. Try again.' });
+      const rateLimited = String(err?.message || '').includes('rate_limited');
+      setState({
+        status: 'denied',
+        errorMsg: rateLimited ? 'Scanning too fast — pause a moment and try again.' : (err?.message || 'Database error. Try again.'),
+      });
     }
 
     // Auto-reset after 3 seconds
