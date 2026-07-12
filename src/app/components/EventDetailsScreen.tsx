@@ -30,6 +30,8 @@ import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { trackEvent } from '../../lib/analytics';
 import { ReportModal } from './ReportModal';
+import { ImageCarousel } from './ImageCarousel';
+import { FlyerLightbox } from './FlyerLightbox';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -240,6 +242,10 @@ export function EventDetailsScreen({
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [flyerFullScreen, setFlyerFullScreen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  // events only stores a single image_url today -- falls back to the
+  // already-resolved event.image the moment a real gallery isn't present.
+  const flyerImages = event.images && event.images.length > 0 ? event.images : (event.image ? [event.image] : []);
   const [userReviews, setUserReviews] = useState<Review[]>([]);
   const [reviewRating, setReviewRating] = useState(0);
   const [reviewHover, setReviewHover] = useState(0);
@@ -454,24 +460,28 @@ export function EventDetailsScreen({
     >
       {/* Full-screen flyer lightbox */}
       {flyerFullScreen && (
-        <div
-          onClick={() => setFlyerFullScreen(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.97)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <img src={event.image} alt={event.title} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-          <span style={{ position: 'absolute', top: '20px', right: '20px', color: '#fff', fontSize: '13px', background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '4px 10px' }}>Tap to close</span>
-        </div>
+        <FlyerLightbox
+          images={flyerImages}
+          initialIndex={lightboxIndex}
+          alt={event.title}
+          onClose={() => setFlyerFullScreen(false)}
+        />
       )}
 
-      {/* Hero */}
-      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, cursor: 'zoom-in' }} onClick={() => setFlyerFullScreen(true)}>
-        <img
-          src={event.image}
+      {/* Hero — curved bottom edge; object-contain + a matching dark fill so
+          the whole flyer is always visible, never cropped, regardless of
+          its aspect ratio. */}
+      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, borderRadius: '0 0 28px 28px', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
+        <ImageCarousel
+          images={flyerImages}
           alt={event.title}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={(e) => { (e.currentTarget as HTMLImageElement).style.background = 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)'; (e.currentTarget as HTMLImageElement).src = ''; }}
+          imageFit="contain"
+          imageBackground="#020005"
+          showArrows={flyerImages.length > 1}
+          onImageTap={(i) => { setLightboxIndex(i); setFlyerFullScreen(true); }}
+          style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
         />
-        <div style={{ position: 'absolute', bottom: '70px', right: '12px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '3px 8px' }}>
+        <div style={{ position: 'absolute', bottom: '70px', right: '12px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '3px 8px', pointerEvents: 'none' }}>
           <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>
         </div>
         <div
@@ -1168,14 +1178,19 @@ export function EventDetailsScreen({
                       flexShrink: 0,
                     }}
                   >
-                    <img src={evt.image} alt="" style={{ width: '100%', height: '80px', objectFit: 'cover' }} />
+                    <img
+                      src={evt.image}
+                      alt=""
+                      style={{ width: '100%', height: '80px', objectFit: 'cover', background: 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)' }}
+                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                    />
                     <div style={{ padding: '8px' }}>
                       <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '32px', lineHeight: 1.3, marginBottom: '4px' }}>
                         {evt.title}
                       </p>
                       <p style={{ color: '#8B8FA8', fontSize: '10px' }}>{evt.date}</p>
                       <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 700, marginTop: '2px' }}>
-                        {evt.price === 0 ? 'Free' : `₦${evt.price.toLocaleString()}`}
+                        {formatPrice(evt.price)}
                       </p>
                     </div>
                   </div>

@@ -20,6 +20,12 @@ export interface Event {
   state: string;
   price: number;
   image: string;
+  // Optional gallery of flyer images for the multi-image carousel. The
+  // events table only stores a single image_url today (no backend change
+  // in this pass), so this is populated as a single-item array from
+  // `image` -- ready to hold a real gallery the moment the backend grows
+  // one, with no further UI changes needed.
+  images?: string[];
   description: string;
   organizer: string;
   organizerVerified?: boolean;

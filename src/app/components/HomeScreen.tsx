@@ -12,6 +12,7 @@ import BadgeChip from './BadgeChip';
 import { formatPrice } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
+import { ImageCarousel } from './ImageCarousel';
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -113,6 +114,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     state: stateFromLocation || city,
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
+    images: dbEvent.image_url ? [dbEvent.image_url] : [],
     description: dbEvent.description || '',
     organizer: dbEvent.organizer_name || dbEvent.organizer_username || 'Verified Organizer',
     organizerVcBadge: dbEvent.organizer_vc_badge || null,
@@ -158,6 +160,8 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
   const isSelling = (event.bookingsCount ?? 0) > 50;
   const countdown = useCardCountdown(event.event_date);
 
+  const cardImages = event.images && event.images.length > 0 ? event.images : (event.image ? [event.image] : []);
+
   return (
     <div
       onClick={() => onPress(event)}
@@ -165,29 +169,18 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
       style={{
         width: '100%',
         background: '#090514',
-        borderRadius: '16px',
+        borderRadius: '28px',
         border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 2px 8px rgba(0,0,0,0.08)',
+        boxShadow: '0 20px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.25)',
       }}
     >
-      <div style={{ height: '110px', position: 'relative' }}>
-        <img
-          src={event.image}
+      <div style={{ aspectRatio: '3 / 4', position: 'relative' }}>
+        <ImageCarousel
+          images={cardImages}
           alt={event.title}
-          loading="lazy"
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          onError={(e) => {
-            const el = e.currentTarget as HTMLImageElement;
-            el.style.display = 'none';
-            const parent = el.parentElement;
-            if (parent && !parent.querySelector('.img-fallback')) {
-              const fb = document.createElement('div');
-              fb.className = 'img-fallback';
-              fb.style.cssText = 'width:100%;height:100%;background:linear-gradient(135deg,#1e1040 0%,#0f172a 100%);display:flex;align-items:center;justify-content:center;font-size:28px;';
-              fb.textContent = '🎉';
-              parent.insertBefore(fb, parent.firstChild);
-            }
-          }}
+          imageFit="cover"
+          showDots={cardImages.length > 1}
+          style={{ width: '100%', height: '100%' }}
         />
         {/* FOMO tag */}
         {isSelling && (
@@ -281,9 +274,15 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           </div>
         )}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '12px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 700 }}>
-            {formatPrice(event.price)}
-          </span>
+          {!event.price ? (
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#06D6A0', background: 'rgba(6,214,160,0.15)', border: '1px solid rgba(6,214,160,0.4)', borderRadius: '20px', padding: '2px 10px', letterSpacing: '0.02em' }}>
+              FREE
+            </span>
+          ) : (
+            <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
+              {formatPrice(event.price)}
+            </span>
+          )}
           {event.is_18_plus && (
             <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700 }}>18+</span>
           )}
@@ -591,12 +590,17 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '20px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)' }}>
-          <img
-            src={event.image}
+        <div style={{ borderRadius: '32px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 24px 48px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3)' }}>
+          {/* This card's own swipe (above) switches between featured EVENTS;
+              a single event's own image list rarely has more than one entry
+              today (events only store one image_url), so ImageCarousel's own
+              swipe handling is effectively inert here for now. */}
+          <ImageCarousel
+            images={event.images && event.images.length > 0 ? event.images : (event.image ? [event.image] : [])}
             alt={event.title}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+            imageFit="cover"
+            showDots={false}
+            style={{ width: '100%', height: '100%' }}
           />
           {/* Deep gradient from transparent at top to almost-black at bottom */}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
@@ -623,7 +627,7 @@ function FeaturedCarousel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
-              <span style={{ background: event.price === 0 ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${event.price === 0 ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: event.price === 0 ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
+              <span style={{ background: !event.price ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${!event.price ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: !event.price ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
             </div>
           </div>
         </div>
@@ -819,7 +823,7 @@ export function HomeScreen({
     // Price filter (free vs paid)
     const matchPrice =
       priceFilter === 'all' ||
-      (priceFilter === 'free' && event.price === 0) ||
+      (priceFilter === 'free' && !event.price) ||
       (priceFilter === 'paid' && event.price > 0);
 
     // Upcoming events only validation (event_date >= now)
