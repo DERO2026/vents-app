@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical, CalendarX } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
+
+// Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 // html5-qrcode is loaded dynamically to avoid SSR issues
 type ScanResult = 'idle' | 'scanning' | 'valid' | 'already_scanned' | 'denied';
@@ -41,8 +44,16 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
   const isDevEnvironment = import.meta.env.DEV;
   const processingRef = useRef(false);
 
-  // Access guard
-  const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'admin';
+  // Access guard — event organizer, sub-admin, or root/platform admin.
+  // (The specific-organizer-vs-event ownership check happens server-side in
+  // verify_entry_pass, which rejects with 'wrong_organizer' if the scanning
+  // user doesn't actually own the ticket's event.)
+  const isOrganizer =
+    currentUser?.role === 'organizer' ||
+    currentUser?.role === 'organiser' ||
+    currentUser?.role === 'admin' ||
+    currentUser?.role === 'sub-admin' ||
+    currentUser?.id === ROOT_UID;
 
   // Load check-in stats
   const loadStats = async () => {
@@ -79,7 +90,9 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
   // the real camera permission prompt immediately and starts decoding the
   // instant the stream is live — no hidden UI, no extra taps.
   useEffect(() => {
-    if (!isOrganizer) return;
+    // Skip entirely without a valid event — the "No Event Selected" fallback
+    // renders instead of the scanner div, so there'd be nothing to mount into.
+    if (!isOrganizer || !selectedEvent?.id) return;
 
     let mounted = true;
     let html5QrCode: any = null;
@@ -133,7 +146,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
       }
     };
-  }, [isOrganizer]);
+  }, [isOrganizer, selectedEvent?.id]);
 
   const handleScan = async (rawTicketId: string) => {
     // Defensive trim — some camera/QR decoders append trailing
@@ -199,6 +212,26 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
         <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800 }}>Organizers Only</h2>
         <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '8px', lineHeight: 1.6 }}>
           The check-in scanner is only accessible to event organizers.
+        </p>
+        <button onClick={onBack} style={{ marginTop: '24px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  // ── No event selected ────────────────────────────────────────────────────────
+  // The scanner is only ever meaningful scoped to a specific event — if it's
+  // reached without a valid selectedEvent.id (e.g. a stale navigation stack,
+  // or a deep link with a missing/invalid event id), fail loudly instead of
+  // silently rendering a scanner with a permanently-empty stats bar.
+  if (!selectedEvent?.id) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
+        <CalendarX size={48} color="#F59E0B" style={{ marginBottom: '16px' }} />
+        <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800 }}>No Event Selected</h2>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '8px', lineHeight: 1.6 }}>
+          No event selected for scanning. Open the scanner from an event's page or your organizer dashboard.
         </p>
         <button onClick={onBack} style={{ marginTop: '24px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
           Go Back

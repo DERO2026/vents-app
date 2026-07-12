@@ -203,7 +203,7 @@ export default function App() {
 
   const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner'];
   const navigateTo = useCallback((next: Screen) => {
-    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'organiser' && currentUser?.role !== 'admin' && currentUser?.id !== ROOT_UID) {
+    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'organiser' && currentUser?.role !== 'admin' && currentUser?.role !== 'sub-admin' && currentUser?.id !== ROOT_UID) {
       console.warn(`Unauthorized attempt to access ${next} screen`);
       return;
     }
@@ -1726,6 +1726,8 @@ export default function App() {
               bookingLoading={bookingLoading}
               onEventPress={handleEventPress}
               currentUserId={currentUser?.id}
+              currentUserRole={currentUser?.role}
+              onOpenDoorScanner={() => navigateTo('checkin-scanner')}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')

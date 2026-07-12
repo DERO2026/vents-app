@@ -21,6 +21,8 @@ import {
   Plus,
   Flag,
   CalendarPlus,
+  Shield,
+  ScanLine,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
@@ -46,9 +48,14 @@ interface EventDetailsScreenProps {
   bookingLoading?: boolean;
   onEventPress?: (event: Event) => void;
   currentUserId?: string;
+  currentUserRole?: string;
   onOrganizerPress?: (organizerId: string) => void;
   onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
+  onOpenDoorScanner?: () => void;
 }
+
+// Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string): number {
   if (eventDate) {
@@ -219,9 +226,17 @@ export function EventDetailsScreen({
   bookingLoading = false,
   onEventPress,
   currentUserId,
+  currentUserRole,
   onOrganizerPress,
   onMessageOrganizer,
+  onOpenDoorScanner,
 }: EventDetailsScreenProps) {
+  const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
+  const isSubAdmin = currentUserRole === 'sub-admin';
+  const isRootAdmin = currentUserId === ROOT_UID;
+  const isPlatformAdmin = currentUserRole === 'admin';
+  const canManageDoor = isEventOwner || isSubAdmin || isRootAdmin || isPlatformAdmin;
+
   const [expanded, setExpanded] = useState(false);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [flyerFullScreen, setFlyerFullScreen] = useState(false);
@@ -605,6 +620,49 @@ export function EventDetailsScreen({
             </div>
           </div>
         </div>
+
+        {/* Organizer Tools — door-staff scanner access. Only ever visible to
+            the event's own organizer, a Sub-Admin, or Root/platform admin;
+            regular attendees never see this section at all. Placed at the
+            very top of the content so it's the first thing door staff hit,
+            no scrolling required. */}
+        {canManageDoor && onOpenDoorScanner && (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(34,211,238,0.12))',
+              border: '1px solid rgba(167,139,250,0.35)',
+              borderRadius: '18px',
+              padding: '14px',
+              marginBottom: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+              <Shield size={13} color="#A78BFA" />
+              <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                Organizer Tools
+              </span>
+            </div>
+            <button
+              onClick={onOpenDoorScanner}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '16px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(123,47,190,0.4)',
+              }}
+            >
+              <ScanLine size={20} color="#fff" />
+              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
+            </button>
+          </div>
+        )}
 
         {/* Info cards */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
