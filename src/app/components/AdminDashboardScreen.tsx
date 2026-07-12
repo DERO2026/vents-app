@@ -5,6 +5,7 @@ import {
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
   Mic, Image as ImageIcon, Activity,
+  Ticket, ScanLine, UserPlus, Banknote,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
@@ -34,7 +35,7 @@ interface AuditLog {
   action: string;
   details: Record<string, any>;
   created_at: string;
-  admin_id: string;
+  admin_id: string | null;
   target_user_id: string | null;
   actor_role?: string | null;
 }
@@ -60,6 +61,10 @@ function ConfirmModal({
   message,
   confirmLabel = 'Confirm',
   danger = true,
+  // When set, the confirm button stays disabled until the admin types this
+  // exact word (case-insensitive) — the "type CANCEL/REFUND to confirm"
+  // guard for the payout split-action work (Block 17).
+  typedConfirmationText,
   onConfirm,
   onCancel,
 }: {
@@ -67,9 +72,13 @@ function ConfirmModal({
   message: string;
   confirmLabel?: string;
   danger?: boolean;
+  typedConfirmationText?: string;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const [typedValue, setTypedValue] = useState('');
+  const typedMatches = !typedConfirmationText || typedValue.trim().toUpperCase() === typedConfirmationText.toUpperCase();
+
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(8px)',
@@ -84,11 +93,37 @@ function ConfirmModal({
         </div>
         <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif' }}>{title}</h3>
         <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: '0 0 24px' }}>{message}</p>
+        {typedConfirmationText && (
+          <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.05em', marginBottom: '6px' }}>
+              Type <span style={{ color: '#EF4444' }}>{typedConfirmationText}</span> to confirm
+            </p>
+            <input
+              autoFocus
+              value={typedValue}
+              onChange={(e) => setTypedValue(e.target.value)}
+              placeholder={typedConfirmationText}
+              style={{ width: '100%', background: '#060A12', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '14px', fontWeight: 700, letterSpacing: '0.05em', outline: 'none', boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={onCancel} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
-          <button onClick={onConfirm} style={{ flex: 1, background: danger ? 'rgba(239,68,68,0.15)' : 'rgba(168,85,247,0.15)', border: `1px solid ${danger ? 'rgba(239,68,68,0.4)' : 'rgba(168,85,247,0.4)'}`, borderRadius: '12px', padding: '12px', color: danger ? '#EF4444' : '#A855F7', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+          <button
+            onClick={onConfirm}
+            disabled={!typedMatches}
+            style={{
+              flex: 1,
+              background: !typedMatches ? 'rgba(255,255,255,0.05)' : danger ? 'rgba(239,68,68,0.15)' : 'rgba(168,85,247,0.15)',
+              border: `1px solid ${!typedMatches ? 'rgba(255,255,255,0.1)' : danger ? 'rgba(239,68,68,0.4)' : 'rgba(168,85,247,0.4)'}`,
+              borderRadius: '12px', padding: '12px',
+              color: !typedMatches ? '#555C7A' : danger ? '#EF4444' : '#A855F7',
+              fontSize: '14px', fontWeight: 700,
+              cursor: typedMatches ? 'pointer' : 'not-allowed',
+            }}
+          >
             {confirmLabel}
           </button>
         </div>
@@ -141,12 +176,25 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // Kill switch (app_config.disable_payouts) — the payout RPCs already
+  // reject with 'payouts_disabled' server-side; this is purely so the
+  // admin sees why the buttons are greyed out instead of hitting an error.
+  const [payoutsDisabled, setPayoutsDisabled] = useState(false);
+  useEffect(() => {
+    insforge.database.from('app_config').select('disable_payouts').maybeSingle()
+      .then(({ data }) => setPayoutsDisabled(!!data?.disable_payouts), () => {});
+  }, []);
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
+  // Split from the processing-state action (Block 17): a pending request
+  // was never sent to Paystack at all, so rejecting it is a low-risk,
+  // purely-internal state change — separate confirmation gate, separate
+  // muted styling, from the processing-state "Refund Funds" action below.
+  const [rejectConfirmId, setRejectConfirmId] = useState<string | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -344,6 +392,12 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      {payoutsDisabled && (
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 16px' }}>
+          <p style={{ margin: 0, fontSize: '13px', color: '#EF4444', fontWeight: 700 }}>⚠ Payouts are temporarily disabled platform-wide</p>
+          <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>Approve/Cancel/Refund actions are paused until this kill switch is turned off in System Controller.</p>
+        </div>
+      )}
       {/* Total pending banner */}
       {totalPending > 0 && (
         <div style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '4px' }}>
@@ -406,15 +460,16 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
                   <div style={{ display: 'flex', gap: '8px', marginTop: '2px' }}>
                     <button
                       onClick={() => handleApprove(pendingReq.request_id)}
-                      disabled={actionLoading === pendingReq.request_id}
+                      disabled={actionLoading === pendingReq.request_id || payoutsDisabled}
                       style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === pendingReq.request_id ? 0.6 : 1 }}>
                       {actionLoading === pendingReq.request_id ? 'Processing…' : 'Approve & Pay'}
                     </button>
                     <button
-                      onClick={() => handleReject(pendingReq.request_id)}
-                      disabled={actionLoading === pendingReq.request_id}
-                      style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === pendingReq.request_id ? 0.6 : 1 }}>
-                      Reject & Refund
+                      onClick={() => setRejectConfirmId(pendingReq.request_id)}
+                      disabled={actionLoading === pendingReq.request_id || payoutsDisabled}
+                      title="Rejects the request — funds stay in the platform, nothing is sent to Paystack"
+                      style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '8px', color: '#C4C9E0', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === pendingReq.request_id ? 0.6 : 1 }}>
+                      Cancel Request
                     </button>
                   </div>
                 )}
@@ -447,15 +502,16 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
                 <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                   <button
                     onClick={() => handleApprove(r.request_id)}
-                    disabled={actionLoading === r.request_id}
+                    disabled={actionLoading === r.request_id || payoutsDisabled}
                     style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
                     {actionLoading === r.request_id ? 'Processing…' : 'Approve & Pay'}
                   </button>
                   <button
-                    onClick={() => handleReject(r.request_id)}
-                    disabled={actionLoading === r.request_id}
-                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
-                    Reject & Refund
+                    onClick={() => setRejectConfirmId(r.request_id)}
+                    disabled={actionLoading === r.request_id || payoutsDisabled}
+                    title="Rejects the request — funds stay in the platform, nothing is sent to Paystack"
+                    style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '10px', padding: '8px', color: '#C4C9E0', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
+                    Cancel Request
                   </button>
                 </div>
               )}
@@ -463,26 +519,42 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
                 <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
                   <button
                     onClick={() => setCancelConfirmId(r.request_id)}
-                    disabled={actionLoading === r.request_id}
+                    disabled={actionLoading === r.request_id || payoutsDisabled}
                     title="Use this if this request is stuck in Processing and doesn't actually exist on Paystack — e.g. the 'Reconcile Processing' check couldn't find it"
-                    style={{ flex: 1, background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1 }}>
-                    {actionLoading === r.request_id ? 'Cancelling…' : 'Cancel & Refund'}
+                    style={{ flex: 1, background: '#EF4444', border: '1px solid #F87171', borderRadius: '10px', padding: '10px', color: '#fff', fontWeight: 800, fontSize: '13px', cursor: 'pointer', opacity: actionLoading === r.request_id ? 0.6 : 1, boxShadow: '0 0 16px rgba(239,68,68,0.5)' }}>
+                    {actionLoading === r.request_id ? 'Refunding…' : '⚠ Refund Funds'}
                   </button>
                 </div>
-              )}
-              {cancelConfirmId === r.request_id && (
-                <ConfirmModal
-                  title="Cancel this payout?"
-                  message="Are you sure you want to cancel this payout? This will refund the amount to the user."
-                  confirmLabel="Yes, cancel"
-                  danger
-                  onConfirm={() => handleCancelConfirmed(r.request_id)}
-                  onCancel={() => setCancelConfirmId(null)}
-                />
               )}
             </div>
           );
         })
+      )}
+
+      {/* Rendered at this level (not per-request-row) so the modal still
+          appears when the triggering button lives in the Wallets section,
+          which doesn't render the requests.map() above at all. */}
+      {rejectConfirmId && (
+        <ConfirmModal
+          title="Cancel this payout request?"
+          message="The request will be rejected and the funds will stay safely in the organizer's platform balance — nothing is sent to Paystack."
+          confirmLabel="Cancel request"
+          danger={false}
+          typedConfirmationText="CANCEL"
+          onConfirm={() => { const id = rejectConfirmId; setRejectConfirmId(null); handleReject(id); }}
+          onCancel={() => setRejectConfirmId(null)}
+        />
+      )}
+      {cancelConfirmId && (
+        <ConfirmModal
+          title="Refund this payout?"
+          message="This request is already Processing — a transfer may already be in flight with Paystack. Confirming will mark it cancelled and return the funds to the organizer's platform balance."
+          confirmLabel="Refund funds"
+          danger
+          typedConfirmationText="REFUND"
+          onConfirm={() => { const id = cancelConfirmId; setCancelConfirmId(null); handleCancelConfirmed(id); }}
+          onCancel={() => setCancelConfirmId(null)}
+        />
       )}
     </div>
   );
@@ -796,6 +868,11 @@ export function AdminDashboardScreen({
   // (see migrations/20260710185537_media-feature-toggles.sql)
   const [voiceNotesEnabled, setVoiceNotesEnabled] = useState(false);
   const [imageSharingEnabled, setImageSharingEnabled] = useState(true);
+  // Block 17 kill switches (migrations/20260712193800_kill-switches-and-payout-action-split.sql)
+  const [disablePurchases, setDisablePurchases] = useState(false);
+  const [disableScanning, setDisableScanning] = useState(false);
+  const [disableSignups, setDisableSignups] = useState(false);
+  const [disablePayouts, setDisablePayouts] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -873,11 +950,15 @@ export function AdminDashboardScreen({
   // ── Load app_config for maintenance mode + media feature toggles ────────────
   const loadConfig = useCallback(async () => {
     try {
-      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled').single();
+      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts').single();
       if (data) {
         setMaintenanceMode(data.maintenance_mode);
         setVoiceNotesEnabled(data.voice_notes_enabled);
         setImageSharingEnabled(data.image_sharing_enabled);
+        setDisablePurchases(!!data.disable_purchases);
+        setDisableScanning(!!data.disable_scanning);
+        setDisableSignups(!!data.disable_signups);
+        setDisablePayouts(!!data.disable_payouts);
       }
     } catch { /* ignore */ }
   }, []);
@@ -1214,6 +1295,37 @@ export function AdminDashboardScreen({
           setImageSharingEnabled(next);
           flash(true, `Image sharing ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update image sharing toggle.'); }
+      },
+    });
+  };
+
+  // Block 17 kill switches — one generic handler for all four, since they
+  // share the exact same shape (toggle a single app_config boolean,
+  // confirm, audit-log, flash).
+  const KILL_SWITCH_META: Record<'disable_purchases' | 'disable_scanning' | 'disable_signups' | 'disable_payouts', { label: string; setter: (v: boolean) => void }> = {
+    disable_purchases: { label: 'Ticket Purchases', setter: setDisablePurchases },
+    disable_scanning: { label: 'QR Scanning', setter: setDisableScanning },
+    disable_signups: { label: 'New Sign-ups', setter: setDisableSignups },
+    disable_payouts: { label: 'Organizer Payouts', setter: setDisablePayouts },
+  };
+  const handleToggleKillSwitch = (column: keyof typeof KILL_SWITCH_META, currentlyDisabled: boolean) => {
+    const next = !currentlyDisabled; // next = the new "disabled" value
+    const meta = KILL_SWITCH_META[column];
+    setConfirmModal({
+      title: next ? `Disable ${meta.label}?` : `Re-enable ${meta.label}?`,
+      message: next
+        ? `This immediately blocks ${meta.label.toLowerCase()} platform-wide, for every user. The backend enforces this even if bypassed via direct API call.`
+        : `This restores ${meta.label.toLowerCase()} for all users immediately.`,
+      confirmLabel: next ? 'Disable' : 'Re-enable',
+      danger: next,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          await insforge.database.from('app_config').update({ [column]: next, updated_by: currentUser.id }).eq('id', true);
+          await writeAuditLog(currentUser, next ? `ROOT_${column}_on` : `ROOT_${column}_off`, null, {});
+          meta.setter(next);
+          flash(true, `${meta.label} ${next ? 'disabled' : 're-enabled'}.`);
+        } catch (err: any) { flash(false, err?.message || `Failed to update ${meta.label} kill switch.`); }
       },
     });
   };
@@ -1745,7 +1857,7 @@ export function AdminDashboardScreen({
                       </p>
                     )}
                     <p style={{ color: '#555C7A', fontSize: '10px', margin: 0 }}>
-                      Target: {log.target_user_id || '—'} · Admin: {log.admin_id?.slice(0, 8)}…
+                      Target: {log.target_user_id || '—'} · Admin: {log.admin_id ? `${log.admin_id.slice(0, 8)}…` : '—'}
                     </p>
                   </div>
                 );
@@ -2428,6 +2540,91 @@ export function AdminDashboardScreen({
               <div onClick={handleToggleImageSharing} style={{ cursor: 'pointer' }}>
                 {imageSharingEnabled
                   ? <ToggleRight size={32} color="#10B981" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          {/* Kill Switches — Block 17 Operational Controls */}
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: disablePurchases ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Ticket size={17} color={disablePurchases ? '#EF4444' : '#10B981'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Ticket Purchases</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {disablePurchases ? 'Paused — "Buy Ticket" is blocked for every user' : 'Enabled — purchases are open'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={() => handleToggleKillSwitch('disable_purchases', disablePurchases)} style={{ cursor: 'pointer' }}>
+                {disablePurchases
+                  ? <ToggleRight size={32} color="#EF4444" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: disableScanning ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <ScanLine size={17} color={disableScanning ? '#EF4444' : '#10B981'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>QR Scanning</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {disableScanning ? 'Paused — check-in scanners are blocked for every organizer' : 'Enabled — check-in scanning is open'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={() => handleToggleKillSwitch('disable_scanning', disableScanning)} style={{ cursor: 'pointer' }}>
+                {disableScanning
+                  ? <ToggleRight size={32} color="#EF4444" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: disableSignups ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <UserPlus size={17} color={disableSignups ? '#EF4444' : '#10B981'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>New Sign-ups</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {disableSignups ? 'Paused — new account creation is blocked' : 'Enabled — sign-ups are open'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={() => handleToggleKillSwitch('disable_signups', disableSignups)} style={{ cursor: 'pointer' }}>
+                {disableSignups
+                  ? <ToggleRight size={32} color="#EF4444" />
+                  : <ToggleLeft size={32} color="#555C7A" />}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: disablePayouts ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Banknote size={17} color={disablePayouts ? '#EF4444' : '#10B981'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Organizer Payouts</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {disablePayouts ? 'Paused — approve/cancel/refund payout actions are blocked' : 'Enabled — payout actions are open'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={() => handleToggleKillSwitch('disable_payouts', disablePayouts)} style={{ cursor: 'pointer' }}>
+                {disablePayouts
+                  ? <ToggleRight size={32} color="#EF4444" />
                   : <ToggleLeft size={32} color="#555C7A" />}
               </div>
             </div>

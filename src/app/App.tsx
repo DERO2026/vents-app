@@ -183,6 +183,17 @@ export default function App() {
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
+  // Kill switch flags (Block 17) — scoped feature disables, distinct from
+  // maintenance_mode's app-wide gate. Each RPC also enforces its own flag
+  // server-side (purchases_disabled/scanning_disabled/signups_disabled/
+  // payouts_disabled), so this state is purely for graceful UI
+  // degradation, not the actual security boundary.
+  const [featureFlags, setFeatureFlags] = useState({
+    disablePurchases: false,
+    disableScanning: false,
+    disableSignups: false,
+    disablePayouts: false,
+  });
   const [dbEvents, setDbEvents] = useState<Event[]>([]);
   const eventsPageRef = useRef(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
@@ -246,7 +257,7 @@ export default function App() {
     const checkAppConfig = () => {
       insforge.database
         .from('app_config')
-        .select('min_client_version, maintenance_mode')
+        .select('min_client_version, maintenance_mode, disable_purchases, disable_scanning, disable_signups, disable_payouts')
         .maybeSingle()
         .then(({ data }) => {
           if (cancelled) return;
@@ -254,6 +265,12 @@ export default function App() {
             setUpdateRequired(true);
           }
           setMaintenanceMode(!!data?.maintenance_mode);
+          setFeatureFlags({
+            disablePurchases: !!data?.disable_purchases,
+            disableScanning: !!data?.disable_scanning,
+            disableSignups: !!data?.disable_signups,
+            disablePayouts: !!data?.disable_payouts,
+          });
         }, () => {});
     };
     checkAppConfig();
@@ -1529,6 +1546,7 @@ export default function App() {
               onBack={goBack}
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
+              signupsDisabled={featureFlags.disableSignups}
             />
           )}
 
@@ -1712,6 +1730,7 @@ export default function App() {
               onBack={goBack}
               currentUser={currentUser}
               selectedEvent={selectedEvent}
+              scanningDisabled={featureFlags.disableScanning}
             />
           )}
 
@@ -1777,6 +1796,7 @@ export default function App() {
               currentUserId={currentUser?.id}
               currentUserRole={currentUser?.role}
               onOpenDoorScanner={() => navigateTo('checkin-scanner')}
+              purchasesDisabled={featureFlags.disablePurchases}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database
                   .from('public_profiles')

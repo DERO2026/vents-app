@@ -36,6 +36,12 @@ interface AuthScreenProps {
   onBack: () => void;
   onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
   resetToken?: string;
+  // Kill switch (app_config.disable_signups) — the server-side signup path
+  // itself can't be gated (InsForge's own /api/auth/signup runs outside
+  // our schema), so this blocks the client's own signup attempt and the
+  // check_signups_enabled() pre-flight RPC blocks it again server-side for
+  // any caller that goes through our RPC layer at all.
+  signupsDisabled?: boolean;
 }
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -134,7 +140,7 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -255,7 +261,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     mode === 'forgot'
       ? email.length > 0
       : mode === 'signup'
-      ? (email.length > 0 &&
+      ? (!signupsDisabled &&
+         email.length > 0 &&
          password.length > 0 &&
          confirmPassword.length > 0 &&
          password === confirmPassword &&
@@ -401,6 +408,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         setPassword('');
         setConfirmPassword('');
       } else if (mode === 'signup') {
+        if (signupsDisabled) throw new Error('New sign-ups are temporarily paused. Please check back shortly.');
         if (!name.trim()) throw new Error('Full name is required.');
         if (!username.trim()) throw new Error('Username is required.');
         if (!validateUsername(username.trim())) throw new Error('Username must be 3-30 characters, letters numbers and underscores only.');
@@ -479,6 +487,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (existsResult?.username_taken) throw new Error('Username already exists');
 
         await checkAuthRateLimit('signup', normalizedEmail);
+        // Server-side re-check, not just the client-side signupsDisabled
+        // gate above — catches any caller hitting this RPC layer directly.
+        const { error: flagError } = await insforge.database.rpc('check_signups_enabled');
+        if (flagError && String((flagError as any)?.message || flagError).includes('signups_disabled')) {
+          throw new Error('New sign-ups are temporarily paused. Please check back shortly.');
+        }
         const { data, error } = await insforge.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
 
@@ -1249,6 +1263,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 ? 'Enter your email to receive a verification code'
                 : 'Enter your new password below'}
             </p>
+
+            {mode === 'signup' && signupsDisabled && (
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
+                <p style={{ margin: 0, color: '#F59E0B', fontSize: '13px', fontWeight: 600 }}>New sign-ups are temporarily paused. Please check back shortly.</p>
+              </div>
+            )}
 
             {errorMessage && (
               <div

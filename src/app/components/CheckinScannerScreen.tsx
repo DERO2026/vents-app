@@ -13,6 +13,9 @@ interface CheckinScannerScreenProps {
   onBack: () => void;
   currentUser: any;
   selectedEvent?: Event | null;
+  // Kill switch (app_config.disable_scanning) — verify_entry_pass also
+  // rejects with 'scanning_disabled' server-side if this is bypassed.
+  scanningDisabled?: boolean;
 }
 
 interface CheckinState {
@@ -31,7 +34,7 @@ function triggerHaptic(kind: 'success' | 'error') {
   try { navigator.vibrate(kind === 'success' ? 40 : [30, 60, 30]); } catch { /* ignore */ }
 }
 
-export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: CheckinScannerScreenProps) {
+export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scanningDisabled = false }: CheckinScannerScreenProps) {
   const [state, setState] = useState<CheckinState>({ status: 'idle' });
   const [stats, setStats] = useState({ checkedIn: 0, total: 0 });
   const [scannerReady, setScannerReady] = useState(false);
@@ -222,6 +225,22 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
           The check-in scanner is only accessible to event organizers.
         </p>
         <button onClick={onBack} style={{ marginTop: '24px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  // ── Kill switch (app_config.disable_scanning) ───────────────────────────────
+  if (scanningDisabled) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
+        <ScanLine size={48} color="#8B8FA8" style={{ marginBottom: '16px' }} />
+        <h2 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800 }}>Scanning Temporarily Paused</h2>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '8px', lineHeight: 1.6 }}>
+          Ticket scanning is temporarily disabled platform-wide. Please try again shortly.
+        </p>
+        <button onClick={onBack} style={{ marginTop: '24px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px 28px', color: '#C4C9E0', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
           Go Back
         </button>
       </div>

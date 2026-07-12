@@ -54,6 +54,10 @@ interface EventDetailsScreenProps {
   onOrganizerPress?: (organizerId: string) => void;
   onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
   onOpenDoorScanner?: () => void;
+  // Kill switch (app_config.disable_purchases) — server-side purchase_ticket
+  // also rejects with 'purchases_disabled' if this is bypassed, so this
+  // prop is purely a graceful-degradation UI state, not the real gate.
+  purchasesDisabled?: boolean;
 }
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
@@ -232,6 +236,7 @@ export function EventDetailsScreen({
   onOrganizerPress,
   onMessageOrganizer,
   onOpenDoorScanner,
+  purchasesDisabled = false,
 }: EventDetailsScreenProps) {
   const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
   const isSubAdmin = currentUserRole === 'sub-admin';
@@ -1316,7 +1321,7 @@ export function EventDetailsScreen({
         <button
           onClick={() => {
             try {
-              if (!isBooked && canBook && selectedTicket) {
+              if (!isBooked && canBook && !purchasesDisabled && selectedTicket) {
                 onGetTickets(selectedTicket, selectedQty);
               }
             } catch (err: any) {
@@ -1324,30 +1329,32 @@ export function EventDetailsScreen({
               alert('Booking error: ' + (err?.message || String(err)));
             }
           }}
-          disabled={isBooked || !canBook}
+          disabled={isBooked || !canBook || purchasesDisabled}
           style={{
             flex: 1,
             background: isBooked
               ? 'rgba(16,185,129,0.12)'
+              : purchasesDisabled
+              ? '#1A1D2E'
               : canBook
               ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
               : '#1A1D2E',
             border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
             borderRadius: '16px',
             padding: '14px 28px',
-            color: isBooked ? '#10B981' : canBook ? '#fff' : '#8B8FA8',
+            color: isBooked ? '#10B981' : purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: isBooked || !canBook ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !isBooked ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+            cursor: isBooked || !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+            boxShadow: canBook && !isBooked && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
           }}
         >
-          {isBooked ? '✓ You are going' : canBook ? `Book · ${formatPrice(selectedTicket!.price * selectedQty)}` : 'Select tickets above'}
+          {isBooked ? '✓ You are going' : purchasesDisabled ? 'Purchases Temporarily Paused' : canBook ? `Book · ${formatPrice(selectedTicket!.price * selectedQty)}` : 'Select tickets above'}
         </button>
       </div>
 
