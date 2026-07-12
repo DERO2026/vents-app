@@ -1,0 +1,25 @@
+-- Phase-3 abuse-prevention audit: admin_credit_vents_cents existed as two
+-- inconsistent SECURITY DEFINER overloads.
+--
+-- (p_target_user_id uuid, p_amount integer, p_reason text) — peer-to-peer
+-- model: debited the calling admin's own vents_wallets balance to fund the
+-- credit, and wrote NO vc_transactions row (invisible to the VC ledger).
+-- Added in migrations/20260616213327_admin-credit-vents-cents.sql.
+-- Unreachable from the live client: AdminDashboardScreen.tsx's
+-- handleVcAdminTransfer (the only caller) sends a JSON body keyed
+-- `p_user_id`, which PostgREST can only resolve against the other overload's
+-- parameter names — this signature has never actually been invoked by the app.
+--
+-- (p_user_id uuid, p_amount numeric, p_reason text) — mint model: inserts a
+-- 'earn'/'active' public.vc_transactions row, credits public.vents_wallets,
+-- and notifies the target. This is the one the client actually calls, and it
+-- matches the design already established by the admin_debit_vents_cents
+-- sibling (migrations/20260711122545_add-admin-debit-vents-cents.sql), which
+-- burns VC via _vc_deduct() with no offsetting credit anywhere — i.e. admin
+-- VC adjustments are a system mint/burn against the ledger, not a transfer
+-- to/from the admin's personal wallet. Keeping this overload as the single
+-- canonical admin_credit_vents_cents.
+--
+-- Dropping the stale, unreachable, unaudited peer-to-peer overload so only
+-- one signature — and one behavior — remains.
+DROP FUNCTION IF EXISTS public.admin_credit_vents_cents(uuid, integer, text);
