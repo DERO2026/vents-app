@@ -27,17 +27,10 @@
       <!-- Paystack Inline Payment SDK -->
       <script src="https://js.paystack.co/v1/inline.js"></script>
 
-      <!-- PushAlert (background tracking only — permission prompt disabled) -->
-      <script type="text/javascript">
-        window.paDisablePushPrompt = true;
-        (function(d, t) {
-          var g = d.createElement(t),
-          s = d.getElementsByTagName(t)[0];
-          g.src = "https://cdn.pushalert.co/integrate_be1188a61752af971d519863076f1388.js";
-          s.parentNode.insertBefore(g, s);
-        }(document, "script"));
-      </script>
-      <!-- End PushAlert -->
+      <!-- PushAlert is initialized from React (see src/lib/pushAlert.ts,
+           called via initPushAlert() in App.tsx) rather than a blocking
+           inline script here, so a slow/blocked vendor load can't crash
+           app startup and is only ever injected once. -->
     </head>
 
     <body>

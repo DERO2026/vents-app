@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken } from '../lib/insforge';
-import { setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
+import { initPushAlert, setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
 import { identifyUser, trackEvent } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
 
@@ -259,6 +259,13 @@ export default function App() {
     checkAppConfig();
     const interval = setInterval(checkAppConfig, 15000);
     return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  // Mount-once: initPushAlert() itself guards against double-injection
+  // (module-level flag + a DOM check for an existing script tag), so this
+  // stays safe even under React 18 StrictMode's double-invoke in dev.
+  useEffect(() => {
+    initPushAlert();
   }, []);
 
   // Keep currentUser.role in sync with the DB. Without this, a role change
