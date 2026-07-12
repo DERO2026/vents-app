@@ -1098,6 +1098,8 @@ export function AdminDashboardScreen({
   };
 
   const handleSoftDelete = (u: UserRow) => {
+    const reason = window.prompt(`Reason for deleting @${u.username || u.email}? (kept on the account record for the audit trail)`);
+    if (reason === null) return; // cancelled
     setConfirmModal({
       title: 'Delete Account',
       message: `Soft-delete @${u.username || u.email}? They will be blocked from login. You can reinstate them later.`,
@@ -1108,9 +1110,11 @@ export function AdminDashboardScreen({
         setBusyId(u.id);
         try {
           const deletedAt = new Date().toISOString();
-          const { error } = await insforge.database.from('users').update({ status: 'deleted', deleted_at: deletedAt }).eq('id', u.id);
+          const { error } = await insforge.database.from('users')
+            .update({ status: 'deleted', deleted_at: deletedAt, deleted_by: currentUser.id, reason: reason.trim() || null })
+            .eq('id', u.id);
           if (error) throw error;
-          await writeAuditLog(currentUser,'delete_user', u.id, { target_email: u.email });
+          await writeAuditLog(currentUser,'delete_user', u.id, { target_email: u.email, reason: reason.trim() || null });
           // Deleted users no longer show in the main Users list — they move
           // to the dedicated Deleted Users tab (queried on deleted_at).
           setUsers(prev => prev.filter(x => x.id !== u.id));
@@ -1125,7 +1129,7 @@ export function AdminDashboardScreen({
   const handleReinstate = async (u: UserRow) => {
     setBusyId(u.id);
     try {
-      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null, deleted_at: null }).eq('id', u.id);
+      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null, deleted_at: null, deleted_by: null, reason: null }).eq('id', u.id);
       if (error) throw error;
       await writeAuditLog(currentUser,'reinstate_user', u.id, { target_email: u.email, previous_status: u.status });
       setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null, deleted_at: null } : x));

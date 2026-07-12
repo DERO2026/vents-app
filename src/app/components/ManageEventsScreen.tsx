@@ -128,7 +128,12 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
     if (!deleteTarget) return;
     setDeleting(true);
     try {
-      await insforge.database.from('events').delete().eq('id', deleteTarget.id);
+      // Soft delete only — public.tickets.event_id is ON DELETE RESTRICT,
+      // so a real DELETE here would be rejected by the DB once any ticket
+      // exists anyway. This preserves ticket/payment history and can be
+      // restored later (see soft_delete_event / admin_restore_deleted_event).
+      const { error } = await insforge.database.rpc('soft_delete_event', { p_event_id: deleteTarget.id });
+      if (error) throw error;
       onDeleteEvent?.(deleteTarget.id);
       setDeleteTarget(null);
     } catch { /* ignore */ } finally {

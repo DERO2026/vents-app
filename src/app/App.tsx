@@ -694,8 +694,18 @@ export default function App() {
         .eq('status', 'active');
       
       if (error) throw error;
-      
+
       if (data) {
+        // Single source of truth for the embedded event's "attendees"
+        // figure — previously read events.attendee_count, a column that
+        // was never created in any migration, so this always silently
+        // fell back to 0.
+        const ticketEventIds = [...new Set(data.filter((t: any) => t.events).map((t: any) => t.events.id))];
+        let statsByEventId: Record<string, number> = {};
+        if (ticketEventIds.length > 0) {
+          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: ticketEventIds });
+          (statsRes || []).forEach((s: any) => { statsByEventId[s.event_id] = s.sold_count || 0; });
+        }
         const mappedTickets: PurchasedTicket[] = data
           .filter((t: any) => t.events)
           .map((t: any) => {
@@ -737,7 +747,7 @@ export default function App() {
             organizerVerified: true,
             isFeatured: false,
             isTrending: false,
-            attendees: dbEvent.attendee_count ?? 0,
+            attendees: statsByEventId[dbEvent.id] ?? 0,
             capacity: dbEvent.ticket_goal ?? 0,
             rating: 0,
             reviewCount: 0,
@@ -855,11 +865,14 @@ export default function App() {
             .in('event_id', eventIds);
           if (promoRes) promotionsData = promoRes;
 
-          const { data: ticketsRes } = await insforge.database
-            .from('tickets')
-            .select('event_id, status')
-            .in('event_id', eventIds);
-          if (ticketsRes) ticketsData = ticketsRes;
+          // Single source of truth for "tickets sold" across the whole
+          // app — see get_event_ticket_stats (Data Consistency migration).
+          // Previously this queried tickets directly and counted any
+          // status='active' row regardless of payment_status, which could
+          // disagree with SalesAnalyticsScreen/OrganizerDashboard's
+          // payment_status='paid'-only counts for the same event.
+          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
+          if (statsRes) ticketsData = statsRes;
 
           // Fetch saves count per event for popularity score
           const { data: savesRes } = await insforge.database
@@ -871,9 +884,7 @@ export default function App() {
 
         const bookingsCountMap: Record<string, number> = {};
         ticketsData.forEach((t: any) => {
-          if (t.status === 'active') {
-            bookingsCountMap[t.event_id] = (bookingsCountMap[t.event_id] || 0) + 1;
-          }
+          bookingsCountMap[t.event_id] = t.sold_count || 0;
         });
 
         const savesCountMap: Record<string, number> = {};

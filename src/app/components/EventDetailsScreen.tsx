@@ -322,20 +322,17 @@ export function EventDetailsScreen({
     fetchRelatedEvents();
   }, [event.id, event.category, event.organizer_id]);
 
-  // 2. Dynamic attendee count - re-fetch when event changes or booking state updates
+  // 2. Dynamic attendee count - re-fetch when event changes or booking state updates.
+  // Single source of truth (get_event_ticket_stats, see Data Consistency
+  // migration) — previously counted any status='active' ticket regardless
+  // of payment_status, which could show a different number here than on
+  // SalesAnalyticsScreen/OrganizerDashboard for the same event.
   useEffect(() => {
     const fetchAttendeeCount = async () => {
       try {
-        const { data, error } = await insforge.database
-          .from('tickets')
-          .select('id')
-          .eq('event_id', event.id)
-          .eq('status', 'active');
-        
+        const { data, error } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
         if (error) throw error;
-        if (data) {
-          setRealAttendeeCount(data.length);
-        }
+        setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {
         console.error('Failed to fetch attendee count:', err);
       }

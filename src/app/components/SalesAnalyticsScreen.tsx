@@ -258,11 +258,20 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
           return acc;
         }, {});
 
+        // Matches the canonical "sold" definition used everywhere else
+        // (get_event_ticket_stats, see Data Consistency migration):
+        // status='active' AND payment_status='paid'. This screen still
+        // needs the raw per-ticket rows for the daily/ticket-type
+        // breakdown below, so it can't just call the aggregate RPC, but it
+        // must apply the same filter or "Total Revenue"/"Tickets Sold"
+        // here would silently include pending/unpaid checkouts that
+        // OrganizerDashboard and AdminDashboard correctly exclude.
         const { data: tickets, error: ticketsError } = await insforge.database
           .from('tickets')
           .select('*')
           .in('event_id', eventIds)
-          .eq('status', 'active');
+          .eq('status', 'active')
+          .eq('payment_status', 'paid');
 
         if (ticketsError) throw ticketsError;
 

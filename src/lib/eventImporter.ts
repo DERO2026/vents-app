@@ -1,4 +1,5 @@
 import { getAuthToken } from './insforge';
+import { REGION } from './regionConfig';
 
 export interface ImportedEvent {
   title: string;
@@ -65,8 +66,13 @@ export async function publishEvents(
   for (const event of events) {
     try {
       const time = event.time || '10:00';
+      // Imported events don't carry their own timezone info, so this
+      // assumes the offset matches VENTS' current single launch region
+      // (see regionConfig.ts) rather than a bare hardcoded literal.
+      // events.event_date is timestamptz, so Postgres normalizes whatever
+      // offset is supplied here to true UTC on write.
       const eventDate = event.date
-        ? `${event.date}T${time}:00+01:00`
+        ? `${event.date}T${time}:00${REGION.timezoneOffset}`
         : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
       const { error } = await database.from('events').insert({
