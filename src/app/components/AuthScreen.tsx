@@ -552,7 +552,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           // 3.5: Block banned / deleted accounts immediately after auth
           if (profile?.status === 'suspended' || profile?.status === 'deleted') {
             await insforge.auth.signOut().catch(() => {});
-            clearRefreshToken();
+            await clearRefreshToken();
             setBanInfo({ status: profile.status, until: profile.banned_until ?? null });
             setLoading(false);
             return;

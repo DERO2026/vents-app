@@ -1,4 +1,6 @@
 import { createClient } from '@insforge/sdk';
+import { Capacitor } from '@capacitor/core';
+import { SecureStorage } from '@aparajita/capacitor-secure-storage';
 
 export const insforge = createClient({
   baseUrl: import.meta.env.VITE_INSFORGE_URL,
@@ -7,14 +9,42 @@ export const insforge = createClient({
 
 const SESSION_KEY = 'vents_rt';
 
-// Persist and restore refresh token so sessions survive page reloads.
-// sessionStorage (not localStorage) — cleared when the tab is closed.
-export function saveRefreshToken(token: string) {
-  try { sessionStorage.setItem(SESSION_KEY, token); } catch { /* ignore */ }
+// On native (Capacitor/Android), the refresh token is persisted through
+// @aparajita/capacitor-secure-storage — backed by the Android Keystore
+// (EncryptedSharedPreferences), not plain SharedPreferences, so it isn't
+// readable even on a rooted device without breaking the Keystore itself.
+// On web, there's no native Keychain equivalent; sessionStorage remains
+// the least-bad option (cleared when the tab closes, unlike localStorage
+// which persists indefinitely and widens the XSS exposure window). Both
+// paths are wrapped so every caller gets the same async API regardless of
+// platform.
+const isNative = Capacitor.isNativePlatform();
+
+export async function readRefreshToken(): Promise<string | null> {
+  try {
+    if (isNative) return await SecureStorage.getItem(SESSION_KEY);
+    return sessionStorage.getItem(SESSION_KEY);
+  } catch {
+    return null;
+  }
 }
 
-export function clearRefreshToken() {
-  try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
+export async function saveRefreshToken(token: string): Promise<void> {
+  try {
+    if (isNative) await SecureStorage.setItem(SESSION_KEY, token);
+    else sessionStorage.setItem(SESSION_KEY, token);
+  } catch {
+    /* ignore — falling back to relying on the SDK's own session handling */
+  }
+}
+
+export async function clearRefreshToken(): Promise<void> {
+  try {
+    if (isNative) await SecureStorage.removeItem(SESSION_KEY);
+    else sessionStorage.removeItem(SESSION_KEY);
+  } catch {
+    /* ignore */
+  }
 }
 
 /**
@@ -22,6 +52,7 @@ export function clearRefreshToken() {
  * Safe to call before any storage upload — works after a page refresh.
  */
 export async function getAuthToken(): Promise<string> {
+  await rehydrated;
   const hc = (insforge as any).getHttpClient?.();
 
   // 1. Try the SDK's official accessor first
@@ -32,7 +63,7 @@ export async function getAuthToken(): Promise<string> {
   if (hc?.userToken) return hc.userToken as string;
 
   // 3. Try manual refresh using the stored refresh token (most reliable after page reload)
-  const storedRt = sessionStorage.getItem(SESSION_KEY);
+  const storedRt = await readRefreshToken();
   if (storedRt && hc) {
     try {
       const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
@@ -49,7 +80,7 @@ export async function getAuthToken(): Promise<string> {
           const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
           if (newRt) {
             hc.refreshToken = newRt;
-            sessionStorage.setItem(SESSION_KEY, newRt);
+            await saveRefreshToken(newRt);
           }
           return at as string;
         }
@@ -73,6 +104,11 @@ export async function getAuthToken(): Promise<string> {
   throw new Error('Session expired. Please sign out and sign back in, then try again.');
 }
 
+// Resolves once the previously-saved refresh token (if any) has been
+// restored onto the http client — getAuthToken() awaits this before doing
+// anything else so it never races the async native storage read.
+let rehydrated: Promise<void> = Promise.resolve();
+
 if (typeof window !== 'undefined') {
   localStorage.removeItem('vents_auth_session');
 
@@ -82,8 +118,9 @@ if (typeof window !== 'undefined') {
     // Restore a previously-saved refresh token so getCurrentUser() can
     // rehydrate the session without relying on cross-domain httpOnly cookies
     // (which don't work on http://localhost vs https://insforge.app).
-    const stored = sessionStorage.getItem(SESSION_KEY);
-    if (stored) httpClient.refreshToken = stored;
+    rehydrated = readRefreshToken().then((stored) => {
+      if (stored) httpClient.refreshToken = stored;
+    });
 
     // Monkey-patch refreshAccessToken to work around a refreshToken vs
     // refresh_token casing inconsistency in the SDK's refresh request body.

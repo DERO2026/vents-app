@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
-import { insforge, clearRefreshToken, getAuthToken } from '../lib/insforge';
+import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
 import { initPushAlert, setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
 import { identifyUser, trackEvent } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
@@ -355,11 +355,13 @@ export default function App() {
 
         // 2. Fetch user session.
         // On localhost, the httpOnly refresh cookie is blocked cross-origin, so we
-        // fall back to a refresh token stored in sessionStorage (set at login).
+        // fall back to a refresh token stored in secure storage (set at login) —
+        // see src/lib/insforge.ts for the native Keychain/Keystore vs
+        // sessionStorage split.
         let sessionUserId: string | null = null;
         let sessionUserEmail: string | null = null;
 
-        const storedRt = sessionStorage.getItem('vents_rt');
+        const storedRt = await readRefreshToken();
         const hc = (insforge as any).getHttpClient?.();
         if (storedRt && hc && !hc.userToken) {
           try {
@@ -397,10 +399,10 @@ export default function App() {
               const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
               if (newRt) {
                 hc.refreshToken = newRt;
-                sessionStorage.setItem('vents_rt', newRt);
+                await saveRefreshToken(newRt);
               }
             } else {
-              sessionStorage.removeItem('vents_rt');
+              await clearRefreshToken();
             }
           } catch (refreshErr: any) {
             console.warn('Auth refresh token exchange failed:', refreshErr?.name === 'AbortError' ? 'timed out after 12s' : refreshErr?.message || refreshErr);
@@ -465,7 +467,7 @@ export default function App() {
         // Item 20: reject suspended users immediately on session restore
         if (profile?.status === 'suspended') {
           await insforge.auth.signOut().catch(() => {});
-          sessionStorage.removeItem('vents_rt');
+          await clearRefreshToken();
           setCurrentUser(null);
           setAuthError('Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.');
           setAuthLoading(false);
@@ -1299,7 +1301,7 @@ export default function App() {
 
   const handleSignOut = useCallback(async () => {
     setAuthLoading(true);
-    clearRefreshToken();
+    await clearRefreshToken();
     try {
       await insforge.auth.signOut();
     } catch (err) {
