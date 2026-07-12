@@ -62,6 +62,9 @@ export interface PurchasedTicket {
   // submission time; a ticket fetched back from the DB doesn't carry this,
   // it's already resolved into holderName/holderEmail for that one row.
   attendees?: TicketAttendee[];
+  // Server-validated promo code applied at checkout, if any — forwarded to
+  // purchase_ticket so it can be re-verified and the redemption recorded.
+  promoCode?: string;
   useVentsCents?: boolean;
   vcDiscountNgn?: number;
 }

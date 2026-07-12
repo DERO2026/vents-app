@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users } from 'lucide-react';
+import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users, CheckCircle2 } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { trackEvent } from '../../lib/analytics';
+import { insforge } from '../../lib/insforge';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -134,6 +135,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
+  const [promoDiscountPct, setPromoDiscountPct] = useState(0);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoChecking, setPromoChecking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
@@ -153,7 +157,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
-  const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
+  const discount = promoApplied ? Math.round(subtotal * (promoDiscountPct / 100)) : 0;
   const total = Math.max(0, subtotal + serviceFee - discount);
 
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
@@ -162,10 +166,42 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   const additionalAttendeesValid = additionalAttendees.every((a) => a.name.trim().length > 0 && isValidEmail(a.email));
 
+  // A code the user typed but never successfully applied (or applied, then
+  // edited) must block checkout rather than silently getting ignored — that
+  // would look like the discount applied when it didn't.
+  const promoPending = promoCode.trim().length > 0 && !promoApplied;
+
   const buildAttendees = (purchaserName: string, purchaserEmail: string): TicketAttendee[] => [
     { name: purchaserName, email: purchaserEmail },
     ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim() })),
   ];
+
+  const handleApplyPromo = async () => {
+    const code = promoCode.trim();
+    if (!code) return;
+    setPromoChecking(true);
+    setPromoError(null);
+    try {
+      const { data, error } = await insforge.database.rpc('validate_promo_code' as any, { p_code: code });
+      if (error) throw error;
+      const result = data as any;
+      if (result?.valid) {
+        setPromoApplied(true);
+        setPromoDiscountPct(Number(result.discount_percentage) || 0);
+        setPromoError(null);
+      } else {
+        setPromoApplied(false);
+        setPromoDiscountPct(0);
+        setPromoError(result?.reason || 'Invalid promo code.');
+      }
+    } catch (err: any) {
+      setPromoApplied(false);
+      setPromoDiscountPct(0);
+      setPromoError('Could not verify promo code. Please try again.');
+    } finally {
+      setPromoChecking(false);
+    }
+  };
 
   const handleFreeTicket = () => {
     const purchaserName = name.trim() || 'Guest';
@@ -180,6 +216,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       holderName: purchaserName,
       holderEmail: purchaserEmail,
       attendees: buildAttendees(purchaserName, purchaserEmail),
+      promoCode: promoApplied ? promoCode.trim() : undefined,
     };
     trackEvent('ticket_purchase_completed', { eventId: event?.id, ticketType: ticketType?.name, quantity, total: 0, free: true });
     onSuccess(ticket);
@@ -193,6 +230,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     const payerEmail = currentUser?.email || email.trim();
     if (!payerEmail || !isValidEmail(payerEmail)) {
       setPayError('A valid email address is required to pay.');
+      return;
+    }
+
+    if (promoPending) {
+      setPayError('Apply your promo code or clear it before continuing.');
       return;
     }
 
@@ -262,6 +304,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             holderName: purchaserName,
             holderEmail: payerEmail,
             attendees: buildAttendees(purchaserName, payerEmail),
+            promoCode: promoApplied ? promoCode.trim() : undefined,
           };
           trackEvent('ticket_purchase_completed', { eventId: event.id, ticketType: ticketType.name, quantity, total });
           onSuccess(ticket);
@@ -461,24 +504,44 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         )}
 
         {/* Promo code */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-          <Tag size={16} color="#8B8FA8" />
-          <input placeholder="Promo code" value={promoCode} onChange={(e) => setPromoCode(e.target.value)} style={{ ...INPUT_STYLE, flex: 1 }} />
-          <button
-            onClick={() => promoCode && setPromoApplied(true)}
-            style={{
-              background: promoApplied ? 'rgba(16,185,129,0.15)' : 'rgba(124,58,237,0.15)',
-              border: 'none',
-              borderRadius: '8px',
-              padding: '7px 14px',
-              color: promoApplied ? '#10B981' : '#A78BFA',
-              fontSize: '12px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
-          >
-            {promoApplied ? '✓ Applied' : 'Apply'}
-          </button>
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ background: '#090514', border: `1px solid ${promoError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {promoApplied ? <CheckCircle2 size={16} color="#10B981" /> : <Tag size={16} color="#8B8FA8" />}
+            <input
+              placeholder="Promo code"
+              value={promoCode}
+              onChange={(e) => {
+                setPromoCode(e.target.value);
+                if (promoApplied) setPromoApplied(false);
+                setPromoDiscountPct(0);
+                setPromoError(null);
+              }}
+              style={{ ...INPUT_STYLE, flex: 1 }}
+            />
+            <button
+              onClick={handleApplyPromo}
+              disabled={!promoCode.trim() || promoChecking}
+              style={{
+                background: promoApplied ? 'rgba(16,185,129,0.15)' : 'rgba(124,58,237,0.15)',
+                border: 'none',
+                borderRadius: '8px',
+                padding: '7px 14px',
+                color: promoApplied ? '#10B981' : '#A78BFA',
+                fontSize: '12px',
+                fontWeight: 600,
+                cursor: (!promoCode.trim() || promoChecking) ? 'not-allowed' : 'pointer',
+                opacity: (!promoCode.trim() || promoChecking) ? 0.6 : 1,
+              }}
+            >
+              {promoChecking ? 'Checking…' : promoApplied ? `✓ ${promoDiscountPct}% off` : 'Apply'}
+            </button>
+          </div>
+          {promoError && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', paddingLeft: '2px' }}>
+              <AlertCircle size={11} color="#EF4444" />
+              <span style={{ color: '#EF4444', fontSize: '11px' }}>{promoError}</span>
+            </div>
+          )}
         </div>
 
         {/* Order breakdown */}
@@ -495,7 +558,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#10B981', fontSize: '14px' }}>Promo (10% off)</span>
+                <span style={{ color: '#10B981', fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
                 <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
               </div>
             )}

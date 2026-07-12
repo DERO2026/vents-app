@@ -1136,11 +1136,17 @@ export default function App() {
           // now derives paid/pending purely from the event's own server-side
           // price, and only confirm_ticket_payment (webhook-verified) can
           // ever flip a priced ticket to 'paid'.
+          // purchase_ticket re-validates the promo code itself (expiry,
+          // usage limit, active flag) rather than trusting that it was
+          // still valid at the moment CheckoutScreen's "Apply" check ran —
+          // if it's since gone stale, this call throws and no ticket is
+          // created, same as any other validation failure here.
           const { error: insertError } = await insforge.database.rpc('purchase_ticket', {
             p_event_id: ticket.event.id,
             p_ticket_type: ticket.ticketType?.name ?? 'General',
             p_attendees: attendees,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+            p_promo_code: ticket.promoCode || null,
           });
           if (insertError) throw insertError;
           if (currentUser?.phone_number) {
