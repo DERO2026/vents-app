@@ -13,6 +13,9 @@ import { formatPrice } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
 
+// Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
+
 interface HomeScreenProps {
   onEventPress: (event: Event) => void;
   savedEvents: string[];
@@ -1087,7 +1090,7 @@ export function HomeScreen({
           >
             <Bell size={16} color="#C4C9E0" />
           </button>
-          {(currentUser?.role === 'organizer' || currentUser?.role === 'admin' || currentUser?.role === 'root') && (
+          {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button
               onClick={onCreatePress}
               style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}

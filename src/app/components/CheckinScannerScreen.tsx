@@ -46,8 +46,8 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
   // (The specific-organizer-vs-event ownership check happens server-side in
-  // verify_entry_pass, which rejects with 'wrong_organizer' if the scanning
-  // user doesn't actually own the ticket's event.)
+  // verify_entry_pass, which rejects with 'wrong_organizer' unless the
+  // scanning user owns the ticket's event OR is sub-admin/admin/root.)
   const isOrganizer =
     currentUser?.role === 'organizer' ||
     currentUser?.role === 'organiser' ||
@@ -159,14 +159,18 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent }: Che
       // DEFINER checks — without this, every scan would look unauthorized.
       await getAuthToken();
 
-      // Single atomic RPC: existence -> relational ownership (403 if the
-      // ticket's event isn't this organizer's) -> not-already-checked-in ->
-      // atomic checked_in write. No client-side race between separate
-      // read/insert round trips, and accepts either a bare ticket_id or an
-      // HMAC-signed "id.signature" token straight off the QR.
+      // Single atomic RPC: existence -> relational ownership (rejects with
+      // 'wrong_organizer' unless the scanning user owns the ticket's event,
+      // or is Sub-Admin/Admin-tier/Root covering someone else's door) ->
+      // not-already-checked-in -> atomic checked_in write. No client-side
+      // race between separate read/insert round trips, and accepts either a
+      // bare ticket_id or an HMAC-signed "id.signature" token straight off
+      // the QR. p_actor_id is always the authenticated scanning user, not
+      // necessarily the event's organizer — ownership is verified
+      // server-side against the ticket's real event.organizer_id.
       const { data, error } = await insforge.database.rpc('verify_entry_pass' as any, {
         p_ticket_id: ticketId,
-        p_organizer_id: currentUser.id,
+        p_actor_id: currentUser.id,
       });
 
       if (error) throw error;
