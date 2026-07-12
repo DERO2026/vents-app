@@ -43,6 +43,11 @@ export interface Event {
   is_18_plus?: boolean;
 }
 
+export interface TicketAttendee {
+  name: string;
+  email: string;
+}
+
 export interface PurchasedTicket {
   event: Event;
   ticketType: TicketType;
@@ -51,6 +56,12 @@ export interface PurchasedTicket {
   purchasedAt: string;
   totalAmount: number;
   holderName: string;
+  holderEmail?: string;
+  // One entry per ticket in the group, in the same order the backend should
+  // insert them — index 0 is always the purchaser. Only read at checkout
+  // submission time; a ticket fetched back from the DB doesn't carry this,
+  // it's already resolved into holderName/holderEmail for that one row.
+  attendees?: TicketAttendee[];
   useVentsCents?: boolean;
   vcDiscountNgn?: number;
 }

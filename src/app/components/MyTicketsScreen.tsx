@@ -208,7 +208,9 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             <div style={{ textAlign: 'center', padding: '0 16px' }}>
               <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
                 {activeTab === 'upcoming'
-                  ? "Seems like you haven't reserved any ticket yet, we are here to help!"
+                  ? (past.length > 0
+                      ? "You don't have any upcoming tickets right now."
+                      : "Seems like you haven't reserved any ticket yet, we are here to help!")
                   : 'Your expired tickets will appear here!'}
               </p>
               {activeTab === 'past' && (

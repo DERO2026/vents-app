@@ -757,7 +757,11 @@ export default function App() {
             ticketId: t.id,
             purchasedAt: t.created_at,
             totalAmount: Number(dbEvent.price || 0) * (t.quantity || 1),
-            holderName: currentUser?.full_name || 'Attendee'
+            // Each row is one individual attendee's ticket (see the
+            // multi-attendee-tickets migration) — show who it's actually
+            // for, not just the purchaser's own name on every card.
+            holderName: t.holder_name || currentUser?.full_name || 'Attendee',
+            holderEmail: t.holder_email || undefined,
           };
         });
 
@@ -1103,18 +1107,31 @@ export default function App() {
   const handleCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
     if (currentUser) {
       try {
-        // Guard: check if an active ticket already exists for this user + event
-        const { data: existingTicket, error: checkError } = await insforge.database
+        // Guard: skip re-inserting if this user already has active ticket(s)
+        // for this event. A group purchase creates one row per attendee, so
+        // this can no longer assume "at most one" row — .limit(1) instead of
+        // .maybeSingle(), which would throw once more than one row exists.
+        const { data: existingTickets, error: checkError } = await insforge.database
           .from('tickets')
           .select('id')
           .eq('event_id', ticket.event.id)
           .eq('user_id', currentUser.id)
           .eq('status', 'active')
-          .maybeSingle();
+          .limit(1);
 
         if (checkError) throw checkError;
 
-        if (!existingTicket) {
+        if (!existingTickets || existingTickets.length === 0) {
+          // Every ticket in the group needs its own name+email so each gets
+          // a distinct row (and QR code) the door scanner can check in
+          // individually. CheckoutScreen always supplies `attendees` for
+          // group (quantity > 1) purchases; fall back to a single entry
+          // built from the ticket's own holder fields for the instant
+          // free-ticket path (quantity === 1, no CheckoutScreen involved).
+          const attendees = ticket.attendees && ticket.attendees.length > 0
+            ? ticket.attendees
+            : [{ name: ticket.holderName || currentUser.full_name || 'Guest', email: currentUser.email }];
+
           // p_payment_status is no longer accepted from the client — the RPC
           // now derives paid/pending purely from the event's own server-side
           // price, and only confirm_ticket_payment (webhook-verified) can
@@ -1122,7 +1139,7 @@ export default function App() {
           const { error: insertError } = await insforge.database.rpc('purchase_ticket', {
             p_event_id: ticket.event.id,
             p_ticket_type: ticket.ticketType?.name ?? 'General',
-            p_quantity: ticket.quantity,
+            p_attendees: attendees,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
           });
           if (insertError) throw insertError;
@@ -1140,7 +1157,9 @@ export default function App() {
             user_id: currentUser.id,
             type: 'booking',
             title: 'Ticket confirmed! 🎉',
-            body: `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
+            body: attendees.length > 1
+              ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
+              : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
             icon: '🎟️',
           }]).then(({ error: notifyErr }: any) => {
             if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
@@ -1166,7 +1185,11 @@ export default function App() {
     }
     setSelectedTicketType(ticketType);
     setSelectedTicketQty(qty);
-    if ((ticketType.price ?? 0) * qty === 0) {
+    // A single free ticket can skip straight to confirmation. Anything
+    // needing more than one attendee's details -- including a free group
+    // RSVP -- goes through CheckoutScreen's attendee form so every ticket
+    // in the group gets its own name/email (and its own QR code).
+    if ((ticketType.price ?? 0) === 0 && qty === 1) {
       const freeTicket: PurchasedTicket = {
         ticketId: `VNT-FREE-${Date.now()}`,
         event: selectedEvent!,

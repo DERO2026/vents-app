@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X } from 'lucide-react';
-import { Event, TicketType, PurchasedTicket } from './types';
+import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users } from 'lucide-react';
+import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { trackEvent } from '../../lib/analytics';
@@ -138,6 +138,19 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [paymentLoading, setPaymentLoading] = useState(false);
   const [payError, setPayError] = useState<string | null>(null);
 
+  // Group purchases (quantity > 1) need one distinct name+email per ticket
+  // -- each row gets its own QR code, and the door scanner needs to know
+  // whose ticket it's scanning. Attendee 1 is always the purchaser (the
+  // existing name/email fields above); this holds attendees 2..quantity.
+  const [additionalAttendees, setAdditionalAttendees] = useState<TicketAttendee[]>(
+    () => Array.from({ length: Math.max(0, quantity - 1) }, () => ({ name: '', email: '' }))
+  );
+  const [attendeesTouched, setAttendeesTouched] = useState(false);
+
+  const updateAttendee = (index: number, field: keyof TicketAttendee, value: string) => {
+    setAdditionalAttendees((prev) => prev.map((a, i) => (i === index ? { ...a, [field]: value } : a)));
+  };
+
   const subtotal = ticketType.price * quantity;
   const serviceFee = Math.round(subtotal * 0.05);
   const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
@@ -147,7 +160,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
 
+  const additionalAttendeesValid = additionalAttendees.every((a) => a.name.trim().length > 0 && isValidEmail(a.email));
+
+  const buildAttendees = (purchaserName: string, purchaserEmail: string): TicketAttendee[] => [
+    { name: purchaserName, email: purchaserEmail },
+    ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim() })),
+  ];
+
   const handleFreeTicket = () => {
+    const purchaserName = name.trim() || 'Guest';
+    const purchaserEmail = currentUser?.email || email.trim();
     const ticket: PurchasedTicket = {
       event,
       ticketType,
@@ -155,7 +177,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       ticketId: `VNT-FREE-${Date.now().toString(36).toUpperCase()}`,
       purchasedAt: new Date().toISOString(),
       totalAmount: 0,
-      holderName: name.trim() || 'Guest',
+      holderName: purchaserName,
+      holderEmail: purchaserEmail,
+      attendees: buildAttendees(purchaserName, purchaserEmail),
     };
     trackEvent('ticket_purchase_completed', { eventId: event?.id, ticketType: ticketType?.name, quantity, total: 0, free: true });
     onSuccess(ticket);
@@ -163,6 +187,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   const handlePay = () => {
     setPayError(null);
+    setAttendeesTouched(true);
     trackEvent('checkout_initiated', { eventId: event?.id, ticketType: ticketType?.name, quantity, total });
 
     const payerEmail = currentUser?.email || email.trim();
@@ -173,6 +198,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
     if (!event?.id) {
       setPayError('Event not found. Please go back and try again.');
+      return;
+    }
+
+    if (!additionalAttendeesValid) {
+      setPayError(`Enter a name and valid email for all ${quantity} attendees.`);
       return;
     }
 
@@ -221,6 +251,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         },
         callback: (response: { reference: string }) => {
           setPaymentLoading(true);
+          const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
           const ticket: PurchasedTicket = {
             event,
             ticketType,
@@ -228,7 +259,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             ticketId: response.reference,
             purchasedAt: new Date().toISOString(),
             totalAmount: total,
-            holderName: name.trim() || currentUser?.full_name || 'Guest',
+            holderName: purchaserName,
+            holderEmail: payerEmail,
+            attendees: buildAttendees(purchaserName, payerEmail),
           };
           trackEvent('ticket_purchase_completed', { eventId: event.id, ticketType: ticketType.name, quantity, total });
           onSuccess(ticket);
@@ -375,6 +408,57 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </div>
           </div>
         </div>
+
+        {/* Additional attendees — one card per extra ticket in the group.
+            Attendee 1 is the purchaser above; each of these gets its own
+            distinct QR code, so the door scanner can check each person in
+            individually with the right name. */}
+        {quantity > 1 && (
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+              <Users size={16} color="#A78BFA" />
+              <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700 }}>
+                Attendee Details ({quantity} tickets)
+              </p>
+            </div>
+            <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
+              You're buying {quantity} tickets. Each ticket needs its own name and email so everyone gets a valid entry pass.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              {additionalAttendees.map((attendee, i) => {
+                const attendeeNumber = i + 2;
+                const nameMissing = attendeesTouched && attendee.name.trim().length === 0;
+                const attendeeEmailError = attendeesTouched && attendee.email.length > 0 && !isValidEmail(attendee.email)
+                  ? 'Enter a valid email'
+                  : attendeesTouched && attendee.email.length === 0
+                  ? 'Email is required'
+                  : undefined;
+                return (
+                  <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: i === 0 ? 0 : '14px', borderTop: i === 0 ? 'none' : '1px dashed rgba(255,255,255,0.08)' }}>
+                    <p style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                      Attendee {attendeeNumber} Details
+                    </p>
+                    <Field
+                      label="Full Name"
+                      placeholder={`Attendee ${attendeeNumber} full name`}
+                      value={attendee.name}
+                      onChange={(v) => updateAttendee(i, 'name', v)}
+                      error={nameMissing ? 'Name is required' : undefined}
+                    />
+                    <Field
+                      label="Email Address"
+                      placeholder="name@gmail.com"
+                      value={attendee.email}
+                      onChange={(v) => updateAttendee(i, 'email', v)}
+                      type="email"
+                      error={attendeeEmailError}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Promo code */}
         <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '16px', display: 'flex', gap: '10px', alignItems: 'center' }}>
