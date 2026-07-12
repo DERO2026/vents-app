@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Flattened icon (background + mark) for legacy/iOS/favicon use, where
+       there's no separate adaptive foreground/background layering. -->
+  <defs>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur1"/>
+      <feColorMatrix in="blur1" type="matrix"
+        values="0 0 0 0 0.659  0 0 0 0 0.333  0 0 0 0 0.969  0 0 0 0.9 0" result="glow1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="34" result="blur2"/>
+      <feColorMatrix in="blur2" type="matrix"
+        values="0 0 0 0 0.486  0 0 0 0 0.227  0 0 0 0 0.929  0 0 0 0.55 0" result="glow2"/>
+      <feMerge>
+        <feMergeNode in="glow2"/>
+        <feMergeNode in="glow1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1024" height="1024" fill="#020005"/>
+
+  <g transform="translate(44,32)">
+    <polyline points="250,340 340,620 430,340"
+      fill="none" stroke="#FFFFFF" stroke-width="46"
+      stroke-linecap="round" stroke-linejoin="round"/>
+
+    <g filter="url(#glow)">
+      <rect x="490" y="369" width="197" height="51" rx="10" fill="#A855F7"/>
+      <rect x="515" y="455" width="146" height="51" rx="10" fill="#A855F7"/>
+      <rect x="490" y="541" width="197" height="51" rx="10" fill="#A855F7"/>
+    </g>
+  </g>
+</svg>

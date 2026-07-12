@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!--
+    Brand mark reproduced from src/app/components/VentsLogo.tsx (the "V" +
+    three glowing purple bars standing in for the "E" in VENTS). Built as
+    pure vector shapes (no text/font-dependent glyphs), since this gets
+    rasterized by capacitor-assets' own renderer, which won't have
+    "Space Grotesk" installed.
+  -->
+  <defs>
+    <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="14" result="blur1"/>
+      <feColorMatrix in="blur1" type="matrix"
+        values="0 0 0 0 0.659  0 0 0 0 0.333  0 0 0 0 0.969  0 0 0 0.9 0" result="glow1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="34" result="blur2"/>
+      <feColorMatrix in="blur2" type="matrix"
+        values="0 0 0 0 0.486  0 0 0 0 0.227  0 0 0 0 0.929  0 0 0 0.55 0" result="glow2"/>
+      <feMerge>
+        <feMergeNode in="glow2"/>
+        <feMergeNode in="glow1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <g transform="translate(44,32)">
+    <!-- "V" -->
+    <polyline points="250,340 340,620 430,340"
+      fill="none" stroke="#FFFFFF" stroke-width="46"
+      stroke-linecap="round" stroke-linejoin="round"/>
+
+    <!-- three glowing bars standing in for the "E" -->
+    <g filter="url(#glow)">
+      <rect x="490" y="369" width="197" height="51" rx="10" fill="#A855F7"/>
+      <rect x="515" y="455" width="146" height="51" rx="10" fill="#A855F7"/>
+      <rect x="490" y="541" width="197" height="51" rx="10" fill="#A855F7"/>
+    </g>
+  </g>
+</svg>
