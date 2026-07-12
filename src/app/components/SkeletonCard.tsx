@@ -6,10 +6,43 @@ const shimmerStyle: React.CSSProperties = {
 };
 
 interface SkeletonCardProps {
-  variant?: 'event' | 'ticket' | 'message';
+  variant?: 'event' | 'ticket' | 'message' | 'feed' | 'row';
 }
 
 export function SkeletonCard({ variant = 'event' }: SkeletonCardProps) {
+  if (variant === 'row') {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
+        <div style={{ width: '44px', height: '44px', borderRadius: '10px', flexShrink: 0, ...shimmerStyle }} />
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ height: '13px', width: '65%', ...shimmerStyle }} />
+          <div style={{ height: '11px', width: '40%', ...shimmerStyle }} />
+        </div>
+      </div>
+    );
+  }
+
+  if (variant === 'feed') {
+    return (
+      <div
+        style={{
+          width: '100%',
+          background: '#090514',
+          borderRadius: '28px',
+          border: '1px solid rgba(255,255,255,0.07)',
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ aspectRatio: '3 / 4', ...shimmerStyle, borderRadius: 0 }} />
+        <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <div style={{ height: '16px', width: '75%', ...shimmerStyle }} />
+          <div style={{ height: '12px', width: '50%', ...shimmerStyle }} />
+          <div style={{ height: '12px', width: '35%', ...shimmerStyle }} />
+        </div>
+      </div>
+    );
+  }
+
   if (variant === 'ticket') {
     return (
       <div

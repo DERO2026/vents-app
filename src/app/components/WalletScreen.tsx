@@ -130,7 +130,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     resolveTimer.current = setTimeout(async () => {
       setResolving(true);
       try {
-        const result = await authedFetch('/api/wallet/resolve-account', {
+        const result = await authedFetch('/api/v1/wallet/resolve-account', {
           account_number: accountNumber,
           bank_code: selectedBank.code,
         });
@@ -154,7 +154,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     if (banks.length === 0) {
       setBanksLoading(true);
       try {
-        const res = await fetch('/api/wallet/banks');
+        const res = await fetch('/api/v1/wallet/banks');
         const json = await res.json();
         if (res.ok) setBanks(json.banks || []);
       } catch (e) {
@@ -198,7 +198,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setSavingBank(true);
     setBankSaveError('');
     try {
-      await authedFetch('/api/wallet/save-bank', {
+      await authedFetch('/api/v1/wallet/save-bank', {
         account_number: accountNumber,
         bank_code: selectedBank.code,
         bank_name: selectedBank.name,

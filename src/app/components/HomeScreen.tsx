@@ -13,6 +13,7 @@ import { formatPrice } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCarousel } from './ImageCarousel';
+import { SkeletonCard } from './SkeletonCard';
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -742,6 +743,54 @@ export function HomeScreen({
     return () => clearTimeout(handler);
   }, [inputValue]);
 
+  // Server-side fuzzy event search (typo-tolerant, synonym-aware, spans the
+  // full dataset instead of just whatever page is already loaded locally —
+  // see migrations/20260712200000_fuzzy-event-search.sql). null = no active
+  // search (fall back to the locally loaded feed); [] = search ran, no hits.
+  const [searchResults, setSearchResults] = useState<Event[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q) { setSearchResults(null); setSearchLoading(false); return; }
+    let cancelled = false;
+    setSearchLoading(true);
+    (async () => {
+      try {
+        const userDob = (currentUser as any)?.date_of_birth;
+        const userAgeYears = userDob
+          ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+          : 99;
+        const { data, error } = await insforge.database.rpc('search_events_fuzzy', {
+          p_query: q,
+          p_limit: 40,
+          p_exclude_18_plus: userAgeYears < 18,
+        });
+        if (cancelled) return;
+        if (error || !data) { setSearchResults([]); return; }
+
+        const rows = data as any[];
+        const eventIds = rows.map((r) => r.id);
+        let bookingsMap: Record<string, number> = {};
+        if (eventIds.length > 0) {
+          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
+          (statsRes || []).forEach((t: any) => { bookingsMap[t.event_id] = t.sold_count || 0; });
+        }
+        const mapped = rows.map((r) => {
+          const evt = mapDbEventToFrontend(r);
+          const bookings = bookingsMap[evt.id] || 0;
+          return { ...evt, bookingsCount: bookings, attendees: bookings };
+        });
+        if (!cancelled) setSearchResults(mapped);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [searchQuery, currentUser]);
+
   // People search state (for full-screen search overlay)
   const [searchPeople, setSearchPeople] = useState<any[]>([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
@@ -785,18 +834,16 @@ export function HomeScreen({
   // every card on every render pass — matters once the feed is long.
   const savedEventsSet = useMemo(() => new Set(savedEvents), [savedEvents]);
 
+  // While a search query is active, filter/sort the server's fuzzy-matched
+  // results instead of the locally loaded feed page — search_events_fuzzy
+  // already spans every upcoming event, not just what's paginated in.
+  const searchActive = !!searchQuery.trim();
+  const baseEvents = searchActive ? (searchResults ?? []) : dbEvents;
+
   // Filter events locally based on requirements. Memoized so an unrelated
   // re-render (e.g. toggling a save, which only changes savedEventsSet)
   // doesn't re-run this filter+sort pass over the whole events array.
-  const filteredEvents = useMemo(() => dbEvents.filter((event) => {
-    // Search matches title, category, or location
-    const matchQuery =
-      !searchQuery.trim() ||
-      event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.city.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      event.venue.toLowerCase().includes(searchQuery.toLowerCase());
-
+  const filteredEvents = useMemo(() => baseEvents.filter((event) => {
     // Category filter (today/week are date-based; featured events appear in all tabs)
     const matchCategory =
       activeCategory === 'all' ||
@@ -830,13 +877,13 @@ export function HomeScreen({
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
-    return matchQuery && matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
+    return matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
   }).sort((a, b) => {
     // Nearest date to furthest across the board.
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
     const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
     return dtA - dtB;
-  }), [dbEvents, searchQuery, activeCategory, stateFilter, priceFilter, upcomingOnly]);
+  }), [baseEvents, activeCategory, stateFilter, priceFilter, upcomingOnly]);
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
   const upcomingDbEvents = dbEvents.filter(e => {
@@ -1021,7 +1068,11 @@ export function HomeScreen({
 
                 {/* Event results */}
                 <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
-                {filteredEvents.length === 0 ? (
+                {searchLoading ? (
+                  <>
+                    {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="row" />)}
+                  </>
+                ) : filteredEvents.length === 0 ? (
                   <p style={{ color: '#94A3B8', fontSize: '13px' }}>No events found</p>
                 ) : (
                   filteredEvents.slice(0, 8).map(ev => (
@@ -1245,11 +1296,15 @@ export function HomeScreen({
                   {isDefaultState ? 'Explore Events' : 'Search Results'}
                 </h3>
                 <span style={{ color: '#94A3B8', fontSize: '11px' }}>
-                  {filteredEvents.length} event{filteredEvents.length !== 1 ? 's' : ''}
+                  {searchActive && searchLoading ? 'Searching…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
 
-              {filteredEvents.length === 0 ? (
+              {searchActive && searchLoading ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="feed" />)}
+                </div>
+              ) : filteredEvents.length === 0 ? (
                 <div className="flex flex-col items-center py-12 px-4 text-center">
                   {isDefaultState ? (
                     <>

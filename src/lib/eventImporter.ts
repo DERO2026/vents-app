@@ -19,7 +19,7 @@ export interface ImportedEvent {
 export async function extractEventsFromText(rawText: string): Promise<ImportedEvent[]> {
   try {
     const token = await getAuthToken();
-    const response = await fetch('/api/extract-events', {
+    const response = await fetch('/api/v1/extract-events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ text: rawText }),
@@ -45,7 +45,7 @@ export async function extractEventsFromUrl(url: string): Promise<ImportedEvent[]
 // required" banner without ever needing its own copy of the API key.
 export async function isEventExtractionConfigured(): Promise<boolean> {
   try {
-    const response = await fetch('/api/extract-events');
+    const response = await fetch('/api/v1/extract-events');
     if (!response.ok) return false;
     const data = await response.json();
     return !!data.configured;

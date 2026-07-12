@@ -148,7 +148,7 @@ async function writeAuditLog(actor: { id: string; role?: string }, action: strin
 async function notifyByEmail(requestType: 'organizer' | 'cac' | 'payout', requestId: string, decision: 'approved' | 'rejected', reason?: string) {
   try {
     const token = await getAuthToken();
-    await fetch('/api/notify/status-email', {
+    await fetch('/api/v1/notify/status-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ request_type: requestType, request_id: requestId, decision, reason }),
@@ -278,7 +278,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/wallet/admin-approve-payout', {
+      const res = await fetch('/api/v1/wallet/admin-approve-payout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ request_id: id }),
@@ -311,7 +311,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/wallet/admin-reject-payout', {
+      const res = await fetch('/api/v1/wallet/admin-reject-payout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ request_id: id, reason: reason.trim() }),
@@ -332,7 +332,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setReconciling(true);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/wallet/reconcile-payouts', {
+      const res = await fetch('/api/v1/wallet/reconcile-payouts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
@@ -355,7 +355,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/wallet/admin-cancel-payout', {
+      const res = await fetch('/api/v1/wallet/admin-cancel-payout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ request_id: id, reason: reason.trim() }),

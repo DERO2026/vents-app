@@ -116,7 +116,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           // this reference with Paystack (status + exact amount) before
           // writing anything, rather than trusting this callback alone.
           const token = await getAuthToken();
-          const res = await fetch('/api/promotions/activate', {
+          const res = await fetch('/api/v1/promotions/activate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({
