@@ -6,19 +6,21 @@ reset_password_method = "code"
 disable_signup = false
 
 [auth.password]
-min_length = 6
-require_number = false
-require_lowercase = false
-require_uppercase = false
+min_length = 10
+require_number = true
+require_lowercase = true
+require_uppercase = true
 require_special_char = false
 
 [auth.smtp]
-enabled = false
-host = ""
-port = 465
-username = ""
-sender_email = ""
-sender_name = ""
+enabled = true
+host = "smtp.gmail.com"
+port = 587
+username = "support@getvents.com"
+# password is managed via secrets — run `insforge secrets add SMTP_PASSWORD "<value>"`
+password = "env(SMTP_PASSWORD)"
+sender_email = "support@getvents.com"
+sender_name = "VENTS"
 min_interval_seconds = 60
 
 [storage]

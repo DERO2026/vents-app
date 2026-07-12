@@ -3,9 +3,19 @@ import { verifyInsforgeSession } from './_lib/verifyAuth.js';
 import { applyCors } from './_lib/cors.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  applyCors(req, res);
+  applyCors(req, res, 'GET, POST, OPTIONS');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
+
+  // Cheap, unauthenticated status check for the admin UI's setup banner —
+  // reveals only whether the key is configured, never the key itself. This
+  // exists specifically so the client never needs its own copy of the
+  // secret (see the ANTHROPIC_API_KEY-only read below: a VITE_-prefixed
+  // env var would get inlined into the public JS bundle by Vite, which is
+  // exactly what happened before this endpoint existed as the fix).
+  if (req.method === 'GET') {
+    return res.status(200).json({ configured: !!process.env.ANTHROPIC_API_KEY });
+  }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
   // This endpoint spends a paid Anthropic API call per request — must be a
@@ -21,7 +31,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'text field too long (max 20000 characters)' });
   }
 
-  const apiKey = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY || '';
+  // Server-only, never VITE_-prefixed — a VITE_ var gets inlined into the
+  // public client bundle by Vite at build time.
+  const apiKey = process.env.ANTHROPIC_API_KEY || '';
   if (!apiKey) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
   }

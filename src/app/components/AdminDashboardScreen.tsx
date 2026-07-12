@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
-import { extractEventsFromText, publishEvents, type ImportedEvent } from '../../lib/eventImporter';
+import { extractEventsFromText, publishEvents, isEventExtractionConfigured, type ImportedEvent } from '../../lib/eventImporter';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -557,6 +557,12 @@ export function AdminDashboardScreen({
   const [selectedImports, setSelectedImports] = useState<Set<number>>(new Set());
   const [publishLoading, setPublishLoading] = useState(false);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
+  const [extractionConfigured, setExtractionConfigured] = useState(true);
+
+  useEffect(() => {
+    if (tab !== 'import-events') return;
+    isEventExtractionConfigured().then(setExtractionConfigured);
+  }, [tab]);
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -2327,11 +2333,11 @@ export function AdminDashboardScreen({
           )}
 
           {/* Instructions — only show if API key not configured */}
-          {!import.meta.env.VITE_ANTHROPIC_API_KEY && (
+          {!extractionConfigured && (
             <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '14px' }}>
               <p style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>⚠ SETUP REQUIRED</p>
               <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
-                Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>VITE_ANTHROPIC_API_KEY</span> in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>. Redeploy after adding.
+                Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>ANTHROPIC_API_KEY</span> (server-only — no <span style={{ fontFamily: 'monospace' }}>VITE_</span> prefix) in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>. Redeploy after adding.
               </p>
             </div>
           )}

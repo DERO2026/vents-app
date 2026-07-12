@@ -27,7 +27,10 @@ export const signupSchema = z.object({
   username: z.string().trim().regex(/^[a-zA-Z0-9_]{3,30}$/, 'Username must be 3-30 characters, letters, numbers, and underscores only'),
   email: z.string().trim().email().max(254),
   phone: z.string().trim().regex(NIGERIAN_PHONE_REGEX, 'Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678'),
-  password: z.string().min(8).max(128),
+  password: z.string().min(10).max(128)
+    .regex(/[a-z]/, 'Password must include a lowercase letter')
+    .regex(/[A-Z]/, 'Password must include an uppercase letter')
+    .regex(/\d/, 'Password must include a number'),
   state: safeText(1, 100),
 });
 

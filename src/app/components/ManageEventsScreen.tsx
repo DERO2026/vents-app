@@ -137,9 +137,14 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
   }
 
   async function toggleHide(event: OrganizerEvent) {
-    const newHidden = !((event as any).hidden_by_admin);
-    await insforge.database.from('events').update({ hidden_by_admin: newHidden }).eq('id', event.id);
-    onEditEvent(event.id, { status: newHidden ? 'draft' : 'live' } as any);
+    // hidden_by_admin is an admin-only moderation flag (server-enforced) —
+    // an organizer's own "pause my event" self-service toggle uses status
+    // instead, which the public feed query already filters on
+    // independently of hidden_by_admin.
+    const newlyPaused = event.status !== 'draft';
+    const newStatus = newlyPaused ? 'draft' : 'live';
+    const { error } = await insforge.database.from('events').update({ status: newStatus }).eq('id', event.id);
+    if (!error) onEditEvent(event.id, { status: newStatus } as any);
     setOptionsEvent(null);
   }
 
@@ -482,7 +487,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
               { icon: <Edit2 size={18} />, label: 'Edit', color: '#A78BFA', action: () => { openEdit(optionsEvent); setOptionsEvent(null); } },
               ...(onPromoteEvent && (optionsEvent.status === 'live' || optionsEvent.status === 'approved') ? [{ icon: <Zap size={18} />, label: 'Promote', color: '#F59E0B', action: () => { onPromoteEvent(optionsEvent.id); setOptionsEvent(null); } }] : []),
               { icon: <Users size={18} />, label: 'Attendees', color: '#3B82F6', action: () => { onNavigate('attendee-list'); setOptionsEvent(null); } },
-              { icon: (optionsEvent as any).hidden_by_admin ? <Eye size={18} /> : <EyeOff size={18} />, label: (optionsEvent as any).hidden_by_admin ? 'Make Live' : 'Hide Event', color: '#8B8FA8', action: () => toggleHide(optionsEvent) },
+              { icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: optionsEvent.status === 'draft' ? 'Make Live' : 'Hide Event', color: '#8B8FA8', action: () => toggleHide(optionsEvent) },
               { icon: <Trash2 size={18} />, label: 'Delete Event', color: '#EF4444', action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } },
             ].map((item, i) => (
               <button key={i} onClick={item.action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>

@@ -365,6 +365,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
       } else if (mode === 'reset') {
         if (!password) throw new Error('Password is required.');
+        if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         if (!resetToken) throw new Error('Reset token is missing or invalid. Please request a new link.');
         
@@ -390,7 +391,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           throw new Error('Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678');
         }
         if (!password) throw new Error('Password is required.');
-        if (!validatePassword(password)) throw new Error('Password must be at least 8 characters.');
+        if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         if (!signupState && !selectedState) throw new Error('State is required.');
         if (!role) throw new Error('Role is required.');
@@ -611,7 +612,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           : (msgL.includes('phone') && (msgL.includes('already') || msgL.includes('exists') || msgL.includes('taken')))
           ? 'Phone number already registered. Try logging in instead.'
           : (msgL.includes('password') && (msgL.includes('weak') || msgL.includes('short') || msgL.includes('simple') || msgL.includes('strength')))
-          ? 'Password is too weak. Use at least 8 characters with letters and numbers.'
+          ? 'Password is too weak. Use at least 10 characters with uppercase, lowercase, and a number.'
           : msgL.includes('rate limit') || msgL.includes('too many')
           ? 'Too many attempts. Please wait a few minutes and try again.'
           : msgL.includes('network') || msgL.includes('fetch')
@@ -1005,6 +1006,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               onClick={async () => {
                 if (!forgotExchangedToken) { setErrorMessage('Your session expired. Please request a new code.'); return; }
                 if (!forgotNewPassword) { setErrorMessage('Password is required.'); return; }
+                if (!validatePassword(forgotNewPassword)) { setErrorMessage('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.'); return; }
                 if (forgotNewPassword !== forgotConfirmPassword) { setErrorMessage('Passwords do not match.'); return; }
                 setLoading(true);
                 setErrorMessage(null);

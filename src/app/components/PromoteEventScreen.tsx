@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
+import { insforge, getAuthToken } from '../../lib/insforge';
 import { openPaystackPopup } from '../../lib/paystack';
 
 interface PromoteEventScreenProps {
@@ -61,6 +61,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
   const [selectedDuration, setSelectedDuration] = useState<Duration>(7);
   const [loading, setLoading] = useState(false);
   const [paid, setPaid] = useState(false);
+  const [activationError, setActivationError] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId || '');
 
@@ -109,31 +110,32 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       amountNaira,
       metadata: { event_id: selectedEventId, plan: selectedPlan, duration: selectedDuration },
       onSuccess: async (response) => {
+        setActivationError(null);
         try {
-          const planTypeMap: Record<Plan, string> = { spotlight: 'boosted', featured: 'featured', trending: 'trending' };
-          const start = new Date();
-          const end = new Date();
-          end.setDate(start.getDate() + selectedDuration);
-
-          // Record promotion
-          await insforge.database.from('event_promotions').insert([{
-            event_id: selectedEventId,
-            organizer_id: currentUser.id,
-            plan_type: planTypeMap[selectedPlan],
-            start_date: start.toISOString(),
-            end_date: end.toISOString(),
-            status: 'active'
-          }]);
-
-          // Mark event as featured with expiry
-          await insforge.database.from('events')
-            .update({ is_featured: true, featured_until: end.toISOString() })
-            .eq('id', selectedEventId);
+          // Server-side verified activation: the API independently confirms
+          // this reference with Paystack (status + exact amount) before
+          // writing anything, rather than trusting this callback alone.
+          const token = await getAuthToken();
+          const res = await fetch('/api/promotions/activate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              event_id: selectedEventId,
+              reference: response.reference,
+              plan: selectedPlan,
+              duration_days: selectedDuration,
+            }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({ error: 'Activation failed' }));
+            throw new Error(err.error || 'Activation failed');
+          }
 
           setPaid(true);
           if (onPromoted) onPromoted();
-        } catch (err) {
-          console.error('Failed to save event promotion:', err);
+        } catch (err: any) {
+          console.error('Failed to activate event promotion:', err);
+          setActivationError(err?.message || 'Payment succeeded but activation failed. Contact support@getvents.com with your reference: ' + response.reference);
         } finally {
           setLoading(false);
         }
@@ -330,6 +332,11 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
       {/* CTA */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
+        {activationError && (
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '10px 12px', color: '#EF4444', fontSize: '12px', marginBottom: '10px', lineHeight: 1.5 }}>
+            {activationError}
+          </div>
+        )}
         <button
           onClick={handlePay}
           disabled={loading}

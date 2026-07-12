@@ -40,6 +40,19 @@ export async function extractEventsFromUrl(url: string): Promise<ImportedEvent[]
   return extractEventsFromText(`Event page: ${url}`);
 }
 
+// Unauthenticated boolean status check — lets the admin UI show a "setup
+// required" banner without ever needing its own copy of the API key.
+export async function isEventExtractionConfigured(): Promise<boolean> {
+  try {
+    const response = await fetch('/api/extract-events');
+    if (!response.ok) return false;
+    const data = await response.json();
+    return !!data.configured;
+  } catch {
+    return false;
+  }
+}
+
 export async function publishEvents(
   events: ImportedEvent[],
   organizerId: string,

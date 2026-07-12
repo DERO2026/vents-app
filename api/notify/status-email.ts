@@ -10,10 +10,13 @@ function fmtNaira(kobo: number): string {
 // brand-verification request. Called by the admin client right after the
 // status-changing RPC succeeds — never blocks the admin action if it fails.
 //
-// Admin-ness is verified the same way every other admin endpoint in this
-// app does it: forward the caller's own InsForge token and let RLS decide.
-// admin-only SELECT policies on both tables mean a non-admin caller simply
-// gets an empty result back, not the row.
+// Admin-ness is verified with a real server-side check (the is_admin() RPC,
+// forwarded with the caller's own token) rather than relying on RLS to fail
+// closed — organizer_requests/organizer_verification_requests/
+// organizer_withdrawal_requests all have an "OR own-user" SELECT policy
+// alongside the admin one, so a non-admin owner could otherwise read their
+// own request row here and trigger a fake "approved"/"completed" decision
+// email to themselves with any decision value they chose.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
@@ -41,6 +44,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const insforgeHeaders = { Authorization: authHeader, apikey: anonKey };
 
   try {
+    const adminCheckRes = await fetch(`${baseUrl}/api/database/rpc/is_admin`, {
+      method: 'POST',
+      headers: { ...insforgeHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const isAdmin = adminCheckRes.ok && (await adminCheckRes.json().catch(() => false)) === true;
+    if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
     const table = request_type === 'organizer' ? 'organizer_requests'
       : request_type === 'cac' ? 'organizer_verification_requests'
       : 'organizer_withdrawal_requests';
