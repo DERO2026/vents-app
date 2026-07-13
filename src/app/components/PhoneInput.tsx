@@ -29,9 +29,18 @@ export const COUNTRY_CODES: CountryOption[] = [
 
 export const DEFAULT_COUNTRY = COUNTRY_CODES[0];
 
-/** Max raw digits a country's national number holds, derived from its format's '0' placeholders. */
+// Format strings like Nigeria's "080 0000 0000" or Kenya's "0712 000000" are
+// human-readable EXAMPLE numbers, not pure templates — the '8', '7', '1', '2'
+// are real example digits, not placeholder characters. Treating only literal
+// '0' as a placeholder (the previous approach) left those example digits
+// hardcoded into the display no matter what the user actually typed, which
+// looked like the input only accepted 0/8/9. Every digit character in the
+// format string is a placeholder position; only non-digits (spaces, dashes,
+// parens) are literal separators.
+
+/** Max raw digits a country's national number holds, derived from its format's digit placeholders. */
 export function maxDigitsFor(country: CountryOption): number {
-  return (country.format.match(/0/g) || []).length;
+  return (country.format.match(/\d/g) || []).length;
 }
 
 /** Groups raw digits into a country's display format, e.g. "0801234567" -> "080 1234 567". */
@@ -40,7 +49,7 @@ export function formatNationalNumber(digits: string, country: CountryOption): st
   let di = 0;
   for (let i = 0; i < country.format.length && di < digits.length; i++) {
     const ch = country.format[i];
-    if (ch === '0') { out += digits[di]; di++; }
+    if (/\d/.test(ch)) { out += digits[di]; di++; }
     else out += ch;
   }
   return out;

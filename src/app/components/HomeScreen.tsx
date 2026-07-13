@@ -115,7 +115,10 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     state: stateFromLocation || city,
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
-    images: dbEvent.image_url ? [dbEvent.image_url] : [],
+    images: [
+      ...(dbEvent.image_url ? [dbEvent.image_url] : []),
+      ...(Array.isArray(dbEvent.gallery_urls) ? dbEvent.gallery_urls.filter(Boolean) : []),
+    ],
     description: dbEvent.description || '',
     organizer: dbEvent.organizer_name || dbEvent.organizer_username || 'Verified Organizer',
     organizerVcBadge: dbEvent.organizer_vc_badge || null,

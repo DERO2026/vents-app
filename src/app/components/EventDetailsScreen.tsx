@@ -469,18 +469,19 @@ export function EventDetailsScreen({
         />
       )}
 
-      {/* Hero — curved bottom edge; object-contain + a matching dark fill so
-          the whole flyer is always visible, never cropped, regardless of
-          its aspect ratio. */}
-      <div style={{ position: 'relative', height: 'calc(290px + env(safe-area-inset-top))', flexShrink: 0, borderRadius: '0 0 28px 28px', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
+      {/* Hero — curved bottom edge; sized to the flyer's own natural portrait
+          aspect ratio (capped at 68vh) so it fills nearly the whole card
+          instead of being letterboxed/pillarboxed inside a fixed-shape box. */}
+      <div style={{ position: 'relative', flexShrink: 0, borderRadius: '0 0 28px 28px', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
         <ImageCarousel
           images={flyerImages}
           alt={event.title}
-          imageFit="contain"
+          naturalAspect
+          maxHeightVh={68}
           imageBackground="#020005"
           showArrows={flyerImages.length > 1}
           onImageTap={(i) => { setLightboxIndex(i); setFlyerFullScreen(true); }}
-          style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
+          style={{ width: '100%', cursor: 'zoom-in' }}
         />
         <div style={{ position: 'absolute', bottom: '70px', right: '12px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '3px 8px', pointerEvents: 'none' }}>
           <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>

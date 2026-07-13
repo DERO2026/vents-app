@@ -10,6 +10,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { compressImage } from '../../lib/compressImage';
 import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -134,11 +135,18 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     (async () => {
       setLoadingEdit(true);
       try {
-        const { data, error } = await insforge.database
-          .from('events')
-          .select('*')
-          .eq('id', editEventId)
-          .single();
+        // Failsafe: a hung fetch must never leave the user stuck on the
+        // "Loading event…" spinner forever.
+        const { data, error } = await withTimeoutFallback(
+          Promise.resolve(
+            insforge.database
+              .from('events')
+              .select('*')
+              .eq('id', editEventId)
+              .single()
+          ),
+          { timeoutMs: 8000, timeoutMessage: 'Loading this event is taking too long. Please check your connection and try again.' }
+        );
         if (error) throw error;
         if (cancelled || !data) return;
         const row = data as any;
@@ -252,9 +260,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     const file = new File([compressed], `flier-${Date.now()}.${extension}`, { type: mimeType });
     const formData = new FormData();
     formData.append('file', file);
-    const res = await fetch(
-      `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
-      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+    // Failsafe: a hung upload (flaky mobile connection, iOS Safari stalls)
+    // must never leave the user stuck — this throws a friendly, catchable
+    // error instead of hanging the promise forever.
+    const res = await withTimeoutFallback(
+      fetch(
+        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
+        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      ),
+      { timeoutMs: 8000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
     );
     if (!res.ok) {
       if (res.status === 401 || res.status === 403) {
@@ -331,7 +345,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const submitEvent = async (eventStatus: 'live' | 'draft') => {
     setSubmitting(true);
     setErrorMessage(null);
-    const safetyTimer = setTimeout(() => setSubmitting(false), 10000);
     try {
       // Boundary-layer schema validation — rejects malformed/malicious
       // payloads before any DB call is made.
@@ -356,32 +369,39 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
       await getAuthToken();
 
-      const { data, error } = await insforge.database
-        .from('events')
-        .insert([{
-          title: sanitize(title),
-          description: sanitize(description),
-          image_url: imageUrl,
-          gallery_urls: galleryUrls,
-          location: locationString,
-          event_date: eventTimestamp,
-          start_time: startTime || null,
-          end_time: endTime || null,
-          price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
-          category: selectedCategories[0] || '',
-          categories: selectedCategories,
-          organizer_id: currentUser.id,
-          status: eventStatus,
-          is_18_plus: is18Plus,
-          ticket_types: ticketTypes.map((t, idx) => ({
-            id: `t_${idx}`,
-            name: t.name.trim(),
-            price: Number(t.price),
-            quantity: Number(t.quantity),
-            description: t.description.trim()
-          }))
-        }])
-        .select('id');
+      // Failsafe: a hung insert (flaky connection) must never leave the
+      // user stuck on the publish button forever.
+      const { data, error } = await withTimeoutFallback(
+        Promise.resolve(
+          insforge.database
+            .from('events')
+            .insert([{
+              title: sanitize(title),
+              description: sanitize(description),
+              image_url: imageUrl,
+              gallery_urls: galleryUrls,
+              location: locationString,
+              event_date: eventTimestamp,
+              start_time: startTime || null,
+              end_time: endTime || null,
+              price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+              category: selectedCategories[0] || '',
+              categories: selectedCategories,
+              organizer_id: currentUser.id,
+              status: eventStatus,
+              is_18_plus: is18Plus,
+              ticket_types: ticketTypes.map((t, idx) => ({
+                id: `t_${idx}`,
+                name: t.name.trim(),
+                price: Number(t.price),
+                quantity: Number(t.quantity),
+                description: t.description.trim()
+              }))
+            }])
+            .select('id')
+        ),
+        { timeoutMs: 8000, timeoutMessage: 'Publishing is taking too long. Please check your connection and try again.' }
+      );
 
       if (error) throw error;
 
@@ -419,7 +439,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       console.error('Failed to save event:', err);
       setErrorMessage(err.message || 'Failed to save event. Please try again.');
     } finally {
-      clearTimeout(safetyTimer);
       setSubmitting(false);
     }
   };
@@ -428,7 +447,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     if (!editEventId) return;
     setSubmitting(true);
     setErrorMessage(null);
-    const safetyTimer = setTimeout(() => setSubmitting(false), 10000);
     try {
       const eventCheck = eventCreateSchema.safeParse({
         title: title.trim(),
@@ -450,31 +468,38 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       await getAuthToken();
 
-      const { error } = await insforge.database
-        .from('events')
-        .update({
-          title: sanitize(title),
-          description: sanitize(description),
-          image_url: imageUrl,
-          gallery_urls: galleryUrls,
-          location: locationString,
-          event_date: eventTimestamp,
-          start_time: startTime || null,
-          end_time: endTime || null,
-          price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
-          category: selectedCategories[0] || '',
-          categories: selectedCategories,
-          is_18_plus: is18Plus,
-          ticket_types: ticketTypes.map((t, idx) => ({
-            id: `t_${idx}`,
-            name: t.name.trim(),
-            price: Number(t.price),
-            quantity: Number(t.quantity),
-            description: t.description.trim()
-          })),
-          ticket_goal: Number(capacity) || 0,
-        })
-        .eq('id', editEventId);
+      // Failsafe: a hung update must never leave the user stuck on "Save
+      // Changes" forever.
+      const { error } = await withTimeoutFallback(
+        Promise.resolve(
+          insforge.database
+            .from('events')
+            .update({
+              title: sanitize(title),
+              description: sanitize(description),
+              image_url: imageUrl,
+              gallery_urls: galleryUrls,
+              location: locationString,
+              event_date: eventTimestamp,
+              start_time: startTime || null,
+              end_time: endTime || null,
+              price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+              category: selectedCategories[0] || '',
+              categories: selectedCategories,
+              is_18_plus: is18Plus,
+              ticket_types: ticketTypes.map((t, idx) => ({
+                id: `t_${idx}`,
+                name: t.name.trim(),
+                price: Number(t.price),
+                quantity: Number(t.quantity),
+                description: t.description.trim()
+              })),
+              ticket_goal: Number(capacity) || 0,
+            })
+            .eq('id', editEventId)
+        ),
+        { timeoutMs: 8000, timeoutMessage: 'Saving is taking too long. Please check your connection and try again.' }
+      );
 
       if (error) throw error;
 
@@ -501,7 +526,6 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       console.error('Failed to update event:', err);
       setErrorMessage(err.message || 'Failed to update event. Please try again.');
     } finally {
-      clearTimeout(safetyTimer);
       setSubmitting(false);
     }
   };

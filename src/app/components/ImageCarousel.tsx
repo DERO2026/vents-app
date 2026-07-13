@@ -12,6 +12,15 @@ interface ImageCarouselProps {
   showArrows?: boolean;
   showDots?: boolean;
   fallbackIcon?: string;
+  /**
+   * When true, the container isn't given a fixed height — it sizes itself to
+   * the current image's own intrinsic aspect ratio (capped by maxHeightVh),
+   * so a portrait flyer renders full-width at its natural height instead of
+   * being letterboxed/pillarboxed inside a fixed-shape box.
+   */
+  naturalAspect?: boolean;
+  /** Cap on the natural-aspect box's height, in vh. Defaults to 70. */
+  maxHeightVh?: number;
 }
 
 const FALLBACK_BG = 'linear-gradient(135deg, #1e1040 0%, #0f172a 100%)';
@@ -30,6 +39,8 @@ export function ImageCarousel({
   showArrows = false,
   showDots = true,
   fallbackIcon = '🎉',
+  naturalAspect = false,
+  maxHeightVh = 70,
 }: ImageCarouselProps) {
   const [index, setIndex] = useState(0);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
@@ -72,7 +83,7 @@ export function ImageCarousel({
 
   if (validImages.length === 0 || currentFailed) {
     return (
-      <div style={{ ...style, background: FALLBACK_BG, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ ...style, background: FALLBACK_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', ...(naturalAspect ? { aspectRatio: '4 / 5', width: '100%' } : {}) }}>
         <span style={{ fontSize: '32px' }}>{fallbackIcon}</span>
       </div>
     );
@@ -80,7 +91,13 @@ export function ImageCarousel({
 
   return (
     <div
-      style={{ ...style, position: 'relative', overflow: 'hidden', background: imageBackground || '#090514' }}
+      style={{
+        ...style,
+        position: 'relative',
+        overflow: 'hidden',
+        background: imageBackground || '#090514',
+        ...(naturalAspect ? { display: 'flex', justifyContent: 'center' } : {}),
+      }}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       onClick={handleClick}
@@ -89,7 +106,11 @@ export function ImageCarousel({
         src={currentSrc}
         alt={alt}
         loading="lazy"
-        style={{ width: '100%', height: '100%', objectFit: imageFit, display: 'block' }}
+        style={
+          naturalAspect
+            ? { width: '100%', height: 'auto', maxHeight: `${maxHeightVh}vh`, objectFit: 'contain', display: 'block' }
+            : { width: '100%', height: '100%', objectFit: imageFit, display: 'block' }
+        }
         onError={() => setFailed((f) => ({ ...f, [clampedIndex]: true }))}
       />
 

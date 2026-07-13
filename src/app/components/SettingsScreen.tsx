@@ -10,6 +10,7 @@ import {
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { ImageCropperModal } from './ImageCropperModal';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
@@ -466,9 +467,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const formData = new FormData();
       formData.append('file', croppedFile);
-      const res = await fetch(
-        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      // Failsafe: a hung upload must never leave the profile photo picker stuck.
+      const res = await withTimeoutFallback(
+        fetch(
+          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        ),
+        { timeoutMs: 8000, timeoutMessage: 'Photo upload is taking too long. Please check your connection and try again.' }
       );
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
@@ -516,9 +521,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const formData = new FormData();
       formData.append('file', croppedFile);
-      const res = await fetch(
-        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      // Failsafe: a hung upload must never leave the cover photo picker stuck.
+      const res = await withTimeoutFallback(
+        fetch(
+          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        ),
+        { timeoutMs: 8000, timeoutMessage: 'Cover photo upload is taking too long. Please check your connection and try again.' }
       );
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');

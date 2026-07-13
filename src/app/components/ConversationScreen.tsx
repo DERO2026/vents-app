@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { compressImage } from '../../lib/compressImage';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
 interface ConversationScreenProps {
   currentUser: { id: string };
@@ -27,32 +29,6 @@ interface DM {
   _pending?: 'sending' | 'queued';
 }
 
-async function compressImage(file: File, maxPx = 1200, quality = 0.82): Promise<File> {
-  if (!file.type.startsWith('image/')) return file;
-  return new Promise((resolve) => {
-    const img = new window.Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      URL.revokeObjectURL(url);
-      let { width, height } = img;
-      if (Math.max(width, height) > maxPx) {
-        const ratio = maxPx / Math.max(width, height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      canvas.getContext('2d')!.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => resolve(blob ? new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }) : file),
-        'image/jpeg', quality
-      );
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
-    img.src = url;
-  });
-}
 
 export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle, onBack, onNavigateToProfile }: ConversationScreenProps) {
   const [messages, setMessages] = useState<DM[]>([]);
@@ -153,12 +129,16 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     setUploadingImg(true);
     try {
       const token = await getAuthToken();
-      const compressed = await compressImage(file);
+      const { blob: compressedBlob, mimeType, extension } = await compressImage(file);
       const formData = new FormData();
-      formData.append('file', new File([compressed], `dm-${Date.now()}.jpg`, { type: compressed.type }));
-      const res = await fetch(
-        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+      formData.append('file', new File([compressedBlob], `dm-${Date.now()}.${extension}`, { type: mimeType }));
+      // Failsafe: a hung upload must never leave the send button stuck.
+      const res = await withTimeoutFallback(
+        fetch(
+          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
+          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        ),
+        { timeoutMs: 8000, timeoutMessage: 'Image upload is taking too long.' }
       );
       if (!res.ok) throw new Error('Upload failed');
       const data = await res.json();
@@ -261,9 +241,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mt });
         const formData = new FormData();
         formData.append('file', file);
-        const res = await fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+        // Failsafe: a hung upload must never leave the recorder UI stuck.
+        const res = await withTimeoutFallback(
+          fetch(
+            `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
+            { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+          ),
+          { timeoutMs: 8000, timeoutMessage: 'Voice message upload is taking too long.' }
         );
         if (!res.ok) throw new Error('Upload failed');
         const data = await res.json();
