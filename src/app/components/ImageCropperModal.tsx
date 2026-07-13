@@ -78,6 +78,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const onCropCompleteCallback = useCallback((croppedArea: any, croppedAreaPixels: any) => {
     setCroppedAreaPixels(croppedAreaPixels);
@@ -86,10 +87,12 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
   const handleSave = async () => {
     try {
       if (!croppedAreaPixels) return;
+      setError(null);
       const croppedBlob = await getCroppedImg(imageSrc, croppedAreaPixels);
       onCropComplete(croppedBlob);
     } catch (e) {
       console.error('Failed to crop image:', e);
+      setError('Could not crop this image. Try again or pick a different photo.');
     }
   };
 
@@ -181,6 +184,9 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           gap: '8px',
         }}
       >
+        {error && (
+          <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>
+        )}
         <div style={{ display: 'flex', justifyContent: 'space-between', color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>
           <span>Zoom</span>
           <span>{Math.round(zoom * 100)}%</span>

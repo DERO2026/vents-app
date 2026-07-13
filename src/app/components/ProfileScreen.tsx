@@ -9,7 +9,6 @@ import {
   Star,
   LogOut,
   Shield,
-  HelpCircle,
   MapPin,
   Users,
   BadgeCheck,
@@ -275,20 +274,6 @@ export function ProfileScreen({
       sublabel: 'Account & preferences',
       color: '#22C55E',
       screen: 'settings',
-    },
-    {
-      icon: Shield,
-      label: 'Privacy & Security',
-      sublabel: 'Privacy policy & data rights',
-      color: '#3B82F6',
-      screen: 'privacy-policy',
-    },
-    {
-      icon: HelpCircle,
-      label: 'Help & Support',
-      sublabel: 'FAQs and contact',
-      color: '#8B8FA8',
-      screen: 'help-support',
     },
   ];
 

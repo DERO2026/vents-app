@@ -3,7 +3,6 @@ import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
   Share2,
-  Heart,
   MapPin,
   Calendar,
   Clock,
@@ -557,11 +556,9 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <Heart
-                size={17}
-                fill={isSaved ? '#EF4444' : 'none'}
-                color={isSaved ? '#EF4444' : '#fff'}
-              />
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
+              </svg>
             </button>
             {currentUserId && (
               <button

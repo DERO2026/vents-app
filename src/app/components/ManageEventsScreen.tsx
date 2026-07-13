@@ -1,15 +1,15 @@
 import { useState } from 'react';
-import { ArrowLeft, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, X, Phone, MoreVertical, Trash2, EyeOff, Eye } from 'lucide-react';
+import { ArrowLeft, Users, Search, Calendar, Edit2, Lock, CheckCircle, Clock, Zap, MoreVertical, Trash2, EyeOff, Eye } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEvent } from './types';
 import { insforge } from '../../lib/insforge';
-import { CATEGORIES as CATEGORY_LIST } from './categories';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
   onNavigate: (screen: string) => void;
   orgEvents: OrganizerEvent[];
   onEditEvent: (id: string, updates: Partial<OrganizerEvent>) => void;
+  onOpenEdit: (eventId: string) => void;
   onPromoteEvent?: (eventId: string) => void;
   onDeleteEvent?: (id: string) => void;
 }
@@ -19,21 +19,6 @@ const STATUS_STYLE = {
   approved: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', border: 'rgba(16,185,129,0.3)', label: 'Approved ✓', icon: CheckCircle },
   live: { bg: 'rgba(16,185,129,0.12)', color: '#10B981', border: 'rgba(16,185,129,0.3)', label: 'Live', icon: Zap },
   draft: { bg: 'rgba(139,143,168,0.1)', color: '#8B8FA8', border: 'rgba(139,143,168,0.2)', label: 'Draft', icon: Edit2 },
-};
-
-const CATEGORIES = CATEGORY_LIST.map(c => c.id);
-
-const INPUT_STYLE: React.CSSProperties = {
-  width: '100%',
-  background: '#090514',
-  border: '1px solid rgba(255,255,255,0.08)',
-  borderRadius: '12px',
-  padding: '11px 14px',
-  color: '#F0F0FF',
-  fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
-  outline: 'none',
-  boxSizing: 'border-box',
 };
 
 function daysUntil(dateStr: string): number {
@@ -47,44 +32,15 @@ function isEditLocked(event: OrganizerEvent): boolean {
   return days >= 0 && days <= 3;
 }
 
-export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent, onPromoteEvent, onDeleteEvent }: ManageEventsScreenProps) {
+export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent, onOpenEdit, onPromoteEvent, onDeleteEvent }: ManageEventsScreenProps) {
   const [query, setQuery] = useState('');
-  const [editingEvent, setEditingEvent] = useState<OrganizerEvent | null>(null);
   const [optionsEvent, setOptionsEvent] = useState<OrganizerEvent | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<OrganizerEvent | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Edit form state
-  const [editTitle, setEditTitle] = useState('');
-  const [editCategories, setEditCategories] = useState<string[]>([]);
-  const [editDescription, setEditDescription] = useState('');
-  const [editDate, setEditDate] = useState('');
-  const [editTime, setEditTime] = useState('');
-  const [editVenue, setEditVenue] = useState('');
-  const [editCity, setEditCity] = useState('');
-  const [editCapacity, setEditCapacity] = useState('');
-  const [editTicketPrice, setEditTicketPrice] = useState('');
-  const [editPhone, setEditPhone] = useState('');
-  const [editShowPhone, setEditShowPhone] = useState(false);
-
   const filteredOrg = orgEvents.filter(
     (e) => !query || e.title.toLowerCase().includes(query.toLowerCase())
   );
-
-  function openEdit(event: OrganizerEvent) {
-    setEditingEvent(event);
-    setEditTitle(event.title);
-    setEditCategories((event as any).categories?.length ? (event as any).categories : (event.category ? [event.category] : []));
-    setEditDescription(event.description);
-    setEditDate(event.date);
-    setEditTime(event.startTime);
-    setEditVenue(event.venue);
-    setEditCity(event.city);
-    setEditCapacity(event.capacity);
-    setEditTicketPrice(event.ticketPrice);
-    setEditPhone(event.contactPhone);
-    setEditShowPhone(event.showPhone);
-  }
 
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
@@ -103,25 +59,6 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
     } catch (e: any) {
       setPublishMsg('Error: ' + (e?.message || 'unknown'));
     } finally { setPublishingId(null); }
-  }
-
-  function saveEdit() {
-    if (!editingEvent) return;
-    onEditEvent(editingEvent.id, {
-      title: editTitle,
-      category: editCategories[0] || '',
-      ...(editCategories.length > 0 ? { categories: editCategories } as any : {}),
-      description: editDescription,
-      date: editDate,
-      startTime: editTime,
-      venue: editVenue,
-      city: editCity,
-      capacity: editCapacity,
-      ticketPrice: editTicketPrice,
-      contactPhone: editShowPhone ? editPhone : '',
-      showPhone: editShowPhone,
-    });
-    setEditingEvent(null);
   }
 
   async function confirmDelete() {
@@ -300,7 +237,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
                       {/* Actions */}
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
-                          onClick={() => !locked && openEdit(event)}
+                          onClick={() => !locked && onOpenEdit(event.id)}
                           disabled={locked}
                           style={{
                             flex: 1,
@@ -372,116 +309,6 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
 
       </div>
 
-      {/* Edit Modal */}
-      {editingEvent && (
-        <div
-          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
-          onClick={() => setEditingEvent(null)}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ background: '#090514', borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.08)', maxHeight: '82%', display: 'flex', flexDirection: 'column' }}
-          >
-            {/* Modal header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid rgba(255,255,255,0.07)', flexShrink: 0 }}>
-              <div>
-                <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>Edit Event</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '2px' }}>Changes will be re-reviewed if significant</p>
-              </div>
-              <button onClick={() => setEditingEvent(null)} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                <X size={15} color="#C4C9E0" />
-              </button>
-            </div>
-
-            {/* Scrollable fields */}
-            <div style={{ overflowY: 'auto', padding: '16px 20px 8px', scrollbarWidth: 'none', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Event Title</p>
-                <input value={editTitle} onChange={(e) => setEditTitle(e.target.value)} style={INPUT_STYLE} />
-              </div>
-              <div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Category</p>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                  {CATEGORIES.map((cat) => {
-                    const sel = editCategories.includes(cat);
-                    return (
-                      <button
-                        key={cat}
-                        onClick={() => setEditCategories(prev => sel ? prev.filter(c => c !== cat) : [...prev, cat])}
-                        style={{ background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E', border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '5px 12px', color: sel ? '#fff' : '#8B8FA8', fontSize: '11px', fontWeight: 500, cursor: 'pointer' }}
-                      >
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-              <div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Description</p>
-                <textarea value={editDescription} onChange={(e) => setEditDescription(e.target.value)} rows={3} style={{ ...INPUT_STYLE, resize: 'none' }} />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Date</p>
-                  <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)} style={INPUT_STYLE} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Start Time</p>
-                  <input type="time" value={editTime} onChange={(e) => setEditTime(e.target.value)} style={INPUT_STYLE} />
-                </div>
-              </div>
-              <div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Venue</p>
-                <input value={editVenue} onChange={(e) => setEditVenue(e.target.value)} style={INPUT_STYLE} />
-              </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>City</p>
-                  <input value={editCity} onChange={(e) => setEditCity(e.target.value)} style={INPUT_STYLE} />
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Capacity</p>
-                  <input type="number" value={editCapacity} onChange={(e) => setEditCapacity(e.target.value)} style={INPUT_STYLE} />
-                </div>
-              </div>
-              <div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, marginBottom: '6px' }}>Ticket Price (₦)</p>
-                <input type="number" value={editTicketPrice} onChange={(e) => setEditTicketPrice(e.target.value)} style={INPUT_STYLE} />
-              </div>
-
-              {/* Phone toggle */}
-              <div style={{ background: '#090514', border: editShowPhone ? '1px solid rgba(168,85,247,0.3)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }} onClick={() => setEditShowPhone((v) => !v)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <Phone size={14} color={editShowPhone ? '#A855F7' : '#8B8FA8'} />
-                    <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500 }}>Show Contact Number</span>
-                  </div>
-                  <div style={{ width: '38px', height: '22px', borderRadius: '11px', background: editShowPhone ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2A2D3E', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
-                    <div style={{ position: 'absolute', width: '16px', height: '16px', borderRadius: '50%', background: '#fff', top: '3px', left: editShowPhone ? '19px' : '3px', transition: 'left 0.2s' }} />
-                  </div>
-                </div>
-                {editShowPhone && (
-                  <div style={{ marginTop: '10px', position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: '#8B8FA8', fontSize: '13px', userSelect: 'none' }}>+234</span>
-                    <input type="tel" value={editPhone} onChange={(e) => setEditPhone(e.target.value.replace(/\D/g, '').slice(0, 11))} placeholder="8012345678" style={{ ...INPUT_STYLE, paddingLeft: '50px' }} />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Save button */}
-            <div style={{ padding: '12px 20px 24px', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-              <button
-                onClick={saveEdit}
-                style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer', boxShadow: '0 6px 24px rgba(123,47,190,0.4)' }}
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Options bottom sheet */}
       {optionsEvent && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }} onClick={() => setOptionsEvent(null)}>
@@ -489,7 +316,7 @@ export function ManageEventsScreen({ onBack, onNavigate, orgEvents, onEditEvent,
             <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px', margin: '0 auto 16px' }} />
             <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, padding: '0 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }} className="truncate">{optionsEvent.title}</p>
             {[
-              { icon: <Edit2 size={18} />, label: 'Edit', color: '#A78BFA', action: () => { openEdit(optionsEvent); setOptionsEvent(null); } },
+              { icon: <Edit2 size={18} />, label: 'Edit', color: '#A78BFA', action: () => { onOpenEdit(optionsEvent.id); setOptionsEvent(null); } },
               ...(onPromoteEvent && (optionsEvent.status === 'live' || optionsEvent.status === 'approved') ? [{ icon: <Zap size={18} />, label: 'Promote', color: '#F59E0B', action: () => { onPromoteEvent(optionsEvent.id); setOptionsEvent(null); } }] : []),
               { icon: <Users size={18} />, label: 'Attendees', color: '#3B82F6', action: () => { onNavigate('attendee-list'); setOptionsEvent(null); } },
               { icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: optionsEvent.status === 'draft' ? 'Make Live' : 'Hide Event', color: '#8B8FA8', action: () => toggleHide(optionsEvent) },

@@ -700,6 +700,7 @@ export default function App() {
   const [ticketsLoading, setTicketsLoading] = useState(false);
   const [bookingLoading, setBookingLoading] = useState(false);
   const [promotionEventId, setPromotionEventId] = useState<string>('');
+  const [editingEventId, setEditingEventId] = useState<string | null>(null);
 
   const fetchUserTickets = useCallback(async (userId: string) => {
     setTicketsLoading(true);
@@ -1306,6 +1307,9 @@ export default function App() {
   }, [navigateTo]);
 
   const handleOrgNavigate = useCallback((target: string) => {
+    // A generic "Create Event" entry point (not the edit flow's own
+    // onOpenEdit, which sets editingEventId itself) — always start fresh.
+    if (target === 'create-event') setEditingEventId(null);
     navigateTo(target as Screen);
   }, [navigateTo]);
 
@@ -1888,12 +1892,21 @@ export default function App() {
           {screen === 'create-event' && (
             <CreateEventScreen
               currentUser={currentUser}
-              onBack={goBack}
+              onBack={() => { setEditingEventId(null); goBack(); }}
+              editEventId={editingEventId || undefined}
               onCreated={(event) => {
                 trackPushEvent('event_created', { eventId: event.id, eventTitle: event.title });
                 trackEvent('event_created', { eventId: event.id });
                 setOrgEvents((prev) => [event, ...prev]);
                 fetchEvents(true);
+                setOrgTab('home');
+                setScreen('manage-events');
+                setScreenStack([]);
+              }}
+              onUpdated={(event) => {
+                setOrgEvents((prev) => prev.map((e) => (e.id === event.id ? event : e)));
+                fetchEvents(true);
+                setEditingEventId(null);
                 setOrgTab('home');
                 setScreen('manage-events');
                 setScreenStack([]);
@@ -1908,6 +1921,10 @@ export default function App() {
               onEditEvent={(id, updates) =>
                 setOrgEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)))
               }
+              onOpenEdit={(eventId) => {
+                setEditingEventId(eventId);
+                navigateTo('create-event');
+              }}
               onDeleteEvent={(id) =>
                 setOrgEvents((prev) => prev.filter((e) => e.id !== id))
               }

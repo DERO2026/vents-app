@@ -356,12 +356,25 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   async function load() {
     try {
-      const { data } = await insforge.database
+      // Respect this user's own "Clear Chat"/"Delete Chat" cutoff (see
+      // migrations/20260713170000_conversation-clear-and-delete.sql) —
+      // messages at or before it stay hidden from this side only.
+      const { data: clearRow } = await insforge.database
+        .from('conversation_clears')
+        .select('cleared_at')
+        .eq('user_id', currentUser.id)
+        .eq('other_user_id', otherUser.id)
+        .maybeSingle();
+
+      let query = insforge.database
         .from('direct_messages')
         .select('id, sender_id, recipient_id, body, image_url, media_type, duration_seconds, deleted_by_sender, created_at, read_at')
         .or(
           `and(sender_id.eq.${currentUser.id},recipient_id.eq.${otherUser.id}),and(sender_id.eq.${otherUser.id},recipient_id.eq.${currentUser.id})`
-        )
+        );
+      if ((clearRow as any)?.cleared_at) query = query.gt('created_at', (clearRow as any).cleared_at);
+
+      const { data } = await query
         .order('created_at', { ascending: true })
         .limit(50);
 

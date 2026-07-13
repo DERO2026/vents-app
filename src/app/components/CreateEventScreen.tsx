@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
@@ -9,12 +9,18 @@ import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { compressImage } from '../../lib/compressImage';
+import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
   onBack: () => void;
   onCreated: (event: OrganizerEvent) => void;
+  /** When set, the screen loads this event's data and edits it in place instead of creating a new one. */
+  editEventId?: string;
+  onUpdated?: (event: OrganizerEvent) => void;
 }
+
+const MAX_GALLERY_FLIERS = 4;
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -64,7 +70,7 @@ function Label({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEventScreenProps) {
+export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId, onUpdated }: CreateEventScreenProps) {
   const [step, setStep] = useState<Step>(1);
   const [title, setTitle] = useState('');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -94,6 +100,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     { name: 'Standard', price: '', quantity: '', description: 'General Admission' }
   ]);
   const [contactPhone, setContactPhone] = useState('');
+  const [contactPhoneCountryCode, setContactPhoneCountryCode] = useState<string>(DEFAULT_COUNTRY.code);
   const [showPhone, setShowPhone] = useState(false);
   const [is18Plus, setIs18Plus] = useState(false);
   
@@ -102,6 +109,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const [imageKey, setImageKey] = useState('');
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
+  const [cropTarget, setCropTarget] = useState<'cover' | 'gallery'>('cover');
+  // Additional fliers beyond the primary cover (see migrations/20260713160000_event-gallery-urls.sql)
+  const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
+  const [uploadingGallery, setUploadingGallery] = useState(false);
 
   // General states
   const [submitting, setSubmitting] = useState(false);
@@ -109,7 +120,67 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
   const [published, setPublished] = useState(false);
   const publishedEventRef = useRef<OrganizerEvent | null>(null);
 
+  // Edit-mode state — populated from the DB when editEventId is provided
+  const [loadingEdit, setLoadingEdit] = useState(!!editEventId);
+  const originalStatusRef = useRef<string>('live');
+  const originalCreatedAtRef = useRef<number>(Date.now());
+
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const galleryFileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!editEventId) return;
+    let cancelled = false;
+    (async () => {
+      setLoadingEdit(true);
+      try {
+        const { data, error } = await insforge.database
+          .from('events')
+          .select('*')
+          .eq('id', editEventId)
+          .single();
+        if (error) throw error;
+        if (cancelled || !data) return;
+        const row = data as any;
+        setTitle(row.title || '');
+        const cats: string[] = Array.isArray(row.categories) && row.categories.length
+          ? row.categories
+          : (row.category ? [row.category] : []);
+        setSelectedCategories(cats);
+        setDescription(row.description || '');
+        setImageUrl(row.image_url || '');
+        setGalleryUrls(Array.isArray(row.gallery_urls) ? row.gallery_urls : []);
+        if (row.event_date) setDate(String(row.event_date).split('T')[0]);
+        setStartTime(row.start_time || '');
+        setEndTime(row.end_time || '');
+        // location was assembled as "venue, state, city[, address]" on create —
+        // parsed back in the same order (see submitEvent's locationString).
+        const parts = String(row.location || '').split(', ');
+        setVenue(parts[0] || '');
+        setStateName(parts[1] || '');
+        setCity(parts[2] || '');
+        setAddress(parts[3] || '');
+        setCapacity(row.ticket_goal != null ? String(row.ticket_goal) : '');
+        const tts: TicketFormType[] = Array.isArray(row.ticket_types) && row.ticket_types.length
+          ? row.ticket_types.map((t: any) => ({
+              name: t.name || '',
+              price: t.price != null ? String(t.price) : '',
+              quantity: t.quantity != null ? String(t.quantity) : '',
+              description: t.description || '',
+            }))
+          : [{ name: 'Standard', price: row.price != null ? String(row.price) : '', quantity: row.ticket_goal != null ? String(row.ticket_goal) : '', description: 'General Admission' }];
+        setTicketTypes(tts);
+        setIs18Plus(!!row.is_18_plus);
+        originalStatusRef.current = row.status || 'live';
+        originalCreatedAtRef.current = row.created_at ? new Date(row.created_at).getTime() : Date.now();
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Failed to load event for editing.');
+      } finally {
+        if (!cancelled) setLoadingEdit(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editEventId]);
 
   // Role permissions guard
   if (!currentUser || (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin')) {
@@ -175,38 +246,48 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     });
   }, []);
 
+  const uploadFlierBlob = useCallback(async (croppedBlob: Blob): Promise<{ url: string; key: string | null }> => {
+    const token = await getAuthToken();
+    const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
+    const file = new File([compressed], `flier-${Date.now()}.${extension}`, { type: mimeType });
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(
+      `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
+      { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
+    );
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        throw new Error('Session expired. Please sign out and sign back in, then try again.');
+      }
+      throw new Error(`Upload failed (${res.status}). Please try again.`);
+    }
+    const data = await res.json();
+    const key: string | null = data?.key ?? null;
+    const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(key)}` : null);
+    if (!url) throw new Error('Upload succeeded but no URL was returned. Please try again.');
+    return { url, key };
+  }, []);
+
   const handleCroppedFlier = useCallback(async (croppedBlob: Blob) => {
     closeCropper();
-    setUploadingImage(true);
+    const target = cropTarget;
+    if (target === 'cover') setUploadingImage(true); else setUploadingGallery(true);
     setErrorMessage(null);
     try {
-      const token = await getAuthToken();
-      const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
-      const file = new File([compressed], `flier-${Date.now()}.${extension}`, { type: mimeType });
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await fetch(
-        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-      );
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) {
-          throw new Error('Session expired. Please sign out and sign back in, then try again.');
-        }
-        throw new Error(`Upload failed (${res.status}). Please try again.`);
+      const { url, key } = await uploadFlierBlob(croppedBlob);
+      if (target === 'cover') {
+        setImageUrl(url);
+        if (key) setImageKey(key);
+      } else {
+        setGalleryUrls((prev) => [...prev, url]);
       }
-      const data = await res.json();
-      const key: string | null = data?.key ?? null;
-      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(key)}` : null);
-      if (!url) throw new Error('Upload succeeded but no URL was returned. Please try again.');
-      setImageUrl(url);
-      if (key) setImageKey(key);
     } catch (err: any) {
       setErrorMessage(err.message || 'Image upload failed. Please try again.');
     } finally {
-      setUploadingImage(false);
+      if (target === 'cover') setUploadingImage(false); else setUploadingGallery(false);
     }
-  }, [closeCropper]);
+  }, [closeCropper, cropTarget, uploadFlierBlob]);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (uploadingImage) return;
@@ -226,7 +307,25 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     // MB) into React state as a base64 string, which is heavier to hold
     // and re-decode on lower-end Android WebViews than a lightweight blob
     // reference. Revoked in closeCropper() once the crop is done/cancelled.
+    setCropTarget('cover');
     setCropSrc(URL.createObjectURL(file));
+  };
+
+  const handleGalleryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (uploadingGallery || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (e.target) e.target.value = '';
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMessage('Image file must be under 15MB');
+      return;
+    }
+    setCropTarget('gallery');
+    setCropSrc(URL.createObjectURL(file));
+  };
+
+  const removeGalleryImage = (index: number) => {
+    setGalleryUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
   const submitEvent = async (eventStatus: 'live' | 'draft') => {
@@ -263,6 +362,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           title: sanitize(title),
           description: sanitize(description),
           image_url: imageUrl,
+          gallery_urls: galleryUrls,
           location: locationString,
           event_date: eventTimestamp,
           start_time: startTime || null,
@@ -318,6 +418,88 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
     } catch (err: any) {
       console.error('Failed to save event:', err);
       setErrorMessage(err.message || 'Failed to save event. Please try again.');
+    } finally {
+      clearTimeout(safetyTimer);
+      setSubmitting(false);
+    }
+  };
+
+  const saveEditedEvent = async () => {
+    if (!editEventId) return;
+    setSubmitting(true);
+    setErrorMessage(null);
+    const safetyTimer = setTimeout(() => setSubmitting(false), 10000);
+    try {
+      const eventCheck = eventCreateSchema.safeParse({
+        title: title.trim(),
+        description: description.trim(),
+        venue: venue.trim(),
+        city: city.trim(),
+        address: address ? address.trim() : undefined,
+        ticketTypes: ticketTypes.map(t => ({
+          name: t.name.trim(),
+          description: t.description.trim(),
+          price: Number(t.price),
+          quantity: Number(t.quantity),
+        })),
+      });
+      if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
+
+      const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
+      const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
+
+      await getAuthToken();
+
+      const { error } = await insforge.database
+        .from('events')
+        .update({
+          title: sanitize(title),
+          description: sanitize(description),
+          image_url: imageUrl,
+          gallery_urls: galleryUrls,
+          location: locationString,
+          event_date: eventTimestamp,
+          start_time: startTime || null,
+          end_time: endTime || null,
+          price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
+          category: selectedCategories[0] || '',
+          categories: selectedCategories,
+          is_18_plus: is18Plus,
+          ticket_types: ticketTypes.map((t, idx) => ({
+            id: `t_${idx}`,
+            name: t.name.trim(),
+            price: Number(t.price),
+            quantity: Number(t.quantity),
+            description: t.description.trim()
+          })),
+          ticket_goal: Number(capacity) || 0,
+        })
+        .eq('id', editEventId);
+
+      if (error) throw error;
+
+      const updatedEvent: OrganizerEvent = {
+        id: editEventId,
+        title: title.trim(),
+        category,
+        description: description.trim(),
+        date,
+        startTime,
+        venue: venue.trim(),
+        city: city.trim(),
+        capacity,
+        ticketName: ticketTypes[0]?.name || 'Regular',
+        ticketPrice: ticketTypes[0]?.price || '0',
+        ticketQty: ticketTypes[0]?.quantity || '500',
+        contactPhone: showPhone ? contactPhone : '',
+        showPhone,
+        status: originalStatusRef.current as any,
+        createdAt: originalCreatedAtRef.current,
+      };
+      onUpdated?.(updatedEvent);
+    } catch (err: any) {
+      console.error('Failed to update event:', err);
+      setErrorMessage(err.message || 'Failed to update event. Please try again.');
     } finally {
       clearTimeout(safetyTimer);
       setSubmitting(false);
@@ -382,7 +564,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
       }
       setStep(4);
     } else if (step === 4) {
-      await submitEvent('live');
+      if (editEventId) await saveEditedEvent();
+      else await submitEvent('live');
     }
   };
 
@@ -439,7 +622,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             <ArrowLeft size={16} color="#C4C9E0" />
           </button>
         )}
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{published ? 'Event Published' : 'Create Event'}</h1>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{published ? 'Event Published' : editEventId ? 'Edit Event' : 'Create Event'}</h1>
       </div>
 
       {/* Step indicator */}
@@ -531,7 +714,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           </div>
         )}
 
-        {step === 1 && (
+        {loadingEdit && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0', gap: '12px' }}>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.15)', borderTopColor: '#A78BFA', animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading event…</p>
+          </div>
+        )}
+
+        {!loadingEdit && step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Image upload */}
             {cropSrc && (
@@ -629,6 +819,63 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               style={{ display: 'none' }}
             />
 
+            {/* Additional fliers — image_url above stays the primary cover
+                shown everywhere else in the app; these are extra pages/looks
+                an attendee can browse on the event details screen. */}
+            <div>
+              <Label>Additional Fliers (optional, up to {MAX_GALLERY_FLIERS})</Label>
+              <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', paddingBottom: '2px' }}>
+                {galleryUrls.map((url, i) => (
+                  <div
+                    key={url + i}
+                    style={{ position: 'relative', width: '72px', height: '96px', flexShrink: 0, borderRadius: '10px', overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}
+                  >
+                    <img src={url} alt={`Flier ${i + 2}`} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <button
+                      type="button"
+                      onClick={() => removeGalleryImage(i)}
+                      style={{ position: 'absolute', top: '3px', right: '3px', background: 'rgba(0,0,0,0.65)', border: 'none', borderRadius: '50%', width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      <X size={11} color="#fff" />
+                    </button>
+                  </div>
+                ))}
+                {galleryUrls.length < MAX_GALLERY_FLIERS && (
+                  <button
+                    type="button"
+                    onClick={() => { if (!uploadingGallery && !submitting) galleryFileInputRef.current?.click(); }}
+                    disabled={uploadingGallery || submitting}
+                    style={{
+                      width: '72px',
+                      height: '96px',
+                      flexShrink: 0,
+                      borderRadius: '10px',
+                      border: '1.5px dashed rgba(167,139,250,0.3)',
+                      background: '#090514',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: (uploadingGallery || submitting) ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {uploadingGallery ? (
+                      <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#A78BFA', animation: 'spin 0.8s linear infinite' }} />
+                    ) : (
+                      <Plus size={18} color="#A78BFA" />
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <input
+              ref={galleryFileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleGalleryFileChange}
+              style={{ display: 'none' }}
+            />
+
             <div>
               <Label>Event Title *</Label>
               <input
@@ -687,7 +934,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           </div>
         )}
 
-        {step === 2 && (
+        {!loadingEdit && step === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div>
               <Label>Event Date *</Label>
@@ -792,7 +1039,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           </div>
         )}
 
-        {step === 3 && (
+        {!loadingEdit && step === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
 
@@ -986,28 +1233,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               {showPhone && (
                 <div style={{ marginTop: '12px' }}>
                   <Label>Phone Number</Label>
-                  <div style={{ position: 'relative' }}>
-                    <span
-                      style={{
-                        position: 'absolute',
-                        left: '12px',
-                        top: '50%',
-                        transform: 'translateY(-50%)',
-                        color: '#8B8FA8',
-                        fontSize: '14px',
-                        userSelect: 'none',
-                      }}
-                    >
-                      +234
-                    </span>
-                    <input
-                      type="tel"
-                      placeholder="8012345678"
-                      value={contactPhone}
-                      onChange={(e) => setContactPhone(e.target.value.replace(/\D/g, '').slice(0, 11))}
-                      style={{ ...INPUT_STYLE, paddingLeft: '52px' }}
-                    />
-                  </div>
+                  <PhoneInput
+                    countryCode={contactPhoneCountryCode}
+                    onCountryCodeChange={setContactPhoneCountryCode}
+                    value={contactPhone}
+                    onChange={setContactPhone}
+                  />
                   <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
                     Only visible to attendees who have purchased a ticket for this event.
                   </p>
@@ -1050,7 +1281,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
           </div>
         )}
 
-        {step === 4 && (
+        {!loadingEdit && step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div
               style={{
@@ -1078,9 +1309,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
                 <Check size={20} color="#10B981" />
               </div>
               <div>
-                <p style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Ready to publish!</p>
+                <p style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Ready to save!' : 'Ready to publish!'}</p>
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
-                  Review your event details before publishing.
+                  {editEventId ? 'Review your changes before saving.' : 'Review your event details before publishing.'}
                 </p>
               </div>
             </div>
@@ -1093,13 +1324,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
               { label: 'Venue', value: venue || '(not set)' },
               { label: 'City', value: city || '(not set)' },
               { label: 'Capacity', value: capacity ? `${capacity} attendees` : '(not set)' },
+              { label: 'Additional Fliers', value: galleryUrls.length > 0 ? `${galleryUrls.length} attached` : 'None' },
               {
                 label: 'Tickets',
                 value: ticketTypes.length > 0
                   ? ticketTypes.map(t => `${t.name || 'Standard'} (₦${Number(t.price || 0).toLocaleString()})`).join(', ')
                   : '(not set)'
               },
-              { label: 'Contact Number', value: showPhone && contactPhone ? `+234 ${contactPhone}` : 'Not shown' },
+              { label: 'Contact Number', value: showPhone && contactPhone ? `${contactPhoneCountryCode} ${contactPhone}` : 'Not shown' },
             ].map(({ label, value }) => (
               <div
                 key={label}
@@ -1170,10 +1402,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated }: CreateEven
             : submitting
             ? 'Saving...'
             : step === 4
-            ? 'Publish Event'
+            ? (editEventId ? 'Save Changes' : 'Publish Event')
             : `Next: ${STEPS[step].label}`}
         </button>
-        {step === 4 && !submitting && (
+        {step === 4 && !submitting && !editEventId && (
           published ? (
             <button
               onClick={handleReturnHome}

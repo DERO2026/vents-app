@@ -12,6 +12,7 @@ import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { ImageCropperModal } from './ImageCropperModal';
 import { NIGERIA_STATES } from './StateSelectScreen';
+import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
@@ -341,7 +342,9 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
+  // Raw national-number digits only — country dial code tracked separately.
   const [phone, setPhone] = useState('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [stateValue, setStateValue] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
@@ -408,7 +411,16 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           setName(data.full_name || '');
           setUsername(data.username || '');
           setBio(data.bio || '');
-          setPhone(data.phone_number || '');
+          {
+            const storedPhone: string = data.phone_number || '';
+            const matchedCountry = COUNTRY_CODES.find((c) => storedPhone.startsWith(c.code));
+            if (matchedCountry) {
+              setPhoneCountryCode(matchedCountry.code);
+              setPhone(storedPhone.slice(matchedCountry.code.length));
+            } else {
+              setPhone(storedPhone.replace(/\D/g, ''));
+            }
+          }
           setStateValue(data.state || '');
           setAvatarUrl(data.avatar_url || '');
           setCoverUrl(data.cover_url || '');
@@ -544,11 +556,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         throw new Error("Username is already taken.");
       }
 
-      const rawDigits = phone.replace(/\D/g, '');
+      const rawDigits = phone.replace(/\D/g, '').replace(/^0+/, '');
       let cleanPhone = '';
       if (rawDigits) {
-        cleanPhone = rawDigits.startsWith('234') ? '+' + rawDigits : '+234' + (rawDigits.startsWith('0') ? rawDigits.slice(1) : rawDigits);
-        if (!REGION.phoneRegex.test(cleanPhone)) {
+        cleanPhone = phoneCountryCode + rawDigits;
+        if (phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(cleanPhone)) {
           throw new Error("Please enter a valid Nigerian phone number (+234 format).");
         }
       }
@@ -699,26 +711,15 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Phone Number</p>
-                <input
+                <PhoneInput
+                  countryCode={phoneCountryCode}
+                  onCountryCodeChange={setPhoneCountryCode}
                   value={phone}
-                  onChange={(e) => {
-                    let raw = e.target.value.replace(/\D/g, '');
-                    if (raw.startsWith('234')) raw = raw.slice(3);
-                    else if (raw.startsWith('0')) raw = raw.slice(1);
-                    raw = raw.slice(0, 10);
-                    let formatted = '+234';
-                    if (raw.length > 0) formatted += ' ' + raw.slice(0, 3);
-                    if (raw.length > 3) formatted += ' ' + raw.slice(3, 7);
-                    if (raw.length > 7) formatted += ' ' + raw.slice(7);
-                    setPhone(raw.length === 0 ? '' : formatted);
-                  }}
-                  inputMode="tel"
-                  placeholder="+234 801 234 5678"
-                  style={inputStyle}
+                  onChange={setPhone}
                 />
-                {phone.trim() && !/^\+234[789][01]\d{8}$/.test(phone.replace(/[\s\-]/g, '')) && (
+                {phone.trim() && phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(phoneCountryCode + phone.replace(/^0+/, '')) && (
                   <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
-                    Enter a valid Nigerian number (e.g. +234 801 234 5678)
+                    Enter a valid Nigerian number (e.g. 0801 234 5678)
                   </p>
                 )}
               </div>
@@ -1202,7 +1203,7 @@ export function SettingsScreen({
           <Divider />
           <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => window.open('https://twitter.com/TheVentsApp', '_blank')} />
           <Divider />
-          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => window.open('https://tiktok.com/@TheVentsApp', '_blank')} />
+          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => window.open('https://www.tiktok.com/@theventsapp', '_blank')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

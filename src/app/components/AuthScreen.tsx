@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react';
-import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, Phone, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
+import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../../lib/insforge';
@@ -76,16 +77,14 @@ function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
 
-// Strips spaces/dashes/parens/plus signs and normalizes to +234 E.164 —
-// used everywhere a phone number is dispatched to the backend so a
-// display-formatted value (e.g. "+234 811 5515 152") never reaches the DB.
-function normalizePhoneE164(raw: string): string {
-  const digits = raw.replace(/\D/g, '');
+// Combines a selected country's dial code with the raw national-number
+// digits into a single E.164 string dispatched to the backend — used
+// everywhere a phone number is collected so a display-formatted value never
+// reaches the DB.
+function buildE164(nationalDigits: string, countryCode: string): string {
+  const digits = nationalDigits.replace(/\D/g, '').replace(/^0+/, '');
   if (!digits) return '';
-  const cc = REGION.phoneCountryCode.replace('+', '');
-  if (digits.startsWith(cc)) return '+' + digits;
-  if (digits.startsWith('0')) return REGION.phoneCountryCode + digits.slice(1);
-  return REGION.phoneCountryCode + digits;
+  return countryCode + digits;
 }
 
 function InputRow({
@@ -157,7 +156,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
-  const [phone, setPhone] = useState<string>(REGION.phoneCountryCode);
+  // Raw national-number digits only — the country dial code is tracked
+  // separately so the selector can change without re-parsing the input.
+  const [phone, setPhone] = useState<string>('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [loading, setLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -302,7 +304,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const payload: Record<string, any> = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
-          phone_number: normalizePhoneE164(phone),
+          phone_number: buildE164(phone, phoneCountryCode),
           state: (signupState || selectedState || '').trim(),
           avatar_url: avatarUrl || signupAvatarUrl
         };
@@ -414,9 +416,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!validateUsername(username.trim())) throw new Error('Username must be 3-30 characters, letters numbers and underscores only.');
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         if (!phone.trim()) throw new Error('Phone number is required.');
-        const normalizedPhone = normalizePhoneE164(phone);
-        if (!REGION.phoneRegex.test(normalizedPhone)) {
+        const normalizedPhone = buildE164(phone, phoneCountryCode);
+        const isNigerianPhone = phoneCountryCode === REGION.phoneCountryCode;
+        if (isNigerianPhone && !REGION.phoneRegex.test(normalizedPhone)) {
           throw new Error('Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678');
+        }
+        // Non-Nigerian numbers can't be validated/verified end-to-end yet
+        // (SMS + CAC verification are Nigeria-only, see src/lib/regionConfig.ts) —
+        // the selector still lets a user browse/pick their country, but
+        // signup itself is scoped to what the backend can actually support.
+        if (!isNigerianPhone) {
+          throw new Error('Only Nigerian phone numbers are currently supported for sign-up. Please select 🇳🇬 Nigeria.');
         }
         if (!password) throw new Error('Password is required.');
         if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');
@@ -1357,22 +1367,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 </div>
               )}
               {mode === 'signup' && (
-                <InputRow
-                  icon={Phone}
-                  placeholder="+234 801 234 5678"
+                <PhoneInput
+                  countryCode={phoneCountryCode}
+                  onCountryCodeChange={setPhoneCountryCode}
                   value={phone}
-                  onChange={(v) => {
-                    let raw = v.replace(/\D/g, '');
-                    if (raw.startsWith('234')) raw = raw.slice(3);
-                    else if (raw.startsWith('0')) raw = raw.slice(1);
-                    raw = raw.slice(0, 10);
-                    let formatted = '+234';
-                    if (raw.length > 0) formatted += ' ' + raw.slice(0, 3);
-                    if (raw.length > 3) formatted += ' ' + raw.slice(3, 7);
-                    if (raw.length > 7) formatted += ' ' + raw.slice(7);
-                    setPhone(raw.length === 0 ? '' : formatted);
-                  }}
-                  type="tel"
+                  onChange={setPhone}
+                  height={45}
                 />
               )}
               {mode === 'signup' && (
@@ -1423,6 +1423,20 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     </button>
                   }
                 />
+              )}
+              {mode === 'signup' && password.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', padding: '2px 4px' }}>
+                  {[
+                    { met: password.length >= 10, label: 'At least 10 characters' },
+                    { met: /[a-z]/.test(password) && /[A-Z]/.test(password), label: 'Upper and lower case letters' },
+                    { met: /\d/.test(password), label: 'At least one number' },
+                  ].map(({ met, label }) => (
+                    <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {met ? <Check size={12} color="#10B981" /> : <X size={12} color="#8B8FA8" />}
+                      <span style={{ fontSize: '11px', color: met ? '#10B981' : '#8B8FA8' }}>{label}</span>
+                    </div>
+                  ))}
+                </div>
               )}
               {(mode === 'signup' || mode === 'reset') && (
                 <InputRow
