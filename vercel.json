@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "env": { "VITE_SENTRY_DSN": "https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744", "VITE_PAYSTACK_PUBLIC_KEY": "pk_live_25b53ec01a3a6c46b65690fc355c267d403f26f6", "VITE_POSTHOG_KEY": "phc_uVuzd3hGprUYf4QnQ76JsAUwd9aGHKF7U8MH3aC3J9c4", "VITE_SENDCHAMP_BASE_URL": "https://api.sendchamp.com/api/v1", "VITE_SENDCHAMP_PUBLIC_KEY": "sendchamp_live_$2a$10$ZZlAW1NgNs/fR2.vvi/oGeSdqJ/XkdHDjwmdmNtsKaVNeHAVpRKhy" },
   "rewrites": [
+    { "source": "/api/v1/(.*)", "destination": "/api/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
