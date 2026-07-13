@@ -564,7 +564,7 @@ export function ProfileScreen({
         </div>
 
         {/* Organizer Wallet */}
-        {(isOrganizer || isAdmin) && (
+        {(isOrganizer || isAdmin || isSubAdmin) && (
           <div className="px-4 mb-3">
             <button
               onClick={() => onNavigate('wallet')}

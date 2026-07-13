@@ -5,7 +5,7 @@ import {
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
   Mic, Image as ImageIcon, Activity,
-  Ticket, ScanLine, UserPlus, Banknote,
+  Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sendSMS } from '../../lib/sendchamp';
@@ -603,6 +603,10 @@ export function AdminDashboardScreen({
   const [vcDebit, setVcDebit] = useState({ amount: '', reason: '' });
   const [vcDebitBusy, setVcDebitBusy] = useState(false);
   const [vcDebitMsg, setVcDebitMsg] = useState<string | null>(null);
+  // Overview-card aggregates — computed against the full table, not the
+  // capped 100-row vcTxns list below (which is for the recent-activity feed
+  // only), so these can't silently undercount once activity exceeds 100 rows.
+  const [vcAggregates, setVcAggregates] = useState({ circulation: 0, totalTxns: 0, credits: 0, debits: 0 });
 
   // Stats tab state
   const [stats, setStats] = useState<any | null>(null);
@@ -638,6 +642,21 @@ export function AdminDashboardScreen({
 
   useEffect(() => {
     if (tab !== 'vc') return;
+    // vc_transactions.type is 'earn'/'spend'/'refund'/'referral' — there is
+    // no 'credit'/'debit' value, so these aggregates used to always be 0.
+    // Also, vents_wallets has RLS limiting SELECT to the caller's own row,
+    // so a plain client-side sum only ever returned the admin's own
+    // balance — admin_get_vc_aggregates() (SECURITY DEFINER, admin-gated)
+    // sums the real platform-wide balance server-side instead.
+    insforge.database.rpc('admin_get_vc_aggregates').then(({ data }: any) => {
+      const row = (data || [])[0] || {};
+      setVcAggregates({
+        circulation: Number(row.circulation || 0),
+        totalTxns: Number(row.total_txns || 0),
+        credits: Number(row.credits || 0),
+        debits: Number(row.debits || 0),
+      });
+    }, (err: any) => console.error('VC aggregates fetch error:', err));
     setVcLoading(true);
     insforge.database
       .from('vc_transactions')
@@ -652,20 +671,33 @@ export function AdminDashboardScreen({
 
   const loadStats = useCallback(() => {
     setStatsLoading(true);
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
     Promise.all([
       insforge.database.from('users').select('id', { count: 'exact', head: true }),
       insforge.database.from('events').select('id', { count: 'exact', head: true }),
       insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
-      insforge.database.from('vc_transactions').select('amount').eq('type', 'credit').eq('status', 'active'),
+      // vc_transactions.type is 'earn'/'spend'/'refund'/'referral' — there is
+      // no 'credit' value, so this used to always compute vcTotal as 0.
+      insforge.database.from('vc_transactions').select('amount').eq('type', 'earn').eq('status', 'active'),
       insforge.database.from('tickets').select('amount').eq('payment_status', 'paid'),
-      insforge.database.from('users').select('id', { count: 'exact', head: true }).gte('created_at', weekAgo),
-      insforge.database.from('users').select('id', { count: 'exact', head: true }).gte('created_at', monthAgo),
-    ]).then(([uRes, eRes, tRes, vcRes, revRes, weekRes, monthRes]) => {
+      // Signup-completion state (auth.users.email_verified), not the
+      // organizer trust badge (users.is_verified) — see
+      // admin_get_new_user_stats() in
+      // migrations/20260713100000_admin-stats-and-payout-cleanup.sql.
+      insforge.database.rpc('admin_get_new_user_stats'),
+    ]).then(([uRes, eRes, tRes, vcRes, revRes, newUserRes]) => {
       const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
+      // tickets.amount is already stored in naira, not kobo — no /100 here.
       const revenue = (revRes.data || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
-      setStats({ users: uRes.count ?? 0, events: eRes.count ?? 0, tickets: tRes.count ?? 0, vc: vcTotal, revenue, newThisWeek: weekRes.count ?? 0, newThisMonth: monthRes.count ?? 0 });
+      const newUserRow = (newUserRes.data || [])[0] || {};
+      setStats({
+        users: uRes.count ?? 0,
+        events: eRes.count ?? 0,
+        tickets: tRes.count ?? 0,
+        vc: vcTotal,
+        revenue,
+        newThisWeek: newUserRow.new_this_week ?? 0,
+        newThisMonth: newUserRow.new_this_month ?? 0,
+      });
       setStatsLoading(false);
     }).catch(() => setStatsLoading(false));
   }, []);
@@ -777,25 +809,25 @@ export function AdminDashboardScreen({
     try {
       const like = `%${q}%`;
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      // public_profiles has no email column, so the "email" half of the
+      // placeholder's promise was silently a no-op — query users directly
+      // (same table/pattern the Users tab's loadUsers already uses) so
+      // admins can actually find someone by email, not just name/username.
       let query = insforge.database
-        .from('public_profiles')
-        .select('id, full_name, username, avatar_url')
-        .or(`full_name.ilike.${like},username.ilike.${like}`);
+        .from('users')
+        .select('id, full_name, username, email, avatar_url')
+        .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like}`);
       if (uuidRe.test(q)) {
         query = insforge.database
-          .from('public_profiles')
-          .select('id, full_name, username, avatar_url')
-          .or(`full_name.ilike.${like},username.ilike.${like},id.eq.${q}`);
+          .from('users')
+          .select('id, full_name, username, email, avatar_url')
+          .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like},id.eq.${q}`);
       }
       const { data } = await query.limit(8);
       setVcSearchResults(data || []);
     } catch { setVcSearchResults([]); }
     finally { setVcSearching(false); }
   };
-
-  const vcTotalCirculation = vcTxns
-    .filter(t => t.type === 'credit' && t.status === 'active')
-    .reduce((s, t) => s + Number(t.amount), 0);
 
   const handleVcAdminTransfer = async () => {
     const uid = vcTransfer.userId.trim();
@@ -873,6 +905,8 @@ export function AdminDashboardScreen({
   const [disableScanning, setDisableScanning] = useState(false);
   const [disableSignups, setDisableSignups] = useState(false);
   const [disablePayouts, setDisablePayouts] = useState(false);
+  // migrations/20260713100000_admin-stats-and-payout-cleanup.sql
+  const [disableLocationSharing, setDisableLocationSharing] = useState(false);
   const [broadcastMsg, setBroadcastMsg] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [isCleaning, setIsCleaning] = useState(false);
@@ -950,7 +984,7 @@ export function AdminDashboardScreen({
   // ── Load app_config for maintenance mode + media feature toggles ────────────
   const loadConfig = useCallback(async () => {
     try {
-      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts').single();
+      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').single();
       if (data) {
         setMaintenanceMode(data.maintenance_mode);
         setVoiceNotesEnabled(data.voice_notes_enabled);
@@ -959,6 +993,7 @@ export function AdminDashboardScreen({
         setDisableScanning(!!data.disable_scanning);
         setDisableSignups(!!data.disable_signups);
         setDisablePayouts(!!data.disable_payouts);
+        setDisableLocationSharing(!!data.disable_location_sharing);
       }
     } catch { /* ignore */ }
   }, []);
@@ -1302,11 +1337,12 @@ export function AdminDashboardScreen({
   // Block 17 kill switches — one generic handler for all four, since they
   // share the exact same shape (toggle a single app_config boolean,
   // confirm, audit-log, flash).
-  const KILL_SWITCH_META: Record<'disable_purchases' | 'disable_scanning' | 'disable_signups' | 'disable_payouts', { label: string; setter: (v: boolean) => void }> = {
+  const KILL_SWITCH_META: Record<'disable_purchases' | 'disable_scanning' | 'disable_signups' | 'disable_payouts' | 'disable_location_sharing', { label: string; setter: (v: boolean) => void }> = {
     disable_purchases: { label: 'Ticket Purchases', setter: setDisablePurchases },
     disable_scanning: { label: 'QR Scanning', setter: setDisableScanning },
     disable_signups: { label: 'New Sign-ups', setter: setDisableSignups },
     disable_payouts: { label: 'Organizer Payouts', setter: setDisablePayouts },
+    disable_location_sharing: { label: 'Location Sharing', setter: setDisableLocationSharing },
   };
   const handleToggleKillSwitch = (column: keyof typeof KILL_SWITCH_META, currentlyDisabled: boolean) => {
     const next = !currentlyDisabled; // next = the new "disabled" value
@@ -1949,10 +1985,10 @@ export function AdminDashboardScreen({
           {/* Overview cards */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
             {[
-              { label: 'VC in Circulation', value: vcTotalCirculation.toLocaleString() },
-              { label: 'Total Transactions', value: vcTxns.length.toString() },
-              { label: 'Credits', value: vcTxns.filter(t => t.type === 'credit').length.toString() },
-              { label: 'Debits', value: vcTxns.filter(t => t.type === 'debit').length.toString() },
+              { label: 'VC in Circulation', value: vcAggregates.circulation.toLocaleString() },
+              { label: 'Total Transactions', value: vcAggregates.totalTxns.toLocaleString() },
+              { label: 'Credits', value: vcAggregates.credits.toLocaleString() },
+              { label: 'Debits', value: vcAggregates.debits.toLocaleString() },
             ].map(card => (
               <div key={card.label} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', boxSizing: 'border-box' }}>
                 <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
@@ -1976,8 +2012,8 @@ export function AdminDashboardScreen({
                       <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>{txn.type.toUpperCase()} — {txn.status}</div>
                       <div style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>{txn.user_id?.slice(0, 12)}… · {new Date(txn.created_at).toLocaleDateString()}</div>
                     </div>
-                    <div style={{ color: txn.type === 'credit' ? '#10B981' : '#EF4444', fontSize: '14px', fontWeight: 700 }}>
-                      {txn.type === 'credit' ? '+' : '-'}{Number(txn.amount).toLocaleString()} VC
+                    <div style={{ color: (txn.type === 'earn' || txn.type === 'referral') ? '#10B981' : '#EF4444', fontSize: '14px', fontWeight: 700 }}>
+                      {(txn.type === 'earn' || txn.type === 'referral') ? '+' : '-'}{Number(txn.amount).toLocaleString()} VC
                     </div>
                   </div>
                 ))}
@@ -1989,9 +2025,9 @@ export function AdminDashboardScreen({
           <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', boxSizing: 'border-box' }}>
             <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Purchases</div>
             <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-              {vcTxns.filter(t => t.type === 'credit' && t.reference_id?.startsWith('purchase')).length === 0 ? (
+              {vcTxns.filter(t => t.type === 'earn' && t.reference_id?.startsWith('purchase')).length === 0 ? (
                 <div style={{ padding: '20px 16px', color: '#8B8FA8', fontSize: '12px' }}>No purchase records with reference prefix "purchase".</div>
-              ) : vcTxns.filter(t => t.type === 'credit' && t.reference_id?.startsWith('purchase')).map(txn => (
+              ) : vcTxns.filter(t => t.type === 'earn' && t.reference_id?.startsWith('purchase')).map(txn => (
                 <div key={txn.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
                   <div style={{ color: '#F0F0FF', fontSize: '12px' }}>{txn.user_id?.slice(0, 12)}…</div>
                   <div style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>+{Number(txn.amount).toLocaleString()} VC</div>
@@ -2038,7 +2074,7 @@ export function AdminDashboardScreen({
                     </div>
                     <div>
                       <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{u.full_name || u.username || 'Unknown'}</div>
-                      <div style={{ color: '#8B8FA8', fontSize: '11px' }}>@{u.username}</div>
+                      <div style={{ color: '#8B8FA8', fontSize: '11px' }}>@{u.username} · {u.email}</div>
                     </div>
                   </button>
                 ))}
@@ -2056,6 +2092,7 @@ export function AdminDashboardScreen({
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>✓ {vcSelectedUser.full_name || vcSelectedUser.username}</div>
+                  <div style={{ color: '#8B8FA8', fontSize: '11px' }}>{vcSelectedUser.email}</div>
                   <div style={{ color: '#8B8FA8', fontSize: '11px', fontFamily: 'monospace' }}>{vcSelectedUser.id}</div>
                 </div>
                 <button onClick={() => { setVcSelectedUser(null); setVcTransfer(v => ({ ...v, userId: '' })); }} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8B8FA8', fontSize: '16px', padding: '2px' }}>×</button>
@@ -2130,9 +2167,12 @@ export function AdminDashboardScreen({
                   { label: 'Total Events', value: stats.events.toLocaleString(), color: '#A78BFA' },
                   { label: 'Paid Tickets', value: stats.tickets.toLocaleString(), color: '#10B981' },
                   { label: 'Active VC', value: stats.vc.toLocaleString(), color: '#F59E0B' },
-                  { label: 'Total Revenue', value: '₦' + (stats.revenue / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 }), color: '#34D399' },
-                  { label: 'New This Week', value: stats.newThisWeek.toLocaleString(), color: '#60A5FA' },
-                  { label: 'New This Month', value: stats.newThisMonth.toLocaleString(), color: '#818CF8' },
+                  // tickets.amount is already stored in naira, not kobo — the
+                  // old '/ 100' here was double-scaling real revenue down to
+                  // roughly a hundredth of its value (e.g. ₦500 -> "₦5.00").
+                  { label: 'Total Revenue', value: '₦' + stats.revenue.toLocaleString('en-NG', { minimumFractionDigits: 2 }), color: '#34D399' },
+                  { label: 'New Users This Week', value: stats.newThisWeek.toLocaleString(), color: '#60A5FA' },
+                  { label: 'New Users This Month', value: stats.newThisMonth.toLocaleString(), color: '#818CF8' },
                 ].map(card => (
                   <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '16px' }}>
                     <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
@@ -2392,7 +2432,9 @@ export function AdminDashboardScreen({
                           <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
                           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.location}</p>
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>FREE</span>
+                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>
+                              {event.is_free ? 'FREE' : `₦${Number(event.price || 0).toLocaleString()}`}
+                            </span>
                             {event.category && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.category}</span>}
                             {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.state}</span>}
                           </div>
@@ -2561,8 +2603,8 @@ export function AdminDashboardScreen({
               </div>
               <div onClick={() => handleToggleKillSwitch('disable_purchases', disablePurchases)} style={{ cursor: 'pointer' }}>
                 {disablePurchases
-                  ? <ToggleRight size={32} color="#EF4444" />
-                  : <ToggleLeft size={32} color="#555C7A" />}
+                  ? <ToggleLeft size={32} color="#EF4444" />
+                  : <ToggleRight size={32} color="#10B981" />}
               </div>
             </div>
           </div>
@@ -2582,8 +2624,8 @@ export function AdminDashboardScreen({
               </div>
               <div onClick={() => handleToggleKillSwitch('disable_scanning', disableScanning)} style={{ cursor: 'pointer' }}>
                 {disableScanning
-                  ? <ToggleRight size={32} color="#EF4444" />
-                  : <ToggleLeft size={32} color="#555C7A" />}
+                  ? <ToggleLeft size={32} color="#EF4444" />
+                  : <ToggleRight size={32} color="#10B981" />}
               </div>
             </div>
           </div>
@@ -2603,8 +2645,8 @@ export function AdminDashboardScreen({
               </div>
               <div onClick={() => handleToggleKillSwitch('disable_signups', disableSignups)} style={{ cursor: 'pointer' }}>
                 {disableSignups
-                  ? <ToggleRight size={32} color="#EF4444" />
-                  : <ToggleLeft size={32} color="#555C7A" />}
+                  ? <ToggleLeft size={32} color="#EF4444" />
+                  : <ToggleRight size={32} color="#10B981" />}
               </div>
             </div>
           </div>
@@ -2624,8 +2666,29 @@ export function AdminDashboardScreen({
               </div>
               <div onClick={() => handleToggleKillSwitch('disable_payouts', disablePayouts)} style={{ cursor: 'pointer' }}>
                 {disablePayouts
-                  ? <ToggleRight size={32} color="#EF4444" />
-                  : <ToggleLeft size={32} color="#555C7A" />}
+                  ? <ToggleLeft size={32} color="#EF4444" />
+                  : <ToggleRight size={32} color="#10B981" />}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#090514', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.06)', padding: '16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: disableLocationSharing ? 'rgba(239,68,68,0.12)' : 'rgba(16,185,129,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <MapPin size={17} color={disableLocationSharing ? '#EF4444' : '#10B981'} />
+                </div>
+                <div>
+                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>Location Sharing</p>
+                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                    {disableLocationSharing ? 'Paused — sharing your location in chat is blocked' : 'Enabled — location sharing is open'}
+                  </p>
+                </div>
+              </div>
+              <div onClick={() => handleToggleKillSwitch('disable_location_sharing', disableLocationSharing)} style={{ cursor: 'pointer' }}>
+                {disableLocationSharing
+                  ? <ToggleLeft size={32} color="#EF4444" />
+                  : <ToggleRight size={32} color="#10B981" />}
               </div>
             </div>
           </div>

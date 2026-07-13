@@ -75,6 +75,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   // feature; the real launch default lives in the DB column default.
   const [voiceNotesEnabled, setVoiceNotesEnabled] = useState(true);
   const [imageSharingEnabled, setImageSharingEnabled] = useState(true);
+  const [locationSharingEnabled, setLocationSharingEnabled] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
   const imgInputRef = useRef<HTMLInputElement>(null);
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -101,12 +102,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   useEffect(() => {
     insforge.database
       .from('app_config')
-      .select('voice_notes_enabled, image_sharing_enabled')
+      .select('voice_notes_enabled, image_sharing_enabled, disable_location_sharing')
       .maybeSingle()
       .then(
         ({ data }: any) => {
           if (typeof data?.voice_notes_enabled === 'boolean') setVoiceNotesEnabled(data.voice_notes_enabled);
           if (typeof data?.image_sharing_enabled === 'boolean') setImageSharingEnabled(data.image_sharing_enabled);
+          if (typeof data?.disable_location_sharing === 'boolean') setLocationSharingEnabled(!data.disable_location_sharing);
         },
         () => {}
       );
@@ -176,6 +178,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [currentUser.id, otherUser.id, eventId, imageSharingEnabled]);
 
   const doGetLocation = useCallback(async () => {
+    if (!locationSharingEnabled) {
+      setVoiceToast('Location sharing is temporarily unavailable.');
+      setTimeout(() => setVoiceToast(null), 3000);
+      return;
+    }
     if (!navigator.geolocation) {
       setVoiceToast('Location not available on this device');
       setTimeout(() => setVoiceToast(null), 3000);
@@ -197,7 +204,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         setTimeout(() => setVoiceToast(null), 3000);
       }
     );
-  }, [currentUser.id, otherUser.id, eventId]);
+  }, [currentUser.id, otherUser.id, eventId, locationSharingEnabled]);
 
   const sendLocation = useCallback(async () => {
     if (localStorage.getItem('vents_location_asked')) {
@@ -667,9 +674,11 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                 <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
               </button>
             )}
-            <button onClick={sendLocation} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
-              <MapPin size={20} color="#8B8FA8" />
-            </button>
+            {locationSharingEnabled && (
+              <button onClick={sendLocation} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+                <MapPin size={20} color="#8B8FA8" />
+              </button>
+            )}
             {voiceNotesEnabled && (
               <button
                 onMouseDown={startRecording}
