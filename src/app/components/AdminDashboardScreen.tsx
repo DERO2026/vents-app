@@ -1654,11 +1654,17 @@ export function AdminDashboardScreen({
                           <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Shield size={12} /> Root — role locked
                           </span>
+                        ) : isSubAdmin ? (
+                          // Block 19: role changes are a Super Admin action —
+                          // admin_set_user_role() now rejects Support Admins
+                          // (Sub-Admins) server-side regardless, so don't
+                          // show a dropdown that would just error on use.
+                          <span style={{ fontSize: '11px', color: '#8B8FA8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <Shield size={12} /> {u.role} — Super Admin only
+                          </span>
                         ) : (
                           // Root sees Sub-Admin as an assignable option (so a
-                          // demoted deputy can be re-promoted); Sub-Admins
-                          // viewing the console are strictly capped at
-                          // attendee/organizer — no self-escalation path.
+                          // demoted deputy can be re-promoted).
                           (() => {
                             const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
                             return (
