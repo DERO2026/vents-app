@@ -132,6 +132,7 @@ export type Screen =
   | 'nigeria-live'
   | 'admin-dashboard'
   | 'checkin-scanner'
+  | 'door-manager'
   | 'inbox'
   | 'conversation'
   | 'wallet';

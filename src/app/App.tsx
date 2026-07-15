@@ -38,6 +38,7 @@ import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
 import { AdminDashboardScreen } from './components/AdminDashboardScreen';
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
+import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { InterestsScreen } from './components/InterestsScreen';
 import { PrivacyScreen } from './components/PrivacyScreen';
@@ -212,7 +213,7 @@ export default function App() {
     }
   }, [currentUser]);
 
-  const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner'];
+  const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner', 'door-manager'];
   const navigateTo = useCallback((next: Screen) => {
     if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'organiser' && currentUser?.role !== 'admin' && currentUser?.role !== 'sub-admin' && currentUser?.id !== ROOT_UID) {
       console.warn(`Unauthorized attempt to access ${next} screen`);
@@ -1738,6 +1739,16 @@ export default function App() {
             />
           )}
 
+          {screen === 'door-manager' && selectedEvent && (
+            <DoorManagerScreen
+              event={selectedEvent}
+              currentUser={currentUser}
+              onBack={goBack}
+              onOpenScanner={() => navigateTo('checkin-scanner')}
+              scanningDisabled={featureFlags.disableScanning}
+            />
+          )}
+
           {/* ── UTILITY SCREENS ── */}
           {screen === 'notifications' && (
             <NotificationsScreen
@@ -1800,6 +1811,7 @@ export default function App() {
               currentUserId={currentUser?.id}
               currentUserRole={currentUser?.role}
               onOpenDoorScanner={() => navigateTo('checkin-scanner')}
+              onOpenDoorManager={() => navigateTo('door-manager')}
               purchasesDisabled={featureFlags.disablePurchases}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await insforge.database

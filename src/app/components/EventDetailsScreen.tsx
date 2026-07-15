@@ -22,6 +22,7 @@ import {
   CalendarPlus,
   Shield,
   ScanLine,
+  LayoutDashboard,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
@@ -53,6 +54,7 @@ interface EventDetailsScreenProps {
   onOrganizerPress?: (organizerId: string) => void;
   onMessageOrganizer?: (organizerId: string, eventId: string, eventTitle: string) => void;
   onOpenDoorScanner?: () => void;
+  onOpenDoorManager?: () => void;
   // Kill switch (app_config.disable_purchases) — server-side purchase_ticket
   // also rejects with 'purchases_disabled' if this is bypassed, so this
   // prop is purely a graceful-degradation UI state, not the real gate.
@@ -235,6 +237,7 @@ export function EventDetailsScreen({
   onOrganizerPress,
   onMessageOrganizer,
   onOpenDoorScanner,
+  onOpenDoorManager,
   purchasesDisabled = false,
 }: EventDetailsScreenProps) {
   const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
@@ -687,6 +690,27 @@ export function EventDetailsScreen({
               <ScanLine size={20} color="#fff" />
               <span style={{ color: '#fff', fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
             </button>
+            {onOpenDoorManager && (
+              <button
+                onClick={onOpenDoorManager}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(167,139,250,0.3)',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  cursor: 'pointer',
+                  marginTop: '10px',
+                }}
+              >
+                <LayoutDashboard size={18} color="#A78BFA" />
+                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
+              </button>
+            )}
           </div>
         )}
 
