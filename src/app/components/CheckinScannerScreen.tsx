@@ -162,15 +162,17 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       // DEFINER checks — without this, every scan would look unauthorized.
       await getAuthToken();
 
-      // Single atomic RPC: existence -> relational ownership (rejects with
-      // 'wrong_organizer' unless the scanning user owns the ticket's event,
-      // or is Sub-Admin/Admin-tier/Root covering someone else's door) ->
-      // not-already-checked-in -> atomic checked_in write. No client-side
-      // race between separate read/insert round trips, and accepts either a
-      // bare ticket_id or an HMAC-signed "id.signature" token straight off
-      // the QR. p_actor_id is always the authenticated scanning user, not
-      // necessarily the event's organizer — ownership is verified
-      // server-side against the ticket's real event.organizer_id.
+      // Single atomic RPC that decodes + verifies the scanned v2 pass token
+      // entirely server-side (the HMAC signing secret never leaves the
+      // database), then: signature -> version -> expiry -> existence ->
+      // payload binds to the real event/buyer -> relational ownership
+      // (rejects 'wrong_organizer' unless the scanning user owns the ticket's
+      // event, or is Sub-Admin/Admin-tier/Root covering someone else's door)
+      // -> active status -> not-already-checked-in -> atomic checked_in write.
+      // No client-side race between separate read/insert round trips.
+      // p_actor_id is always the authenticated scanning user, not necessarily
+      // the event's organizer — ownership is verified server-side against the
+      // ticket's real event.organizer_id.
       const { data, error } = await insforge.database.rpc('verify_entry_pass' as any, {
         p_ticket_id: ticketId,
         p_actor_id: currentUser.id,
@@ -343,14 +345,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             <span style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 800, letterSpacing: '0.05em', textTransform: 'uppercase' }}>Simulator Mode</span>
           </div>
           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 8px' }}>
-            Dev-only. Inject a signed "ticket_id.signature" token to exercise the full verify_entry_pass RPC loop without a camera — bare ticket IDs are rejected, same as a real scan.
+            Dev-only. Inject a signed v2 pass token ("payload.signature") to exercise the full verify_entry_pass RPC loop without a camera — unsigned, tampered, expired, or legacy tokens are rejected, same as a real scan.
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
             <input
               type="text"
               value={simulatorInput}
               onChange={e => setSimulatorInput(e.target.value)}
-              placeholder="ticket_id.signature"
+              placeholder="payload.signature"
               style={{ flex: 1, minWidth: 0, background: '#060A12', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', fontFamily: 'monospace' }}
             />
             <button

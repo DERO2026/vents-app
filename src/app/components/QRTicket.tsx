@@ -14,8 +14,16 @@ interface QRTicketProps {
 // ─── Offline-first signed-token cache ────────────────────────────────────────
 // The QR is re-rendered from this cache instantly on load (no network wait),
 // then silently upgraded to a freshly-minted HMAC-signed token when online —
-// so the pass is fully usable offline at the door.
-const TOKEN_CACHE_KEY = 'vents_ticket_token_cache_v1';
+// so the pass is fully usable offline at the door. The token is a v2 signed
+// pass: "<base64url(payload)>.<hmacSha256>", where payload binds ticketId,
+// eventId, purchaserId, issuedAt, expiresAt, nonce and version. The scanner
+// verifies the whole payload server-side; nothing here needs (or has) the
+// signing secret.
+//
+// Keyed to v2 so retired v1 tokens (a bare "<uuid>.<sig>" the door no longer
+// accepts) are never rendered — a fresh v2 pass is minted on the next online
+// load instead.
+const TOKEN_CACHE_KEY = 'vents_ticket_token_cache_v2';
 
 function readTokenCache(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(TOKEN_CACHE_KEY) || '{}'); } catch { return {}; }
@@ -28,12 +36,12 @@ function writeTokenCache(ticketId: string, token: string) {
   } catch { /* storage unavailable — token just won't persist across sessions */ }
 }
 
-// Only ever returns a signed "id.signature" token — the scanner (as of this
-// security fix) strictly rejects a bare/unsigned ticket_id, so there is no
-// safe fallback to the raw ID here anymore. Returns null until a signed
-// token is available (from cache, or freshly minted), so the caller can
-// show a "generating…" state instead of rendering a QR that would be
-// rejected at the door.
+// Only ever returns a signed v2 pass token ("<base64url(payload)>.<sig>") minted
+// server-side by generate_ticket_token — the scanner strictly rejects anything
+// that isn't a valid v2 signature, so there is no safe fallback to a raw ID
+// here. Returns null until a signed token is available (from cache, or freshly
+// minted), so the caller can show a "generating…" state instead of rendering a
+// QR that would be rejected at the door.
 function useSignedTicketToken(ticketId: string): string | null {
   const [token, setToken] = useState<string | null>(() => readTokenCache()[ticketId] || null);
 
