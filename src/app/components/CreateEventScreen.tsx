@@ -8,7 +8,7 @@ import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
-import { compressImage } from '../../lib/compressImage';
+import { uploadImage } from '../../lib/mediaPipeline';
 import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
@@ -255,33 +255,19 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   }, []);
 
   const uploadFlierBlob = useCallback(async (croppedBlob: Blob): Promise<{ url: string; key: string | null }> => {
-    const token = await getAuthToken();
-    const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
-    const file = new File([compressed], `flier-${Date.now()}.${extension}`, { type: mimeType });
-    const formData = new FormData();
-    formData.append('file', file);
-    // Failsafe: a hung upload (flaky mobile connection, iOS Safari stalls)
-    // must never leave the user stuck — this throws a friendly, catchable
-    // error instead of hanging the promise forever.
-    const res = await withTimeoutFallback(
-      fetch(
-        `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects`,
-        { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-      ),
-      { timeoutMs: 8000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
-    );
-    if (!res.ok) {
-      if (res.status === 401 || res.status === 403) {
-        throw new Error('Session expired. Please sign out and sign back in, then try again.');
-      }
-      throw new Error(`Upload failed (${res.status}). Please try again.`);
-    }
-    const data = await res.json();
-    const key: string | null = data?.key ?? null;
-    const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/events/objects/${encodeURIComponent(key)}` : null);
-    if (!url) throw new Error('Upload succeeded but no URL was returned. Please try again.');
-    return { url, key };
-  }, []);
+    // Production media pipeline: compresses the flier, generates a responsive
+    // thumbnail, uploads BOTH directly to the S3-compatible `events` bucket
+    // (JWT-signed), and records metadata (dimensions, size, mime, thumbnail) in
+    // media_assets. Returns the full-image {url,key} so the rest of the create/
+    // edit flow is unchanged; the thumbnail + metadata are captured behind it.
+    const asset = await uploadImage(croppedBlob, {
+      bucket: 'events',
+      userId: currentUser?.id ?? null,
+      eventId: editEventId ?? null,
+      filenameBase: 'flier',
+    });
+    return { url: asset.url, key: asset.storageKey };
+  }, [currentUser?.id, editEventId]);
 
   const handleCroppedFlier = useCallback(async (croppedBlob: Blob) => {
     closeCropper();

@@ -31,6 +31,7 @@ import { insforge } from '../../lib/insforge';
 import { trackEvent } from '../../lib/analytics';
 import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
+import { LazyImage } from './LazyImage';
 import { FlyerLightbox } from './FlyerLightbox';
 
 interface EventDetailsScreenExtraProps {
@@ -1218,11 +1219,12 @@ export function EventDetailsScreen({
                       flexShrink: 0,
                     }}
                   >
-                    <img
+                    <LazyImage
                       src={evt.image}
+                      thumbnailUrl={(evt as any).thumbnail_url ?? null}
                       alt=""
-                      style={{ width: '100%', height: '80px', objectFit: 'cover', background: 'linear-gradient(135deg,#1e1040 0%,#0f172a 100%)' }}
-                      onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      objectFit="cover"
+                      style={{ width: '100%', height: '80px' }}
                     />
                     <div style={{ padding: '8px' }}>
                       <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '32px', lineHeight: 1.3, marginBottom: '4px' }}>
