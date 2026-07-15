@@ -12,13 +12,21 @@ interface PaymentSuccessScreenProps {
   onGoHome: () => void;
 }
 
-function QRCode({ value, size = 160 }: { value: string; size?: number }) {
+// v2 signed tokens are much longer than the old bare UUID, which pushes the
+// QR to a denser module grid. Low error correction ('L') avoids adding
+// redundant blocks on top of that density — fine here since this is shown on
+// a clean, backlit phone screen, not printed on paper that could get
+// scuffed. A larger render size and a wide quiet zone (margin, in modules)
+// keep the individual modules large and cleanly separated from the app's
+// dark-mode background so a phone camera can actually focus and lock on.
+function QRCode({ value, size = 280 }: { value: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     if (!canvasRef.current) return;
     QRCodeLib.toCanvas(canvasRef.current, value, {
       width: size,
-      margin: 1,
+      margin: 4,
+      errorCorrectionLevel: 'L',
       color: { dark: '#0A0A0F', light: '#ffffff' },
     });
   }, [value, size]);
@@ -261,8 +269,8 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   borderRadius: '16px',
                   padding: '12px',
                   boxShadow: '0 0 40px rgba(168,85,247,0.2)',
-                  width: '164px',
-                  height: '164px',
+                  width: '304px',
+                  height: '304px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
@@ -270,7 +278,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                 }}
               >
                 {signedToken
-                  ? <QRCode value={signedToken} size={140} />
+                  ? <QRCode value={signedToken} size={280} />
                   : <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</span>}
               </div>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>

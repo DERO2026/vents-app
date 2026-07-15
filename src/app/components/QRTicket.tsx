@@ -12,14 +12,22 @@ interface QRTicketProps {
 }
 
 // ─── Real scannable QR canvas renderer ───────────────────────────────────────
-function QRCodeDisplay({ value, size = 180 }: { value: string; size?: number }) {
+// v2 signed tokens are much longer than the old bare UUID, which pushes the
+// QR to a denser module grid. Low error correction ('L') avoids adding
+// redundant blocks on top of that density — fine here since this is shown on
+// a clean, backlit phone screen, not printed on paper that could get
+// scuffed. A larger render size and a wide quiet zone (margin, in modules)
+// keep the individual modules large and cleanly separated from the app's
+// dark-mode background so a phone camera can actually focus and lock on.
+function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     if (!canvasRef.current) return;
     QRCode.toCanvas(canvasRef.current, value, {
       width: size,
-      margin: 2,
+      margin: 4,
+      errorCorrectionLevel: 'L',
       color: { dark: '#0A0B14', light: '#ffffff' },
     }).catch(console.error);
   }, [value, size]);
@@ -222,13 +230,13 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                       borderRadius: '16px',
                       border: '1px solid rgba(34,211,238,0.25)',
                       boxShadow: '0 0 24px rgba(34,211,238,0.15)',
-                      width: '170px',
-                      height: '170px',
+                      width: '280px',
+                      height: '280px',
                       boxSizing: 'border-box',
                     }}
                   >
                     {signedToken
-                      ? <QRCodeDisplay value={signedToken} size={170} />
+                      ? <QRCodeDisplay value={signedToken} size={280} />
                       : <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
                   </div>
                   <div className="flex items-center gap-1.5" style={{ marginTop: '4px' }}>
