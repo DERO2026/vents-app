@@ -4,6 +4,7 @@ import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
+import { useSignedTicketToken } from '../../lib/ticketToken';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -28,6 +29,10 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   const firedRef = useRef(false);
   const [saveToast, setSaveToast] = useState(false);
   const [shareToast, setShareToast] = useState(false);
+  // The gate scanner accepts ONLY a signed v2 pass token — a raw id/JSON blob
+  // is rejected as "missing cryptographic signature". Mint the same signed
+  // token QRTicket uses so this post-purchase QR is scannable too.
+  const signedToken = useSignedTicketToken(ticket.ticketId);
 
   const handleSave = () => {
     const content = [
@@ -256,9 +261,17 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   borderRadius: '16px',
                   padding: '12px',
                   boxShadow: '0 0 40px rgba(168,85,247,0.2)',
+                  width: '164px',
+                  height: '164px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  boxSizing: 'border-box',
                 }}
               >
-                <QRCode value={JSON.stringify({ ticketId: ticket.ticketId, eventId: (ticket as any).eventId, userId: (ticket as any).userId, v: 1 })} size={140} />
+                {signedToken
+                  ? <QRCode value={signedToken} size={140} />
+                  : <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</span>}
               </div>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                 {ticket.ticketId}
