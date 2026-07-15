@@ -469,53 +469,61 @@ export function EventDetailsScreen({
         />
       )}
 
-      {/* Hero — curved bottom edge; sized to the flyer's own natural portrait
-          aspect ratio (capped at 68vh) so it fills nearly the whole card
-          instead of being letterboxed/pillarboxed inside a fixed-shape box. */}
-      <div style={{ position: 'relative', flexShrink: 0, borderRadius: '0 0 28px 28px', overflow: 'hidden', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
-        <ImageCarousel
-          images={flyerImages}
-          alt={event.title}
-          naturalAspect
-          maxHeightVh={68}
-          imageBackground="#020005"
-          showArrows={flyerImages.length > 1}
-          onImageTap={(i) => { setLightboxIndex(i); setFlyerFullScreen(true); }}
-          style={{ width: '100%', cursor: 'zoom-in' }}
-        />
-        <div style={{ position: 'absolute', bottom: '70px', right: '12px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '3px 8px', pointerEvents: 'none' }}>
-          <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>
-        </div>
+      {/* Hero — premium rounded flyer card (Sync Rwanda-style): inset card
+          with generous corner radius, cover-fit image, bottom gradient for
+          legibility, category pill + share/save/report overlaid on the
+          image, and a subtle fade-in on mount. */}
+      <div
+        style={{
+          padding: '0 16px',
+          marginTop: 'calc(16px + env(safe-area-inset-top))',
+          marginBottom: '16px',
+          flexShrink: 0,
+        }}
+      >
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
-            background: 'linear-gradient(to top, #020005 0%, transparent 100%)',
-            pointerEvents: 'none',
-          }}
-        />
-
-        {/* Controls */}
-        <div
-          style={{
-            position: 'absolute',
-            top: 'calc(20px + env(safe-area-inset-top))',
-            left: '16px',
-            right: '16px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
+            position: 'relative',
+            aspectRatio: '4 / 5',
+            borderRadius: '26px',
+            overflow: 'hidden',
+            border: '1px solid rgba(255,255,255,0.08)',
+            boxShadow: '0 16px 40px rgba(0,0,0,0.45)',
+            animation: 'heroFadeIn 0.5s ease forwards',
           }}
         >
+          <ImageCarousel
+            images={flyerImages}
+            alt={event.title}
+            imageFit="cover"
+            showArrows={flyerImages.length > 1}
+            onImageTap={(i) => { setLightboxIndex(i); setFlyerFullScreen(true); }}
+            style={{ width: '100%', height: '100%', cursor: 'zoom-in' }}
+          />
+
+          {/* Soft bottom gradient so the category pill and tap hint stay legible */}
+          <div
+            style={{
+              position: 'absolute',
+              inset: 0,
+              background: 'linear-gradient(to top, rgba(2,0,5,0.9) 0%, rgba(2,0,5,0.25) 40%, transparent 65%)',
+              pointerEvents: 'none',
+            }}
+          />
+
+          {/* Back button (top-left) */}
           <button
             onClick={(e) => { e.stopPropagation(); onBack(); }}
             style={{
-              background: 'rgba(0,0,0,0.5)',
+              position: 'absolute',
+              top: '16px',
+              left: '16px',
+              background: 'rgba(0,0,0,0.4)',
               backdropFilter: 'blur(10px)',
               border: '1px solid rgba(255,255,255,0.15)',
               borderRadius: '50%',
-              width: '44px',
-              height: '44px',
+              width: '40px',
+              height: '40px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -524,11 +532,13 @@ export function EventDetailsScreen({
           >
             <ArrowLeft size={18} color="#fff" />
           </button>
-          <div style={{ display: 'flex', gap: '10px' }}>
+
+          {/* Share / Save / Report (top-right) */}
+          <div style={{ position: 'absolute', top: '16px', right: '16px', display: 'flex', gap: '8px' }}>
             <button
               onClick={(e) => { e.stopPropagation(); handleShare(); }}
               style={{
-                background: 'rgba(0,0,0,0.5)',
+                background: 'rgba(0,0,0,0.4)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.15)',
                 borderRadius: '50%',
@@ -545,7 +555,7 @@ export function EventDetailsScreen({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
               style={{
-                background: 'rgba(0,0,0,0.5)',
+                background: 'rgba(0,0,0,0.4)',
                 backdropFilter: 'blur(10px)',
                 border: '1px solid rgba(255,255,255,0.15)',
                 borderRadius: '50%',
@@ -565,7 +575,7 @@ export function EventDetailsScreen({
               <button
                 onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
                 style={{
-                  background: 'rgba(0,0,0,0.5)',
+                  background: 'rgba(0,0,0,0.4)',
                   backdropFilter: 'blur(10px)',
                   border: '1px solid rgba(255,255,255,0.15)',
                   borderRadius: '50%',
@@ -581,28 +591,34 @@ export function EventDetailsScreen({
               </button>
             )}
           </div>
-        </div>
 
-        {/* Category badge */}
-        <div
-          style={{
-            position: 'absolute',
-            bottom: '16px',
-            left: '16px',
-            background: 'rgba(123,47,190,0.15)',
-            border: '1px solid #7B2FBE',
-            borderRadius: '100px',
-            padding: '4px 10px',
-          }}
-        >
-          <span style={{ color: '#C084FC', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-            {event.category.toUpperCase()}
-          </span>
+          {/* Tap-to-expand hint (bottom-right) */}
+          <div style={{ position: 'absolute', bottom: '16px', right: '16px', background: 'rgba(0,0,0,0.5)', borderRadius: '8px', padding: '4px 8px', pointerEvents: 'none' }}>
+            <span style={{ color: '#fff', fontSize: '10px' }}>Tap to expand</span>
+          </div>
+
+          {/* Category pill (bottom-left, inside the image) */}
+          <div
+            style={{
+              position: 'absolute',
+              bottom: '16px',
+              left: '16px',
+              background: 'rgba(123,47,190,0.2)',
+              border: '1px solid #7B2FBE',
+              borderRadius: '100px',
+              padding: '4px 10px',
+              backdropFilter: 'blur(6px)',
+            }}
+          >
+            <span style={{ color: '#C084FC', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+              {event.category.toUpperCase()}
+            </span>
+          </div>
         </div>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: '16px 16px 120px' }}>
+      <div style={{ flex: 1, padding: '0 16px 120px' }}>
         {/* Title + Rating */}
         <div style={{ marginBottom: '12px' }}>
           <h1
