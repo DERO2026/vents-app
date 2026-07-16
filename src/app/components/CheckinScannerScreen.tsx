@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical, CalendarX, Flashlight, FlashlightOff, Check } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
@@ -14,11 +14,15 @@ const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 //                returns. The cryptographic verification path is UNCHANGED.
 type ScanResult = 'idle' | 'reading' | 'valid' | 'already_scanned' | 'denied';
 
-// Phase-B result display ≈ the duplicate-scan cooldown. The camera preview
-// stays live and mounted the WHOLE time — this only gates re-processing, it
-// never stops/recreates the camera. ~1s keeps the loop tight
-// (Detect → Verify → Cooldown → Ready) while preventing an instant double scan.
-const RESULT_MS = 1000;
+// Per-result display ≈ the duplicate-scan cooldown, after which the loop
+// auto-resumes (the camera is never stopped/recreated). Errors show for < 1s
+// (Task 7) so the door keeps moving; an approval lingers a touch longer.
+const APPROVED_MS = 1000;
+const ALREADY_MS = 1100;
+const DENIED_MS = 850;              // < 1 second
+const SAME_CODE_DEBOUNCE_MS = 2500; // ignore the identical code sitting in-frame
+const STATS_RECONCILE_MS = 8000;    // throttle the (network) count queries
+const VERIFY_TIMEOUT_MS = 9000;     // a stuck backend must not freeze the loop
 
 interface CheckinScannerScreenProps {
   onBack: () => void;
@@ -40,6 +44,14 @@ interface CheckinState {
   flash?: 'green' | 'red' | 'amber';
   seq?: number; // bumps each result so the flash animation re-fires
 }
+
+// Result visuals are static — defined once at module scope so they aren't
+// re-allocated on every render (this component re-renders on each scan).
+const RESULT_THEME = {
+  valid: { color: '#10B981', bg: 'rgba(16,185,129,0.16)', border: '#10B981', icon: <CheckCircle size={44} color="#10B981" /> },
+  already_scanned: { color: '#F59E0B', bg: 'rgba(245,158,11,0.16)', border: '#F59E0B', icon: <XCircle size={44} color="#F59E0B" /> },
+  denied: { color: '#EF4444', bg: 'rgba(239,68,68,0.16)', border: '#EF4444', icon: <XCircle size={44} color="#EF4444" /> },
+} as const;
 
 // Web Vibration API — the browser/Capacitor-WebView equivalent of native
 // haptics. No-ops silently on platforms without support (e.g. iOS Safari).
@@ -131,6 +143,42 @@ const DEFAULT_CAPS: CamCaps = {
   barcodeDetector: false, resolution: null,
 };
 
+// Lightweight, allocation-free scan metrics (kept in a ref — never triggers a
+// re-render). Aggregated as running sums/counts so memory stays flat across a
+// full-day / one-hour session no matter how many scans (Task 8/9).
+interface Metrics {
+  camStartAt: number; cameraInitMs: number; readyAt: number; firstDetectionMs: number;
+  rawDetections: number; duplicatesBlocked: number; processed: number;
+  verifySum: number; verifyCount: number; totalSum: number; totalCount: number;
+}
+function newMetrics(): Metrics {
+  return { camStartAt: 0, cameraInitMs: 0, readyAt: 0, firstDetectionMs: 0, rawDetections: 0, duplicatesBlocked: 0, processed: 0, verifySum: 0, verifyCount: 0, totalSum: 0, totalCount: 0 };
+}
+function summarize(m: Metrics) {
+  const avgVerify = m.verifyCount ? m.verifySum / m.verifyCount : 0;
+  const avgTotal = m.totalCount ? m.totalSum / m.totalCount : 0;
+  return {
+    cameraInitMs: Math.round(m.cameraInitMs),
+    firstDetectionMs: Math.round(m.firstDetectionMs),
+    avgVerifyMs: Math.round(avgVerify),
+    avgTotalScanMs: Math.round(avgTotal),
+    avgDetectionOverheadMs: Math.round(Math.max(0, avgTotal - avgVerify)),
+    processed: m.processed,
+    rawDetections: m.rawDetections,
+    duplicateRatePct: m.rawDetections ? Math.round((100 * m.duplicatesBlocked) / m.rawDetections) : 0,
+  };
+}
+
+// Reject the verify promise if the backend hangs, so a slow/dead network can
+// never freeze the loop in the "reading" state (Task 7 error recovery / Task 9
+// slow-backend). Verification logic itself is untouched.
+function withVerifyTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
+  return Promise.race([
+    Promise.resolve(p), // the Postgrest builder is a thenable, not a real Promise
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error('verify_timeout')), ms)),
+  ]);
+}
+
 export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scanningDisabled = false }: CheckinScannerScreenProps) {
   const [state, setState] = useState<CheckinState>({ status: 'idle' });
   const [stats, setStats] = useState({ checkedIn: 0, total: 0 });
@@ -139,12 +187,28 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const [simulatorInput, setSimulatorInput] = useState('');
   const scannerRef = useRef<any>(null);
   const scannerDivId = 'vents-qr-scanner';
-  // Vite's dev-build flag — the web/Capacitor equivalent of React Native's
-  // __DEV__. Stripped out of production bundles entirely at build time.
   const isDevEnvironment = import.meta.env.DEV;
+
   const processingRef = useRef(false);
   const seqRef = useRef(0);
   const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
+
+  // ── Lifecycle-safe timers + mount tracking (no setState after unmount) ──────
+  const mountedRef = useRef(true);
+  const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
+  const later = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => { timersRef.current.delete(id); if (mountedRef.current) fn(); }, ms);
+    timersRef.current.add(id);
+    return id;
+  }, []);
+  const safeSetState = useCallback((s: CheckinState) => { if (mountedRef.current) setState(s); }, []);
+
+  // ── Instrumentation (Task 8) ────────────────────────────────────────────────
+  const metricsRef = useRef<Metrics>(newMetrics());
+  const logMetrics = useCallback((tag = '') => {
+    // eslint-disable-next-line no-console
+    console.info(`[VENTS scanner] metrics${tag ? ' (' + tag + ')' : ''}:`, summarize(metricsRef.current));
+  }, []);
 
   // ── Professional camera pipeline state ──────────────────────────────────────
   const [caps, setCaps] = useState<CamCaps>(DEFAULT_CAPS);
@@ -154,6 +218,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const camCapsRef = useRef<any>(null);           // html5-qrcode CameraCapabilities (zoom/torch)
   const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
   const zoomThrottleRef = useRef(0);
+  const zoomRef = useRef(1);
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
   const isOrganizer =
@@ -163,6 +228,19 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     currentUser?.role === 'sub-admin' ||
     currentUser?.id === ROOT_UID;
 
+  // Component-lifetime bookkeeping: clear pending timers + emit a final metrics
+  // report on unmount so nothing lingers or fires after teardown.
+  useEffect(() => {
+    mountedRef.current = true;
+    const timers = timersRef.current;
+    return () => {
+      mountedRef.current = false;
+      timers.forEach(clearTimeout);
+      timers.clear();
+      logMetrics('session-end');
+    };
+  }, [logMetrics]);
+
   // Unlock the audio context on the first user gesture so Phase-B tones are
   // reliable (mobile browsers start it suspended until a real interaction).
   useEffect(() => {
@@ -171,45 +249,123 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     return () => window.removeEventListener('pointerdown', unlock);
   }, []);
 
-  // Load check-in stats
-  const loadStats = async () => {
+  // ── Check-in stats — optimistic + throttled (Task 6/9) ──────────────────────
+  // Instead of two COUNT queries after EVERY scan (crippling at a 5,000-attendee
+  // event with several organizers scanning), we optimistically bump the local
+  // count on each approval and reconcile with the server at most once every 8s.
+  const lastStatsFetchRef = useRef(0);
+  const loadStats = useCallback(async (force = false) => {
     if (!selectedEvent?.id) return;
+    const now = Date.now();
+    if (!force && now - lastStatsFetchRef.current < STATS_RECONCILE_MS) return;
+    lastStatsFetchRef.current = now;
     try {
       const { count: checkedCount } = await insforge.database
-        .from('checkins')
-        .select('id', { count: 'exact', head: true })
-        .eq('event_id', selectedEvent.id);
-
+        .from('checkins').select('id', { count: 'exact', head: true }).eq('event_id', selectedEvent.id);
       const { count: totalCount } = await insforge.database
-        .from('tickets')
-        .select('id', { count: 'exact', head: true })
-        .eq('event_id', selectedEvent.id)
-        .eq('status', 'active');
-
-      setStats({ checkedIn: checkedCount || 0, total: totalCount || 0 });
+        .from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', selectedEvent.id).eq('status', 'active');
+      if (mountedRef.current) setStats({ checkedIn: checkedCount || 0, total: totalCount || 0 });
     } catch { /* ignore */ }
-  };
-
-  useEffect(() => {
-    loadStats();
   }, [selectedEvent?.id]);
 
-  // Initialise the camera directly via the low-level Html5Qrcode API.
-  //
-  // We deliberately do NOT use Html5QrcodeScanner (the high-level, auto-UI
-  // class) — it never starts the camera on its own and hides its controls
-  // inside our dark container, which reads as "the scanner is broken". Driving
-  // Html5Qrcode.start() ourselves triggers the permission prompt immediately
-  // and starts decoding the instant the stream is live.
+  const bumpCheckedIn = useCallback(() => {
+    if (mountedRef.current) setStats(s => ({ checkedIn: s.checkedIn + 1, total: Math.max(s.total, s.checkedIn + 1) }));
+  }, []);
+
+  useEffect(() => { loadStats(true); }, [loadStats]);
+
+  // ── The scan handler — kept in a ref so the once-created camera callback
+  //    always calls the freshest version (no stale closures / no re-subscribe). ─
+  const handleScan = useCallback(async (rawTicketId: string, detectAt = performance.now()) => {
+    const m = metricsRef.current;
+    m.processed++;
+    const ticketId = rawTicketId.trim();
+    let resumeMs = DENIED_MS;
+
+    // ── PHASE A — QR DETECTED (instant, synchronous, no network) ──────────────
+    triggerHaptic('detect');
+    safeSetState({ status: 'reading' });
+
+    try {
+      await getAuthToken();
+      const vStart = performance.now();
+      // Unchanged: single atomic server-side verification of the signed v2 pass,
+      // now guarded by a timeout so a hung backend can't freeze the scanner.
+      const { data, error } = await withVerifyTimeout(
+        insforge.database.rpc('verify_entry_pass' as any, { p_ticket_id: ticketId, p_actor_id: currentUser.id }),
+        VERIFY_TIMEOUT_MS,
+      ) as any;
+      m.verifySum += performance.now() - vStart; m.verifyCount++;
+
+      if (error) throw error;
+      const result = data as any;
+      const seq = ++seqRef.current;
+
+      // ── PHASE B — VERIFICATION COMPLETE ─────────────────────────────────────
+      if (result?.ok) {
+        triggerHaptic('success'); playTone('success');
+        bumpCheckedIn();
+        resumeMs = APPROVED_MS;
+        safeSetState({
+          status: 'valid', headline: 'APPROVED',
+          holderName: result.holder_name || 'Verified Attendee',
+          ticketType: result.ticket_type || undefined,
+          checkinTime: result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined,
+          flash: 'green', seq,
+        });
+      } else if (result?.reason === 'already_scanned') {
+        triggerHaptic('error'); playTone('error');
+        resumeMs = ALREADY_MS;
+        const t = result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined;
+        safeSetState({
+          status: 'already_scanned', headline: 'ALREADY CHECKED IN',
+          errorMsg: t ? `First scanned at ${t}` : 'This ticket was already scanned.',
+          checkinTime: t, originalScannerId: result.scanner_id || undefined, flash: 'amber', seq,
+        });
+      } else {
+        triggerHaptic('error'); playTone('error');
+        resumeMs = DENIED_MS;
+        const info = deniedInfo(result);
+        safeSetState({ status: 'denied', headline: info.headline, errorMsg: info.detail, flash: 'red', seq });
+      }
+
+      loadStats(false); // throttled reconcile
+    } catch (err: any) {
+      triggerHaptic('error'); playTone('error');
+      resumeMs = DENIED_MS;
+      const msg = String(err?.message || '');
+      const detail = /verify_timeout/.test(msg)
+        ? 'Network is slow — try again.'
+        : msg.includes('rate_limited') ? 'Scanning too fast — pause a moment and try again.'
+        : (msg || 'Could not verify. Try again.');
+      safeSetState({ status: 'denied', headline: /verify_timeout/.test(msg) ? 'CONNECTION SLOW' : 'ENTRY DENIED', errorMsg: detail, flash: 'red', seq: ++seqRef.current });
+    }
+
+    m.totalSum += performance.now() - detectAt; m.totalCount++;
+    if (isDevEnvironment) logMetrics();
+
+    // Automatically resume scanning — the camera is never restarted; we just
+    // clear the result and re-arm re-processing after the result window.
+    later(() => { safeSetState({ status: 'idle' }); processingRef.current = false; }, resumeMs);
+  }, [currentUser?.id, safeSetState, later, loadStats, bumpCheckedIn, logMetrics, isDevEnvironment]);
+
+  const handleScanRef = useRef(handleScan);
+  handleScanRef.current = handleScan;
+
+  // Initialise the camera directly via the low-level Html5Qrcode API. We
+  // deliberately do NOT use Html5QrcodeScanner (it hides its own controls and
+  // reads as "broken"). This effect runs ONCE per session (stable deps) — the
+  // camera is never recreated between scans.
   useEffect(() => {
     if (!isOrganizer || !selectedEvent?.id) return;
 
     let mounted = true;
     let html5QrCode: any = null;
+    metricsRef.current = newMetrics();
+    metricsRef.current.camStartAt = performance.now();
 
     import('html5-qrcode').then(async ({ Html5Qrcode }) => {
       if (!mounted) return;
-
       html5QrCode = new Html5Qrcode(scannerDivId, /* verbose */ false);
       scannerRef.current = html5QrCode;
 
@@ -220,36 +376,34 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           // cost of 1080p on low-end phones) and a stable 30fps target.
           { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } } as any,
           {
-            fps: 15,                                   // decode attempts/sec — snappy, stable
-            qrbox: { width: 260, height: 260 },        // acquires codes from a bit further away
+            fps: 15,
+            qrbox: { width: 260, height: 260 },
             aspectRatio: 1.0,
-            disableFlip: false,                         // read mirrored / flipped codes too
-            // Fast barcode detection: use the browser's native BarcodeDetector
-            // when present (hardware-accelerated, far lower latency than the JS
-            // ZXing fallback). Falls back automatically where unsupported.
-            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+            disableFlip: false, // read mirrored / flipped codes
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true }, // native fast-decode
           },
-          async (decodedText: string) => {
-            // Continuous loop — the camera is NEVER stopped or unmounted between
-            // scans; we only gate re-processing. Two guards:
-            //   * processingRef: a ~1s cooldown after each scan (Cooldown → Ready).
-            //   * lastScanRef: debounce the SAME code sitting in-frame so it
-            //     doesn't repeat, while a DIFFERENT ticket still scans instantly
-            //     the moment the cooldown clears.
-            if (processingRef.current) return;
+          // Detection callback — created ONCE, closes only over stable refs, and
+          // dispatches to the freshest handleScan via handleScanRef.
+          (decodedText: string) => {
+            const m = metricsRef.current;
+            m.rawDetections++;
+            const nowP = performance.now();
+            if (!m.firstDetectionMs && m.readyAt) m.firstDetectionMs = nowP - m.readyAt;
+
+            if (processingRef.current) { m.duplicatesBlocked++; return; }
             const v = decodedText.trim();
             const now = Date.now();
-            if (v === lastScanRef.current.value && now - lastScanRef.current.at < 2500) return;
+            if (v === lastScanRef.current.value && now - lastScanRef.current.at < SAME_CODE_DEBOUNCE_MS) { m.duplicatesBlocked++; return; }
+
             processingRef.current = true;
             lastScanRef.current = { value: v, at: now };
-            await handleScan(decodedText);
-            setTimeout(() => { processingRef.current = false; }, RESULT_MS);
+            handleScanRef.current(decodedText, nowP);
           },
-          (_errorMessage: string) => {
-            // Per-frame "no QR in this frame" noise — expected, not an error.
-          },
+          (_errorMessage: string) => { /* per-frame "no QR here" noise — not an error */ },
         );
         if (!mounted) return;
+        metricsRef.current.cameraInitMs = performance.now() - metricsRef.current.camStartAt;
+        metricsRef.current.readyAt = performance.now();
         setScannerReady(true);
         tuneCamera(html5QrCode);
       } catch (err: any) {
@@ -275,18 +429,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     return () => {
       mounted = false;
       if (html5QrCode && html5QrCode.isScanning) {
-        // Turn the torch off before tearing down so it doesn't stay lit.
         try { camCapsRef.current?.torchFeature?.()?.apply?.(false); } catch { /* ignore */ }
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOrganizer, selectedEvent?.id]);
 
   // ── Camera capability audit + tuning ────────────────────────────────────────
-  // Probe the running track's NATIVE capabilities and enable only what's truly
-  // supported: continuous autofocus, continuous auto-exposure, torch, zoom, and
-  // whether a real tap-to-focus (single-shot/manual) mode exists. Anything
-  // unsupported is recorded in `caps` and surfaced to the operator — never faked.
   const tuneCamera = async (qr: any) => {
     const report: CamCaps = { ...DEFAULT_CAPS, probed: true };
     try {
@@ -309,139 +459,71 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       const zf = camCaps?.zoomFeature?.();
       if (zf?.isSupported?.()) {
         report.zoom = { supported: true, min: zf.min(), max: zf.max(), step: zf.step?.() || 0.1 };
-        try { setZoom(zf.value?.() || 1); } catch { /* ignore */ }
+        const z = zf.value?.() || 1; zoomRef.current = z; if (mountedRef.current) setZoom(z);
       }
       const tf = camCaps?.torchFeature?.();
       report.torch = !!tf?.isSupported?.();
     } catch { /* capability probing unavailable — degrade to plain preview */ }
 
     report.barcodeDetector = typeof (window as any).BarcodeDetector !== 'undefined';
-    setCaps(report);
-    // Full audit for support/debugging (also lists what's unavailable).
+    if (mountedRef.current) setCaps(report);
     // eslint-disable-next-line no-console
     console.info('[VENTS scanner] camera capabilities:', report);
   };
 
-  const toggleTorch = async () => {
+  const toggleTorch = useCallback(async () => {
     const tf = camCapsRef.current?.torchFeature?.();
     if (!tf?.isSupported?.()) return;
-    try { await tf.apply(!torchOn); setTorchOn(v => !v); } catch { /* ignore */ }
-  };
+    try { await tf.apply(!torchOn); if (mountedRef.current) setTorchOn(v => !v); } catch { /* ignore */ }
+  }, [torchOn]);
 
-  const applyZoom = (z: number) => {
+  // Apply zoom to hardware AND state at most ~16×/s so a fast pinch doesn't
+  // storm re-renders or spam the track.
+  const applyZoom = useCallback((z: number) => {
     const zf = camCapsRef.current?.zoomFeature?.();
     if (!zf?.isSupported?.()) return;
     const clamped = Math.max(caps.zoom.min, Math.min(caps.zoom.max, z));
     const now = Date.now();
-    if (now - zoomThrottleRef.current < 60) { setZoom(clamped); return; } // throttle hardware calls
+    if (now - zoomThrottleRef.current < 60) return;
     zoomThrottleRef.current = now;
+    zoomRef.current = clamped;
     try { zf.apply(clamped); } catch { /* ignore */ }
-    setZoom(clamped);
-  };
+    if (mountedRef.current) setZoom(clamped);
+  }, [caps.zoom.min, caps.zoom.max]);
 
-  // Tap-to-focus — only when the device exposes a real refocus mode. Shows a
-  // focus ring at the tap and nudges a single-shot/manual refocus, then returns
-  // to continuous. (Point-based focus needs `pointsOfInterest`, which browsers
-  // almost never expose — so we refocus centrally rather than fake a per-point focus.)
-  const onCameraTap = (e: React.MouseEvent<HTMLDivElement>) => {
+  // Tap-to-focus — only when the device exposes a real refocus mode. (Point-based
+  // focus needs `pointsOfInterest`, which browsers almost never expose — so we
+  // refocus centrally rather than fake a per-point focus.)
+  const onCameraTap = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     if (!caps.tapToFocus) return;
     const rect = e.currentTarget.getBoundingClientRect();
     setFocusRing({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
-    setTimeout(() => setFocusRing(null), 900);
+    later(() => setFocusRing(null), 900);
     const qr = scannerRef.current;
     const modes: string[] = (qr?.getRunningTrackCapabilities?.()?.focusMode) || [];
     (async () => {
       try {
         if (modes.includes('single-shot')) await qr.applyVideoConstraints({ advanced: [{ focusMode: 'single-shot' }] } as any);
         else if (modes.includes('manual')) await qr.applyVideoConstraints({ advanced: [{ focusMode: 'manual' }] } as any);
-        setTimeout(() => {
-          if (modes.includes('continuous')) qr?.applyVideoConstraints?.({ advanced: [{ focusMode: 'continuous' }] } as any).catch(() => {});
-        }, 1600);
+        later(() => { if (modes.includes('continuous')) qr?.applyVideoConstraints?.({ advanced: [{ focusMode: 'continuous' }] } as any).catch(() => {}); }, 1600);
       } catch { /* ignore */ }
     })();
-  };
+  }, [caps.tapToFocus, later]);
 
-  const onPinchStart = (e: React.TouchEvent) => {
+  const onPinchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && caps.zoom.supported) {
       const [a, b] = [e.touches[0], e.touches[1]];
-      pinchRef.current = { startDist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), startZoom: zoom };
+      pinchRef.current = { startDist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), startZoom: zoomRef.current };
     }
-  };
-  const onPinchMove = (e: React.TouchEvent) => {
+  }, [caps.zoom.supported]);
+  const onPinchMove = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 2 && pinchRef.current && caps.zoom.supported) {
       const [a, b] = [e.touches[0], e.touches[1]];
       const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
       applyZoom(pinchRef.current.startZoom * (dist / pinchRef.current.startDist));
     }
-  };
-  const onPinchEnd = () => { pinchRef.current = null; };
-
-  const handleScan = async (rawTicketId: string) => {
-    const ticketId = rawTicketId.trim();
-
-    // ── PHASE A — QR DETECTED (instant, synchronous, no network) ──────────────
-    // Runs before the first await, so the reticle + light tick land in <50 ms.
-    // The camera preview keeps running; no approve/deny, no success tone yet.
-    triggerHaptic('detect');
-    setState({ status: 'reading' });
-
-    try {
-      // Ensure hc.userToken is set so auth.uid() resolves in the RPC's checks.
-      await getAuthToken();
-
-      // Unchanged: single atomic server-side verification of the signed v2 pass.
-      const { data, error } = await insforge.database.rpc('verify_entry_pass' as any, {
-        p_ticket_id: ticketId,
-        p_actor_id: currentUser.id,
-      });
-
-      if (error) throw error;
-      const result = data as any;
-      const seq = ++seqRef.current;
-
-      // ── PHASE B — VERIFICATION COMPLETE ─────────────────────────────────────
-      if (result?.ok) {
-        triggerHaptic('success'); playTone('success');
-        setState({
-          status: 'valid',
-          headline: 'APPROVED',
-          holderName: result.holder_name || 'Verified Attendee',
-          ticketType: result.ticket_type || undefined,
-          checkinTime: result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined,
-          flash: 'green', seq,
-        });
-      } else if (result?.reason === 'already_scanned') {
-        triggerHaptic('error'); playTone('error');
-        const t = result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined;
-        setState({
-          status: 'already_scanned',
-          headline: 'ALREADY CHECKED IN',
-          errorMsg: t ? `First scanned at ${t}` : 'This ticket was already scanned.',
-          checkinTime: t,
-          originalScannerId: result.scanner_id || undefined,
-          flash: 'amber', seq,
-        });
-      } else {
-        triggerHaptic('error'); playTone('error');
-        const info = deniedInfo(result);
-        setState({ status: 'denied', headline: info.headline, errorMsg: info.detail, flash: 'red', seq });
-      }
-
-      loadStats();
-    } catch (err: any) {
-      triggerHaptic('error'); playTone('error');
-      const rateLimited = String(err?.message || '').includes('rate_limited');
-      setState({
-        status: 'denied',
-        headline: 'ENTRY DENIED',
-        errorMsg: rateLimited ? 'Scanning too fast — pause a moment and try again.' : (err?.message || 'Database error. Try again.'),
-        flash: 'red', seq: ++seqRef.current,
-      });
-    }
-
-    // Automatically return to scanning mode.
-    setTimeout(() => setState({ status: 'idle' }), RESULT_MS);
-  };
+  }, [caps.zoom.supported, applyZoom]);
+  const onPinchEnd = useCallback(() => { pinchRef.current = null; }, []);
 
   // ── Access denied ────────────────────────────────────────────────────────────
   if (!isOrganizer) {
@@ -494,13 +576,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const pct = stats.total > 0 ? Math.round((stats.checkedIn / stats.total) * 100) : 0;
   const isResult = state.status === 'valid' || state.status === 'already_scanned' || state.status === 'denied';
   const reading = state.status === 'reading';
-
-  const resultTheme = {
-    valid: { color: '#10B981', bg: 'rgba(16,185,129,0.16)', border: '#10B981', icon: <CheckCircle size={44} color="#10B981" /> },
-    already_scanned: { color: '#F59E0B', bg: 'rgba(245,158,11,0.16)', border: '#F59E0B', icon: <XCircle size={44} color="#F59E0B" /> },
-    denied: { color: '#EF4444', bg: 'rgba(239,68,68,0.16)', border: '#EF4444', icon: <XCircle size={44} color="#EF4444" /> },
-  } as const;
-  const theme = isResult ? resultTheme[state.status as keyof typeof resultTheme] : null;
+  const theme = isResult ? RESULT_THEME[state.status as keyof typeof RESULT_THEME] : null;
   const flashColor = state.flash === 'green' ? '#10B981' : state.flash === 'red' ? '#EF4444' : '#F59E0B';
 
   return (
@@ -598,8 +674,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
 
             {/* Scanner — the camera preview is ALWAYS mounted and live. Every
                 state (reading / result / cooldown) renders OVER the running
-                preview; the camera is never stopped, recreated, or hidden, so
-                the loop never black-screens or freezes between scans. */}
+                preview; the camera is never stopped, recreated, or hidden. */}
             <div
               onClick={onCameraTap}
               onTouchStart={onPinchStart}
@@ -685,7 +760,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
 
               {/* Phase-B result — a bottom card OVER the still-running preview
                   (the live camera stays visible above the gradient), so it never
-                  looks frozen. Auto-clears after the ~1s cooldown. */}
+                  looks frozen. Auto-clears after the cooldown. */}
               {isResult && theme && (
                 <div key={`r${state.seq}`} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', pointerEvents: 'none' }}>
                   <div style={{ background: 'linear-gradient(to top, rgba(2,3,8,0.97) 0%, rgba(2,3,8,0.86) 48%, transparent 90%)', padding: '36px 16px 16px', textAlign: 'center', animation: 'ventsPop 0.18s ease-out' }}>
@@ -749,6 +824,17 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 )}
               </div>
             )}
+
+            {/* Live performance readout (dev only) — the same metrics streamed to
+                the console on every scan and at session end. */}
+            {isDevEnvironment && scannerReady && (() => {
+              const m = summarize(metricsRef.current);
+              return (
+                <p style={{ color: '#555C7A', fontSize: '10px', textAlign: 'center', marginTop: '8px', fontFamily: 'monospace' }}>
+                  init {m.cameraInitMs}ms · 1st-detect {m.firstDetectionMs}ms · verify {m.avgVerifyMs}ms · scan {m.avgTotalScanMs}ms · {m.processed} done · dup {m.duplicateRatePct}%
+                </p>
+              );
+            })()}
           </>
         )}
       </div>
