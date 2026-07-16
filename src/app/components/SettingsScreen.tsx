@@ -12,6 +12,7 @@ import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
+import { Sentry } from '../../lib/sentry';
 import { ImageCropperModal } from './ImageCropperModal';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
@@ -164,6 +165,38 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
 
 // ── Sub-screens ──────────────────────────────────────────────────
 
+// Never surface a raw DB/RLS/network error to the user — this is what's
+// shown instead, no matter what actually failed underneath.
+const VERIFICATION_UPLOAD_ERROR = "We couldn't upload your certificate. Please try again or contact support if the issue continues.";
+
+// Real byte-level upload progress via XHR (fetch has no upload progress
+// event). Uploads straight to the verification-docs bucket's storage
+// endpoint; the RLS policy on storage.objects (bucket='verification-docs')
+// is what actually authorizes this write for the signed-in user.
+function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/verification-docs/objects`);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      let data: any = null;
+      try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
+      if (xhr.status >= 200 && xhr.status < 300 && data?.url) {
+        resolve(data.url as string);
+      } else {
+        reject(new Error(`verification_upload_failed:${xhr.status}:${data?.error || data?.message || 'unknown'}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('verification_upload_failed:network'));
+    const fd = new FormData();
+    fd.append('file', file);
+    xhr.send(fd);
+  });
+}
+
 function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBack: () => void }) {
   const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
   const [rejectReason, setRejectReason] = useState<string | null>(null);
@@ -173,6 +206,7 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
   const [businessAddress, setBusinessAddress] = useState(currentUser?.state ? `${currentUser.state}, Nigeria` : '');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -218,22 +252,36 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
     }
     setSubmitting(true);
     try {
-      await getAuthToken();
-      setUploading(true);
-      const { data: uploadData, error: uploadError } = await insforge.storage.from('verification-docs').uploadAuto(file);
-      if (uploadError) throw uploadError;
-      if (!uploadData?.url) throw new Error('Upload failed — no URL returned.');
+      const token = await getAuthToken();
 
+      // 1. Upload the certificate (real progress shown throughout) → 2. get
+      // back its secure storage URL.
+      setUploading(true);
+      setUploadProgress(0);
+      const documentUrl = await withTimeoutFallback(
+        uploadVerificationCertificate(file, token, setUploadProgress),
+        { timeoutMs: 20000, timeoutMessage: 'verification_upload_failed:timeout' }
+      );
+      setUploading(false);
+
+      // 3. Save that URL directly into the organizer's verification record.
       const { error: rpcError } = await insforge.database.rpc('submit_organizer_verification' as any, {
         p_company_name: companyName.trim(),
         p_cac_number: cacNumber.trim(),
         p_business_address: businessAddress.trim(),
-        p_document_url: uploadData.url,
+        p_document_url: documentUrl,
       });
-      if (rpcError) throw new Error(rpcError.message);
+      if (rpcError) throw rpcError;
+
       setStatus('pending');
     } catch (err: any) {
-      setError(err?.message || 'Submission failed.');
+      // Never surface the raw DB/RLS/network error to the user — log it
+      // silently for engineering (Sentry) and show only the friendly message.
+      Sentry.captureException(err, {
+        tags: { feature: 'organizer-verification-upload' },
+        extra: { userId: currentUser?.id },
+      });
+      setError(VERIFICATION_UPLOAD_ERROR);
     } finally {
       setUploading(false);
       setSubmitting(false);
@@ -312,10 +360,26 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '16px', color: file ? '#10B981' : '#8B8FA8', fontSize: '13px', cursor: 'pointer', textAlign: 'center' }}
+            disabled={uploading || submitting}
+            style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '16px', color: file ? '#10B981' : '#8B8FA8', fontSize: '13px', cursor: (uploading || submitting) ? 'not-allowed' : 'pointer', textAlign: 'center' }}
           >
             {file ? `✓ ${file.name}` : 'Tap to upload document (image or PDF)'}
           </button>
+
+          {uploading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
+              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                <div
+                  style={{
+                    width: `${uploadProgress}%`, height: '100%', borderRadius: '3px',
+                    background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)',
+                    transition: 'width 0.2s ease',
+                  }}
+                />
+              </div>
+              <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Uploading certificate… {uploadProgress}%</span>
+            </div>
+          )}
         </div>
 
         {error && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{error}</p>}
@@ -325,7 +389,7 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
           disabled={submitting}
           style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
         >
-          {uploading ? 'Uploading document…' : submitting ? 'Submitting…' : 'Submit for Verification'}
+          {uploading ? `Uploading… ${uploadProgress}%` : submitting ? 'Submitting…' : 'Submit for Verification'}
         </button>
       </div>
     );
