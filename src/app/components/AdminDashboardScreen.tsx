@@ -4,7 +4,7 @@ import {
   UserX, Trash2, RefreshCw, ClipboardList, Users,
   Zap, Settings, Bell, Wrench, ToggleLeft, ToggleRight,
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
-  Mic, Image as ImageIcon, Activity,
+  Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
@@ -620,6 +620,18 @@ export function AdminDashboardScreen({
   const [cacRequestsLoading, setCacRequestsLoading] = useState(false);
   const [expandedCacId, setExpandedCacId] = useState<string | null>(null);
   const [cacActionLoading, setCacActionLoading] = useState<string | null>(null);
+  const [cacStatusFilter, setCacStatusFilter] = useState<'pending' | 'approved' | 'rejected' | 'all'>('pending');
+  const [cacSearchInput, setCacSearchInput] = useState('');
+  const [cacSearch, setCacSearch] = useState('');
+  const [cacRejectingId, setCacRejectingId] = useState<string | null>(null);
+  const [cacRejectReason, setCacRejectReason] = useState('');
+  const [cacPreviewLoadingId, setCacPreviewLoadingId] = useState<string | null>(null);
+
+  // Debounce the CAC search box so every keystroke doesn't fire a query.
+  useEffect(() => {
+    const t = setTimeout(() => setCacSearch(cacSearchInput.trim()), 350);
+    return () => clearTimeout(t);
+  }, [cacSearchInput]);
 
   // Organizer Requests tab state
   const [orgRequests, setOrgRequests] = useState<any[]>([]);
@@ -752,7 +764,12 @@ export function AdminDashboardScreen({
   const loadCacRequests = useCallback(async () => {
     setCacRequestsLoading(true);
     try {
-      const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any);
+      const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any, {
+        p_status: cacStatusFilter,
+        p_search: cacSearch || null,
+        p_limit: 50,
+        p_offset: 0,
+      });
       if (error) throw error;
       setCacRequests(data || []);
     } catch (err) {
@@ -761,7 +778,7 @@ export function AdminDashboardScreen({
     } finally {
       setCacRequestsLoading(false);
     }
-  }, []);
+  }, [cacStatusFilter, cacSearch]);
 
   useEffect(() => {
     if (tab !== 'verify') return;
@@ -785,20 +802,43 @@ export function AdminDashboardScreen({
   };
 
   const handleRejectCac = async (requestId: string) => {
-    const reason = window.prompt('Reason for rejecting this brand verification? (shown to the organizer)');
-    if (!reason || !reason.trim()) return;
+    const reason = cacRejectReason.trim();
+    if (!reason) { flash(false, 'A rejection reason is required'); return; }
     setCacActionLoading(requestId);
     try {
-      const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason.trim() });
+      const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason });
       if (error) throw new Error(error.message);
       flash(false, 'Verification rejected');
       setExpandedCacId(null);
+      setCacRejectingId(null);
+      setCacRejectReason('');
       await loadCacRequests();
-      notifyByEmail('cac', requestId, 'rejected', reason.trim());
+      notifyByEmail('cac', requestId, 'rejected', reason);
     } catch (e: any) {
       flash(false, e.message || 'Rejection failed');
     } finally {
       setCacActionLoading(null);
+    }
+  };
+
+  // The verification-docs bucket is private (RLS-gated to the uploader or an
+  // admin) — a plain <a href> would 401 since it carries no Authorization
+  // header. Fetch the object as an authenticated blob instead, then hand the
+  // browser a local blob: URL, which opens correctly for both images and PDFs.
+  const handlePreviewCacDocument = async (requestId: string, documentUrl: string) => {
+    setCacPreviewLoadingId(requestId);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(documentUrl, { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) throw new Error(`Could not load document (${res.status})`);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      window.open(blobUrl, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+    } catch (e: any) {
+      flash(false, e.message || 'Could not open document');
+    } finally {
+      setCacPreviewLoadingId(null);
     }
   };
 
@@ -2207,50 +2247,146 @@ export function AdminDashboardScreen({
           </div>
 
           {verifySection === 'cac' ? (
-            cacRequestsLoading ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
-            ) : cacRequests.length === 0 ? (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No pending brand verification requests</div>
-            ) : cacRequests.map((r: any) => {
-              const expanded = expandedCacId === r.request_id;
-              return (
-                <div key={r.request_id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <div onClick={() => setExpandedCacId(expanded ? null : r.request_id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}>
-                    <div>
-                      <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name}</div>
-                      <div style={{ color: '#8B8FA8', fontSize: '12px' }}>{r.full_name || 'No Name'} · {r.state || 'No state'}</div>
-                      <div style={{ color: '#555C7A', fontSize: '11px' }}>{r.email}</div>
+            <>
+              <div style={{ position: 'relative' }}>
+                <Search size={14} color="#555C7A" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
+                <input
+                  value={cacSearchInput}
+                  onChange={e => setCacSearchInput(e.target.value)}
+                  placeholder="Search by business name, CAC number, organizer name or email…"
+                  style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                {(['pending', 'approved', 'rejected', 'all'] as const).map(s => (
+                  <button key={s} onClick={() => setCacStatusFilter(s)}
+                    style={{ padding: '5px 12px', borderRadius: '7px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '11px', textTransform: 'capitalize', background: cacStatusFilter === s ? 'rgba(167,139,250,0.18)' : 'rgba(255,255,255,0.04)', color: cacStatusFilter === s ? '#A78BFA' : '#8B8FA8' }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+
+              {cacRequestsLoading ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
+              ) : cacRequests.length === 0 ? (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>No {cacStatusFilter === 'all' ? '' : cacStatusFilter + ' '}brand verification requests</div>
+              ) : cacRequests.map((r: any) => {
+                const expanded = expandedCacId === r.request_id;
+                const statusColor = r.status === 'pending' ? '#F59E0B' : r.status === 'approved' ? '#10B981' : '#EF4444';
+                const isRejecting = cacRejectingId === r.request_id;
+                return (
+                  <div key={r.request_id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div onClick={() => setExpandedCacId(expanded ? null : r.request_id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}>
+                      <div>
+                        <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name}</div>
+                        <div style={{ color: '#8B8FA8', fontSize: '12px' }}>{r.full_name || 'No Name'} · {r.state || 'No state'}</div>
+                        <div style={{ color: '#555C7A', fontSize: '11px' }}>{r.email}</div>
+                      </div>
+                      <span style={{ fontSize: '10px', color: statusColor, background: `${statusColor}1A`, padding: '2px 8px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.status}</span>
                     </div>
-                    <span style={{ fontSize: '10px', color: '#F59E0B', background: 'rgba(245,158,11,0.1)', padding: '2px 8px', borderRadius: '6px', fontWeight: 600 }}>PENDING</span>
+                    <div style={{ color: '#555C7A', fontSize: '10px' }}>Submitted {new Date(r.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
+
+                    {expanded && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {/* Organizer profile summary — AdminDashboardScreen has no
+                            router access to a full UserProfileScreen, so this
+                            inline card (matching the Reports tab's precedent)
+                            is the "view organizer profile" affordance. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '8px 10px' }}>
+                          {r.avatar_url ? (
+                            <img src={r.avatar_url} alt="" style={{ width: '32px', height: '32px', borderRadius: '50%', objectFit: 'cover' }} />
+                          ) : (
+                            <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(168,85,247,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#A855F7', fontSize: '13px', fontWeight: 700 }}>
+                              {(r.full_name || r.email || '?').charAt(0).toUpperCase()}
+                            </div>
+                          )}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              {r.full_name || 'No Name'}
+                              {r.is_verified && <ShieldCheck size={11} color="#10B981" />}
+                            </div>
+                            <div style={{ color: '#8B8FA8', fontSize: '11px' }}>{r.phone_number || 'No phone on file'}</div>
+                          </div>
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Owner/Director:</strong> {r.owner_name || '—'}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Registration Date:</strong> {r.registration_date ? new Date(r.registration_date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '—'}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Email:</strong> {r.business_email || '—'}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Phone:</strong> {r.business_phone || '—'}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address}</p>
+                          {r.status !== 'pending' && r.admin_note && (
+                            <p style={{ margin: 0, fontSize: '12px', color: '#EF4444' }}><strong style={{ color: '#8B8FA8' }}>Rejection Reason:</strong> {r.admin_note}</p>
+                          )}
+                          {r.status !== 'pending' && r.reviewed_at && (
+                            <p style={{ margin: 0, fontSize: '11px', color: '#555C7A' }}>Reviewed {new Date(r.reviewed_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                          )}
+                          <button
+                            onClick={() => handlePreviewCacDocument(r.request_id, r.document_url)}
+                            disabled={cacPreviewLoadingId === r.request_id}
+                            style={{ alignSelf: 'flex-start', background: 'none', border: 'none', padding: 0, color: '#A855F7', fontSize: '12px', fontWeight: 600, textDecoration: 'underline', cursor: cacPreviewLoadingId === r.request_id ? 'wait' : 'pointer' }}
+                          >
+                            {cacPreviewLoadingId === r.request_id ? 'Opening…' : 'Preview uploaded CAC document ↗'}
+                          </button>
+                        </div>
+
+                        {isRejecting && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            <textarea
+                              value={cacRejectReason}
+                              onChange={e => setCacRejectReason(e.target.value)}
+                              placeholder="Reason for rejecting this request (shown to the organizer)…"
+                              rows={2}
+                              style={{ width: '100%', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {r.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {isRejecting ? (
+                          <>
+                            <button
+                              onClick={() => handleRejectCac(r.request_id)}
+                              disabled={cacActionLoading === r.request_id || !cacRejectReason.trim()}
+                              style={{ flex: 1, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: (cacActionLoading === r.request_id || !cacRejectReason.trim()) ? 0.6 : 1 }}
+                            >
+                              {cacActionLoading === r.request_id ? 'Rejecting…' : 'Confirm Rejection'}
+                            </button>
+                            <button
+                              onClick={() => { setCacRejectingId(null); setCacRejectReason(''); }}
+                              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '8px', color: '#8B8FA8', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => handleApproveCac(r.request_id)}
+                              disabled={cacActionLoading === r.request_id}
+                              style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
+                            >
+                              {cacActionLoading === r.request_id ? 'Processing…' : 'Approve & Verify Brand'}
+                            </button>
+                            <button
+                              onClick={() => { setExpandedCacId(r.request_id); setCacRejectingId(r.request_id); setCacRejectReason(''); }}
+                              disabled={cacActionLoading === r.request_id}
+                              style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
+                            >
+                              Reject Verification
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <div style={{ color: '#555C7A', fontSize: '10px' }}>Submitted {new Date(r.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
-                  {expanded && (
-                    <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address}</p>
-                      <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Phone:</strong> {r.phone_number || '—'}</p>
-                      <a href={r.document_url} target="_blank" rel="noopener noreferrer" style={{ color: '#A855F7', fontSize: '12px', fontWeight: 600, textDecoration: 'underline' }}>View uploaded CAC document ↗</a>
-                    </div>
-                  )}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => handleApproveCac(r.request_id)}
-                      disabled={cacActionLoading === r.request_id}
-                      style={{ flex: 1, background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '8px', color: '#10B981', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
-                    >
-                      {cacActionLoading === r.request_id ? 'Processing…' : 'Approve & Verify Brand'}
-                    </button>
-                    <button
-                      onClick={() => handleRejectCac(r.request_id)}
-                      disabled={cacActionLoading === r.request_id}
-                      style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: cacActionLoading === r.request_id ? 0.6 : 1 }}
-                    >
-                      Reject Verification
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </>
           ) : pendingOrgsLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
           ) : pendingOrgs.length === 0 ? (

@@ -6,7 +6,7 @@ import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
-  Eye, EyeOff, Check,
+  Eye, EyeOff, Check, Clock, MessageSquare,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
@@ -197,12 +197,84 @@ function uploadVerificationCertificate(file: File, token: string, onProgress: (p
   });
 }
 
-function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBack: () => void }) {
+// Deliberate, curated business-rule messages submit_organizer_verification
+// raises on purpose (see migrations/20260716175945_organizer-verification-
+// workflow-v2.sql) — safe to show verbatim. Anything else (a genuine bug, an
+// RLS error, a network failure) falls back to a generic friendly message.
+const VERIFICATION_SUBMIT_ERROR = "We couldn't submit your verification request. Please try again or contact support if the issue continues.";
+const KNOWN_VERIFICATION_RPC_ERRORS = new Set([
+  'Business name is required', 'CAC number is required', 'Business address is required',
+  'Owner name is required', 'A valid registration date is required', 'A valid business email is required',
+  'Business phone is required', 'A certificate document is required',
+  'Only organizers can request brand verification', 'You already have a pending verification request',
+  'Not authenticated',
+]);
+
+interface VerificationRow {
+  request_id: string; status: 'pending' | 'approved' | 'rejected'; admin_note: string | null;
+  created_at: string; reviewed_at: string | null;
+  company_name: string; cac_number: string; owner_name: string; registration_date: string;
+  business_email: string; business_phone: string; business_address: string; document_url: string;
+}
+
+// Professional "Verification Pending" status page (Task 4) — business name,
+// submission date, status, estimated review time, a friendly reference ID
+// derived from the request UUID, and a Contact Support action.
+function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; onContactSupport?: () => void }) {
+  const refId = `VER-${v.request_id.slice(0, 8).toUpperCase()}`;
+  const submittedDate = new Date(v.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' });
+  const rows: { label: string; value: string; color?: string; mono?: boolean }[] = [
+    { label: 'Business Name', value: v.company_name },
+    { label: 'Submission Date', value: submittedDate },
+    { label: 'Status', value: 'Pending Review', color: '#F59E0B' },
+    { label: 'Estimated Review Time', value: '1–3 business days' },
+    { label: 'Verification Reference ID', value: refId, mono: true },
+  ];
+  return (
+    <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+      <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '28px 20px 22px', background: 'linear-gradient(180deg, rgba(123,47,190,0.16), rgba(9,5,20,0))', borderRadius: '20px', border: '1px solid rgba(168,85,247,0.2)' }}>
+        <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Clock size={28} color="#F59E0B" />
+        </div>
+        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Verification Pending</p>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
+          Your brand verification request is under review. We'll email you once a decision is made.
+        </p>
+      </div>
+
+      <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '4px 16px' }}>
+        {rows.map((row, i) => (
+          <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', gap: '12px' }}>
+            <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{row.label}</span>
+            <span style={{ color: row.color || '#F0F0FF', fontSize: '13px', fontWeight: 700, fontFamily: row.mono ? 'ui-monospace, monospace' : 'inherit', textAlign: 'right' }}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {onContactSupport && (
+        <button
+          onClick={onContactSupport}
+          style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', color: '#C4C9E0', fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+        >
+          <MessageSquare size={16} /> Contact Support
+        </button>
+      )}
+    </div>
+  );
+}
+
+function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { currentUser: any; onBack: () => void; onContactSupport?: () => void }) {
   const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
-  const [rejectReason, setRejectReason] = useState<string | null>(null);
+  const [verification, setVerification] = useState<VerificationRow | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   const [companyName, setCompanyName] = useState('');
   const [cacNumber, setCacNumber] = useState('');
+  const [ownerName, setOwnerName] = useState('');
+  const [registrationDate, setRegistrationDate] = useState('');
+  const [businessEmail, setBusinessEmail] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [businessAddress, setBusinessAddress] = useState(currentUser?.state ? `${currentUser.state}, Nigeria` : '');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -210,6 +282,7 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const todayStr = new Date().toISOString().slice(0, 10);
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -224,72 +297,194 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
     boxSizing: 'border-box',
   };
 
-  useEffect(() => {
+  const loadLatest = useCallback(async () => {
     if (!currentUser?.id) return;
-    (async () => {
-      try {
-        await getAuthToken();
-        const { data } = await insforge.database.rpc('my_latest_organizer_verification' as any);
-        const row = Array.isArray(data) ? data[0] : data;
-        if (row?.status === 'pending') { setStatus('pending'); return; }
-        if (row?.status === 'rejected') { setRejectReason(row.admin_note || null); setStatus('rejected'); return; }
-        setStatus('form');
-      } catch {
-        setStatus('form');
+    try {
+      await getAuthToken();
+      const { data } = await insforge.database.rpc('my_latest_organizer_verification' as any);
+      const row = Array.isArray(data) ? data[0] : data;
+      if (row?.status === 'pending' || row?.status === 'rejected') {
+        setVerification(row as VerificationRow);
+        setStatus(row.status);
+        return;
       }
-    })();
+      setStatus('form');
+    } catch {
+      setStatus('form');
+    }
   }, [currentUser?.id]);
+
+  useEffect(() => { loadLatest(); }, [loadLatest]);
 
   const handleSubmit = async () => {
     setError('');
-    if (!companyName.trim() || !cacNumber.trim() || !businessAddress.trim()) {
-      setError('All fields are required.');
-      return;
-    }
-    if (!file) {
-      setError('Please upload your Certificate of Incorporation.');
-      return;
-    }
+    // 1. Validate every field before touching the network.
+    if (!companyName.trim()) { setError('Business name is required.'); return; }
+    if (!cacNumber.trim()) { setError('CAC registration number is required.'); return; }
+    if (!businessAddress.trim()) { setError('Business address is required.'); return; }
+    if (!ownerName.trim()) { setError('Owner name is required.'); return; }
+    if (!registrationDate) { setError('Registration date is required.'); return; }
+    if (registrationDate > todayStr) { setError('Registration date cannot be in the future.'); return; }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail.trim())) { setError('A valid business email is required.'); return; }
+    if (businessPhone.replace(/\D/g, '').length < 6) { setError('A valid business phone number is required.'); return; }
+    if (!file) { setError('Please upload your Certificate of Incorporation.'); return; }
+
     setSubmitting(true);
     try {
       const token = await getAuthToken();
 
-      // 1. Upload the certificate (real progress shown throughout) → 2. get
-      // back its secure storage URL.
+      // 2. Upload the certificate (real progress shown throughout) → get
+      // back its secure storage URL. Upload failures are never shown raw.
       setUploading(true);
       setUploadProgress(0);
-      const documentUrl = await withTimeoutFallback(
-        uploadVerificationCertificate(file, token, setUploadProgress),
-        { timeoutMs: 20000, timeoutMessage: 'verification_upload_failed:timeout' }
-      );
-      setUploading(false);
+      let documentUrl: string;
+      try {
+        documentUrl = await withTimeoutFallback(
+          uploadVerificationCertificate(file, token, setUploadProgress),
+          { timeoutMs: 20000, timeoutMessage: 'verification_upload_failed:timeout' }
+        );
+      } catch (uploadErr) {
+        Sentry.captureException(uploadErr, { tags: { feature: 'organizer-verification-upload' }, extra: { userId: currentUser?.id } });
+        setError(VERIFICATION_UPLOAD_ERROR);
+        return;
+      } finally {
+        setUploading(false);
+      }
 
-      // 3. Save that URL directly into the organizer's verification record.
+      // 3. Save that URL directly into the organizer's verification record
+      // (status defaults to 'pending'; the RPC also blocks duplicate
+      // pending submissions server-side).
       const { error: rpcError } = await insforge.database.rpc('submit_organizer_verification' as any, {
         p_company_name: companyName.trim(),
         p_cac_number: cacNumber.trim(),
         p_business_address: businessAddress.trim(),
         p_document_url: documentUrl,
+        p_owner_name: ownerName.trim(),
+        p_registration_date: registrationDate,
+        p_business_email: businessEmail.trim(),
+        p_business_phone: `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}`,
       });
       if (rpcError) throw rpcError;
 
-      setStatus('pending');
+      // 4. Success confirmation, then land on the Pending status page.
+      setShowSuccess(true);
+      await loadLatest();
+      setTimeout(() => setShowSuccess(false), 1800);
     } catch (err: any) {
-      // Never surface the raw DB/RLS/network error to the user — log it
-      // silently for engineering (Sentry) and show only the friendly message.
-      Sentry.captureException(err, {
-        tags: { feature: 'organizer-verification-upload' },
-        extra: { userId: currentUser?.id },
-      });
-      setError(VERIFICATION_UPLOAD_ERROR);
+      const msg = err?.message || '';
+      Sentry.captureException(err, { tags: { feature: 'organizer-verification-submit' }, extra: { userId: currentUser?.id } });
+      setError(KNOWN_VERIFICATION_RPC_ERRORS.has(msg) ? msg : VERIFICATION_SUBMIT_ERROR);
     } finally {
-      setUploading(false);
       setSubmitting(false);
     }
   };
 
+  // Plain JSX (not a nested component function) — this is the actual fix for
+  // the keyboard-dismiss-on-every-keystroke bug. The previous implementation
+  // declared `function CACForm() { ... }` INSIDE this component's body and
+  // rendered it as `<CACForm />`. Every keystroke updates state here, which
+  // re-renders CACVerificationScreen, which re-creates a BRAND NEW CACForm
+  // function value each time — React treats a new function/component
+  // reference as a different component type, so the reconciler unmounted and
+  // remounted the entire input subtree (and its DOM nodes) on every single
+  // keystroke, which is exactly what drops focus and dismisses the mobile
+  // keyboard. Inlined `<input>`/`<textarea>` elements are plain DOM tags, not
+  // components — their "type" is the stable string 'input'/'textarea', so
+  // React patches attributes in place across renders instead of remounting.
+  const form = (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: status === 'form' ? '8px' : 0 }}>
+      <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
+        Verify your organization with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
+      </p>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Legal Registered Name</label>
+        <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
+        <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Owner / Director Full Name</label>
+        <input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="e.g. Jane Doe" style={inputStyle} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Date</label>
+        <input
+          type="date" value={registrationDate} max={todayStr}
+          onChange={e => setRegistrationDate(e.target.value)}
+          style={{ ...inputStyle, colorScheme: 'dark' }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Email</label>
+        <input type="email" value={businessEmail} onChange={e => setBusinessEmail(e.target.value)} placeholder="business@yourcompany.com" style={inputStyle} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Phone</label>
+        <PhoneInput countryCode={phoneCountryCode} onCountryCodeChange={setPhoneCountryCode} value={businessPhone} onChange={setBusinessPhone} placeholder="801 234 5678" height={45} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
+        <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Certificate of Incorporation</label>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,application/pdf"
+          onChange={e => setFile(e.target.files?.[0] || null)}
+          style={{ display: 'none' }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading || submitting}
+          style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '16px', color: file ? '#10B981' : '#8B8FA8', fontSize: '13px', cursor: (uploading || submitting) ? 'not-allowed' : 'pointer', textAlign: 'center' }}
+        >
+          {file ? `✓ ${file.name}` : 'Tap to upload document (image or PDF)'}
+        </button>
+
+        {uploading && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
+            <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+              <div
+                style={{
+                  width: `${uploadProgress}%`, height: '100%', borderRadius: '3px',
+                  background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)',
+                  transition: 'width 0.2s ease',
+                }}
+              />
+            </div>
+            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Uploading certificate… {uploadProgress}%</span>
+          </div>
+        )}
+      </div>
+
+      {error && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{error}</p>}
+
+      <button
+        onClick={handleSubmit}
+        disabled={submitting}
+        style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
+      >
+        {uploading ? `Uploading… ${uploadProgress}%` : submitting ? 'Submitting…' : 'Submit for Verification'}
+      </button>
+    </div>
+  );
+
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <style>{`@keyframes vfFadeIn { from { opacity: 0; } to { opacity: 1; } }`}</style>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
@@ -297,103 +492,40 @@ function CACVerificationScreen({ currentUser, onBack }: { currentUser: any; onBa
         <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700 }}>Get Verified</h1>
       </div>
 
+      {showSuccess && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(2,0,5,0.94)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', zIndex: 10, animation: 'vfFadeIn .25s ease' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle size={36} color="#10B981" />
+          </div>
+          <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0 }}>Request Submitted!</p>
+          <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>Your certificate is now under review.</p>
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 40px' }}>
         {status === 'loading' && (
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>Loading…</p>
         )}
 
-        {status === 'pending' && (
-          <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '16px', padding: '20px', textAlign: 'center', marginTop: '20px' }}>
-            <ShieldCheck size={32} color="#F59E0B" style={{ marginBottom: '10px' }} />
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>Verification Pending</p>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>Your brand verification request is under review. We'll email you once a decision is made.</p>
-          </div>
+        {status === 'pending' && verification && (
+          <VerificationPendingCard v={verification} onContactSupport={onContactSupport} />
         )}
 
         {status === 'rejected' && (
           <div style={{ marginTop: '8px' }}>
             <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
               <p style={{ color: '#EF4444', fontSize: '13px', fontWeight: 700, margin: '0 0 6px' }}>Previous request not approved</p>
-              {rejectReason && <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>{rejectReason}</p>}
+              {verification?.admin_note && <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>{verification.admin_note}</p>}
             </div>
             <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '16px' }}>You can submit a new request below.</p>
-            <CACForm />
+            {form}
           </div>
         )}
 
-        {status === 'form' && <CACForm />}
+        {status === 'form' && form}
       </div>
     </div>
   );
-
-  function CACForm() {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: status === 'form' ? '8px' : 0 }}>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-          Verify your organization with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
-        </p>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Company Legal Registered Name</label>
-          <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
-          <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
-          <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Certificate of Incorporation</label>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,application/pdf"
-            onChange={e => setFile(e.target.files?.[0] || null)}
-            style={{ display: 'none' }}
-          />
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || submitting}
-            style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px dashed rgba(255,255,255,0.2)', borderRadius: '12px', padding: '16px', color: file ? '#10B981' : '#8B8FA8', fontSize: '13px', cursor: (uploading || submitting) ? 'not-allowed' : 'pointer', textAlign: 'center' }}
-          >
-            {file ? `✓ ${file.name}` : 'Tap to upload document (image or PDF)'}
-          </button>
-
-          {uploading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '2px' }}>
-              <div style={{ width: '100%', height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
-                <div
-                  style={{
-                    width: `${uploadProgress}%`, height: '100%', borderRadius: '3px',
-                    background: 'linear-gradient(90deg,#7B2FBE,#4F46E5)',
-                    transition: 'width 0.2s ease',
-                  }}
-                />
-              </div>
-              <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Uploading certificate… {uploadProgress}%</span>
-            </div>
-          )}
-        </div>
-
-        {error && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{error}</p>}
-
-        <button
-          onClick={handleSubmit}
-          disabled={submitting}
-          style={{ marginTop: '4px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}
-        >
-          {uploading ? `Uploading… ${uploadProgress}%` : submitting ? 'Submitting…' : 'Submit for Verification'}
-        </button>
-      </div>
-    );
-  }
 }
 
 function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
@@ -1294,7 +1426,7 @@ export function SettingsScreen({
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
-  if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onContactSupport={() => setSubScreen('help')} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
