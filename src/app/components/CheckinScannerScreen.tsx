@@ -6,8 +6,16 @@ import { Event } from './types';
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
-// html5-qrcode is loaded dynamically to avoid SSR issues
-type ScanResult = 'idle' | 'scanning' | 'valid' | 'already_scanned' | 'denied';
+// Two-phase pipeline:
+//   'reading'  = Phase A. A QR was DETECTED (instant, pre-verification): light
+//                haptic + white reticle pulse + "Reading Ticket…", camera stays
+//                live. No approve/deny, no success sound yet.
+//   valid / already_scanned / denied = Phase B, only after verify_entry_pass()
+//                returns. The cryptographic verification path is UNCHANGED.
+type ScanResult = 'idle' | 'reading' | 'valid' | 'already_scanned' | 'denied';
+
+// How long a Phase-B result is shown before auto-returning to scanning.
+const RESULT_MS = 2200;
 
 interface CheckinScannerScreenProps {
   onBack: () => void;
@@ -20,18 +28,85 @@ interface CheckinScannerScreenProps {
 
 interface CheckinState {
   status: ScanResult;
+  headline?: string;
   holderName?: string;
   ticketType?: string;
   checkinTime?: string;
   errorMsg?: string;
   originalScannerId?: string;
+  flash?: 'green' | 'red' | 'amber';
+  seq?: number; // bumps each result so the flash animation re-fires
 }
 
 // Web Vibration API — the browser/Capacitor-WebView equivalent of native
 // haptics. No-ops silently on platforms without support (e.g. iOS Safari).
-function triggerHaptic(kind: 'success' | 'error') {
+// 'detect' is the light Phase-A tick fired the instant a QR is seen.
+function triggerHaptic(kind: 'detect' | 'success' | 'error') {
   if (typeof navigator === 'undefined' || !('vibrate' in navigator)) return;
-  try { navigator.vibrate(kind === 'success' ? 40 : [30, 60, 30]); } catch { /* ignore */ }
+  try {
+    navigator.vibrate(kind === 'detect' ? 8 : kind === 'success' ? 40 : [30, 60, 30]);
+  } catch { /* ignore */ }
+}
+
+// Optional, best-effort Web-Audio confirmation tones (no audio assets shipped).
+// Useful in loud venues where haptics alone are easy to miss. Silently no-ops
+// where audio is unavailable/locked — haptics remain the primary cue.
+let _audioCtx: AudioContext | null = null;
+function getAudioCtx(): AudioContext | null {
+  try {
+    const AC = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AC) return null;
+    if (!_audioCtx) _audioCtx = new AC();
+    if (_audioCtx.state === 'suspended') _audioCtx.resume().catch(() => {});
+    return _audioCtx;
+  } catch { return null; }
+}
+function playTone(kind: 'success' | 'error') {
+  const ctx = getAudioCtx();
+  if (!ctx) return;
+  try {
+    const now = ctx.currentTime;
+    const beep = (freq: number, start: number, dur: number, peak = 0.16) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, now + start);
+      gain.gain.exponentialRampToValueAtTime(peak, now + start + 0.012);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + start + dur);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(now + start); osc.stop(now + start + dur + 0.03);
+    };
+    if (kind === 'success') { beep(880, 0, 0.09); beep(1320, 0.075, 0.13); } // bright rising two-note
+    else { beep(196, 0, 0.2, 0.12); }                                        // low error blip
+  } catch { /* ignore */ }
+}
+
+// Map a verify_entry_pass denial into an exact, glanceable headline + detail.
+// (The server messages/reasons are unchanged; this only presents them.)
+function deniedInfo(result: any): { headline: string; detail: string } {
+  const reason = result?.reason as string | undefined;
+  const msg = (result?.message as string | undefined) || '';
+  const low = msg.toLowerCase();
+  switch (reason) {
+    case 'expired':
+      return { headline: 'EXPIRED TICKET', detail: msg || 'This pass has expired.' };
+    case 'wrong_organizer':
+    case 'payload_mismatch':
+      return { headline: 'WRONG EVENT', detail: msg || 'This ticket is for a different event.' };
+    case 'not_active':
+      if (low.includes('refund')) return { headline: 'REFUNDED', detail: 'This ticket was refunded.' };
+      if (low.includes('cancel')) return { headline: 'CANCELLED', detail: 'This ticket was cancelled.' };
+      return { headline: 'INVALID TICKET', detail: msg || 'This ticket is not active.' };
+    case 'invalid_signature':
+    case 'invalid_token':
+    case 'unsigned_ticket':
+    case 'legacy_token':
+    case 'not_found':
+      return { headline: 'INVALID TICKET', detail: msg || 'This ticket could not be validated.' };
+    default:
+      return { headline: 'ENTRY DENIED', detail: msg || 'This ticket could not be validated.' };
+  }
 }
 
 export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scanningDisabled = false }: CheckinScannerScreenProps) {
@@ -46,17 +121,23 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   // __DEV__. Stripped out of production bundles entirely at build time.
   const isDevEnvironment = import.meta.env.DEV;
   const processingRef = useRef(false);
+  const seqRef = useRef(0);
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
-  // (The specific-organizer-vs-event ownership check happens server-side in
-  // verify_entry_pass, which rejects with 'wrong_organizer' unless the
-  // scanning user owns the ticket's event OR is sub-admin/admin/root.)
   const isOrganizer =
     currentUser?.role === 'organizer' ||
     currentUser?.role === 'organiser' ||
     currentUser?.role === 'admin' ||
     currentUser?.role === 'sub-admin' ||
     currentUser?.id === ROOT_UID;
+
+  // Unlock the audio context on the first user gesture so Phase-B tones are
+  // reliable (mobile browsers start it suspended until a real interaction).
+  useEffect(() => {
+    const unlock = () => { getAudioCtx(); window.removeEventListener('pointerdown', unlock); };
+    window.addEventListener('pointerdown', unlock, { once: true });
+    return () => window.removeEventListener('pointerdown', unlock);
+  }, []);
 
   // Load check-in stats
   const loadStats = async () => {
@@ -84,17 +165,11 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   // Initialise the camera directly via the low-level Html5Qrcode API.
   //
   // We deliberately do NOT use Html5QrcodeScanner (the high-level, auto-UI
-  // class) — it never starts the camera on its own. On first use it injects
-  // its own unstyled "Request Camera Permissions" button into the target div
-  // and waits for an explicit click, followed by a second manual "Start
-  // Scanning" step. Wrapped inside our dark, overflow:hidden container that
-  // control is easy to miss entirely, which reads to an organizer as "the
-  // scanner is just broken." Driving Html5Qrcode.start() ourselves triggers
-  // the real camera permission prompt immediately and starts decoding the
-  // instant the stream is live — no hidden UI, no extra taps.
+  // class) — it never starts the camera on its own and hides its controls
+  // inside our dark container, which reads as "the scanner is broken". Driving
+  // Html5Qrcode.start() ourselves triggers the permission prompt immediately
+  // and starts decoding the instant the stream is live.
   useEffect(() => {
-    // Skip entirely without a valid event — the "No Event Selected" fallback
-    // renders instead of the scanner div, so there'd be nothing to mount into.
     if (!isOrganizer || !selectedEvent?.id) return;
 
     let mounted = true;
@@ -109,16 +184,19 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       try {
         await html5QrCode.start(
           { facingMode: 'environment' },
-          { fps: 10, qrbox: { width: 240, height: 240 }, aspectRatio: 1.0 },
+          // fps 15 (up from 10) for snappier detection; a slightly larger qrbox
+          // acquires the code from a bit further away without hurting decode.
+          { fps: 15, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
           async (decodedText: string) => {
             if (processingRef.current) return;
             processingRef.current = true;
             await handleScan(decodedText);
-            setTimeout(() => { processingRef.current = false; }, 3000);
+            // Cooldown so the same code lingering in-frame doesn't instantly
+            // re-fire; slightly longer than the result display.
+            setTimeout(() => { processingRef.current = false; }, RESULT_MS + 500);
           },
-          (errorMessage: string) => {
-            // Per-frame "no QR found in this frame" noise — expected while
-            // the camera is just looking for a code. Not a real error.
+          (_errorMessage: string) => {
+            // Per-frame "no QR in this frame" noise — expected, not an error.
           },
         );
         if (!mounted) return;
@@ -152,27 +230,19 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   }, [isOrganizer, selectedEvent?.id]);
 
   const handleScan = async (rawTicketId: string) => {
-    // Defensive trim — some camera/QR decoders append trailing
-    // whitespace/newlines to the decoded payload.
     const ticketId = rawTicketId.trim();
-    setState({ status: 'scanning' });
+
+    // ── PHASE A — QR DETECTED (instant, synchronous, no network) ──────────────
+    // Runs before the first await, so the reticle + light tick land in <50 ms.
+    // The camera preview keeps running; no approve/deny, no success tone yet.
+    triggerHaptic('detect');
+    setState({ status: 'reading' });
 
     try {
-      // Ensure hc.userToken is set so auth.uid() resolves in RLS/SECURITY
-      // DEFINER checks — without this, every scan would look unauthorized.
+      // Ensure hc.userToken is set so auth.uid() resolves in the RPC's checks.
       await getAuthToken();
 
-      // Single atomic RPC that decodes + verifies the scanned v2 pass token
-      // entirely server-side (the HMAC signing secret never leaves the
-      // database), then: signature -> version -> expiry -> existence ->
-      // payload binds to the real event/buyer -> relational ownership
-      // (rejects 'wrong_organizer' unless the scanning user owns the ticket's
-      // event, or is Sub-Admin/Admin-tier/Root covering someone else's door)
-      // -> active status -> not-already-checked-in -> atomic checked_in write.
-      // No client-side race between separate read/insert round trips.
-      // p_actor_id is always the authenticated scanning user, not necessarily
-      // the event's organizer — ownership is verified server-side against the
-      // ticket's real event.organizer_id.
+      // Unchanged: single atomic server-side verification of the signed v2 pass.
       const { data, error } = await insforge.database.rpc('verify_entry_pass' as any, {
         p_ticket_id: ticketId,
         p_actor_id: currentUser.id,
@@ -180,41 +250,50 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
 
       if (error) throw error;
       const result = data as any;
+      const seq = ++seqRef.current;
 
+      // ── PHASE B — VERIFICATION COMPLETE ─────────────────────────────────────
       if (result?.ok) {
-        triggerHaptic('success');
+        triggerHaptic('success'); playTone('success');
         setState({
           status: 'valid',
+          headline: 'APPROVED',
           holderName: result.holder_name || 'Verified Attendee',
           ticketType: result.ticket_type || undefined,
-          checkinTime: new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }),
+          checkinTime: result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined,
+          flash: 'green', seq,
         });
       } else if (result?.reason === 'already_scanned') {
-        triggerHaptic('error');
-        const time = result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : 'an earlier time';
+        triggerHaptic('error'); playTone('error');
+        const t = result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined;
         setState({
           status: 'already_scanned',
-          errorMsg: `Already scanned at ${time}`,
-          checkinTime: result.checked_in_at ? new Date(result.checked_in_at).toLocaleTimeString('en-NG', { timeStyle: 'short' }) : undefined,
+          headline: 'ALREADY CHECKED IN',
+          errorMsg: t ? `First scanned at ${t}` : 'This ticket was already scanned.',
+          checkinTime: t,
           originalScannerId: result.scanner_id || undefined,
+          flash: 'amber', seq,
         });
       } else {
-        triggerHaptic('error');
-        setState({ status: 'denied', errorMsg: result?.message || 'This ticket could not be validated.' });
+        triggerHaptic('error'); playTone('error');
+        const info = deniedInfo(result);
+        setState({ status: 'denied', headline: info.headline, errorMsg: info.detail, flash: 'red', seq });
       }
 
       loadStats();
     } catch (err: any) {
-      triggerHaptic('error');
+      triggerHaptic('error'); playTone('error');
       const rateLimited = String(err?.message || '').includes('rate_limited');
       setState({
         status: 'denied',
+        headline: 'ENTRY DENIED',
         errorMsg: rateLimited ? 'Scanning too fast — pause a moment and try again.' : (err?.message || 'Database error. Try again.'),
+        flash: 'red', seq: ++seqRef.current,
       });
     }
 
-    // Auto-reset after 3 seconds
-    setTimeout(() => setState({ status: 'idle' }), 3000);
+    // Automatically return to scanning mode.
+    setTimeout(() => setState({ status: 'idle' }), RESULT_MS);
   };
 
   // ── Access denied ────────────────────────────────────────────────────────────
@@ -250,10 +329,6 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   }
 
   // ── No event selected ────────────────────────────────────────────────────────
-  // The scanner is only ever meaningful scoped to a specific event — if it's
-  // reached without a valid selectedEvent.id (e.g. a stale navigation stack,
-  // or a deep link with a missing/invalid event id), fail loudly instead of
-  // silently rendering a scanner with a permanently-empty stats bar.
   if (!selectedEvent?.id) {
     return (
       <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
@@ -269,39 +344,27 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     );
   }
 
-  // ── Result overlay colour ────────────────────────────────────────────────────
-  const overlayConfig: Record<string, { bg: string; border: string; icon: React.ReactNode; headline: string }> = {
-    valid: {
-      bg: 'rgba(16,185,129,0.15)',
-      border: 'rgba(16,185,129,0.4)',
-      icon: <CheckCircle size={52} color="#10B981" />,
-      headline: 'ENTRY APPROVED',
-    },
-    already_scanned: {
-      bg: 'rgba(245,158,11,0.15)',
-      border: 'rgba(245,158,11,0.4)',
-      icon: <XCircle size={52} color="#F59E0B" />,
-      headline: 'ALREADY SCANNED',
-    },
-    denied: {
-      bg: 'rgba(239,68,68,0.15)',
-      border: 'rgba(239,68,68,0.4)',
-      icon: <XCircle size={52} color="#EF4444" />,
-      headline: 'ENTRY DENIED',
-    },
-    scanning: {
-      bg: 'rgba(167,139,250,0.15)',
-      border: 'rgba(167,139,250,0.4)',
-      icon: <ScanLine size={52} color="#A78BFA" />,
-      headline: 'Validating…',
-    },
-  };
-
-  const overlay = overlayConfig[state.status];
   const pct = stats.total > 0 ? Math.round((stats.checkedIn / stats.total) * 100) : 0;
+  const isResult = state.status === 'valid' || state.status === 'already_scanned' || state.status === 'denied';
+  const reading = state.status === 'reading';
+
+  const resultTheme = {
+    valid: { color: '#10B981', bg: 'rgba(16,185,129,0.16)', border: 'rgba(16,185,129,0.45)', icon: <CheckCircle size={54} color="#10B981" /> },
+    already_scanned: { color: '#F59E0B', bg: 'rgba(245,158,11,0.16)', border: 'rgba(245,158,11,0.45)', icon: <XCircle size={54} color="#F59E0B" /> },
+    denied: { color: '#EF4444', bg: 'rgba(239,68,68,0.16)', border: 'rgba(239,68,68,0.45)', icon: <XCircle size={54} color="#EF4444" /> },
+  } as const;
+  const theme = isResult ? resultTheme[state.status as keyof typeof resultTheme] : null;
+  const flashColor = state.flash === 'green' ? '#10B981' : state.flash === 'red' ? '#EF4444' : '#F59E0B';
 
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif', position: 'relative' }}>
+      <style>{`
+        @keyframes ventsReticlePulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+        @keyframes ventsSweep { 0% { top: 4%; } 100% { top: 92%; } }
+        @keyframes ventsFlash { 0% { opacity: .5; } 100% { opacity: 0; } }
+        @keyframes ventsPop { 0% { transform: scale(.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
+        @keyframes ventsSpin { to { transform: rotate(360deg); } }
+      `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 20px 14px', background: '#020005', flexShrink: 0, borderBottom: '1px solid rgba(255,255,255,0.04)' }}>
@@ -356,8 +419,8 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               style={{ flex: 1, minWidth: 0, background: '#060A12', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '8px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', fontFamily: 'monospace' }}
             />
             <button
-              onClick={() => { if (simulatorInput.trim()) handleScan(simulatorInput.trim()); }}
-              disabled={!simulatorInput.trim() || state.status === 'scanning'}
+              onClick={() => { if (simulatorInput.trim() && !reading) handleScan(simulatorInput.trim()); }}
+              disabled={!simulatorInput.trim() || reading}
               style={{ background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '8px', padding: '0 14px', color: '#F59E0B', fontSize: '12px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap' }}
             >
               Simulate Scan
@@ -379,21 +442,52 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </div>
         ) : (
           <>
-            <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', marginBottom: '12px' }}>
-              Point the camera at a Vents ticket QR code
+            <p style={{ color: reading ? '#F0F0FF' : '#8B8FA8', fontSize: '12px', textAlign: 'center', marginBottom: '12px', transition: 'color .2s', fontWeight: reading ? 700 : 400 }}>
+              {reading ? 'Reading Ticket…' : 'Point the camera at a Vents ticket QR code'}
             </p>
-            {/* html5-qrcode mounts into this div */}
-            <div
-              id={scannerDivId}
-              style={{
-                borderRadius: '20px',
-                overflow: 'hidden',
-                border: '2px solid rgba(167,139,250,0.3)',
-                background: '#090514',
-              }}
-            />
+
+            {/* Scanner + live reticle overlay (camera keeps running through Phase A) */}
+            <div style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: '2px solid rgba(167,139,250,0.3)', background: '#090514', minHeight: scannerReady ? undefined : '260px' }}>
+              <div id={scannerDivId} />
+
+              {/* Reticle: corner brackets + (idle) sweep line; pulses white while reading. */}
+              {scannerReady && (
+                <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ position: 'relative', width: 'min(62%, 230px)', aspectRatio: '1 / 1' }}>
+                    {([['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const).map(([v, h], i) => (
+                      <div key={i} style={{
+                        position: 'absolute', width: '30px', height: '30px',
+                        [v]: '-2px', [h]: '-2px',
+                        [`border${v[0].toUpperCase()}${v.slice(1)}`]: `3px solid ${reading ? '#FFFFFF' : 'rgba(167,139,250,0.85)'}`,
+                        [`border${h[0].toUpperCase()}${h.slice(1)}`]: `3px solid ${reading ? '#FFFFFF' : 'rgba(167,139,250,0.85)'}`,
+                        [`border${v === 'top' ? 'TopLeft' : 'BottomLeft'}Radius`]: h === 'left' ? '10px' : undefined,
+                        [`border${v === 'top' ? 'TopRight' : 'BottomRight'}Radius`]: h === 'right' ? '10px' : undefined,
+                        boxShadow: reading ? '0 0 12px rgba(255,255,255,0.6)' : 'none',
+                        animation: reading ? 'ventsReticlePulse 0.7s ease-in-out infinite' : 'none',
+                        transition: 'border-color .15s',
+                      } as React.CSSProperties} />
+                    ))}
+                    {/* idle sweep line */}
+                    {!reading && !isResult && (
+                      <div style={{ position: 'absolute', left: '6%', right: '6%', height: '2px', background: 'linear-gradient(90deg, transparent, #A78BFA, transparent)', borderRadius: '2px', animation: 'ventsSweep 2.2s ease-in-out infinite alternate' }} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Phase-A "Reading Ticket…" pill */}
+              {reading && (
+                <div style={{ position: 'absolute', bottom: '14px', left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(2,0,5,0.72)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '100px', padding: '7px 14px' }}>
+                    <span style={{ width: '13px', height: '13px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', display: 'inline-block', animation: 'ventsSpin 0.7s linear infinite' }} />
+                    <span style={{ color: '#fff', fontSize: '12.5px', fontWeight: 700 }}>Reading Ticket…</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
             {!scannerReady && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '260px', color: '#8B8FA8', fontSize: '13px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80px', color: '#8B8FA8', fontSize: '13px' }}>
                 Initialising camera…
               </div>
             )}
@@ -401,8 +495,13 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         )}
       </div>
 
-      {/* ── Result Overlay ─────────────────────────────────────────────────── */}
-      {overlay && (
+      {/* ── Phase-B colour flash (one-shot, keyed to each result) ──────────── */}
+      {isResult && state.flash && (
+        <div key={state.seq} style={{ position: 'absolute', inset: 0, background: flashColor, pointerEvents: 'none', zIndex: 45, animation: 'ventsFlash 0.5s ease-out forwards' }} />
+      )}
+
+      {/* ── Phase-B result overlay ─────────────────────────────────────────── */}
+      {isResult && theme && (
         <div
           style={{
             position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
@@ -411,13 +510,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             padding: '24px', textAlign: 'center', zIndex: 50,
           }}
         >
-          <div style={{ background: overlay.bg, border: `2px solid ${overlay.border}`, borderRadius: '28px', padding: '40px 32px', maxWidth: '300px', width: '100%' }}>
-            {overlay.icon}
-            <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 900, letterSpacing: '0.03em', margin: '16px 0 8px' }}>
-              {overlay.headline}
+          <div style={{ background: theme.bg, border: `2px solid ${theme.border}`, borderRadius: '28px', padding: '38px 30px', maxWidth: '320px', width: '100%', animation: 'ventsPop 0.18s ease-out', boxShadow: `0 0 44px ${theme.bg}` }}>
+            {theme.icon}
+            <h2 style={{ color: theme.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '14px 0 6px' }}>
+              {state.headline}
             </h2>
+
             {state.status === 'valid' && state.holderName && (
-              <p style={{ color: '#A78BFA', fontSize: '16px', fontWeight: 700, margin: '4px 0' }}>
+              <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '6px 0 2px' }}>
                 {state.holderName}
               </p>
             )}
@@ -426,26 +526,26 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 {state.ticketType}
               </span>
             )}
-            {state.checkinTime && (
-              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '4px 0' }}>
-                {state.status === 'valid' ? 'Checked in at' : 'Originally scanned at'} {state.checkinTime}
+            {state.status === 'valid' && state.checkinTime && (
+              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '6px 0 0' }}>
+                Checked in at {state.checkinTime}
               </p>
             )}
-            {state.status === 'already_scanned' && state.originalScannerId && (
-              <p style={{ color: '#555C7A', fontSize: '11px', margin: '2px 0', fontFamily: 'monospace' }}>
-                Scanner ID: {state.originalScannerId.slice(0, 8)}…
-              </p>
-            )}
-            {state.errorMsg && (
-              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '8px 0 0', lineHeight: 1.5 }}>
+
+            {state.status !== 'valid' && state.errorMsg && (
+              <p style={{ color: '#C4C9E0', fontSize: '13px', margin: '6px 0 0', lineHeight: 1.5 }}>
                 {state.errorMsg}
               </p>
             )}
-            {state.status !== 'scanning' && (
-              <p style={{ color: '#555C7A', fontSize: '11px', margin: '16px 0 0' }}>
-                Resuming scanner…
+            {state.status === 'already_scanned' && state.originalScannerId && (
+              <p style={{ color: '#555C7A', fontSize: '11px', margin: '6px 0 0', fontFamily: 'monospace' }}>
+                Scanner ID: {state.originalScannerId.slice(0, 8)}…
               </p>
             )}
+
+            <p style={{ color: '#555C7A', fontSize: '11px', margin: '16px 0 0' }}>
+              Resuming scanner…
+            </p>
           </div>
         </div>
       )}
