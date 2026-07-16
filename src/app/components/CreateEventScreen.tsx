@@ -115,6 +115,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
   const [uploadingGallery, setUploadingGallery] = useState(false);
 
+  // Payout destination for this event — auto-populated with the organizer's
+  // default bank account, but they can pick any of their linked accounts.
+  const [payoutAccounts, setPayoutAccounts] = useState<{ id: string; bank_name: string; account_number: string; is_default: boolean }[]>([]);
+  const [payoutAccountId, setPayoutAccountId] = useState<string | null>(null);
+
   // General states
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -128,6 +133,26 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Load the organizer's linked payout accounts and preselect their default.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await insforge.database
+          .from('organizer_bank_accounts')
+          .select('id, bank_name, account_number, is_default')
+          .eq('organizer_id', currentUser.id)
+          .order('is_default', { ascending: false });
+        if (cancelled) return;
+        const accts = (data as any[]) || [];
+        setPayoutAccounts(accts);
+        setPayoutAccountId(prev => prev && accts.some(a => a.id === prev) ? prev : (accts.find(a => a.is_default)?.id ?? accts[0]?.id ?? null));
+      } catch { /* non-blocking — the DB trigger still auto-fills the default */ }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
 
   useEffect(() => {
     if (!editEventId) return;
@@ -151,6 +176,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         if (cancelled || !data) return;
         const row = data as any;
         setTitle(row.title || '');
+        if (row.payout_account_id) setPayoutAccountId(row.payout_account_id);
         const cats: string[] = Array.isArray(row.categories) && row.categories.length
           ? row.categories
           : (row.category ? [row.category] : []);
@@ -374,6 +400,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               category: selectedCategories[0] || '',
               categories: selectedCategories,
               organizer_id: currentUser.id,
+              // Explicit payout destination; when null the DB trigger fills in
+              // the organizer's default account.
+              payout_account_id: payoutAccountId || null,
               status: eventStatus,
               is_18_plus: is18Plus,
               ticket_types: ticketTypes.map((t, idx) => ({
@@ -472,6 +501,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
               category: selectedCategories[0] || '',
               categories: selectedCategories,
+              ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
               is_18_plus: is18Plus,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
@@ -1369,6 +1399,35 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 </span>
               </div>
             ))}
+
+            {/* Payout destination — auto-set to the organizer's default; can be
+                changed to any of their linked accounts. */}
+            {payoutAccounts.length > 0 && (
+              <div style={{ marginTop: '4px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', fontWeight: 600, margin: '0 0 8px' }}>Ticket sales pay out to</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {payoutAccounts.map(acct => {
+                    const selected = (payoutAccountId || payoutAccounts.find(a => a.is_default)?.id) === acct.id;
+                    return (
+                      <button
+                        key={acct.id}
+                        type="button"
+                        onClick={() => setPayoutAccountId(acct.id)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : '#090514', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? '#A855F7' : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#A855F7' }} />}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{acct.account_number}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

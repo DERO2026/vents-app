@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 
 interface WalletScreenProps {
@@ -40,6 +40,7 @@ interface BankAccount {
   account_number: string;
   account_name: string;
   recipient_code: string | null;
+  is_default: boolean;
 }
 
 interface Bank {
@@ -66,12 +67,27 @@ async function authedFetch(path: string, body: any) {
 export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [txns, setTxns] = useState<Transaction[]>([]);
-  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Which account a withdrawal pays out to (defaults to the org's default).
+  const [withdrawAccountId, setWithdrawAccountId] = useState<string | null>(null);
+
+  // Password/biometric confirmation gate for every bank mutation. When set, a
+  // modal collects the password; on confirm we run `action(password)`.
+  const [confirm, setConfirm] = useState<{ label: string; action: (password: string) => Promise<void> } | null>(null);
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [confirmError, setConfirmError] = useState('');
+  const [confirmBusy, setConfirmBusy] = useState(false);
+  const [showConfirmPw, setShowConfirmPw] = useState(false);
+  const [biometricAvailable, setBiometricAvailable] = useState(false);
+  // In-memory only (never persisted): lets a biometric unlock reuse the
+  // password the organizer already typed once this session.
+  const cachedPassword = useRef<string | null>(null);
   // null while loading; the RPC checks auth.users.email_verified for the
   // caller — the same platform flag InsForge itself gates login on. Wallet
   // actions are also enforced server-side (request_organizer_payout /
-  // upsert_organizer_bank_account reject unverified callers); this is the
+  // add_bank_account_confirmed reject unverified callers); this is the
   // UI-side reflection of that gate.
   const [emailVerified, setEmailVerified] = useState<boolean | null>(null);
 
@@ -103,12 +119,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       const [wRes, tRes, bRes, vRes] = await Promise.all([
         insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
         insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
-        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code').eq('organizer_id', currentUser.id).maybeSingle(),
+        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         insforge.database.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
       setTxns(tRes.data || []);
-      setBankAccount(bRes.data || null);
+      const accounts: BankAccount[] = (bRes.data as BankAccount[]) || [];
+      setBankAccounts(accounts);
+      // Preselect the default (or first) account for withdrawals.
+      setWithdrawAccountId(prev => prev && accounts.some(a => a.id === prev) ? prev : (accounts.find(a => a.is_default)?.id ?? accounts[0]?.id ?? null));
       setEmailVerified(vRes.data === true);
     } catch (e) {
       console.error('Wallet load error:', e);
@@ -118,6 +137,69 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   useEffect(() => { load(); }, [currentUser?.id]);
+
+  // Detect a real platform authenticator (Face ID / Touch ID / Android
+  // biometric) so the "Use biometrics" button is only offered when it can
+  // actually run — we never pretend it exists.
+  useEffect(() => {
+    let alive = true;
+    const anyWin = window as any;
+    const w: any = anyWin.PublicKeyCredential;
+    if (w?.isUserVerifyingPlatformAuthenticatorAvailable) {
+      w.isUserVerifyingPlatformAuthenticatorAvailable().then((ok: boolean) => { if (alive) setBiometricAvailable(!!ok); }).catch(() => {});
+    } else if (anyWin.Capacitor?.isNativePlatform?.()) {
+      setBiometricAvailable(true); // native shell exposes biometric APIs
+    }
+    return () => { alive = false; };
+  }, []);
+
+  // Open the password/biometric confirmation gate for a sensitive bank action.
+  const requestConfirm = (label: string, action: (password: string) => Promise<void>) => {
+    setConfirmError('');
+    setConfirmPassword('');
+    setShowConfirmPw(false);
+    setConfirm({ label, action });
+  };
+
+  const runConfirm = async (password: string) => {
+    if (!password) { setConfirmError('Please enter your password to continue.'); return; }
+    setConfirmBusy(true);
+    setConfirmError('');
+    try {
+      await confirm!.action(password);
+      cachedPassword.current = password; // in-memory only, for biometric reuse
+      setConfirm(null);
+      setConfirmPassword('');
+    } catch (e: any) {
+      setConfirmError(e?.message || 'Confirmation failed. Please try again.');
+    } finally {
+      setConfirmBusy(false);
+    }
+  };
+
+  // Real biometric user-verification. On success we reuse the password the
+  // organizer typed earlier this session (never stored anywhere) — the server
+  // still verifies that password. If none is cached yet, ask them to type it
+  // once so biometrics can carry it forward afterwards.
+  const confirmWithBiometrics = async () => {
+    setConfirmError('');
+    try {
+      const anyWin = window as any;
+      if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
+        const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+        await navigator.credentials.get({
+          publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
+        } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+      }
+      if (!cachedPassword.current) {
+        setConfirmError('Enter your password once to enable biometric confirmation.');
+        return;
+      }
+      await runConfirm(cachedPassword.current);
+    } catch (e: any) {
+      setConfirmError(e?.message || 'Biometric confirmation is unavailable — please use your password.');
+    }
+  };
 
   // Live account-number resolution, debounced, as soon as a bank is picked
   // and 10 digits are entered.
@@ -172,14 +254,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     if (!amount || amount < 100) { setWithdrawError('Minimum withdrawal is ₦100'); return; }
     const kobo = Math.floor(amount * 100);
     if (!wallet || kobo > wallet.balance_kobo) { setWithdrawError('Insufficient balance'); return; }
-    if (!bankAccount) { setWithdrawError('Add a bank account first'); return; }
+    const payoutAccountId = withdrawAccountId || bankAccounts.find(a => a.is_default)?.id || bankAccounts[0]?.id;
+    if (!payoutAccountId) { setWithdrawError('Add a bank account first'); return; }
 
     setWithdrawing(true);
     try {
       await getAuthToken();
       const { error } = await insforge.database.rpc('request_organizer_payout', {
         p_amount_kobo: kobo,
-        p_bank_account_id: bankAccount.id,
+        p_bank_account_id: payoutAccountId,
       });
       if (error) throw new Error(error.message);
       setShowWithdraw(false);
@@ -192,24 +275,36 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     }
   };
 
-  const handleSaveBank = async () => {
+  // Adding a bank account — gated by password/biometric confirmation.
+  const handleSaveBank = () => {
     if (!selectedBank || !resolvedName || resolving) return;
     if (!emailVerified) { setBankSaveError('Please verify your email before adding a payout bank account'); return; }
-    setSavingBank(true);
-    setBankSaveError('');
-    try {
+    setShowAddBank(false);
+    requestConfirm('Add this bank account', async (password) => {
       await authedFetch('/api/v1/wallet/save-bank', {
         account_number: accountNumber,
         bank_code: selectedBank.code,
         bank_name: selectedBank.name,
+        password,
       });
-      setShowAddBank(false);
       await load();
-    } catch (e: any) {
-      setBankSaveError(e.message || 'Failed to save bank account');
-    } finally {
-      setSavingBank(false);
-    }
+    });
+  };
+
+  // Set a linked account as the payout default — gated.
+  const handleSetDefault = (acct: BankAccount) => {
+    requestConfirm(`Make ${acct.bank_name} · ${acct.account_number} your default`, async (password) => {
+      await authedFetch('/api/v1/wallet/save-bank', { action: 'set_default', account_id: acct.id, password });
+      await load();
+    });
+  };
+
+  // Remove a linked account — gated.
+  const handleRemoveBank = (acct: BankAccount) => {
+    requestConfirm(`Remove ${acct.bank_name} · ${acct.account_number}`, async (password) => {
+      await authedFetch('/api/v1/wallet/save-bank', { action: 'remove', account_id: acct.id, password });
+      await load();
+    });
   };
 
   const balance = wallet?.balance_kobo ?? 0;
@@ -277,18 +372,44 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               title={emailVerified === false ? 'Verify your email to add a payout bank account' : undefined}
             >
               <Plus size={18} color="#8B8FA8" />
-              <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>{bankAccount ? 'Update Bank' : 'Add Bank'}</span>
+              <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
             </button>
           </div>
 
-          {/* Bank account summary */}
-          {bankAccount && (
-            <div style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600 }}>{bankAccount.bank_name}</p>
-                <p style={{ margin: '2px 0 0', fontSize: '12px', color: '#8B8FA8' }}>{bankAccount.account_number} · {bankAccount.account_name}</p>
+          {/* Payout bank accounts (multiple; one Default) */}
+          {bankAccounts.length > 0 && (
+            <div style={{ marginBottom: '24px' }}>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {bankAccounts.map(acct => (
+                  <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}</p>
+                          {acct.is_default && (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.18)', color: '#C4B5FD', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', flexShrink: 0 }}>
+                              <Star size={9} fill="#C4B5FD" color="#C4B5FD" /> DEFAULT
+                            </span>
+                          )}
+                          {acct.recipient_code && <Check size={13} color="#10B981" style={{ flexShrink: 0 }} />}
+                        </div>
+                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.account_number} · {acct.account_name}</p>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                      {!acct.is_default && (
+                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                          <Star size={13} /> Set default
+                        </button>
+                      )}
+                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                        <Trash2 size={13} /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ))}
               </div>
-              {bankAccount.recipient_code && <Check size={16} color="#10B981" />}
             </div>
           )}
 
@@ -339,6 +460,27 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               onChange={e => setWithdrawAmount(e.target.value)}
               style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
             />
+            {bankAccounts.length > 0 && (
+              <div style={{ marginBottom: '12px' }}>
+                <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 8px' }}>Pay out to</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {bankAccounts.map(acct => {
+                    const selected = (withdrawAccountId || bankAccounts.find(a => a.is_default)?.id) === acct.id;
+                    return (
+                      <button key={acct.id} onClick={() => setWithdrawAccountId(acct.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', padding: '11px 13px', cursor: 'pointer' }}>
+                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? '#A855F7' : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#A855F7' }} />}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{acct.account_number}</p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {withdrawError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                 <AlertCircle size={14} color="#EF4444" />
@@ -359,7 +501,10 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {showAddBank && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
           <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
-            <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 20px' }}>{bankAccount ? 'Update Bank Account' : 'Add Bank Account'}</p>
+            <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 6px' }}>Add Bank Account</p>
+            <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <ShieldCheck size={13} color="#A855F7" /> You'll confirm with your password before it's saved.
+            </p>
 
             {/* Bank picker */}
             <button
@@ -440,6 +585,56 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 {bank.name}
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Security gate: password / biometric confirmation for bank mutations */}
+      {confirm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9800, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
+              <ShieldCheck size={20} color="#A855F7" />
+              <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>Confirm it's you</p>
+            </div>
+            <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
+
+            <div style={{ position: 'relative', marginBottom: '10px' }}>
+              <input
+                type={showConfirmPw ? 'text' : 'password'}
+                placeholder="Your account password"
+                value={confirmPassword}
+                onChange={e => setConfirmPassword(e.target.value)}
+                autoComplete="current-password"
+                autoCapitalize="off"
+                autoCorrect="off"
+                onKeyDown={e => { if (e.key === 'Enter' && !confirmBusy) runConfirm(confirmPassword); }}
+                style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px 44px 14px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
+              />
+              <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#8B8FA8', display: 'flex' }}>
+                {showConfirmPw ? <EyeOff size={17} /> : <Eye size={17} />}
+              </button>
+            </div>
+
+            {biometricAvailable && (
+              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: '#C4B5FD', fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
+                <Fingerprint size={17} /> Use Face ID / Touch ID
+              </button>
+            )}
+
+            {confirmError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                <AlertCircle size={14} color="#EF4444" />
+                <span style={{ color: '#EF4444', fontSize: '13px' }}>{confirmError}</span>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
+              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
+                {confirmBusy ? 'Confirming…' : 'Confirm'}
+              </button>
+            </div>
           </div>
         </div>
       )}
