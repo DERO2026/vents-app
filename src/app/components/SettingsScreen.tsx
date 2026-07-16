@@ -169,6 +169,21 @@ function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
 // shown instead, no matter what actually failed underneath.
 const VERIFICATION_UPLOAD_ERROR = "We couldn't upload your certificate. Please try again or contact support if the issue continues.";
 
+// Client-side upload validation (Task 8). The storage bucket also enforces a
+// hard 50MB cap server-side, but validating type + size here gives the user
+// instant feedback and avoids wasting an upload round-trip on a bad file.
+const MAX_CAC_FILE_BYTES = 10 * 1024 * 1024; // 10MB — a CAC certificate scan
+const ACCEPTED_CAC_MIME = /^(image\/(jpeg|png|webp|heic|heif)|application\/pdf)$/i;
+const ACCEPTED_CAC_EXT = /\.(jpe?g|png|webp|heic|heif|pdf)$/i;
+// Returns an error string if the file is invalid, or null if it's acceptable.
+function validateCacFile(file: File): string | null {
+  const typeOk = ACCEPTED_CAC_MIME.test(file.type) || (!file.type && ACCEPTED_CAC_EXT.test(file.name));
+  if (!typeOk) return 'Please upload an image (JPG/PNG) or a PDF document.';
+  if (file.size > MAX_CAC_FILE_BYTES) return 'File is too large. Please upload a document under 10MB.';
+  if (file.size === 0) return 'That file appears to be empty. Please choose another.';
+  return null;
+}
+
 // Real byte-level upload progress via XHR (fetch has no upload progress
 // event). Uploads straight to the verification-docs bucket's storage
 // endpoint; the RLS policy on storage.objects (bucket='verification-docs')
@@ -282,7 +297,22 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Guards against setState after unmount (the success overlay's timer, or a
+  // slow upload/RPC that resolves after the user has navigated away) — no
+  // memory leaks / "setState on unmounted component" warnings (Task 9).
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Validate the chosen certificate immediately on selection (Task 8), before
+  // it's ever uploaded, so a wrong type/oversize file is caught up front.
+  const handleFileSelect = useCallback((f: File | null) => {
+    setError('');
+    if (!f) { setFile(null); return; }
+    const problem = validateCacFile(f);
+    if (problem) { setError(problem); setFile(null); return; }
+    setFile(f);
+  }, []);
 
   const inputStyle: React.CSSProperties = {
     width: '100%',
@@ -367,9 +397,10 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
       if (rpcError) throw rpcError;
 
       // 4. Success confirmation, then land on the Pending status page.
+      if (!mountedRef.current) return;
       setShowSuccess(true);
       await loadLatest();
-      setTimeout(() => setShowSuccess(false), 1800);
+      setTimeout(() => { if (mountedRef.current) setShowSuccess(false); }, 1800);
     } catch (err: any) {
       const msg = err?.message || '';
       Sentry.captureException(err, { tags: { feature: 'organizer-verification-submit' }, extra: { userId: currentUser?.id } });
@@ -441,8 +472,8 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*,application/pdf"
-          onChange={e => setFile(e.target.files?.[0] || null)}
+          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+          onChange={e => handleFileSelect(e.target.files?.[0] || null)}
           style={{ display: 'none' }}
         />
         <button
