@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical, CalendarX } from 'lucide-react';
+import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical, CalendarX, Flashlight, FlashlightOff, Check } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
 
@@ -112,6 +112,25 @@ function deniedInfo(result: any): { headline: string; detail: string } {
   }
 }
 
+// Runtime audit of the camera track's native capabilities. Every enhancement
+// is DETECTED before it's enabled — unsupported features are reported, never
+// faked.
+interface CamCaps {
+  probed: boolean;
+  continuousFocus: boolean;   // continuous autofocus applied
+  autoExposure: boolean;      // continuous auto-exposure applied
+  tapToFocus: boolean;        // a real single-shot/manual refocus mode exists
+  torch: boolean;             // torch/flashlight controllable
+  zoom: { supported: boolean; min: number; max: number; step: number };
+  barcodeDetector: boolean;   // native BarcodeDetector fast-decode path present
+  resolution: string | null;  // actual negotiated capture resolution
+}
+const DEFAULT_CAPS: CamCaps = {
+  probed: false, continuousFocus: false, autoExposure: false, tapToFocus: false,
+  torch: false, zoom: { supported: false, min: 1, max: 1, step: 0.1 },
+  barcodeDetector: false, resolution: null,
+};
+
 export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scanningDisabled = false }: CheckinScannerScreenProps) {
   const [state, setState] = useState<CheckinState>({ status: 'idle' });
   const [stats, setStats] = useState({ checkedIn: 0, total: 0 });
@@ -126,6 +145,15 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const processingRef = useRef(false);
   const seqRef = useRef(0);
   const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
+
+  // ── Professional camera pipeline state ──────────────────────────────────────
+  const [caps, setCaps] = useState<CamCaps>(DEFAULT_CAPS);
+  const [torchOn, setTorchOn] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [focusRing, setFocusRing] = useState<{ x: number; y: number; id: number } | null>(null);
+  const camCapsRef = useRef<any>(null);           // html5-qrcode CameraCapabilities (zoom/torch)
+  const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
+  const zoomThrottleRef = useRef(0);
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
   const isOrganizer =
@@ -187,10 +215,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
 
       try {
         await html5QrCode.start(
-          { facingMode: 'environment' },
-          // fps 15 (up from 10) for snappier detection; a slightly larger qrbox
-          // acquires the code from a bit further away without hurting decode.
-          { fps: 15, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
+          // Rear camera + highest PRACTICAL capture resolution (1280 ideal — a
+          // sweet spot: sharp enough for small/distant codes without the decode
+          // cost of 1080p on low-end phones) and a stable 30fps target.
+          { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } } as any,
+          {
+            fps: 15,                                   // decode attempts/sec — snappy, stable
+            qrbox: { width: 260, height: 260 },        // acquires codes from a bit further away
+            aspectRatio: 1.0,
+            disableFlip: false,                         // read mirrored / flipped codes too
+            // Fast barcode detection: use the browser's native BarcodeDetector
+            // when present (hardware-accelerated, far lower latency than the JS
+            // ZXing fallback). Falls back automatically where unsupported.
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
+          },
           async (decodedText: string) => {
             // Continuous loop — the camera is NEVER stopped or unmounted between
             // scans; we only gate re-processing. Two guards:
@@ -213,6 +251,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         );
         if (!mounted) return;
         setScannerReady(true);
+        tuneCamera(html5QrCode);
       } catch (err: any) {
         if (!mounted) return;
         const raw = String(err?.name || err?.message || err || '');
@@ -236,10 +275,106 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     return () => {
       mounted = false;
       if (html5QrCode && html5QrCode.isScanning) {
+        // Turn the torch off before tearing down so it doesn't stay lit.
+        try { camCapsRef.current?.torchFeature?.()?.apply?.(false); } catch { /* ignore */ }
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
       }
     };
   }, [isOrganizer, selectedEvent?.id]);
+
+  // ── Camera capability audit + tuning ────────────────────────────────────────
+  // Probe the running track's NATIVE capabilities and enable only what's truly
+  // supported: continuous autofocus, continuous auto-exposure, torch, zoom, and
+  // whether a real tap-to-focus (single-shot/manual) mode exists. Anything
+  // unsupported is recorded in `caps` and surfaced to the operator — never faked.
+  const tuneCamera = async (qr: any) => {
+    const report: CamCaps = { ...DEFAULT_CAPS, probed: true };
+    try {
+      const trackCaps: any = qr.getRunningTrackCapabilities?.() || {};
+      const settings: any = qr.getRunningTrackSettings?.() || {};
+      if (settings.width && settings.height) report.resolution = `${settings.width}×${settings.height}`;
+
+      const focusModes: string[] = trackCaps.focusMode || [];
+      if (focusModes.includes('continuous')) {
+        try { await qr.applyVideoConstraints({ advanced: [{ focusMode: 'continuous' }] } as any); report.continuousFocus = true; } catch { /* not applyable */ }
+      }
+      const exposureModes: string[] = trackCaps.exposureMode || [];
+      if (exposureModes.includes('continuous')) {
+        try { await qr.applyVideoConstraints({ advanced: [{ exposureMode: 'continuous' }] } as any); report.autoExposure = true; } catch { /* not applyable */ }
+      }
+      report.tapToFocus = focusModes.includes('single-shot') || focusModes.includes('manual');
+
+      const camCaps: any = qr.getRunningTrackCameraCapabilities?.();
+      camCapsRef.current = camCaps || null;
+      const zf = camCaps?.zoomFeature?.();
+      if (zf?.isSupported?.()) {
+        report.zoom = { supported: true, min: zf.min(), max: zf.max(), step: zf.step?.() || 0.1 };
+        try { setZoom(zf.value?.() || 1); } catch { /* ignore */ }
+      }
+      const tf = camCaps?.torchFeature?.();
+      report.torch = !!tf?.isSupported?.();
+    } catch { /* capability probing unavailable — degrade to plain preview */ }
+
+    report.barcodeDetector = typeof (window as any).BarcodeDetector !== 'undefined';
+    setCaps(report);
+    // Full audit for support/debugging (also lists what's unavailable).
+    // eslint-disable-next-line no-console
+    console.info('[VENTS scanner] camera capabilities:', report);
+  };
+
+  const toggleTorch = async () => {
+    const tf = camCapsRef.current?.torchFeature?.();
+    if (!tf?.isSupported?.()) return;
+    try { await tf.apply(!torchOn); setTorchOn(v => !v); } catch { /* ignore */ }
+  };
+
+  const applyZoom = (z: number) => {
+    const zf = camCapsRef.current?.zoomFeature?.();
+    if (!zf?.isSupported?.()) return;
+    const clamped = Math.max(caps.zoom.min, Math.min(caps.zoom.max, z));
+    const now = Date.now();
+    if (now - zoomThrottleRef.current < 60) { setZoom(clamped); return; } // throttle hardware calls
+    zoomThrottleRef.current = now;
+    try { zf.apply(clamped); } catch { /* ignore */ }
+    setZoom(clamped);
+  };
+
+  // Tap-to-focus — only when the device exposes a real refocus mode. Shows a
+  // focus ring at the tap and nudges a single-shot/manual refocus, then returns
+  // to continuous. (Point-based focus needs `pointsOfInterest`, which browsers
+  // almost never expose — so we refocus centrally rather than fake a per-point focus.)
+  const onCameraTap = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!caps.tapToFocus) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    setFocusRing({ x: e.clientX - rect.left, y: e.clientY - rect.top, id: Date.now() });
+    setTimeout(() => setFocusRing(null), 900);
+    const qr = scannerRef.current;
+    const modes: string[] = (qr?.getRunningTrackCapabilities?.()?.focusMode) || [];
+    (async () => {
+      try {
+        if (modes.includes('single-shot')) await qr.applyVideoConstraints({ advanced: [{ focusMode: 'single-shot' }] } as any);
+        else if (modes.includes('manual')) await qr.applyVideoConstraints({ advanced: [{ focusMode: 'manual' }] } as any);
+        setTimeout(() => {
+          if (modes.includes('continuous')) qr?.applyVideoConstraints?.({ advanced: [{ focusMode: 'continuous' }] } as any).catch(() => {});
+        }, 1600);
+      } catch { /* ignore */ }
+    })();
+  };
+
+  const onPinchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && caps.zoom.supported) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      pinchRef.current = { startDist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), startZoom: zoom };
+    }
+  };
+  const onPinchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current && caps.zoom.supported) {
+      const [a, b] = [e.touches[0], e.touches[1]];
+      const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+      applyZoom(pinchRef.current.startZoom * (dist / pinchRef.current.startDist));
+    }
+  };
+  const onPinchEnd = () => { pinchRef.current = null; };
 
   const handleScan = async (rawTicketId: string) => {
     const ticketId = rawTicketId.trim();
@@ -372,10 +507,13 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif', position: 'relative' }}>
       <style>{`
         @keyframes ventsReticlePulse { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+        @keyframes ventsGentlePulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.03); } }
         @keyframes ventsSweep { 0% { top: 4%; } 100% { top: 92%; } }
         @keyframes ventsFlash { 0% { opacity: .5; } 100% { opacity: 0; } }
         @keyframes ventsPop { 0% { transform: scale(.9); opacity: 0; } 100% { transform: scale(1); opacity: 1; } }
         @keyframes ventsSpin { to { transform: rotate(360deg); } }
+        @keyframes ventsLiveDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+        @keyframes ventsFocusRing { 0% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
       `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -462,14 +600,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 state (reading / result / cooldown) renders OVER the running
                 preview; the camera is never stopped, recreated, or hidden, so
                 the loop never black-screens or freezes between scans. */}
-            <div style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', minHeight: scannerReady ? undefined : '260px', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s' }}>
+            <div
+              onClick={onCameraTap}
+              onTouchStart={onPinchStart}
+              onTouchMove={onPinchMove}
+              onTouchEnd={onPinchEnd}
+              style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', minHeight: scannerReady ? undefined : '260px', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
+            >
               <div id={scannerDivId} />
 
               {/* Reticle: corner brackets + (idle) sweep line; pulses white while
                   reading. Hidden during a result so it doesn't clutter the card. */}
               {scannerReady && !isResult && (
                 <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ position: 'relative', width: 'min(62%, 230px)', aspectRatio: '1 / 1' }}>
+                  <div style={{ position: 'relative', width: 'min(62%, 230px)', aspectRatio: '1 / 1', animation: reading ? 'none' : 'ventsGentlePulse 2.4s ease-in-out infinite' }}>
                     {([['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const).map(([v, h], i) => (
                       <div key={i} style={{
                         position: 'absolute', width: '30px', height: '30px',
@@ -496,6 +640,40 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(2,0,5,0.72)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '100px', padding: '7px 14px' }}>
                     <span style={{ width: '13px', height: '13px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.35)', borderTopColor: '#fff', display: 'inline-block', animation: 'ventsSpin 0.7s linear infinite' }} />
                     <span style={{ color: '#fff', fontSize: '12.5px', fontWeight: 700 }}>Reading Ticket…</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Torch / flashlight toggle — only when the hardware supports it. */}
+              {scannerReady && caps.torch && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); toggleTorch(); }}
+                  aria-label={torchOn ? 'Turn torch off' : 'Turn torch on'}
+                  style={{ position: 'absolute', top: '12px', right: '12px', width: '42px', height: '42px', borderRadius: '50%', border: '1px solid rgba(255,255,255,0.25)', background: torchOn ? '#FFB830' : 'rgba(2,0,5,0.55)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', zIndex: 6 }}
+                >
+                  {torchOn ? <Flashlight size={19} color="#020005" /> : <FlashlightOff size={19} color="#fff" />}
+                </button>
+              )}
+
+              {/* Zoom level indicator (pinch-to-zoom) — shown while zoomed in. */}
+              {scannerReady && caps.zoom.supported && zoom > 1.05 && (
+                <div style={{ position: 'absolute', top: '14px', left: '14px', background: 'rgba(2,0,5,0.6)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: '100px', padding: '4px 10px', fontSize: '11px', fontWeight: 700, color: '#fff', zIndex: 6, pointerEvents: 'none' }}>
+                  {zoom.toFixed(1)}×
+                </div>
+              )}
+
+              {/* Tap-to-focus ring (only rendered when a real refocus fired). */}
+              {focusRing && (
+                <div key={focusRing.id} style={{ position: 'absolute', left: focusRing.x, top: focusRing.y, width: '64px', height: '64px', border: '2px solid #FFFFFF', borderRadius: '50%', boxShadow: '0 0 10px rgba(255,255,255,0.5)', pointerEvents: 'none', zIndex: 6, animation: 'ventsFocusRing 0.9s ease-out forwards' }} />
+              )}
+
+              {/* Active-scanning indicator — a live pulsing dot so the operator
+                  always knows the scanner is armed and working (Task 5). */}
+              {scannerReady && !reading && !isResult && (
+                <div style={{ position: 'absolute', bottom: '12px', left: 0, right: 0, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '7px', background: 'rgba(2,0,5,0.55)', backdropFilter: 'blur(6px)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: '100px', padding: '5px 12px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981', animation: 'ventsLiveDot 1.3s ease-in-out infinite' }} />
+                    <span style={{ color: '#E6FFF4', fontSize: '11.5px', fontWeight: 700, letterSpacing: '0.03em' }}>Scanning</span>
                   </div>
                 </div>
               )}
@@ -537,6 +715,38 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             {!scannerReady && (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80px', color: '#8B8FA8', fontSize: '13px' }}>
                 Initialising camera…
+              </div>
+            )}
+
+            {/* Camera capability audit — reports which native enhancements are
+                ACTIVE on this device. Unsupported ones are shown muted (never
+                faked). Full detail is also logged to the console. */}
+            {scannerReady && caps.probed && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', justifyContent: 'center', marginTop: '12px' }}>
+                {([
+                  ['Autofocus', caps.continuousFocus],
+                  ['Auto-exposure', caps.autoExposure],
+                  ['Tap-focus', caps.tapToFocus],
+                  ['Torch', caps.torch],
+                  ['Zoom', caps.zoom.supported],
+                  ['Fast-decode', caps.barcodeDetector],
+                ] as [string, boolean][]).map(([label, on]) => (
+                  <span key={label} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '4px',
+                    fontSize: '10.5px', fontWeight: 600, borderRadius: '100px', padding: '3px 9px',
+                    background: on ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${on ? 'rgba(16,185,129,0.35)' : 'rgba(255,255,255,0.08)'}`,
+                    color: on ? '#34D399' : '#555C7A',
+                  }}>
+                    {on ? <Check size={10} /> : <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#555C7A', display: 'inline-block' }} />}
+                    {label}
+                  </span>
+                ))}
+                {caps.resolution && (
+                  <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#8B8FA8', borderRadius: '100px', padding: '3px 9px', background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)' }}>
+                    {caps.resolution}
+                  </span>
+                )}
               </div>
             )}
           </>
