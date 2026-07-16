@@ -14,8 +14,11 @@ const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 //                returns. The cryptographic verification path is UNCHANGED.
 type ScanResult = 'idle' | 'reading' | 'valid' | 'already_scanned' | 'denied';
 
-// How long a Phase-B result is shown before auto-returning to scanning.
-const RESULT_MS = 2200;
+// Phase-B result display ≈ the duplicate-scan cooldown. The camera preview
+// stays live and mounted the WHOLE time — this only gates re-processing, it
+// never stops/recreates the camera. ~1s keeps the loop tight
+// (Detect → Verify → Cooldown → Ready) while preventing an instant double scan.
+const RESULT_MS = 1000;
 
 interface CheckinScannerScreenProps {
   onBack: () => void;
@@ -122,6 +125,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const isDevEnvironment = import.meta.env.DEV;
   const processingRef = useRef(false);
   const seqRef = useRef(0);
+  const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
   const isOrganizer =
@@ -188,12 +192,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           // acquires the code from a bit further away without hurting decode.
           { fps: 15, qrbox: { width: 260, height: 260 }, aspectRatio: 1.0 },
           async (decodedText: string) => {
+            // Continuous loop — the camera is NEVER stopped or unmounted between
+            // scans; we only gate re-processing. Two guards:
+            //   * processingRef: a ~1s cooldown after each scan (Cooldown → Ready).
+            //   * lastScanRef: debounce the SAME code sitting in-frame so it
+            //     doesn't repeat, while a DIFFERENT ticket still scans instantly
+            //     the moment the cooldown clears.
             if (processingRef.current) return;
+            const v = decodedText.trim();
+            const now = Date.now();
+            if (v === lastScanRef.current.value && now - lastScanRef.current.at < 2500) return;
             processingRef.current = true;
+            lastScanRef.current = { value: v, at: now };
             await handleScan(decodedText);
-            // Cooldown so the same code lingering in-frame doesn't instantly
-            // re-fire; slightly longer than the result display.
-            setTimeout(() => { processingRef.current = false; }, RESULT_MS + 500);
+            setTimeout(() => { processingRef.current = false; }, RESULT_MS);
           },
           (_errorMessage: string) => {
             // Per-frame "no QR in this frame" noise — expected, not an error.
@@ -349,9 +361,9 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const reading = state.status === 'reading';
 
   const resultTheme = {
-    valid: { color: '#10B981', bg: 'rgba(16,185,129,0.16)', border: 'rgba(16,185,129,0.45)', icon: <CheckCircle size={54} color="#10B981" /> },
-    already_scanned: { color: '#F59E0B', bg: 'rgba(245,158,11,0.16)', border: 'rgba(245,158,11,0.45)', icon: <XCircle size={54} color="#F59E0B" /> },
-    denied: { color: '#EF4444', bg: 'rgba(239,68,68,0.16)', border: 'rgba(239,68,68,0.45)', icon: <XCircle size={54} color="#EF4444" /> },
+    valid: { color: '#10B981', bg: 'rgba(16,185,129,0.16)', border: '#10B981', icon: <CheckCircle size={44} color="#10B981" /> },
+    already_scanned: { color: '#F59E0B', bg: 'rgba(245,158,11,0.16)', border: '#F59E0B', icon: <XCircle size={44} color="#F59E0B" /> },
+    denied: { color: '#EF4444', bg: 'rgba(239,68,68,0.16)', border: '#EF4444', icon: <XCircle size={44} color="#EF4444" /> },
   } as const;
   const theme = isResult ? resultTheme[state.status as keyof typeof resultTheme] : null;
   const flashColor = state.flash === 'green' ? '#10B981' : state.flash === 'red' ? '#EF4444' : '#F59E0B';
@@ -446,12 +458,16 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               {reading ? 'Reading Ticket…' : 'Point the camera at a Vents ticket QR code'}
             </p>
 
-            {/* Scanner + live reticle overlay (camera keeps running through Phase A) */}
-            <div style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: '2px solid rgba(167,139,250,0.3)', background: '#090514', minHeight: scannerReady ? undefined : '260px' }}>
+            {/* Scanner — the camera preview is ALWAYS mounted and live. Every
+                state (reading / result / cooldown) renders OVER the running
+                preview; the camera is never stopped, recreated, or hidden, so
+                the loop never black-screens or freezes between scans. */}
+            <div style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', minHeight: scannerReady ? undefined : '260px', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s' }}>
               <div id={scannerDivId} />
 
-              {/* Reticle: corner brackets + (idle) sweep line; pulses white while reading. */}
-              {scannerReady && (
+              {/* Reticle: corner brackets + (idle) sweep line; pulses white while
+                  reading. Hidden during a result so it doesn't clutter the card. */}
+              {scannerReady && !isResult && (
                 <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <div style={{ position: 'relative', width: 'min(62%, 230px)', aspectRatio: '1 / 1' }}>
                     {([['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const).map(([v, h], i) => (
@@ -467,8 +483,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                         transition: 'border-color .15s',
                       } as React.CSSProperties} />
                     ))}
-                    {/* idle sweep line */}
-                    {!reading && !isResult && (
+                    {!reading && (
                       <div style={{ position: 'absolute', left: '6%', right: '6%', height: '2px', background: 'linear-gradient(90deg, transparent, #A78BFA, transparent)', borderRadius: '2px', animation: 'ventsSweep 2.2s ease-in-out infinite alternate' }} />
                     )}
                   </div>
@@ -484,6 +499,39 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                   </div>
                 </div>
               )}
+
+              {/* Phase-B colour flash — confined to the live camera frame (0.5s). */}
+              {isResult && state.flash && (
+                <div key={state.seq} style={{ position: 'absolute', inset: 0, background: flashColor, pointerEvents: 'none', animation: 'ventsFlash 0.5s ease-out forwards' }} />
+              )}
+
+              {/* Phase-B result — a bottom card OVER the still-running preview
+                  (the live camera stays visible above the gradient), so it never
+                  looks frozen. Auto-clears after the ~1s cooldown. */}
+              {isResult && theme && (
+                <div key={`r${state.seq}`} style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', pointerEvents: 'none' }}>
+                  <div style={{ background: 'linear-gradient(to top, rgba(2,3,8,0.97) 0%, rgba(2,3,8,0.86) 48%, transparent 90%)', padding: '36px 16px 16px', textAlign: 'center', animation: 'ventsPop 0.18s ease-out' }}>
+                    {theme.icon}
+                    <h2 style={{ color: theme.color, fontSize: '21px', fontWeight: 900, letterSpacing: '0.02em', margin: '4px 0 4px' }}>
+                      {state.headline}
+                    </h2>
+                    {state.status === 'valid' && state.holderName && (
+                      <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: '2px 0' }}>{state.holderName}</p>
+                    )}
+                    {state.status === 'valid' && state.ticketType && (
+                      <span style={{ display: 'inline-block', color: '#FFB830', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'rgba(255,184,48,0.12)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px', padding: '3px 12px', margin: '3px 0' }}>
+                        {state.ticketType}
+                      </span>
+                    )}
+                    {state.status === 'valid' && state.checkinTime && (
+                      <p style={{ color: '#8B8FA8', fontSize: '12.5px', margin: '4px 0 0' }}>Checked in at {state.checkinTime}</p>
+                    )}
+                    {state.status !== 'valid' && state.errorMsg && (
+                      <p style={{ color: '#C4C9E0', fontSize: '13px', margin: '4px 0 0', lineHeight: 1.5 }}>{state.errorMsg}</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {!scannerReady && (
@@ -494,61 +542,6 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </>
         )}
       </div>
-
-      {/* ── Phase-B colour flash (one-shot, keyed to each result) ──────────── */}
-      {isResult && state.flash && (
-        <div key={state.seq} style={{ position: 'absolute', inset: 0, background: flashColor, pointerEvents: 'none', zIndex: 45, animation: 'ventsFlash 0.5s ease-out forwards' }} />
-      )}
-
-      {/* ── Phase-B result overlay ─────────────────────────────────────────── */}
-      {isResult && theme && (
-        <div
-          style={{
-            position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(6,10,18,0.92)', backdropFilter: 'blur(12px)',
-            padding: '24px', textAlign: 'center', zIndex: 50,
-          }}
-        >
-          <div style={{ background: theme.bg, border: `2px solid ${theme.border}`, borderRadius: '28px', padding: '38px 30px', maxWidth: '320px', width: '100%', animation: 'ventsPop 0.18s ease-out', boxShadow: `0 0 44px ${theme.bg}` }}>
-            {theme.icon}
-            <h2 style={{ color: theme.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '14px 0 6px' }}>
-              {state.headline}
-            </h2>
-
-            {state.status === 'valid' && state.holderName && (
-              <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '6px 0 2px' }}>
-                {state.holderName}
-              </p>
-            )}
-            {state.status === 'valid' && state.ticketType && (
-              <span style={{ display: 'inline-block', color: '#FFB830', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase', background: 'rgba(255,184,48,0.12)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px', padding: '3px 12px', margin: '4px 0' }}>
-                {state.ticketType}
-              </span>
-            )}
-            {state.status === 'valid' && state.checkinTime && (
-              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '6px 0 0' }}>
-                Checked in at {state.checkinTime}
-              </p>
-            )}
-
-            {state.status !== 'valid' && state.errorMsg && (
-              <p style={{ color: '#C4C9E0', fontSize: '13px', margin: '6px 0 0', lineHeight: 1.5 }}>
-                {state.errorMsg}
-              </p>
-            )}
-            {state.status === 'already_scanned' && state.originalScannerId && (
-              <p style={{ color: '#555C7A', fontSize: '11px', margin: '6px 0 0', fontFamily: 'monospace' }}>
-                Scanner ID: {state.originalScannerId.slice(0, 8)}…
-              </p>
-            )}
-
-            <p style={{ color: '#555C7A', fontSize: '11px', margin: '16px 0 0' }}>
-              Resuming scanner…
-            </p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
