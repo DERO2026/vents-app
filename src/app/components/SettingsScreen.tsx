@@ -6,6 +6,7 @@ import {
   ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
+  Eye, EyeOff, Check,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import BadgeChip from './BadgeChip';
@@ -904,23 +905,99 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
 }
 
 // ── Change Password Sub-screen ────────────────────────────────────
+const pwInputStyle: React.CSSProperties = {
+  width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
+  borderRadius: '12px', padding: '12px 44px 12px 14px', color: '#F0F0FF', fontSize: '14px',
+  outline: 'none', boxSizing: 'border-box',
+};
+const pwLabelStyle: React.CSSProperties = { color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' };
+
+// A masked password input with its OWN independent Show/Hide eye toggle.
+// Masked (type="password") by default; the eye cross-fades smoothly on toggle.
+function PasswordField({
+  label, value, onChange, placeholder, show, onToggleShow, autoComplete, enterKeyHint, invalid,
+}: {
+  label: string; value: string; onChange: (v: string) => void; placeholder: string;
+  show: boolean; onToggleShow: () => void; autoComplete: string;
+  enterKeyHint?: 'next' | 'done'; invalid?: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <label style={pwLabelStyle}>{label}</label>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          placeholder={placeholder}
+          required
+          autoComplete={autoComplete}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          enterKeyHint={enterKeyHint}
+          style={{ ...pwInputStyle, border: `1px solid ${invalid ? 'rgba(239,68,68,0.45)' : 'rgba(255,255,255,0.08)'}` }}
+        />
+        <button
+          type="button"
+          onClick={onToggleShow}
+          aria-label={show ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+          tabIndex={-1}
+          style={{
+            position: 'absolute', right: '6px', top: '50%', transform: 'translateY(-50%)',
+            width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#8B8FA8',
+          }}
+        >
+          <span
+            key={show ? 'on' : 'off'}
+            style={{ display: 'inline-flex', animation: 'pwEyeFade .18s ease' }}
+          >
+            {show ? <EyeOff size={17} /> : <Eye size={17} />}
+          </span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: string } | null; onBack: () => void }) {
   const [step, setStep] = useState<'verify' | 'otp'>('verify');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showOld, setShowOld] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  // ── Live password-strength rules ──────────────────────────────────
+  const rules = [
+    { key: 'len', label: 'At least 8 characters', met: newPassword.length >= 8 },
+    { key: 'upper', label: 'One uppercase letter', met: /[A-Z]/.test(newPassword) },
+    { key: 'number', label: 'One number', met: /\d/.test(newPassword) },
+    { key: 'symbol', label: 'One symbol', met: /[^A-Za-z0-9]/.test(newPassword) },
+  ];
+  const metCount = rules.filter(r => r.met).length;
+  const allRulesMet = metCount === rules.length;
+  const passwordsMatch = confirmPassword.length > 0 && newPassword === confirmPassword;
+  const differsFromOld = newPassword.length > 0 && newPassword !== oldPassword;
+  // Continue stays STRICTLY disabled until every requirement passes.
+  const canSubmit = !!oldPassword && allRulesMet && passwordsMatch && differsFromOld && !loading;
+
+  const strengthColor = metCount <= 1 ? '#EF4444' : metCount === 2 ? '#F59E0B' : metCount === 3 ? '#FBBF24' : '#10B981';
+  const strengthLabel = metCount <= 1 ? 'Weak' : metCount === 2 ? 'Fair' : metCount === 3 ? 'Good' : 'Strong';
+
   async function handleVerify(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
     if (!currentUser?.email) { setError('No email on account.'); return; }
-    if (newPassword === oldPassword) { setError('New password must differ from the current password.'); return; }
-    if (newPassword !== confirmPassword) { setError('New passwords do not match.'); return; }
-    if (newPassword.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    if (!differsFromOld) { setError('New password must differ from the current password.'); return; }
+    if (!allRulesMet) { setError('New password does not meet the strength requirements.'); return; }
+    if (!passwordsMatch) { setError('New passwords do not match.'); return; }
     setLoading(true);
     try {
       // Verify old password via a real sign-in call — never compare against anything cached
@@ -959,9 +1036,19 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
     outline: 'none', boxSizing: 'border-box',
   };
 
+  // Keyboard-safe scroll region: the form scrolls independently and carries a
+  // tall bottom pad so the on-screen keyboard (iOS/Android WebView) can never
+  // overlap the focused field or the Continue button.
+  const scrollFormStyle: React.CSSProperties = {
+    flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch',
+    padding: '8px 16px calc(120px + env(safe-area-inset-bottom))',
+    display: 'flex', flexDirection: 'column', gap: '16px',
+  };
+
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+      <style>{`@keyframes pwEyeFade { from { opacity: 0; transform: scale(.8); } to { opacity: 1; transform: scale(1); } }`}</style>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
@@ -976,30 +1063,74 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
           <button onClick={onBack} style={{ marginTop: '8px', padding: '12px 32px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
       ) : step === 'verify' ? (
-        <form onSubmit={handleVerify} style={{ padding: '8px 16px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <form onSubmit={handleVerify} style={scrollFormStyle}>
           {error && (
             <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 14px' }}>
               <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>
             </div>
           )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>CURRENT PASSWORD</label>
-            <input type="password" value={oldPassword} onChange={e => setOldPassword(e.target.value)} placeholder="Enter current password" required style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>NEW PASSWORD</label>
-            <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 6 characters" required style={inputStyle} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>CONFIRM NEW PASSWORD</label>
-            <input type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} placeholder="Repeat new password" required style={inputStyle} />
-          </div>
-          <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
+
+          <PasswordField
+            label="CURRENT PASSWORD" value={oldPassword} onChange={setOldPassword}
+            placeholder="Enter current password" show={showOld} onToggleShow={() => setShowOld(v => !v)}
+            autoComplete="current-password" enterKeyHint="next"
+          />
+
+          <PasswordField
+            label="NEW PASSWORD" value={newPassword} onChange={setNewPassword}
+            placeholder="Create a strong password" show={showNew} onToggleShow={() => setShowNew(v => !v)}
+            autoComplete="new-password" enterKeyHint="next"
+          />
+
+          {/* Live strength meter + requirement checklist */}
+          {newPassword.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '-6px' }}>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                {rules.map((_, i) => (
+                  <div key={i} style={{ flex: 1, height: '4px', borderRadius: '2px', background: i < metCount ? strengthColor : 'rgba(255,255,255,0.1)', transition: 'background .3s ease' }} />
+                ))}
+              </div>
+              <span style={{ fontSize: '11px', fontWeight: 600, color: strengthColor }}>Strength: {strengthLabel}</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '2px' }}>
+                {rules.map(r => (
+                  <div key={r.key} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {r.met ? <Check size={12} color="#10B981" /> : <X size={12} color="#8B8FA8" />}
+                    <span style={{ fontSize: '11px', color: r.met ? '#10B981' : '#8B8FA8', transition: 'color .2s ease' }}>{r.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <PasswordField
+            label="CONFIRM NEW PASSWORD" value={confirmPassword} onChange={setConfirmPassword}
+            placeholder="Repeat new password" show={showConfirm} onToggleShow={() => setShowConfirm(v => !v)}
+            autoComplete="new-password" enterKeyHint="done"
+            invalid={confirmPassword.length > 0 && !passwordsMatch}
+          />
+          {confirmPassword.length > 0 && !passwordsMatch && (
+            <p style={{ color: '#F87171', fontSize: '11px', margin: '-8px 0 0', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <X size={12} /> Passwords don't match
+            </p>
+          )}
+
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            style={{
+              marginTop: '8px', padding: '14px',
+              background: canSubmit ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2D2D4E',
+              border: 'none', borderRadius: '12px',
+              color: canSubmit ? '#fff' : '#6B6F8A', fontSize: '14px', fontWeight: 700,
+              cursor: canSubmit ? 'pointer' : 'not-allowed', opacity: canSubmit ? 1 : 0.85,
+              transition: 'background .2s ease, opacity .2s ease',
+            }}
+          >
             {loading ? 'Verifying…' : 'Continue'}
           </button>
         </form>
       ) : (
-        <form onSubmit={handleOtp} style={{ padding: '8px 16px 32px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        <form onSubmit={handleOtp} style={scrollFormStyle}>
           <div style={{ background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '12px', padding: '14px' }}>
             <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0 }}>A verification code was sent to <strong style={{ color: '#F0F0FF' }}>{currentUser?.email}</strong>. Enter it below to confirm your new password.</p>
           </div>
@@ -1010,7 +1141,7 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, letterSpacing: '0.05em' }}>VERIFICATION CODE</label>
-            <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Enter code from email" required style={{ ...inputStyle, letterSpacing: '0.1em', fontSize: '16px' }} />
+            <input type="text" value={otp} onChange={e => setOtp(e.target.value)} placeholder="Enter code from email" required inputMode="numeric" autoComplete="one-time-code" enterKeyHint="done" style={{ ...inputStyle, letterSpacing: '0.1em', fontSize: '16px' }} />
           </div>
           <button type="submit" disabled={loading} style={{ marginTop: '8px', padding: '14px', background: loading ? '#2D2D4E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: loading ? '#8B8FA8' : '#fff', fontSize: '14px', fontWeight: 700, cursor: loading ? 'not-allowed' : 'pointer' }}>
             {loading ? 'Updating…' : 'Update Password'}
