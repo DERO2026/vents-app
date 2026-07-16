@@ -369,18 +369,37 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       html5QrCode = new Html5Qrcode(scannerDivId, /* verbose */ false);
       scannerRef.current = html5QrCode;
 
+      // ── TEMP DEBUG (camera-init diagnostics) — remove once verified ─────────
+      // eslint-disable-next-line no-console
+      console.info('[VENTS scanner] init: preflight', {
+        isSecureContext: typeof window !== 'undefined' ? window.isSecureContext : 'n/a',
+        hasMediaDevices: !!(navigator as any)?.mediaDevices?.getUserMedia,
+        protocol: typeof location !== 'undefined' ? location.protocol : 'n/a',
+      });
       try {
+        const perm = await (navigator as any)?.permissions?.query?.({ name: 'camera' as any });
+        // eslint-disable-next-line no-console
+        console.info('[VENTS scanner] init: camera permission =', perm?.state ?? 'unknown');
+      } catch { /* permissions API not available for camera — expected on some WebViews */ }
+      // Init watchdog: flag if start() neither resolves nor rejects in time.
+      const initWatchdog = setTimeout(() => {
+        // eslint-disable-next-line no-console
+        console.warn('[VENTS scanner] init: still pending after 12s (possible getUserMedia hang)');
+      }, 12000);
+
+      try {
+        // Rear camera. NOTE: pass a MINIMAL constraint. Do NOT request an
+        // explicit width/height/frameRate here — demanding a square 1280×1280
+        // stream made getUserMedia reject on real devices/WebViews (no sensor
+        // is natively 1:1), which surfaced as "Could not start the camera".
+        // The higher-quality focus/exposure/resolution tuning is applied AFTER
+        // the stream is live, non-fatally, in tuneCamera().
         await html5QrCode.start(
-          // Rear camera + highest PRACTICAL capture resolution (1280 ideal — a
-          // sweet spot: sharp enough for small/distant codes without the decode
-          // cost of 1080p on low-end phones) and a stable 30fps target.
-          { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 1280 }, frameRate: { ideal: 30 } } as any,
+          { facingMode: 'environment' } as any,
           {
             fps: 15,
             qrbox: { width: 260, height: 260 },
             aspectRatio: 1.0,
-            disableFlip: false, // read mirrored / flipped codes
-            experimentalFeatures: { useBarCodeDetectorIfSupported: true }, // native fast-decode
           },
           // Detection callback — created ONCE, closes only over stable refs, and
           // dispatches to the freshest handleScan via handleScanRef.
@@ -401,13 +420,28 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           },
           (_errorMessage: string) => { /* per-frame "no QR here" noise — not an error */ },
         );
+        clearTimeout(initWatchdog);
         if (!mounted) return;
         metricsRef.current.cameraInitMs = performance.now() - metricsRef.current.camStartAt;
         metricsRef.current.readyAt = performance.now();
+        // eslint-disable-next-line no-console
+        console.info('[VENTS scanner] init: camera STARTED', {
+          initMs: Math.round(metricsRef.current.cameraInitMs),
+          settings: (() => { try { return html5QrCode.getRunningTrackSettings?.(); } catch { return null; } })(),
+        });
         setScannerReady(true);
         tuneCamera(html5QrCode);
       } catch (err: any) {
+        clearTimeout(initWatchdog);
         if (!mounted) return;
+        // TEMP DEBUG — print the COMPLETE error (name, message, offending
+        // constraint, stack) instead of only a generic message.
+        // eslint-disable-next-line no-console
+        console.error('[VENTS scanner] init: camera start FAILED', {
+          name: err?.name, message: err?.message,
+          constraint: err?.constraint, // set on OverconstrainedError
+          stack: err?.stack, raw: err,
+        });
         const raw = String(err?.name || err?.message || err || '');
         let friendly = 'Could not start the camera. Please try again.';
         if (/NotAllowedError|Permission denied|permission/i.test(raw)) {
@@ -417,9 +451,11 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         } else if (/NotReadableError|TrackStartError|in use/i.test(raw)) {
           friendly = 'The camera is already in use by another app. Close it and try again.';
         } else if (/OverconstrainedError/i.test(raw)) {
-          friendly = 'This device has no rear-facing camera available.';
+          friendly = 'This device could not provide a compatible camera stream.';
         }
-        setCameraError(friendly);
+        // TEMP DEBUG — surface the real error class on-screen so the failure is
+        // identifiable on-device without a console.
+        setCameraError(`${friendly}${raw ? `  [${raw}]` : ''}`);
       }
     }).catch(err => {
       if (!mounted) return;
