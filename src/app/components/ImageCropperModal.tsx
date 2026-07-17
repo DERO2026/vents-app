@@ -99,7 +99,20 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
   return (
     <div
       style={{
-        position: 'absolute',
+        // position:'fixed', not 'absolute' — this modal is rendered nested
+        // three levels deep inside display:flex containers (CreateEventScreen
+        // root -> scrollable form content -> the step-1 field column), all
+        // position:static, before reaching the app shell's own position:fixed
+        // frame. Real iOS Safari has documented inconsistencies resolving the
+        // containing block for an absolutely-positioned element through that
+        // many static flex ancestors — confirmed live: the modal was
+        // anchoring to something smaller than the full screen, rendering
+        // BELOW the host screen's own header/step-indicator instead of over
+        // it, hiding this modal's own header (with the Done button) entirely.
+        // position:fixed always resolves against the true viewport (or the
+        // nearest transform/filter ancestor) and never binds to a static flex
+        // container, so it cannot inherit that ambiguity.
+        position: 'fixed',
         top: 0,
         left: 0,
         right: 0,
