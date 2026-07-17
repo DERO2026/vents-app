@@ -4,8 +4,6 @@ import { TabId } from './types';
 interface BottomNavProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
-  onFabPress: () => void;
-  isOrganizer?: boolean;
 }
 
 const TABS: { id: TabId; Icon: typeof Home; label: string }[] = [

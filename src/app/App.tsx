@@ -16,7 +16,7 @@ import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScree
 import { SavedScreen } from './components/SavedScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { BottomNav } from './components/BottomNav';
-import { OrganizerBottomNav, OrgTab } from './components/OrganizerBottomNav';
+import { OrgTab } from './components/OrganizerBottomNav';
 import { NotificationsScreen } from './components/NotificationsScreen';
 import { MyTicketsScreen } from './components/MyTicketsScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -1341,10 +1341,6 @@ export default function App() {
     navigateTo(target as Screen);
   }, [handleTabChange, navigateTo]);
 
-  const handleTicketsPress = useCallback(() => {
-    navigateTo('my-tickets');
-  }, [navigateTo]);
-
   const handleOrgNavigate = useCallback((target: string) => {
     // A generic "Create Event" entry point (not the edit flow's own
     // onOpenEdit, which sets editingEventId itself) — always start fresh.
@@ -1391,10 +1387,6 @@ export default function App() {
   // visible for them; individual screens handle their own auth prompts.
   const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
   const showBottomNav = navScreens.includes(screen);
-
-  // Determine if the current user holds any organizer-tool capability (for
-  // nav FAB routing) — capability-based, see src/lib/permissions.ts.
-  const isOrganizerOrAdmin = userRole === 'organizer' || hasAnyOrganizerCapability(currentUser);
 
   if (updateRequired) {
     return (
@@ -2089,19 +2081,14 @@ export default function App() {
             )}
           </div>
 
-        {/* Bottom navigation — shared for attendees (4 tabs) and organizers/admin (5 tabs) */}
+        {/* Bottom navigation — 4 tabs, shared by every role. It has no FAB
+            (see BottomNav.tsx) and is never mounted on create-event (see
+            navScreens above), so it cannot be the source of a stray
+            floating button on the event wizard. */}
         {showBottomNav && (
           <BottomNav
             activeTab={activeTab}
             onTabChange={handleTabChange}
-            onFabPress={() => {
-              if (isOrganizerOrAdmin) {
-                navigateTo('org-dashboard');
-              } else {
-                handleTicketsPress();
-              }
-            }}
-            isOrganizer={isOrganizerOrAdmin}
           />
         )}
 
