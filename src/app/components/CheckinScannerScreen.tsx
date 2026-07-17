@@ -990,7 +990,10 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
            container's dimensions) in the same coordinate space. */
         #${scannerDivId} video, #${scannerDivId} canvas {
           position: absolute !important;
-          inset: 0 !important;
+          top: 0 !important;
+          left: 0 !important;
+          right: 0 !important;
+          bottom: 0 !important;
           width: 100% !important;
           height: 100% !important;
           max-width: 100% !important;
@@ -1091,13 +1094,27 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             {/* Scanner — the camera preview is ALWAYS mounted and live. Every
                 state (reading / result / cooldown) renders OVER the running
                 preview; the camera is never stopped, recreated, or hidden. */}
+            {/* ROOT-CAUSE FIX (blank preview / video rendered 344×0 on iOS
+                WKWebView): this square used to get its height SOLELY from
+                `aspectRatio: '1 / 1'`, with no fallback height anywhere in the
+                chain below it (#scannerDivId is inset:0 → % of this box; the
+                injected <video> is height:100% → % of #scannerDivId). When this
+                WKWebView failed to produce a used height from `aspect-ratio`,
+                the box collapsed to height 0, and every descendant — including
+                the live, decoding <video> (readyState 4, not paused, real
+                1080×1920 stream) — collapsed to 0 height too, so a perfectly
+                healthy camera feed painted nothing. The height:0 + padding-
+                bottom:100% intrinsic-ratio technique derives a REAL used height
+                from the element's width and is supported universally (no
+                dependency on `aspect-ratio` at all), guaranteeing a non-zero
+                square regardless of the engine. */}
             <div
               ref={scannerContainerRef}
               onClick={onCameraTap}
               onTouchStart={onPinchStart}
               onTouchMove={onPinchMove}
               onTouchEnd={onPinchEnd}
-              style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
+              style={{ position: 'relative', width: '100%', height: 0, paddingBottom: '100%', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
             >
               {/* Absolutely positioned + inset:0, NOT a bare block div — this is
                   the actual root cause of the camera overflowing the frame.
@@ -1112,7 +1129,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                   this div to inset:0 against its `position:relative` parent
                   (which IS a definite square via aspect-ratio above) gives it
                   a real height for the video's 100% to resolve against. */}
-              <div id={scannerDivId} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }} />
+              <div id={scannerDivId} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, overflow: 'hidden' }} />
 
               {/* "Initialising camera…" lives INSIDE this fixed-size box (absolute
                   overlay), not as a document-flow sibling below it. This box's own
