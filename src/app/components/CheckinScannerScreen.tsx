@@ -230,6 +230,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   // Graceful camera recovery — bumping this remounts ONLY the camera session
   // (used by the "Try Again" button after a permission/hardware failure).
   const [retryNonce, setRetryNonce] = useState(0);
+  // The scanner frame — ResizeObserver watches it so a real layout change
+  // (device rotation, safe-area shift, restoring from background) forces a
+  // clean camera restart. html5-qrcode never recomputes its viewfinder or
+  // decode region after start() — see the effect below and the note on the
+  // scannerDivId container — so without this, the crop region silently goes
+  // stale and drifts out of alignment with the visible frame after rotation.
+  const scannerContainerRef = useRef<HTMLDivElement>(null);
+  const lastObservedWidthRef = useRef<number | null>(null);
   // Low-light guidance: last moment the scanner saw ANY QR (or other activity).
   const lastActivityRef = useRef(Date.now());
   const [showTorchHint, setShowTorchHint] = useState(false);
@@ -561,6 +569,37 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOrganizer, selectedEvent?.id, retryNonce]);
 
+  // html5-qrcode reads the container's pixel width ONCE, when start() is
+  // called, and never revisits it — rotating the device, restoring the app
+  // from the background, or any other real layout change leaves its decode
+  // region computed against stale dimensions even though the CSS-driven
+  // preview resizes instantly and correctly. Watching the actual frame and
+  // forcing a full camera restart on a real width change is the only way to
+  // keep the detection region and the visible frame in agreement for the
+  // rest of the session. Debounced, and gated on `scannerReady` so it can't
+  // fire while the very first start() is still in flight.
+  useEffect(() => {
+    const el = scannerContainerRef.current;
+    if (!el || !scannerReady) return;
+    lastObservedWidthRef.current = el.getBoundingClientRect().width;
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width;
+      if (width == null) return;
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const last = lastObservedWidthRef.current;
+        if (last != null && Math.abs(width - last) > 4) {
+          lastObservedWidthRef.current = width;
+          setScannerReady(false);
+          setRetryNonce((n) => n + 1);
+        }
+      }, 300);
+    });
+    ro.observe(el);
+    return () => { if (debounceTimer) clearTimeout(debounceTimer); ro.disconnect(); };
+  }, [scannerReady]);
+
   // ── Camera capability audit + tuning ────────────────────────────────────────
   // All quality upgrades happen HERE — after the stream is live — via
   // spec-droppable `advanced` constraint sets wrapped in try/catch. Unlike a
@@ -757,9 +796,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
            feed and the qrbox decode region (computed from this same
            container's dimensions) in the same coordinate space. */
         #${scannerDivId} video, #${scannerDivId} canvas {
+          position: absolute !important;
+          inset: 0 !important;
           width: 100% !important;
           height: 100% !important;
+          max-width: 100% !important;
+          max-height: 100% !important;
           object-fit: cover !important;
+          display: block !important;
         }
       `}</style>
 
@@ -855,13 +899,27 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 state (reading / result / cooldown) renders OVER the running
                 preview; the camera is never stopped, recreated, or hidden. */}
             <div
+              ref={scannerContainerRef}
               onClick={onCameraTap}
               onTouchStart={onPinchStart}
               onTouchMove={onPinchMove}
               onTouchEnd={onPinchEnd}
               style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
             >
-              <div id={scannerDivId} />
+              {/* Absolutely positioned + inset:0, NOT a bare block div — this is
+                  the actual root cause of the camera overflowing the frame.
+                  html5-qrcode injects a <video>/<canvas> and forces its own
+                  `width:100%;height:100%` (see the style block below), but a
+                  percentage height only resolves against a parent with a
+                  DEFINITE height. A plain block div's height is `auto` (sized
+                  to its content — the video), so the previous height:100%
+                  rule silently no-opped and the video fell back to its native
+                  camera aspect ratio, rendering taller or shorter than this
+                  square frame and spilling past the purple border. Pinning
+                  this div to inset:0 against its `position:relative` parent
+                  (which IS a definite square via aspect-ratio above) gives it
+                  a real height for the video's 100% to resolve against. */}
+              <div id={scannerDivId} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }} />
 
               {/* Reticle: corner brackets + (idle) sweep line; pulses white while
                   reading. Hidden during a result so it doesn't clutter the card. */}
