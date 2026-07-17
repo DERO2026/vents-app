@@ -116,7 +116,12 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: 'calc(8px + env(safe-area-inset-top)) 16px 8px',
+          // Matches CreateEventScreen's own header offset (20px base) — the
+          // previous 8px base left too little clearance on notched/Dynamic
+          // Island iPhones: the X/Done buttons rendered up under the status
+          // bar overlay, technically present and still tappable (the status
+          // bar doesn't block touches to page content) but visually hidden.
+          padding: 'calc(20px + env(safe-area-inset-top, 44px)) 16px 8px',
           borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
           background: '#090514',
         }}
