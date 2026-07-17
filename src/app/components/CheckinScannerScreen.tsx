@@ -241,6 +241,17 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const zoomThrottleRef = useRef(0);
   const zoomRef = useRef(1);
   const torchOnRef = useRef(false);               // mirror for listeners that must not re-register
+  // ── Temp on-screen video diagnostics (no devtools needed) ───────────────────
+  // If a live, "ready" camera still shows no visible picture, this surfaces
+  // the exact facts needed to tell a layout/paint problem (rect is 0x0, or
+  // something else is the topmost element at the box's center) apart from a
+  // genuine decode stall (readyState/paused look fine but currentTime never
+  // advances) — without needing Safari remote debugging on the device.
+  const [videoDiag, setVideoDiag] = useState<{
+    native: string; rendered: string; rect: string; readyState: number;
+    paused: boolean; frameDeltaMs: number; display: string; opacity: string; topElement: string;
+  } | null>(null);
+  const lastDiagSampleRef = useRef<{ t: number; time: number } | null>(null);
   // Graceful camera recovery — bumping this remounts ONLY the camera session
   // (used by the "Try Again" button after a permission/hardware failure).
   const [retryNonce, setRetryNonce] = useState(0);
@@ -552,48 +563,84 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         clearTimeout(initWatchdog);
         if (!mounted) return;
         metricsRef.current.cameraInitMs = performance.now() - metricsRef.current.camStartAt;
-        metricsRef.current.readyAt = performance.now();
-        lastActivityRef.current = Date.now();
         // eslint-disable-next-line no-console
-        console.info('[VENTS scanner] init: camera STARTED', {
-          initMs: Math.round(metricsRef.current.cameraInitMs),
+        console.info('[VENTS scanner] init: stream acquired, confirming playback', {
+          acquireMs: Math.round(metricsRef.current.cameraInitMs),
           settings: (() => { try { return html5QrCode.getRunningTrackSettings?.(); } catch { return null; } })(),
         });
-        setScannerReady(true);
-        acquireWakeLock(); // keep the screen on for the scanning shift
-        tuneCamera(html5QrCode);
 
-        // Defensive recovery for a well-documented WebKit/iOS failure mode:
-        // getUserMedia can succeed -- the OS-level recording indicator goes
-        // active, track capabilities are queryable, everything reports
-        // "ready" -- while the injected <video> element itself never
-        // actually starts decoding frames, because its single internal
-        // play() call (inside html5-qrcode's RenderedCameraImpl) silently
-        // rejects or no-ops in certain races. The result is a live,
-        // permitted camera stream stuck on a black/frozen frame forever.
-        // Poll briefly for real frame data and force a second play() if the
-        // first one didn't take -- harmless no-op on an already-healthy
-        // preview, since play() on a playing video does nothing.
+        // CRITICAL: html5-qrcode's start() promise resolves as soon as the
+        // MediaStream is attached to its injected <video> and .play() has
+        // been CALLED -- not once the browser confirms actual playback (the
+        // 'playing' event) and not once the library's OWN internal setup
+        // (creating the qrbox/canvas, starting its detection loop) has run,
+        // since that setup is itself gated behind that same 'playing' event
+        // firing. On WebKit, that single internal .play() call can silently
+        // reject or stall despite a fully-granted, actively-capturing
+        // stream. If we trusted start() resolving alone, this app would
+        // flip to "ready" / show "Scanning" -- our own state -- while the
+        // video never actually renders a frame AND html5-qrcode's real
+        // detection loop never starts either, so tickets can't be scanned
+        // even if the screen looked live. Confirm real playback ourselves
+        // (via the 'playing' event, with a polling/retry fallback for the
+        // known cases where that event is missed) before declaring ready.
         const videoEl = document.getElementById(scannerDivId)?.querySelector('video') as HTMLVideoElement | null;
-        if (videoEl) {
+
+        const declareReady = () => {
+          if (!mounted) return;
+          metricsRef.current.readyAt = performance.now();
+          lastActivityRef.current = Date.now();
+          // eslint-disable-next-line no-console
+          console.info('[VENTS scanner] init: camera CONFIRMED PLAYING', {
+            totalMs: Math.round(performance.now() - metricsRef.current.camStartAt),
+          });
+          setScannerReady(true);
+          acquireWakeLock(); // keep the screen on for the scanning shift
+          tuneCamera(html5QrCode);
+        };
+        const declareStalled = () => {
+          if (!mounted) return;
+          // eslint-disable-next-line no-console
+          console.error('[VENTS scanner] init: stream acquired but preview never confirmed playing -- surfacing as a camera error instead of a false "ready" state');
+          setCameraError('The camera preview could not start. Please tap Try Again.');
+        };
+
+        if (!videoEl) {
+          declareStalled();
+        } else if (videoEl.readyState >= 2 && !videoEl.paused) {
+          declareReady(); // already playing by the time start() resolved -- the common, fast path
+        } else {
+          let settled = false;
+          const onPlaying = () => {
+            if (settled) return;
+            settled = true;
+            videoEl.removeEventListener('playing', onPlaying);
+            declareReady();
+          };
+          videoEl.addEventListener('playing', onPlaying);
+
+          // Fallback poll in case the 'playing' event is missed (a known
+          // race on some WebKit versions) -- and force a play() retry each
+          // pass in case the first internal call silently failed.
           let attempts = 0;
-          const checkPlaying = () => {
-            if (!mounted) return;
+          const poll = () => {
+            if (settled || !mounted) return;
             attempts++;
-            const isActuallyPlaying = videoEl.readyState >= 2 && !videoEl.paused;
-            if (isActuallyPlaying) return;
-            if (isDevEnvironment) {
-              // eslint-disable-next-line no-console
-              console.warn('[VENTS scanner] video not decoding frames yet, forcing play() retry', { attempt: attempts, readyState: videoEl.readyState, paused: videoEl.paused });
+            if (videoEl.readyState >= 2 && !videoEl.paused) {
+              settled = true;
+              videoEl.removeEventListener('playing', onPlaying);
+              declareReady();
+              return;
             }
             videoEl.play().catch(() => {});
-            if (attempts < 5) later(checkPlaying, 500);
-            else if (isDevEnvironment) {
-              // eslint-disable-next-line no-console
-              console.error('[VENTS scanner] video still not decoding frames after retries -- stream may be silently stalled');
+            if (attempts < 6) later(poll, 500);
+            else if (!settled) {
+              settled = true;
+              videoEl.removeEventListener('playing', onPlaying);
+              declareStalled();
             }
           };
-          later(checkPlaying, 400);
+          later(poll, 400);
         }
       } catch (err: any) {
         clearTimeout(initWatchdog);
@@ -710,6 +757,40 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       resizeBaselineReadyRef.current = true;
     }, 900); // comfortably past the ready-state DOM swap + tuneCamera's async capability probing
     return () => clearTimeout(id);
+  }, [scannerReady]);
+
+  // Temp on-screen video diagnostics (see the state declaration above).
+  useEffect(() => {
+    if (!scannerReady) { setVideoDiag(null); lastDiagSampleRef.current = null; return; }
+    const id = setInterval(() => {
+      const videoEl = document.getElementById(scannerDivId)?.querySelector('video') as HTMLVideoElement | null;
+      const containerEl = scannerContainerRef.current;
+      if (!videoEl || !containerEl) return;
+      const containerRect = containerEl.getBoundingClientRect();
+      const cx = containerRect.left + containerRect.width / 2;
+      const cy = containerRect.top + containerRect.height / 2;
+      const topEl = document.elementFromPoint(cx, cy) as HTMLElement | null;
+      const vr = videoEl.getBoundingClientRect();
+      const cs = getComputedStyle(videoEl);
+      const now = performance.now();
+      let frameDeltaMs = 0;
+      if (lastDiagSampleRef.current) {
+        frameDeltaMs = Math.round((videoEl.currentTime - lastDiagSampleRef.current.time) * 1000);
+      }
+      lastDiagSampleRef.current = { t: now, time: videoEl.currentTime };
+      setVideoDiag({
+        native: `${videoEl.videoWidth}x${videoEl.videoHeight}`,
+        rendered: `${videoEl.clientWidth}x${videoEl.clientHeight}`,
+        rect: `${Math.round(vr.width)}x${Math.round(vr.height)}@(${Math.round(vr.left)},${Math.round(vr.top)})`,
+        readyState: videoEl.readyState,
+        paused: videoEl.paused,
+        frameDeltaMs,
+        display: cs.display,
+        opacity: cs.opacity,
+        topElement: topEl ? `${topEl.tagName}${topEl.id ? '#' + topEl.id : ''}` : 'none',
+      });
+    }, 1000);
+    return () => clearInterval(id);
   }, [scannerReady]);
 
   // ── Camera capability audit + tuning ────────────────────────────────────────
@@ -1193,6 +1274,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                     {caps.resolution}
                   </span>
                 )}
+              </div>
+            )}
+
+            {/* Temp on-screen video diagnostics — visible without devtools so
+                a real-device report can be screenshotted directly. Remove
+                once the preview is confirmed stable across devices. */}
+            {scannerReady && videoDiag && (
+              <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontFamily: 'monospace', fontSize: '9.5px', color: '#8B8FA8', lineHeight: 1.6 }}>
+                <div style={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '2px' }}>Video diagnostics (temporary)</div>
+                <div>native {videoDiag.native} · rendered {videoDiag.rendered}</div>
+                <div>rect {videoDiag.rect}</div>
+                <div>readyState {videoDiag.readyState} · paused {String(videoDiag.paused)} · frame Δ {videoDiag.frameDeltaMs}ms/s</div>
+                <div>display {videoDiag.display} · opacity {videoDiag.opacity}</div>
+                <div>topmost element at box center: {videoDiag.topElement}</div>
               </div>
             )}
 
