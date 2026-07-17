@@ -626,6 +626,8 @@ export function AdminDashboardScreen({
   const [cacRejectingId, setCacRejectingId] = useState<string | null>(null);
   const [cacRejectReason, setCacRejectReason] = useState('');
   const [cacPreviewLoadingId, setCacPreviewLoadingId] = useState<string | null>(null);
+  const [verifyStats, setVerifyStats] = useState<{ pendingCount: number; approvedToday: number; rejectedToday: number; avgReviewHours: number | null; totalVerified: number } | null>(null);
+  const [verifyStatsLoading, setVerifyStatsLoading] = useState(false);
 
   // Debounce the CAC search box so every keystroke doesn't fire a query.
   useEffect(() => {
@@ -785,6 +787,37 @@ export function AdminDashboardScreen({
     loadCacRequests();
   }, [tab, loadCacRequests]);
 
+  // Verification queue analytics (Pending Review / Approved Today / Rejected
+  // Today / Average Review Time / Total Verified) — computed server-side via
+  // admin_get_verification_stats() (SECURITY DEFINER, admin-gated) rather
+  // than aggregated client-side, since the client only ever sees a paginated
+  // slice of organizer_verification_requests from admin_list_organizer_verifications.
+  const loadVerifyStats = useCallback(async () => {
+    setVerifyStatsLoading(true);
+    try {
+      const { data, error } = await insforge.database.rpc('admin_get_verification_stats' as any);
+      if (error) throw error;
+      const row = (data || [])[0] || {};
+      setVerifyStats({
+        pendingCount: Number(row.pending_count || 0),
+        approvedToday: Number(row.approved_today || 0),
+        rejectedToday: Number(row.rejected_today || 0),
+        avgReviewHours: row.avg_review_hours != null ? Number(row.avg_review_hours) : null,
+        totalVerified: Number(row.total_verified || 0),
+      });
+    } catch (err) {
+      console.error('Verification stats fetch error:', err);
+      setVerifyStats(null);
+    } finally {
+      setVerifyStatsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'verify') return;
+    loadVerifyStats();
+  }, [tab, loadVerifyStats]);
+
   const handleApproveCac = async (requestId: string) => {
     setCacActionLoading(requestId);
     try {
@@ -793,6 +826,7 @@ export function AdminDashboardScreen({
       flash(true, 'Brand verified ✓');
       setExpandedCacId(null);
       await loadCacRequests();
+      loadVerifyStats();
       notifyByEmail('cac', requestId, 'approved');
     } catch (e: any) {
       flash(false, e.message || 'Approval failed');
@@ -813,6 +847,7 @@ export function AdminDashboardScreen({
       setCacRejectingId(null);
       setCacRejectReason('');
       await loadCacRequests();
+      loadVerifyStats();
       notifyByEmail('cac', requestId, 'rejected', reason);
     } catch (e: any) {
       flash(false, e.message || 'Rejection failed');
@@ -2237,6 +2272,25 @@ export function AdminDashboardScreen({
       {/* ════════════════ ORGANIZER VERIFICATION TAB ══════════════════════ */}
       {tab === 'verify' && (
         <div style={{ flex: 1, overflowY: 'auto', padding: '14px 20px 40px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          {verifyStatsLoading && !verifyStats ? (
+            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80px', color: '#8B8FA8', fontSize: '13px' }}>Loading stats…</div>
+          ) : verifyStats ? (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '4px' }}>
+              {[
+                { label: 'Pending Review', value: verifyStats.pendingCount.toLocaleString(), color: '#F59E0B' },
+                { label: 'Approved Today', value: verifyStats.approvedToday.toLocaleString(), color: '#10B981' },
+                { label: 'Rejected Today', value: verifyStats.rejectedToday.toLocaleString(), color: '#EF4444' },
+                { label: 'Avg. Review Time', value: verifyStats.avgReviewHours != null ? `${verifyStats.avgReviewHours} hrs` : '—', color: '#A78BFA' },
+                { label: 'Total Verified', value: verifyStats.totalVerified.toLocaleString(), color: '#34D399' },
+              ].map(card => (
+                <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '14px' }}>
+                  <div style={{ color: '#8B8FA8', fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
+                  <div style={{ color: card.color, fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
           <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
             {(['cac', 'unverified'] as const).map(s => (
               <button key={s} onClick={() => setVerifySection(s)}

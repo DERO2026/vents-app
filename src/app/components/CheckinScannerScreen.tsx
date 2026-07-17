@@ -23,6 +23,12 @@ const DENIED_MS = 850;              // < 1 second
 const SAME_CODE_DEBOUNCE_MS = 2500; // ignore the identical code sitting in-frame
 const STATS_RECONCILE_MS = 8000;    // throttle the (network) count queries
 const VERIFY_TIMEOUT_MS = 9000;     // a stuck backend must not freeze the loop
+// Single source of truth for the scan box size, shared by the ACTUAL
+// html5-qrcode decode region (qrbox, computed from the real viewfinder
+// dimensions at start time) and the VISIBLE reticle drawn in CSS — they
+// must always agree, or the box the user sees isn't where scanning
+// actually happens. Kept within the requested 65-75% of viewfinder width.
+const SCAN_BOX_RATIO = 0.7;
 
 interface CheckinScannerScreenProps {
   onBack: () => void;
@@ -460,10 +466,19 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
             // constraint — with the native BarcodeDetector path this is cheap
             // and halves worst-case detection latency vs 15.
             fps: 30,
-            // Region-of-interest: decoding is cropped to this box (the visible
-            // reticle) each frame instead of the full preview — faster, more
-            // accurate, and stable against edge noise.
-            qrbox: { width: 260, height: 260 },
+            // Region-of-interest: decoding is cropped to this box each frame
+            // instead of the full preview — faster, more accurate, and stable
+            // against edge noise. A FUNCTION (not a fixed pixel size) so the
+            // crop is computed from the viewfinder's actual rendered
+            // dimensions at start time — the same SCAN_BOX_RATIO used by the
+            // visible reticle below, so the real decode region can never
+            // drift out of alignment with what the user sees on any screen
+            // size (previously a hardcoded 260px box vs. a `min(62%,230px)`
+            // visible reticle — the two diverged on most real screen widths).
+            qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+              const size = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * SCAN_BOX_RATIO);
+              return { width: size, height: size };
+            },
             aspectRatio: 1.0,
             // Native, hardware-accelerated barcode detection (no JS image
             // processing / no still captures) wherever the platform provides
@@ -734,6 +749,18 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         @keyframes ventsSpin { to { transform: rotate(360deg); } }
         @keyframes ventsLiveDot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
         @keyframes ventsFocusRing { 0% { transform: translate(-50%,-50%) scale(1.6); opacity: 0; } 30% { opacity: 1; } 100% { transform: translate(-50%,-50%) scale(1); opacity: 0; } }
+        /* html5-qrcode inserts its own <video>/<canvas> sized to the native
+           camera stream's aspect ratio, which is rarely square — left alone
+           it can render taller or narrower than our square container and
+           get asymmetrically clipped, shifting the visible feed inside the
+           frame. Forcing it to exactly fill the container keeps the visible
+           feed and the qrbox decode region (computed from this same
+           container's dimensions) in the same coordinate space. */
+        #${scannerDivId} video, #${scannerDivId} canvas {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+        }
       `}</style>
 
       {/* ── Header ─────────────────────────────────────────────────────────── */}
@@ -832,7 +859,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               onTouchStart={onPinchStart}
               onTouchMove={onPinchMove}
               onTouchEnd={onPinchEnd}
-              style={{ position: 'relative', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', minHeight: scannerReady ? undefined : '260px', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
+              style={{ position: 'relative', width: '100%', aspectRatio: '1 / 1', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
             >
               <div id={scannerDivId} />
 
@@ -840,7 +867,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                   reading. Hidden during a result so it doesn't clutter the card. */}
               {scannerReady && !isResult && (
                 <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ position: 'relative', width: 'min(62%, 230px)', aspectRatio: '1 / 1', animation: reading ? 'none' : 'ventsGentlePulse 2.4s ease-in-out infinite' }}>
+                  <div style={{ position: 'relative', width: `${SCAN_BOX_RATIO * 100}%`, aspectRatio: '1 / 1', animation: reading ? 'none' : 'ventsGentlePulse 2.4s ease-in-out infinite' }}>
                     {([['top', 'left'], ['top', 'right'], ['bottom', 'left'], ['bottom', 'right']] as const).map(([v, h], i) => (
                       <div key={i} style={{
                         position: 'absolute', width: '30px', height: '30px',
