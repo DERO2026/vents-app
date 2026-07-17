@@ -562,6 +562,39 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         setScannerReady(true);
         acquireWakeLock(); // keep the screen on for the scanning shift
         tuneCamera(html5QrCode);
+
+        // Defensive recovery for a well-documented WebKit/iOS failure mode:
+        // getUserMedia can succeed -- the OS-level recording indicator goes
+        // active, track capabilities are queryable, everything reports
+        // "ready" -- while the injected <video> element itself never
+        // actually starts decoding frames, because its single internal
+        // play() call (inside html5-qrcode's RenderedCameraImpl) silently
+        // rejects or no-ops in certain races. The result is a live,
+        // permitted camera stream stuck on a black/frozen frame forever.
+        // Poll briefly for real frame data and force a second play() if the
+        // first one didn't take -- harmless no-op on an already-healthy
+        // preview, since play() on a playing video does nothing.
+        const videoEl = document.getElementById(scannerDivId)?.querySelector('video') as HTMLVideoElement | null;
+        if (videoEl) {
+          let attempts = 0;
+          const checkPlaying = () => {
+            if (!mounted) return;
+            attempts++;
+            const isActuallyPlaying = videoEl.readyState >= 2 && !videoEl.paused;
+            if (isActuallyPlaying) return;
+            if (isDevEnvironment) {
+              // eslint-disable-next-line no-console
+              console.warn('[VENTS scanner] video not decoding frames yet, forcing play() retry', { attempt: attempts, readyState: videoEl.readyState, paused: videoEl.paused });
+            }
+            videoEl.play().catch(() => {});
+            if (attempts < 5) later(checkPlaying, 500);
+            else if (isDevEnvironment) {
+              // eslint-disable-next-line no-console
+              console.error('[VENTS scanner] video still not decoding frames after retries -- stream may be silently stalled');
+            }
+          };
+          later(checkPlaying, 400);
+        }
       } catch (err: any) {
         clearTimeout(initWatchdog);
         if (!mounted) return;
