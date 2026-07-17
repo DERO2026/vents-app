@@ -11,6 +11,7 @@ import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { uploadImage } from '../../lib/mediaPipeline';
 import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
+import { hasCapability } from '../../lib/permissions';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -22,9 +23,6 @@ interface CreateEventScreenProps {
 }
 
 const MAX_GALLERY_FLIERS = 4;
-
-// Root admin account — same convention used in App.tsx / CheckinScannerScreen.tsx.
-const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -241,10 +239,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     );
   }
 
-  // Role permissions guard — mirrors the app-wide navigation gate (organizer /
-  // organiser / admin / root). Unauthorized users remain blocked here AND by
-  // the events INSERT RLS server-side.
-  if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin' && currentUser.id !== ROOT_UID) {
+  // Capability-based guard (src/lib/permissions.ts) — mirrors the app-wide
+  // navigation gate exactly, off the SAME source of truth, so this can never
+  // drift out of sync with it again. (It previously hardcoded its own role
+  // list that was missing 'sub-admin' — present in the nav gate's list — so
+  // a sub-admin could navigate here only to hit this screen's own, stricter,
+  // stale check and see "Access Denied".) Unauthorized users remain blocked
+  // here AND by the events INSERT RLS server-side.
+  if (!hasCapability(currentUser, 'create_event')) {
     return (
       <div
         style={{

@@ -5,6 +5,7 @@ import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefres
 import { initPushAlert, setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
 import { identifyUser, trackEvent } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
+import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -46,8 +47,6 @@ import { TermsScreen } from './components/TermsScreen';
 import { RefundPolicyScreen } from './components/RefundPolicyScreen';
 import { HelpPage } from './components/HelpPage';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
-
-const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 // Bump this on every release. Compared against app_config.min_client_version
 // on launch — if this build is older, the client shows a blocking update
@@ -213,9 +212,10 @@ export default function App() {
     }
   }, [currentUser]);
 
-  const ORGANIZER_ONLY_SCREENS: Screen[] = ['create-event', 'promote-event', 'manage-events', 'sales-analytics', 'attendee-list', 'checkin-scanner', 'door-manager'];
   const navigateTo = useCallback((next: Screen) => {
-    if (ORGANIZER_ONLY_SCREENS.includes(next) && currentUser?.role !== 'organizer' && currentUser?.role !== 'organiser' && currentUser?.role !== 'admin' && currentUser?.role !== 'sub-admin' && currentUser?.id !== ROOT_UID) {
+    // Capability-based, not a hardcoded role list — see src/lib/permissions.ts.
+    const requiredCapability = SCREEN_CAPABILITY[next];
+    if (requiredCapability && !hasCapability(currentUser, requiredCapability)) {
       console.warn(`Unauthorized attempt to access ${next} screen`);
       return;
     }
@@ -573,7 +573,7 @@ export default function App() {
 
   // Item 4: Load organizer's events from DB on mount/user change
   useEffect(() => {
-    if (!currentUser?.id || (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.id !== ROOT_UID)) return;
+    if (!currentUser?.id || !hasAnyOrganizerCapability(currentUser)) return;
     insforge.database
       .from('events')
       .select('*')
@@ -1392,11 +1392,9 @@ export default function App() {
   const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
   const showBottomNav = navScreens.includes(screen);
 
-  // Determine if the current user is organizer/admin (for nav FAB)
-  const isOrganizerOrAdmin =
-    userRole === 'organizer' ||
-    currentUser?.role === 'admin' ||
-    currentUser?.id === ROOT_UID;
+  // Determine if the current user holds any organizer-tool capability (for
+  // nav FAB routing) — capability-based, see src/lib/permissions.ts.
+  const isOrganizerOrAdmin = userRole === 'organizer' || hasAnyOrganizerCapability(currentUser);
 
   if (updateRequired) {
     return (

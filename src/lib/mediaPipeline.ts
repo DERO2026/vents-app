@@ -32,7 +32,7 @@ export interface UploadOptions {
   filenameBase?: string;
 }
 
-function imageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+function imageDimensionsInner(blob: Blob): Promise<{ width: number; height: number }> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(blob);
     const img = new Image();
@@ -40,6 +40,17 @@ function imageDimensions(blob: Blob): Promise<{ width: number; height: number }>
     img.onerror = () => { URL.revokeObjectURL(url); resolve({ width: 0, height: 0 }); };
     img.src = url;
   });
+}
+
+// Dimensions are non-critical metadata. If the image never fires onload/
+// onerror — a real WebView failure mode, the same reason compressImage
+// carries its own timeout — this promise used to hang forever, and because
+// uploadImage() awaits it BEFORE the (already-timeout-guarded) upload calls,
+// the whole flyer upload never resolved or rejected. uploadingImage was then
+// stuck true forever, permanently disabling "Next: Venue" with no error and
+// no way forward. Timing out here and degrading to {0,0} closes that dead end.
+function imageDimensions(blob: Blob): Promise<{ width: number; height: number }> {
+  return withTimeoutFallback(imageDimensionsInner(blob), { timeoutMs: 4000, fallback: () => ({ width: 0, height: 0 }) });
 }
 
 // Signed, direct-to-object-storage upload (the request is authorized by the
@@ -70,18 +81,26 @@ async function uploadBlob(bucket: string, blob: Blob, filename: string, mimeType
 // usable via its URL, so a metadata hiccup must never fail the whole upload.
 async function recordMetadata(a: MediaAsset, userId?: string | null, eventId?: string | null): Promise<void> {
   try {
-    const { data } = await insforge.database.from('media_assets').insert([{
-      url: a.url,
-      storage_key: a.storageKey,
-      thumbnail_url: a.thumbnailUrl,
-      thumbnail_key: a.thumbnailKey,
-      width: a.width,
-      height: a.height,
-      file_size: a.fileSize,
-      mime_type: a.mimeType,
-      user_id: userId ?? null,
-      event_id: eventId ?? null,
-    }]).select('id').single();
+    // Promise.resolve(...) — the Postgrest builder is a thenable, not a real
+    // Promise, so withTimeoutFallback (which races it against a timer) needs
+    // a genuine Promise to race against.
+    const { data } = await withTimeoutFallback(
+      Promise.resolve(
+        insforge.database.from('media_assets').insert([{
+          url: a.url,
+          storage_key: a.storageKey,
+          thumbnail_url: a.thumbnailUrl,
+          thumbnail_key: a.thumbnailKey,
+          width: a.width,
+          height: a.height,
+          file_size: a.fileSize,
+          mime_type: a.mimeType,
+          user_id: userId ?? null,
+          event_id: eventId ?? null,
+        }]).select('id').single()
+      ),
+      { timeoutMs: 6000, fallback: () => ({ data: null }) }
+    );
     if ((data as any)?.id) a.id = (data as any).id;
   } catch { /* upload already succeeded — metadata is non-blocking */ }
 }
@@ -113,7 +132,7 @@ export async function uploadImage(blob: Blob, opts: UploadOptions): Promise<Medi
   return asset;
 }
 
-function videoPosterAndDims(file: Blob): Promise<{ poster: Blob | null; width: number; height: number }> {
+function videoPosterAndDimsInner(file: Blob): Promise<{ poster: Blob | null; width: number; height: number }> {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
     const v = document.createElement('video');
@@ -138,6 +157,14 @@ function videoPosterAndDims(file: Blob): Promise<{ poster: Blob | null; width: n
     };
     v.onerror = () => finish(null, 0, 0);
   });
+}
+
+// Same class of bug as imageDimensions: if the video never fires
+// onloadeddata (metadata never resolves), this hung forever with no timeout
+// — identical dead-end risk for video fliers. Degrades to a posterless,
+// dimensionless upload instead of hanging.
+function videoPosterAndDims(file: Blob): Promise<{ poster: Blob | null; width: number; height: number }> {
+  return withTimeoutFallback(videoPosterAndDimsInner(file), { timeoutMs: 6000, fallback: () => ({ poster: null, width: 0, height: 0 }) });
 }
 
 /** Direct signed upload of a raw video + an extracted poster thumbnail → metadata. */
