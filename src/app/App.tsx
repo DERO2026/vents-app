@@ -1464,11 +1464,31 @@ export default function App() {
         .phone-frame {
           position: fixed;
           top: 0;
-          left: 50%;
-          transform: translateX(-50%);
+          left: 0;
+          right: 0;
+          /* Centering via margin auto (not transform: translateX(-50%)) —
+             position:fixed combined with a transform on the SAME element is
+             a well-documented iOS Safari bug: after a native UI interruption
+             (the photo/file picker sheet, the keyboard), Safari can detach a
+             fixed+transformed element from the true viewport and let it
+             drift with document scroll instead of staying pinned, which
+             looks exactly like "the top of the screen scrolled out of view
+             while the bottom stays visible" — matching the missing
+             header/stuck-crop-screen report. margin:auto with left/right
+             achieves identical centering with no transform involved. */
+          margin: 0 auto;
           width: 390px;
           max-width: 100vw;
+          /* iOS Safari's address bar dynamically shows/hides, and a plain
+             height:100% on a position:fixed element can be computed against
+             a stale viewport size after a native UI interruption (the photo
+             picker sheet, the keyboard) dismisses — leaving fixed/absolute
+             descendants (like the flyer crop modal) undersized or
+             misaligned. 100dvh tracks the ACTUAL visible viewport and is
+             kept live by the browser itself; height:100% remains as the
+             fallback for engines without dvh support. */
           height: 100%;
+          height: 100dvh;
         }
       `}</style>
       {/* Phone frame */}
