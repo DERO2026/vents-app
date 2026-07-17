@@ -305,6 +305,7 @@ export default function App() {
           setCurrentUser(prev => (prev ? { ...prev, role: data.role } : prev));
         }, () => {});
     };
+    syncRole(); // run IMMEDIATELY — a just-promoted organizer must not wait 15s
     const interval = setInterval(syncRole, 15000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [currentUser?.id, currentUser?.role]);
@@ -455,7 +456,18 @@ export default function App() {
           }
           if (getCurrentUserError) {
             console.warn("GetCurrentUser failed after retry:", getCurrentUserError?.statusCode || getCurrentUserError?.message);
-            setCurrentUser(null);
+            const statusCode = getCurrentUserError?.statusCode;
+            if (statusCode === 401 || statusCode === 403) {
+              // Definitely unauthenticated — a real logout.
+              setCurrentUser(null);
+            } else {
+              // TRANSIENT failure (network blip / backend hiccup — common on
+              // mobile bfcache resume). Do NOT null an existing signed-in user:
+              // that used to flash "Access Denied" at verified organizers on
+              // role-gated screens. Keep the known-good session; the next
+              // hydration or role-sync tick re-validates it.
+              setCurrentUser(prev => prev);
+            }
             setAuthLoading(false);
             return;
           }
@@ -475,12 +487,38 @@ export default function App() {
           return;
         }
 
-        // Fetch user profile from public schema to get the role and full name
-        const { data: profile } = await insforge.database
-          .from('users')
-          .select('*')
-          .eq('id', sessionUserId)
-          .maybeSingle();
+        // Fetch user profile from public schema to get the role and full name.
+        // The error is NOT swallowed: a failed fetch used to silently hydrate a
+        // valid organizer session as role 'user' (the "Access Denied on Create
+        // Event" bug). Retry once; on persistent failure, preserve the
+        // known-good cached role instead of downgrading it.
+        let profile: any = null;
+        let profileError: any = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const { data, error } = await insforge.database
+            .from('users')
+            .select('*')
+            .eq('id', sessionUserId)
+            .maybeSingle();
+          profile = data; profileError = error;
+          if (!profileError) break;
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        if (profileError && !profile) {
+          console.warn('Profile fetch failed during hydration — preserving cached role:', profileError?.message || profileError);
+          setCurrentUser(prev =>
+            prev && prev.id === sessionUserId
+              ? prev // keep the known-good state (including role) — never downgrade on a fetch failure
+              : {
+                  id: sessionUserId!,
+                  email: sessionUserEmail || '',
+                  full_name: (sessionUserEmail || '').split('@')[0],
+                  role: 'user', // unknown fresh session — the 15s role-sync corrects this
+                }
+          );
+          setAuthLoading(false);
+          return;
+        }
 
         // Item 20: reject suspended users immediately on session restore
         if (profile?.status === 'suspended') {
@@ -596,7 +634,7 @@ export default function App() {
   useEffect(() => {
     if (screen === 'splash' && splashMinTimePassed && !authLoading) {
       if (currentUser) {
-        if (currentUser.role !== 'organizer') {
+        if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
           setUserRole('attendee');
           setScreen('home');
           setActiveTab('home');

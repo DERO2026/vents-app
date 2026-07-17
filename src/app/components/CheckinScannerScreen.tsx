@@ -76,7 +76,7 @@ function getAudioCtx(): AudioContext | null {
     return _audioCtx;
   } catch { return null; }
 }
-function playTone(kind: 'success' | 'error') {
+function playTone(kind: 'success' | 'error' | 'detect') {
   const ctx = getAudioCtx();
   if (!ctx) return;
   try {
@@ -92,8 +92,9 @@ function playTone(kind: 'success' | 'error') {
       osc.connect(gain); gain.connect(ctx.destination);
       osc.start(now + start); osc.stop(now + start + dur + 0.03);
     };
-    if (kind === 'success') { beep(880, 0, 0.09); beep(1320, 0.075, 0.13); } // bright rising two-note
-    else { beep(196, 0, 0.2, 0.12); }                                        // low error blip
+    if (kind === 'success') { beep(880, 0, 0.09); beep(1320, 0.075, 0.13); }  // bright rising two-note
+    else if (kind === 'detect') { beep(1568, 0, 0.045, 0.07); }               // instant, quiet "got it" tick
+    else { beep(196, 0, 0.2, 0.12); }                                         // low error blip
   } catch { /* ignore */ }
 }
 
@@ -219,6 +220,23 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const pinchRef = useRef<{ startDist: number; startZoom: number } | null>(null);
   const zoomThrottleRef = useRef(0);
   const zoomRef = useRef(1);
+  const torchOnRef = useRef(false);               // mirror for listeners that must not re-register
+  // Graceful camera recovery — bumping this remounts ONLY the camera session
+  // (used by the "Try Again" button after a permission/hardware failure).
+  const [retryNonce, setRetryNonce] = useState(0);
+  // Low-light guidance: last moment the scanner saw ANY QR (or other activity).
+  const lastActivityRef = useRef(Date.now());
+  const [showTorchHint, setShowTorchHint] = useState(false);
+  // Keep the screen awake during a scanning shift (best-effort, auto no-op
+  // where the Wake Lock API is unavailable).
+  const wakeLockRef = useRef<any>(null);
+  const acquireWakeLock = useCallback(async () => {
+    try {
+      const wl = (navigator as any).wakeLock;
+      if (!wl?.request) return;
+      wakeLockRef.current = await wl.request('screen');
+    } catch { /* denied or unsupported — never fatal */ }
+  }, []);
 
   // Access guard — event organizer, sub-admin, or root/platform admin.
   const isOrganizer =
@@ -248,6 +266,44 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     window.addEventListener('pointerdown', unlock, { once: true });
     return () => window.removeEventListener('pointerdown', unlock);
   }, []);
+
+  // ── Background/foreground lifecycle ─────────────────────────────────────────
+  // When the app is backgrounded: pause scanning + the video element (battery),
+  // kill the torch, and release the wake lock. On return: resume the SAME
+  // camera session (never recreated) and re-acquire the wake lock.
+  useEffect(() => {
+    const onVisibility = () => {
+      const qr = scannerRef.current;
+      if (document.hidden) {
+        try { if (torchOnRef.current) { camCapsRef.current?.torchFeature?.()?.apply?.(false); torchOnRef.current = false; if (mountedRef.current) setTorchOn(false); } } catch { /* ignore */ }
+        try { if (qr?.isScanning) qr.pause(true); } catch { /* not scanning */ }
+        try { wakeLockRef.current?.release?.(); } catch { /* ignore */ } finally { wakeLockRef.current = null; }
+      } else {
+        try { qr?.resume?.(); } catch { /* wasn't paused */ }
+        lastActivityRef.current = Date.now();
+        acquireWakeLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      try { wakeLockRef.current?.release?.(); } catch { /* ignore */ } finally { wakeLockRef.current = null; }
+    };
+  }, [acquireWakeLock]);
+
+  // ── Low-light guidance ──────────────────────────────────────────────────────
+  // If the device has a torch, it's off, and the scanner has been armed for a
+  // while with zero detections, softly suggest the torch (dark venues). The
+  // interval only flips state when the value actually changes.
+  useEffect(() => {
+    if (!caps.torch) return;
+    const id = setInterval(() => {
+      const idleTooLong = Date.now() - lastActivityRef.current > 12000;
+      const next = idleTooLong && !torchOnRef.current && !document.hidden;
+      if (mountedRef.current) setShowTorchHint(prev => (prev === next ? prev : next));
+    }, 3000);
+    return () => clearInterval(id);
+  }, [caps.torch]);
 
   // ── Check-in stats — optimistic + throttled (Task 6/9) ──────────────────────
   // Instead of two COUNT queries after EVERY scan (crippling at a 5,000-attendee
@@ -283,8 +339,11 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     let resumeMs = DENIED_MS;
 
     // ── PHASE A — QR DETECTED (instant, synchronous, no network) ──────────────
+    // Haptic + quiet tick + white flash fire IMMEDIATELY on detection; the
+    // backend verification below is fully asynchronous.
     triggerHaptic('detect');
-    safeSetState({ status: 'reading' });
+    playTone('detect');
+    safeSetState({ status: 'reading', seq: ++seqRef.current });
 
     try {
       await getAuthToken();
@@ -397,15 +456,27 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         await html5QrCode.start(
           { facingMode: 'environment' } as any,
           {
-            fps: 15,
+            // Decode-attempt rate (html5-qrcode throttling), NOT a getUserMedia
+            // constraint — with the native BarcodeDetector path this is cheap
+            // and halves worst-case detection latency vs 15.
+            fps: 30,
+            // Region-of-interest: decoding is cropped to this box (the visible
+            // reticle) each frame instead of the full preview — faster, more
+            // accurate, and stable against edge noise.
             qrbox: { width: 260, height: 260 },
             aspectRatio: 1.0,
+            // Native, hardware-accelerated barcode detection (no JS image
+            // processing / no still captures) wherever the platform provides
+            // BarcodeDetector; html5-qrcode falls back to WASM/JS elsewhere.
+            // Decoder config only — cannot affect camera start.
+            experimentalFeatures: { useBarCodeDetectorIfSupported: true },
           },
           // Detection callback — created ONCE, closes only over stable refs, and
           // dispatches to the freshest handleScan via handleScanRef.
           (decodedText: string) => {
             const m = metricsRef.current;
             m.rawDetections++;
+            lastActivityRef.current = Date.now();
             const nowP = performance.now();
             if (!m.firstDetectionMs && m.readyAt) m.firstDetectionMs = nowP - m.readyAt;
 
@@ -424,18 +495,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         if (!mounted) return;
         metricsRef.current.cameraInitMs = performance.now() - metricsRef.current.camStartAt;
         metricsRef.current.readyAt = performance.now();
+        lastActivityRef.current = Date.now();
         // eslint-disable-next-line no-console
         console.info('[VENTS scanner] init: camera STARTED', {
           initMs: Math.round(metricsRef.current.cameraInitMs),
           settings: (() => { try { return html5QrCode.getRunningTrackSettings?.(); } catch { return null; } })(),
         });
         setScannerReady(true);
+        acquireWakeLock(); // keep the screen on for the scanning shift
         tuneCamera(html5QrCode);
       } catch (err: any) {
         clearTimeout(initWatchdog);
         if (!mounted) return;
-        // TEMP DEBUG — print the COMPLETE error (name, message, offending
-        // constraint, stack) instead of only a generic message.
+        // Full diagnostics to the console (name/message/constraint/stack);
+        // the user sees only the friendly, actionable message below.
         // eslint-disable-next-line no-console
         console.error('[VENTS scanner] init: camera start FAILED', {
           name: err?.name, message: err?.message,
@@ -445,17 +518,15 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         const raw = String(err?.name || err?.message || err || '');
         let friendly = 'Could not start the camera. Please try again.';
         if (/NotAllowedError|Permission denied|permission/i.test(raw)) {
-          friendly = 'Camera access denied. Enable camera permission for Vents in your device/browser settings, then reopen the scanner.';
+          friendly = 'Camera access is blocked. Allow camera access for Vents in your device or browser settings, then tap Try Again.';
         } else if (/NotFoundError|no camera|DevicesNotFound/i.test(raw)) {
           friendly = 'No camera was found on this device.';
         } else if (/NotReadableError|TrackStartError|in use/i.test(raw)) {
-          friendly = 'The camera is already in use by another app. Close it and try again.';
+          friendly = 'The camera is already in use by another app. Close it, then tap Try Again.';
         } else if (/OverconstrainedError/i.test(raw)) {
           friendly = 'This device could not provide a compatible camera stream.';
         }
-        // TEMP DEBUG — surface the real error class on-screen so the failure is
-        // identifiable on-device without a console.
-        setCameraError(`${friendly}${raw ? `  [${raw}]` : ''}`);
+        setCameraError(friendly);
       }
     }).catch(err => {
       if (!mounted) return;
@@ -465,20 +536,26 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     return () => {
       mounted = false;
       if (html5QrCode && html5QrCode.isScanning) {
-        try { camCapsRef.current?.torchFeature?.()?.apply?.(false); } catch { /* ignore */ }
+        try { camCapsRef.current?.torchFeature?.()?.apply?.(false); torchOnRef.current = false; } catch { /* ignore */ }
         html5QrCode.stop().then(() => html5QrCode.clear()).catch(() => {});
       }
     };
+    // retryNonce lets the "Try Again" button re-run this ONE effect after a
+    // camera failure — it never remounts mid-session (nonce only changes on
+    // explicit user retry from the error screen).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOrganizer, selectedEvent?.id]);
+  }, [isOrganizer, selectedEvent?.id, retryNonce]);
 
   // ── Camera capability audit + tuning ────────────────────────────────────────
+  // All quality upgrades happen HERE — after the stream is live — via
+  // spec-droppable `advanced` constraint sets wrapped in try/catch. Unlike a
+  // pre-start getUserMedia constraint (which once broke camera start on
+  // Android WebView), a post-start advanced set that the device can't satisfy
+  // is simply discarded; it can never kill a running track.
   const tuneCamera = async (qr: any) => {
     const report: CamCaps = { ...DEFAULT_CAPS, probed: true };
     try {
       const trackCaps: any = qr.getRunningTrackCapabilities?.() || {};
-      const settings: any = qr.getRunningTrackSettings?.() || {};
-      if (settings.width && settings.height) report.resolution = `${settings.width}×${settings.height}`;
 
       const focusModes: string[] = trackCaps.focusMode || [];
       if (focusModes.includes('continuous')) {
@@ -489,6 +566,31 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         try { await qr.applyVideoConstraints({ advanced: [{ exposureMode: 'continuous' }] } as any); report.autoExposure = true; } catch { /* not applyable */ }
       }
       report.tapToFocus = focusModes.includes('single-shot') || focusModes.includes('manual');
+
+      // Highest STABLE preview quality — only request what the hardware
+      // declares (clamped to its own maxima), and only when it's an upgrade
+      // over the currently negotiated settings.
+      try {
+        const cur: any = qr.getRunningTrackSettings?.() || {};
+        const maxW = Number(trackCaps.width?.max || 0);
+        const maxH = Number(trackCaps.height?.max || 0);
+        if (maxW >= 1280 && maxH >= 720 && (Number(cur.width || 0) < 1280 || Number(cur.height || 0) < 720)) {
+          const w = Math.min(1920, maxW), h = Math.min(1080, maxH);
+          await qr.applyVideoConstraints({ advanced: [{ width: w, height: h }] } as any).catch(() => {});
+        }
+        const maxFps = Number(trackCaps.frameRate?.max || 0);
+        if (maxFps >= 60 && Number(cur.frameRate || 0) < 60) {
+          // Prefer 60fps when the sensor supports it (smoother preview,
+          // more decode-ready frames); silently dropped where it doesn't.
+          await qr.applyVideoConstraints({ advanced: [{ frameRate: 60 }] } as any).catch(() => {});
+        }
+      } catch { /* best-effort only */ }
+
+      // Report the FINAL negotiated settings (after any upgrades above).
+      const settings: any = qr.getRunningTrackSettings?.() || {};
+      if (settings.width && settings.height) {
+        report.resolution = `${settings.width}×${settings.height}${settings.frameRate ? ` @${Math.round(settings.frameRate)}fps` : ''}`;
+      }
 
       const camCaps: any = qr.getRunningTrackCameraCapabilities?.();
       camCapsRef.current = camCaps || null;
@@ -510,8 +612,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const toggleTorch = useCallback(async () => {
     const tf = camCapsRef.current?.torchFeature?.();
     if (!tf?.isSupported?.()) return;
-    try { await tf.apply(!torchOn); if (mountedRef.current) setTorchOn(v => !v); } catch { /* ignore */ }
-  }, [torchOn]);
+    try {
+      const next = !torchOnRef.current;
+      await tf.apply(next);
+      torchOnRef.current = next;
+      lastActivityRef.current = Date.now(); // torch action clears the low-light hint window
+      if (mountedRef.current) { setTorchOn(next); setShowTorchHint(false); }
+    } catch { /* ignore */ }
+  }, []);
 
   // Apply zoom to hardware AND state at most ~16×/s so a fast pinch doesn't
   // storm re-renders or spam the track.
@@ -694,12 +802,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       {/* ── Camera / Scanner area ──────────────────────────────────────────── */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
         {cameraError ? (
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '40px', textAlign: 'center' }}>
-            <Camera size={40} color="#EF4444" />
-            <p style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600 }}>Camera Error</p>
-            <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{cameraError}</p>
-            <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
-              Make sure you have granted camera permission and are using HTTPS.
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '40px', textAlign: 'center', padding: '0 12px' }}>
+            <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Camera size={32} color="#EF4444" />
+            </div>
+            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0 }}>Camera Unavailable</p>
+            <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.6, maxWidth: '300px' }}>{cameraError}</p>
+            <button
+              onClick={() => { setCameraError(null); setScannerReady(false); setRetryNonce(n => n + 1); }}
+              style={{ marginTop: '8px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 32px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}
+            >
+              Try Again
+            </button>
+            <p style={{ color: '#555C7A', fontSize: '11px', margin: '4px 0 0' }}>
+              Scanning requires camera permission over a secure (HTTPS) connection.
             </p>
           </div>
         ) : (
@@ -786,6 +902,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                     <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#10B981', boxShadow: '0 0 8px #10B981', animation: 'ventsLiveDot 1.3s ease-in-out infinite' }} />
                     <span style={{ color: '#E6FFF4', fontSize: '11.5px', fontWeight: 700, letterSpacing: '0.03em' }}>Scanning</span>
                   </div>
+                </div>
+              )}
+
+              {/* Phase-A detect flash — a quick white blink the instant a QR is
+                  seen, before any network round-trip. */}
+              {reading && (
+                <div key={`d${state.seq}`} style={{ position: 'absolute', inset: 0, background: '#FFFFFF', pointerEvents: 'none', animation: 'ventsFlash 0.22s ease-out forwards' }} />
+              )}
+
+              {/* Low-light guidance — only when the device HAS a torch, it's off,
+                  and nothing has been detected for a while. */}
+              {scannerReady && !reading && !isResult && showTorchHint && caps.torch && !torchOn && (
+                <div style={{ position: 'absolute', top: '62px', right: '12px', background: 'rgba(2,0,5,0.72)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '10px', padding: '6px 10px', fontSize: '11px', fontWeight: 600, color: '#FFB830', zIndex: 6, pointerEvents: 'none', maxWidth: '150px', textAlign: 'right' }}>
+                  Dark venue? Try the torch ↑
                 </div>
               )}
 

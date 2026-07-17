@@ -23,6 +23,9 @@ interface CreateEventScreenProps {
 
 const MAX_GALLERY_FLIERS = 4;
 
+// Root admin account — same convention used in App.tsx / CheckinScannerScreen.tsx.
+const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
+
 type Step = 1 | 2 | 3 | 4;
 
 const CATEGORIES = CATEGORY_LIST.map(c => c.id);
@@ -216,8 +219,32 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     return () => { cancelled = true; };
   }, [editEventId]);
 
-  // Role permissions guard
-  if (!currentUser || (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin')) {
+  // Session guard — a null currentUser here is a dropped/expired session (the
+  // navigation gate already required an organizer to get this far), NOT an
+  // authorization verdict. Show an honest session message instead of the
+  // misleading "Access Denied". Creation stays blocked either way — and the
+  // server's RLS (organizer_id = auth.uid()) is the real authority.
+  if (!currentUser) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
+        <div style={{ fontSize: '64px', marginBottom: '20px' }}>⏳</div>
+        <h2 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+          Session Expired
+        </h2>
+        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
+          Your session needs a quick refresh. Go back and sign in again to continue creating your event.
+        </p>
+        <button onClick={onBack} style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '12px 28px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
+          Go Back
+        </button>
+      </div>
+    );
+  }
+
+  // Role permissions guard — mirrors the app-wide navigation gate (organizer /
+  // organiser / admin / root). Unauthorized users remain blocked here AND by
+  // the events INSERT RLS server-side.
+  if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin' && currentUser.id !== ROOT_UID) {
     return (
       <div
         style={{
