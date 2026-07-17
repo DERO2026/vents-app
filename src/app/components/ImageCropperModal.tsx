@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
 import { X, Check } from 'lucide-react';
 
@@ -96,22 +97,24 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
     }
   };
 
-  return (
+  // Rendered via a portal straight to document.body — not just position:fixed
+  // on an inline div — because this modal is normally mounted deep inside
+  // CreateEventScreen's own scrollable "form content" container (overflowY:
+  // 'auto'), which itself sits inside the app shell's .phone-frame
+  // (position:fixed AND overflow:hidden, App.tsx). Real iOS Safari has a
+  // long-documented WebKit bug where a position:fixed descendant nested
+  // inside a scrollable/overflow-clipped ancestor gets trapped and resolves
+  // relative to that ancestor instead of the true viewport, no matter what
+  // position value is used on the element itself — confirmed live via an
+  // annotated device screenshot showing this modal anchored below
+  // CreateEventScreen's own header/step-indicator instead of covering it,
+  // even after switching this div from position:absolute to position:fixed.
+  // A portal to document.body removes the element from that ancestor chain
+  // entirely, so no overflow/scroll/positioning quirk on any ancestor can
+  // affect it, regardless of WebKit version.
+  return createPortal(
     <div
       style={{
-        // position:'fixed', not 'absolute' — this modal is rendered nested
-        // three levels deep inside display:flex containers (CreateEventScreen
-        // root -> scrollable form content -> the step-1 field column), all
-        // position:static, before reaching the app shell's own position:fixed
-        // frame. Real iOS Safari has documented inconsistencies resolving the
-        // containing block for an absolutely-positioned element through that
-        // many static flex ancestors — confirmed live: the modal was
-        // anchoring to something smaller than the full screen, rendering
-        // BELOW the host screen's own header/step-indicator instead of over
-        // it, hiding this modal's own header (with the Done button) entirely.
-        // position:fixed always resolves against the true viewport (or the
-        // nearest transform/filter ancestor) and never binds to a static flex
-        // container, so it cannot inherit that ambiguity.
         position: 'fixed',
         top: 0,
         left: 0,
@@ -231,6 +234,7 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           }}
         />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
