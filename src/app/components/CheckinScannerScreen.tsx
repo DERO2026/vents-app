@@ -200,6 +200,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const seqRef = useRef(0);
   const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
 
+  // ── Temp debug logging (dev builds only) — remove once verified stable on
+  //    real devices. Confirms: single mount, single permission/init cycle,
+  //    scannerReady flips exactly twice (false->true on start, no further
+  //    flips unless a genuine rotation/backgrounding event occurs), and a
+  //    sane render count (no runaway re-render loop). ──────────────────────
+  const renderCountRef = useRef(0);
+  renderCountRef.current += 1;
+  useEffect(() => {
+    if (isDevEnvironment) {
+      // eslint-disable-next-line no-console
+      console.debug('[VENTS scanner] render #', renderCountRef.current);
+    }
+  });
+
   // ── Lifecycle-safe timers + mount tracking (no setState after unmount) ──────
   const mountedRef = useRef(true);
   const timersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set());
@@ -264,14 +278,31 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   // report on unmount so nothing lingers or fires after teardown.
   useEffect(() => {
     mountedRef.current = true;
+    if (isDevEnvironment) {
+      // eslint-disable-next-line no-console
+      console.info('[VENTS scanner] lifecycle: MOUNTED');
+    }
     const timers = timersRef.current;
     return () => {
       mountedRef.current = false;
       timers.forEach(clearTimeout);
       timers.clear();
+      if (isDevEnvironment) {
+        // eslint-disable-next-line no-console
+        console.info('[VENTS scanner] lifecycle: UNMOUNTED');
+      }
       logMetrics('session-end');
     };
-  }, [logMetrics]);
+  }, [logMetrics, isDevEnvironment]);
+
+  // Dev-only: confirms scannerReady only flips on genuine start/stop/rotation
+  // events, never in a rapid back-and-forth loop.
+  useEffect(() => {
+    if (isDevEnvironment) {
+      // eslint-disable-next-line no-console
+      console.info('[VENTS scanner] lifecycle: camera active changed ->', scannerReady);
+    }
+  }, [scannerReady, isDevEnvironment]);
 
   // Unlock the audio context on the first user gesture so Phase-B tones are
   // reliable (mobile browsers start it suspended until a real interaction).
@@ -288,6 +319,10 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   useEffect(() => {
     const onVisibility = () => {
       const qr = scannerRef.current;
+      if (isDevEnvironment) {
+        // eslint-disable-next-line no-console
+        console.info('[VENTS scanner] lifecycle: screen focus changed -> hidden =', document.hidden);
+      }
       if (document.hidden) {
         try { if (torchOnRef.current) { camCapsRef.current?.torchFeature?.()?.apply?.(false); torchOnRef.current = false; if (mountedRef.current) setTorchOn(false); } } catch { /* ignore */ }
         try { if (qr?.isScanning) qr.pause(true); } catch { /* not scanning */ }
@@ -303,7 +338,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       document.removeEventListener('visibilitychange', onVisibility);
       try { wakeLockRef.current?.release?.(); } catch { /* ignore */ } finally { wakeLockRef.current = null; }
     };
-  }, [acquireWakeLock]);
+  }, [acquireWakeLock, isDevEnvironment]);
 
   // ── Low-light guidance ──────────────────────────────────────────────────────
   // If the device has a torch, it's off, and the scanner has been armed for a
@@ -575,22 +610,47 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   // region computed against stale dimensions even though the CSS-driven
   // preview resizes instantly and correctly. Watching the actual frame and
   // forcing a full camera restart on a real width change is the only way to
-  // keep the detection region and the visible frame in agreement for the
-  // rest of the session. Debounced, and gated on `scannerReady` so it can't
-  // fire while the very first start() is still in flight.
+  // keep the detection region and the visible frame in agreement.
+  //
+  // BUG THIS REPLACES: the previous version tore down and recreated the
+  // ResizeObserver — re-capturing its "current width" baseline — every time
+  // `scannerReady` flipped. Becoming ready swaps the "Initialising camera…"
+  // placeholder for the live reticle/controls and, shortly after, adds the
+  // capability-chip row, both of which change this scrollable area's total
+  // content height and can toggle whether its scrollbar is reserved —
+  // narrowing/widening the scanner box's own measured width as a side
+  // effect. The observer read that SELF-INFLICTED width change, mistook it
+  // for a real device rotation, and called setScannerReady(false) +
+  // retryNonce++ — tearing down and fully restarting the camera. Restarting
+  // flips scannerReady again, which re-armed the exact same broken baseline
+  // mid-transition, so the cycle repeated forever: the camera never
+  // stabilized and the screen continuously flickered between init states.
+  //
+  // Fix: the observer is created exactly ONCE per mount and never torn down
+  // by our own ready-state flips. It only acts once `resizeBaselineReadyRef`
+  // is true, which is set only after the camera has been ready AND the
+  // post-ready DOM swap has had time to fully settle. Going not-ready
+  // (camera down / mid-restart) immediately clears that flag, so resize
+  // noise from a restart can never retrigger another one.
+  const resizeBaselineReadyRef = useRef(false);
+
   useEffect(() => {
     const el = scannerContainerRef.current;
-    if (!el || !scannerReady) return;
-    lastObservedWidthRef.current = el.getBoundingClientRect().width;
+    if (!el) return;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     const ro = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width;
-      if (width == null) return;
+      if (width == null || !resizeBaselineReadyRef.current) return;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         const last = lastObservedWidthRef.current;
         if (last != null && Math.abs(width - last) > 4) {
           lastObservedWidthRef.current = width;
+          resizeBaselineReadyRef.current = false; // don't react again until the restart re-settles
+          if (isDevEnvironment) {
+            // eslint-disable-next-line no-console
+            console.info('[VENTS scanner] lifecycle: genuine layout resize detected, restarting camera', { from: last, to: width });
+          }
           setScannerReady(false);
           setRetryNonce((n) => n + 1);
         }
@@ -598,6 +658,25 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     });
     ro.observe(el);
     return () => { if (debounceTimer) clearTimeout(debounceTimer); ro.disconnect(); };
+    // Set up exactly once per mount — never torn down/recreated by our own
+    // ready-state flips (see the bug note above).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Arms the resize-recovery baseline only once the camera is ready AND the
+  // ready-state DOM swap has had time to settle — capturing the baseline any
+  // earlier would bake in a transient, mid-swap width as "normal" (see the
+  // bug note above). Going not-ready disarms it immediately.
+  useEffect(() => {
+    if (!scannerReady) { resizeBaselineReadyRef.current = false; return; }
+    const el = scannerContainerRef.current;
+    if (!el) return;
+    const id = setTimeout(() => {
+      if (!mountedRef.current) return;
+      lastObservedWidthRef.current = el.getBoundingClientRect().width;
+      resizeBaselineReadyRef.current = true;
+    }, 900); // comfortably past the ready-state DOM swap + tuneCamera's async capability probing
+    return () => clearTimeout(id);
   }, [scannerReady]);
 
   // ── Camera capability audit + tuning ────────────────────────────────────────
@@ -871,7 +950,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       )}
 
       {/* ── Camera / Scanner area ──────────────────────────────────────────── */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px 24px', scrollbarGutter: 'stable' }}>
         {cameraError ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', marginTop: '40px', textAlign: 'center', padding: '0 12px' }}>
             <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -920,6 +999,20 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                   (which IS a definite square via aspect-ratio above) gives it
                   a real height for the video's 100% to resolve against. */}
               <div id={scannerDivId} style={{ position: 'absolute', inset: 0, overflow: 'hidden' }} />
+
+              {/* "Initialising camera…" lives INSIDE this fixed-size box (absolute
+                  overlay), not as a document-flow sibling below it. This box's own
+                  size is governed purely by CSS (width:100% + aspect-ratio:1/1) and
+                  is unaffected by its children, so mounting/unmounting this overlay
+                  can never change the scrollable ancestor's total content height —
+                  which is exactly the self-inflicted layout shift that used to fool
+                  the resize-recovery ResizeObserver into restarting the camera (see
+                  the note on that effect below). */}
+              {!scannerReady && !cameraError && (
+                <div style={{ position: 'absolute', inset: 0, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#8B8FA8', fontSize: '13px', background: '#090514' }}>
+                  Initialising camera…
+                </div>
+              )}
 
               {/* Reticle: corner brackets + (idle) sweep line; pulses white while
                   reading. Hidden during a result so it doesn't clutter the card. */}
@@ -1037,12 +1130,6 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 </div>
               )}
             </div>
-
-            {!scannerReady && (
-              <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80px', color: '#8B8FA8', fontSize: '13px' }}>
-                Initialising camera…
-              </div>
-            )}
 
             {/* Camera capability audit — reports which native enhancements are
                 ACTIVE on this device. Unsupported ones are shown muted (never
