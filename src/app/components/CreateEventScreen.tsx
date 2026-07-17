@@ -1461,7 +1461,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         )}
       </div>
 
-      {/* Bottom CTA */}
+      {/* Bottom CTA — unmounted entirely while the flyer cropper is open. The
+          wizard's own step navigation must never be reachable (visible or
+          tappable) underneath a modal that owns the full screen; the crop
+          modal only ever returns an uploaded image and dismisses itself. */}
+      {!cropSrc && (
       <div
         style={{
           position: 'absolute',
@@ -1546,6 +1550,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           )
         )}
       </div>
+      )}
 
       {showStateModal && (
         <div

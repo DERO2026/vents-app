@@ -143,18 +143,22 @@ export function ImageCropperModal({ imageSrc, onCropComplete, onClose, aspect = 
           style={{
             background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
             border: 'none',
-            borderRadius: '50%',
-            width: '32px',
+            borderRadius: '20px',
             height: '32px',
+            padding: '0 14px',
             color: '#fff',
+            fontSize: '13px',
+            fontWeight: 700,
+            fontFamily: 'Space Grotesk, sans-serif',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center',
+            gap: '6px',
             cursor: 'pointer',
             boxShadow: '0 4px 10px rgba(123,47,190,0.3)',
           }}
         >
-          <Check size={16} />
+          <Check size={14} />
+          Done
         </button>
       </div>
 
