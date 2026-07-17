@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, ScanLine, CheckCircle, XCircle, Camera, Shield, FlaskConical, CalendarX, Flashlight, FlashlightOff, Check } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { Event } from './types';
@@ -250,8 +250,18 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const [videoDiag, setVideoDiag] = useState<{
     native: string; rendered: string; rect: string; readyState: number;
     paused: boolean; frameDeltaMs: number; display: string; opacity: string; topElement: string;
+    box: string; mount: string; hpx: string;
   } | null>(null);
   const lastDiagSampleRef = useRef<{ t: number; time: number } | null>(null);
+  // Explicit, JS-measured square height for the scanner box (px). The
+  // container's height must NOT depend on any CSS ratio mechanism
+  // (`aspect-ratio` or a padding-bottom % ) — those resolve height from width
+  // via the layout engine, and in the field the iOS WKWebView was leaving the
+  // box at height 0 (video rendered 344×0 → blank preview). We instead measure
+  // the box's real rendered WIDTH and set its height to the same pixel value,
+  // so a non-zero width mathematically cannot produce a zero height. Null until
+  // the first measurement; a padding-bottom fallback covers that single frame.
+  const [boxHeightPx, setBoxHeightPx] = useState<number | null>(null);
   // Graceful camera recovery — bumping this remounts ONLY the camera session
   // (used by the "Try Again" button after a permission/hardware failure).
   const [retryNonce, setRetryNonce] = useState(0);
@@ -759,6 +769,28 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     return () => clearTimeout(id);
   }, [scannerReady]);
 
+  // Measure the scanner box's rendered WIDTH and pin its height to the same
+  // pixel value — the definitive fix for the field bug where the box (and thus
+  // the injected <video>) collapsed to height 0 on iOS WKWebView. useLayoutEffect
+  // runs after DOM mutation but before paint, so the explicit height is applied
+  // before the first frame is shown (no 0-height flash). Re-runs whenever the box
+  // (re)mounts (cameraError toggling, Try Again) and tracks width changes via a
+  // ResizeObserver so it stays square through rotation / safe-area shifts. Width
+  // does not depend on height (width:100%), so it is always measurable here.
+  useLayoutEffect(() => {
+    if (cameraError) return; // box isn't rendered in the error state
+    const el = scannerContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const w = Math.round(el.getBoundingClientRect().width);
+      if (w > 0) setBoxHeightPx((prev) => (prev === w ? prev : w));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [cameraError, retryNonce]);
+
   // Temp on-screen video diagnostics (see the state declaration above).
   useEffect(() => {
     if (!scannerReady) { setVideoDiag(null); lastDiagSampleRef.current = null; return; }
@@ -772,6 +804,8 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
       const topEl = document.elementFromPoint(cx, cy) as HTMLElement | null;
       const vr = videoEl.getBoundingClientRect();
       const cs = getComputedStyle(videoEl);
+      const mountEl = document.getElementById(scannerDivId);
+      const mr = mountEl?.getBoundingClientRect();
       const now = performance.now();
       let frameDeltaMs = 0;
       if (lastDiagSampleRef.current) {
@@ -788,10 +822,13 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         display: cs.display,
         opacity: cs.opacity,
         topElement: topEl ? `${topEl.tagName}${topEl.id ? '#' + topEl.id : ''}` : 'none',
+        box: `${Math.round(containerRect.width)}x${Math.round(containerRect.height)}`,
+        mount: mr ? `${Math.round(mr.width)}x${Math.round(mr.height)}` : 'n/a',
+        hpx: boxHeightPx != null ? `${boxHeightPx}px` : 'null',
       });
     }, 1000);
     return () => clearInterval(id);
-  }, [scannerReady]);
+  }, [scannerReady, boxHeightPx]);
 
   // ── Camera capability audit + tuning ────────────────────────────────────────
   // All quality upgrades happen HERE — after the stream is live — via
@@ -1114,7 +1151,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
               onTouchStart={onPinchStart}
               onTouchMove={onPinchMove}
               onTouchEnd={onPinchEnd}
-              style={{ position: 'relative', width: '100%', height: 0, paddingBottom: '100%', borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
+              style={{ position: 'relative', width: '100%', boxSizing: 'border-box', ...(boxHeightPx != null ? { height: `${boxHeightPx}px` } : { height: 0, paddingBottom: '100%' }), borderRadius: '20px', overflow: 'hidden', border: `3px solid ${isResult && theme ? theme.border : 'rgba(167,139,250,0.3)'}`, background: '#090514', boxShadow: isResult && theme ? `0 0 30px ${theme.bg}` : 'none', transition: 'border-color .15s, box-shadow .15s', touchAction: caps.zoom.supported ? 'none' : 'auto', cursor: caps.tapToFocus ? 'crosshair' : 'default' }}
             >
               {/* Absolutely positioned + inset:0, NOT a bare block div — this is
                   the actual root cause of the camera overflowing the frame.
@@ -1299,7 +1336,8 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
                 once the preview is confirmed stable across devices. */}
             {scannerReady && videoDiag && (
               <div style={{ marginTop: '10px', padding: '8px 10px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontFamily: 'monospace', fontSize: '9.5px', color: '#8B8FA8', lineHeight: 1.6 }}>
-                <div style={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '2px' }}>Video diagnostics (temporary)</div>
+                <div style={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '2px' }}>Video diagnostics (build: heightpx-v6)</div>
+                <div>box {videoDiag.box} · mount {videoDiag.mount} · hpx {videoDiag.hpx}</div>
                 <div>native {videoDiag.native} · rendered {videoDiag.rendered}</div>
                 <div>rect {videoDiag.rect}</div>
                 <div>readyState {videoDiag.readyState} · paused {String(videoDiag.paused)} · frame Δ {videoDiag.frameDeltaMs}ms/s</div>
