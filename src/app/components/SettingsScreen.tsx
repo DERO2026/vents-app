@@ -3,7 +3,7 @@ import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import { REGION } from '../../lib/regionConfig';
 import {
-  ArrowLeft, User, Bell, Shield, HelpCircle, LogOut, MessageCircle,
+  ArrowLeft, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
   Eye, EyeOff, Check, Clock, MessageSquare,
@@ -1526,8 +1526,8 @@ export function SettingsScreen({
         )}
 
         <Section title="ACCOUNT">
-          <SettingRow icon={User} label="Profile Details" onPress={() => setSubScreen('profile')} />
-          <Divider />
+          {/* "Profile Details" row removed — it duplicated the Edit button on the
+              Profile Card above (both open the same editor). */}
           <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
         </Section>
 

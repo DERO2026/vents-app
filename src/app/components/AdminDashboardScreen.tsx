@@ -8,7 +8,8 @@ import {
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
-import { isRoot as permIsRoot, isAdminTier as permIsAdminTier } from '../../lib/permissions';
+import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
+import { AdminActionsTab } from './AdminActionsTab';
 import { sendSMS } from '../../lib/sendchamp';
 import { extractEventsFromText, publishEvents, isEventExtractionConfigured, type ImportedEvent } from '../../lib/eventImporter';
 
@@ -41,7 +42,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -592,6 +593,23 @@ export function AdminDashboardScreen({
       }
     })();
   }, [currentUser?.id]);
+
+  // ── Admin Actions approval queue: pending-request badge (Super Admins) ───────
+  const isSuperAdmin = permIsSuperAdmin(currentUser);
+  const [pendingActionCount, setPendingActionCount] = useState(0);
+  const refreshPendingCount = useCallback(async () => {
+    if (!isSuperAdmin) { setPendingActionCount(0); return; }
+    try {
+      const { data } = await insforge.database.rpc('admin_pending_request_count' as any, {});
+      setPendingActionCount(Number(data) || 0);
+    } catch { /* ignore */ }
+  }, [isSuperAdmin]);
+  useEffect(() => {
+    refreshPendingCount();
+    const id = setInterval(refreshPendingCount, 20000); // near-real-time badge
+    return () => clearInterval(id);
+  }, [refreshPendingCount]);
+
   const [tab, setTab] = useState<Tab>('users');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -1578,7 +1596,8 @@ export function AdminDashboardScreen({
   const statusColour = (status: string) =>
     status === 'active' ? '#10B981' : status === 'suspended' ? '#F59E0B' : '#EF4444';
 
-  const tabs = [
+  const tabs: { key: Tab; label: string; icon: React.ReactNode; badge?: number }[] = [
+    { key: 'admin-actions' as Tab, label: isSuperAdmin ? 'Admin Actions' : 'My Requests', icon: <Bell size={14} />, badge: pendingActionCount },
     { key: 'users' as Tab, label: 'Users', icon: <Users size={14} /> },
     { key: 'deleted' as Tab, label: 'Deleted Users', icon: <Trash2 size={14} /> },
     { key: 'events' as Tab, label: 'Events', icon: <Shield size={14} /> },
@@ -1640,6 +1659,11 @@ export function AdminDashboardScreen({
             }}
           >
             {t.icon}{t.label}
+            {!!t.badge && t.badge > 0 && (
+              <span style={{ minWidth: '18px', height: '18px', padding: '0 5px', borderRadius: '100px', background: '#EF4444', color: '#fff', fontSize: '10px', fontWeight: 800, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 0 8px rgba(239,68,68,0.5)' }}>
+                {t.badge > 99 ? '99+' : t.badge}
+              </span>
+            )}
           </button>
         ))}
       </div>
@@ -1657,6 +1681,13 @@ export function AdminDashboardScreen({
               <UserCheck size={14} /><span>{successMessage}</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ════════════════ ADMIN ACTIONS (approval queue) ═══════════════════ */}
+      {tab === 'admin-actions' && (
+        <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
+          <AdminActionsTab isSuperAdmin={isSuperAdmin} flash={flash} onCountChange={refreshPendingCount} />
         </div>
       )}
 
