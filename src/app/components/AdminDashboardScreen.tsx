@@ -8,6 +8,7 @@ import {
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { isRoot as permIsRoot, isAdminTier as permIsAdminTier } from '../../lib/permissions';
 import { sendSMS } from '../../lib/sendchamp';
 import { extractEventsFromText, publishEvents, isEventExtractionConfigured, type ImportedEvent } from '../../lib/eventImporter';
 
@@ -568,9 +569,29 @@ export function AdminDashboardScreen({
   onBack: () => void;
   currentUser: any;
 }) {
-  const isRoot = currentUser?.id === ROOT_UID;
+  // Authorization tiers come from the shared single-source-of-truth helpers
+  // (src/lib/permissions.ts), which mirror the backend is_root/is_super_admin/
+  // is_admin gates exactly — the UI and RPC gates can no longer drift.
+  const isRoot = permIsRoot(currentUser);
   const isSubAdmin = currentUser?.role === 'sub-admin';
-  const isAdminOrSubAdmin = currentUser?.role === 'admin' || isSubAdmin || isRoot;
+  const isAdminOrSubAdmin = permIsAdminTier(currentUser);
+
+  // Detailed permission logging: on mount, ask the backend who it thinks we are
+  // and what it resolves us to (authenticated uid, role, and each tier flag),
+  // so any future "access denied" is diagnosable against the server's own view
+  // rather than guessed from the client.
+  useEffect(() => {
+    (async () => {
+      try {
+        const { data, error } = await insforge.database.rpc('whoami_admin' as any, {});
+        // eslint-disable-next-line no-console
+        console.info('[VENTS admin-auth] resolved permissions', { client: { id: currentUser?.id, role: currentUser?.role }, server: data, error });
+      } catch (e) {
+        // eslint-disable-next-line no-console
+        console.warn('[VENTS admin-auth] whoami_admin failed', e);
+      }
+    })();
+  }, [currentUser?.id]);
   const [tab, setTab] = useState<Tab>('users');
   const [users, setUsers] = useState<UserRow[]>([]);
   const [logs, setLogs] = useState<AuditLog[]>([]);

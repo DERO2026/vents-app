@@ -34,6 +34,24 @@ const ROLE_CAPABILITIES: Record<string, Capability[]> = {
 // whatever role string happens to be on its row.
 export const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
+// ── Admin-console authorization tiers ────────────────────────────────────────
+// Single source of truth for admin-console UI gating, mirroring the backend
+// helpers EXACTLY (public.is_root / public.is_super_admin / public.is_admin) so
+// the UI and the RPC gates can never drift:
+//   isRoot        → the one platform super-root account (by fixed UID)
+//   isSuperAdmin  → Root OR full Admin           (ELEVATED: role changes, system)
+//   isAdminTier   → Root OR Admin OR Sub-Admin   (GENERAL admin-console access)
+// Every admin surface must use these instead of hand-rolling role-string checks.
+export function isRoot(user: PermissionUser | null | undefined): boolean {
+  return !!user && user.id === ROOT_UID;
+}
+export function isSuperAdmin(user: PermissionUser | null | undefined): boolean {
+  return isRoot(user) || user?.role === 'admin';
+}
+export function isAdminTier(user: PermissionUser | null | undefined): boolean {
+  return isRoot(user) || user?.role === 'admin' || user?.role === 'sub-admin';
+}
+
 export interface PermissionUser {
   id?: string | null;
   role?: string | null;
