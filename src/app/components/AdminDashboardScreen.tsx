@@ -859,40 +859,38 @@ export function AdminDashboardScreen({
 
   const handleApproveCac = async (requestId: string) => {
     setCacActionLoading(requestId);
-    try {
-      const { error } = await insforge.database.rpc('admin_approve_organizer_verification' as any, { p_request_id: requestId });
-      if (error) throw new Error(error.message);
-      flash(true, 'Brand verified ✓');
-      setExpandedCacId(null);
-      await loadCacRequests();
-      loadVerifyStats();
-      notifyByEmail('cac', requestId, 'approved');
-    } catch (e: any) {
-      flash(false, e.message || 'Approval failed');
-    } finally {
-      setCacActionLoading(null);
-    }
+    await submitOrExecute('organizer_verification_approve',
+      { target_type: 'verification', target_id: requestId, target_label: 'Organizer verification', payload: { request_id: requestId } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_approve_organizer_verification' as any, { p_request_id: requestId });
+        if (error) throw new Error(error.message);
+        flash(true, 'Brand verified ✓');
+        await loadCacRequests();
+        loadVerifyStats();
+        notifyByEmail('cac', requestId, 'approved');
+      });
+    setExpandedCacId(null);
+    setCacActionLoading(null);
   };
 
   const handleRejectCac = async (requestId: string) => {
     const reason = cacRejectReason.trim();
     if (!reason) { flash(false, 'A rejection reason is required'); return; }
     setCacActionLoading(requestId);
-    try {
-      const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason });
-      if (error) throw new Error(error.message);
-      flash(false, 'Verification rejected');
-      setExpandedCacId(null);
-      setCacRejectingId(null);
-      setCacRejectReason('');
-      await loadCacRequests();
-      loadVerifyStats();
-      notifyByEmail('cac', requestId, 'rejected', reason);
-    } catch (e: any) {
-      flash(false, e.message || 'Rejection failed');
-    } finally {
-      setCacActionLoading(null);
-    }
+    await submitOrExecute('organizer_verification_reject',
+      { target_type: 'verification', target_id: requestId, target_label: 'Organizer verification', payload: { request_id: requestId, reason } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason });
+        if (error) throw new Error(error.message);
+        flash(false, 'Verification rejected');
+        await loadCacRequests();
+        loadVerifyStats();
+        notifyByEmail('cac', requestId, 'rejected', reason);
+      });
+    setExpandedCacId(null);
+    setCacRejectingId(null);
+    setCacRejectReason('');
+    setCacActionLoading(null);
   };
 
   // The verification-docs bucket is private (RLS-gated to the uploader or an
@@ -952,28 +950,19 @@ export function AdminDashboardScreen({
       setVcMsg('A reason is required for admin transfers.'); return;
     }
     setVcTransferBusy(true); setVcMsg(null);
-    try {
-      const { error } = await insforge.database.rpc('admin_credit_vents_cents' as any, {
-        p_user_id: uid,
-        p_amount: Number(vcTransfer.amount),
-        p_reason: vcTransfer.reason.trim(),
+    const amt = Number(vcTransfer.amount); const rsn = vcTransfer.reason.trim();
+    const label = vcSelectedUser?.username || uid.slice(0, 8);
+    await submitOrExecute('credit_vents_cents',
+      { target_type: 'user', target_id: uid, target_label: label, payload: { amount: amt, reason: rsn }, changes: { credit_vc: amt } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_credit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
+        if (error) throw error;
+        setVcMsg(`✓ ${amt} VC credited to ${label}…`);
+        setVcTransfer({ userId: '', amount: '', reason: '' });
+        setVcSelectedUser(null); setVcSearch(''); setVcSearchResults([]);
       });
-      if (error) throw error;
-      await writeAuditLog(currentUser,'admin_vc_transfer', uid, {
-        amount: Number(vcTransfer.amount),
-        reason: vcTransfer.reason.trim(),
-        recipient: vcSelectedUser?.username || uid.slice(0, 8),
-      });
-      setVcMsg(`✓ ${vcTransfer.amount} VC credited to ${vcSelectedUser?.username || uid.slice(0, 8)}…`);
-      setVcTransfer({ userId: '', amount: '', reason: '' });
-      setVcSelectedUser(null);
-      setVcSearch('');
-      setVcSearchResults([]);
-    } catch (e: any) {
-      setVcMsg(e.message || 'Transfer failed.');
-    } finally {
-      setVcTransferBusy(false);
-    }
+    if (!isSuperAdmin) { setVcMsg('Request sent — waiting for Admin approval.'); setVcTransfer({ userId: '', amount: '', reason: '' }); }
+    setVcTransferBusy(false);
   };
 
   const handleVcAdminDebit = async () => {
@@ -985,27 +974,20 @@ export function AdminDashboardScreen({
       setVcDebitMsg('A reason is required for admin debits.'); return;
     }
     setVcDebitBusy(true); setVcDebitMsg(null);
-    try {
-      const { error } = await insforge.database.rpc('admin_debit_vents_cents' as any, {
-        p_user_id: uid,
-        p_amount: Number(vcDebit.amount),
-        p_reason: vcDebit.reason.trim(),
+    const amt = Number(vcDebit.amount); const rsn = vcDebit.reason.trim();
+    const label = vcSelectedUser?.username || uid.slice(0, 8);
+    await submitOrExecute('debit_vents_cents',
+      { target_type: 'user', target_id: uid, target_label: label, payload: { amount: amt, reason: rsn }, changes: { debit_vc: amt } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_debit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
+        if (error) throw error;
+        setVcDebitMsg(`✓ ${amt} VC debited from ${label}…`);
+        setVcDebit({ amount: '', reason: '' });
+        setVcTransfer({ userId: '', amount: '', reason: '' });
+        setVcSelectedUser(null); setVcSearch(''); setVcSearchResults([]);
       });
-      if (error) throw error;
-      // admin_debit_vents_cents already writes its own admin_logs row
-      // server-side (with an authoritative actor_role) — no client-side
-      // writeAuditLog call needed here.
-      setVcDebitMsg(`✓ ${vcDebit.amount} VC debited from ${vcSelectedUser?.username || uid.slice(0, 8)}…`);
-      setVcDebit({ amount: '', reason: '' });
-      setVcTransfer({ userId: '', amount: '', reason: '' });
-      setVcSelectedUser(null);
-      setVcSearch('');
-      setVcSearchResults([]);
-    } catch (e: any) {
-      setVcDebitMsg(e.message || 'Debit failed.');
-    } finally {
-      setVcDebitBusy(false);
-    }
+    if (!isSuperAdmin) { setVcDebitMsg('Request sent — waiting for Admin approval.'); setVcDebit({ amount: '', reason: '' }); }
+    setVcDebitBusy(false);
   };
 
   // System Controller state
@@ -1254,27 +1236,67 @@ export function AdminDashboardScreen({
   };
 
   const handleHideEvent = async (eventId: string) => {
-    try {
-      const { error } = await insforge.database.rpc('admin_hide_event', { p_event_id: eventId });
-      if (error) throw error;
-      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: true, hidden_at: new Date().toISOString() } : e));
-      flash(true, 'Event hidden from public feeds.');
-    } catch (err: any) { flash(false, err?.message || 'Failed to hide event.'); }
+    const label = events.find(e => e.id === eventId)?.title || eventId;
+    await submitOrExecute('hide_event',
+      { target_type: 'event', target_id: eventId, target_label: label, previous: { hidden_by_admin: false }, changes: { hidden_by_admin: true } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_hide_event', { p_event_id: eventId });
+        if (error) throw error;
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: true, hidden_at: new Date().toISOString() } : e));
+        flash(true, 'Event hidden from public feeds.');
+      });
   };
 
   const handleReinstateEvent = async (eventId: string) => {
-    try {
-      const { error } = await insforge.database.rpc('admin_reinstate_event', { p_event_id: eventId });
-      if (error) throw error;
-      setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: false, hidden_at: null } : e));
-      flash(true, 'Event reinstated.');
-    } catch (err: any) { flash(false, err?.message || 'Failed to reinstate event.'); }
+    const label = events.find(e => e.id === eventId)?.title || eventId;
+    await submitOrExecute('reinstate_event',
+      { target_type: 'event', target_id: eventId, target_label: label, previous: { hidden_by_admin: true }, changes: { hidden_by_admin: false } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_reinstate_event', { p_event_id: eventId });
+        if (error) throw error;
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: false, hidden_at: null } : e));
+        flash(true, 'Event reinstated.');
+      });
   };
 
   // ── Flash ────────────────────────────────────────────────────────────────────
   const flash = (ok: boolean, msg: string) => {
     if (ok) setSuccessMessage(msg); else setErrorMessage(msg);
     setTimeout(() => { setSuccessMessage(null); setErrorMessage(null); }, 3500);
+  };
+
+  // ── Maker-checker gate (single source of truth for every admin action) ───────
+  // Super Admins (Root + full Admin) execute immediately. Sub-Admins NEVER
+  // execute directly — the action is turned into an Admin Action Request and
+  // queued for approval. The backend independently enforces this (the underlying
+  // RPCs are Super-Admin-gated), so this is both the UX and a mirror of the
+  // server rule. `execute` runs ONLY for Super Admins.
+  const submitOrExecute = async (
+    actionType: string,
+    meta: { target_type: string; target_id?: string | null; target_label?: string | null; payload?: any; previous?: any; changes?: any },
+    execute: () => Promise<void>,
+  ): Promise<void> => {
+    if (isSuperAdmin) {
+      try { await execute(); } catch (e: any) { flash(false, e?.message || 'Action failed.'); }
+      return;
+    }
+    try {
+      const { error } = await insforge.database.rpc('request_admin_action' as any, {
+        p_action_type: actionType,
+        p_target_type: meta.target_type,
+        p_target_id: meta.target_id ?? null,
+        p_target_label: meta.target_label ?? null,
+        p_payload: meta.payload ?? {},
+        p_previous_values: meta.previous ?? null,
+        p_requested_changes: meta.changes ?? null,
+        p_device: typeof navigator !== 'undefined' ? navigator.userAgent : null,
+      });
+      if (error) throw error;
+      flash(true, 'Request sent — waiting for Admin approval.');
+      refreshPendingCount();
+    } catch (e: any) {
+      flash(false, e?.message || 'Could not submit request.');
+    }
   };
 
   // ── User actions ─────────────────────────────────────────────────────────────
@@ -1287,44 +1309,46 @@ export function AdminDashboardScreen({
       flash(false, 'Sub-Admins cannot alter Admin/Sub-Admin accounts.'); return;
     }
     setBusyId(userId);
-    try {
-      const { error } = await insforge.database.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
-      if (error) throw error;
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
-      flash(true, 'Role updated.');
-    } catch (err: any) {
-      flash(false, err?.message || 'Failed to update role.');
-    } finally { setBusyId(null); }
+    await submitOrExecute('set_user_role',
+      { target_type: 'user', target_id: userId, target_label: target?.username || target?.email || userId, payload: { new_role: newRole }, previous: { role: target?.role }, changes: { role: newRole } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
+        if (error) throw error;
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+        flash(true, 'Role updated.');
+      });
+    setBusyId(null);
   };
 
   // banDays: number of days, or null for permanent
   const handleSuspend = async (u: UserRow, banDays: number | null = null) => {
+    const label = u.username || u.email;
     if (u.status === 'suspended') {
       // Unban
       setBusyId(u.id);
-      try {
-        const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null }).eq('id', u.id);
-        if (error) throw error;
-        await writeAuditLog(currentUser,'unsuspend_user', u.id, { target_email: u.email });
-        setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
-        flash(true, 'User reactivated.');
-      } catch (err: any) {
-        flash(false, err?.message || 'Failed to unban.');
-      } finally { setBusyId(null); }
+      await submitOrExecute('unsuspend_user',
+        { target_type: 'user', target_id: u.id, target_label: label, previous: { status: 'suspended' }, changes: { status: 'active' } },
+        async () => {
+          const { error } = await insforge.database.rpc('admin_unsuspend_user', { p_user_id: u.id });
+          if (error) throw error;
+          setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
+          flash(true, 'User reactivated.');
+        });
+      setBusyId(null);
       return;
     }
     // Ban
     const bannedUntil = banDays ? new Date(Date.now() + banDays * 86400000).toISOString() : null;
     setBusyId(u.id);
-    try {
-      const { error } = await insforge.database.from('users').update({ status: 'suspended', banned_until: bannedUntil }).eq('id', u.id);
-      if (error) throw error;
-      await writeAuditLog(currentUser,'suspend_user', u.id, { target_email: u.email, ban_days: banDays ?? 'permanent', banned_until: bannedUntil });
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'suspended', banned_until: bannedUntil } : x));
-      flash(true, banDays ? `Banned for ${banDays} day(s).` : 'Permanently banned.');
-    } catch (err: any) {
-      flash(false, err?.message || 'Failed to ban.');
-    } finally { setBusyId(null); }
+    await submitOrExecute('suspend_user',
+      { target_type: 'user', target_id: u.id, target_label: label, payload: { banned_until: bannedUntil, ban_days: banDays ?? 'permanent' }, previous: { status: u.status }, changes: { status: 'suspended', banned_until: bannedUntil } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_suspend_user', { p_user_id: u.id, p_banned_until: bannedUntil, p_reason: null });
+        if (error) throw error;
+        setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'suspended', banned_until: bannedUntil } : x));
+        flash(true, banDays ? `Banned for ${banDays} day(s).` : 'Permanently banned.');
+      });
+    setBusyId(null);
   };
 
   const handleSoftDelete = (u: UserRow) => {
@@ -1338,50 +1362,46 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         setBusyId(u.id);
-        try {
-          const deletedAt = new Date().toISOString();
-          const { error } = await insforge.database.from('users')
-            .update({ status: 'deleted', deleted_at: deletedAt, deleted_by: currentUser.id, reason: reason.trim() || null })
-            .eq('id', u.id);
-          if (error) throw error;
-          await writeAuditLog(currentUser,'delete_user', u.id, { target_email: u.email, reason: reason.trim() || null });
-          // Deleted users no longer show in the main Users list — they move
-          // to the dedicated Deleted Users tab (queried on deleted_at).
-          setUsers(prev => prev.filter(x => x.id !== u.id));
-          flash(true, 'User deleted. Use Reinstate (Deleted Users tab) to restore.');
-        } catch (err: any) {
-          flash(false, err?.message || 'Failed to delete user.');
-        } finally { setBusyId(null); }
+        await submitOrExecute('soft_delete_user',
+          { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { reason: reason.trim() || null }, previous: { status: u.status }, changes: { status: 'deleted', reason: reason.trim() || null } },
+          async () => {
+            const { error } = await insforge.database.rpc('admin_soft_delete_user', { p_user_id: u.id, p_reason: reason.trim() || null });
+            if (error) throw error;
+            // Deleted users move to the dedicated Deleted Users tab.
+            setUsers(prev => prev.filter(x => x.id !== u.id));
+            flash(true, 'User deleted. Use Reinstate (Deleted Users tab) to restore.');
+          });
+        setBusyId(null);
       },
     });
   };
 
   const handleReinstate = async (u: UserRow) => {
     setBusyId(u.id);
-    try {
-      const { error } = await insforge.database.from('users').update({ status: 'active', banned_until: null, deleted_at: null, deleted_by: null, reason: null }).eq('id', u.id);
-      if (error) throw error;
-      await writeAuditLog(currentUser,'reinstate_user', u.id, { target_email: u.email, previous_status: u.status });
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null, deleted_at: null } : x));
-      setDeletedUsers(prev => prev.filter(x => x.id !== u.id));
-      flash(true, 'User reinstated.');
-    } catch (err: any) {
-      flash(false, err?.message || 'Failed to reinstate user.');
-    } finally { setBusyId(null); }
+    await submitOrExecute('reinstate_user',
+      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, previous: { status: u.status }, changes: { status: 'active' } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_reinstate_user', { p_user_id: u.id });
+        if (error) throw error;
+        setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null, deleted_at: null } : x));
+        setDeletedUsers(prev => prev.filter(x => x.id !== u.id));
+        flash(true, 'User reinstated.');
+      });
+    setBusyId(null);
   };
 
   const handleToggleVerify = async (u: UserRow) => {
     const newVerified = !u.is_verified;
     setBusyId(u.id);
-    try {
-      const { error } = await insforge.database.from('users').update({ is_verified: newVerified }).eq('id', u.id);
-      if (error) throw error;
-      await writeAuditLog(currentUser,'toggle_verification', u.id, { is_verified: newVerified, target_email: u.email });
-      setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_verified: newVerified } : x));
-      flash(true, `User ${newVerified ? 'verified ✓' : 'unverified'}.`);
-    } catch (err: any) {
-      flash(false, err?.message || 'Failed to update verification.');
-    } finally { setBusyId(null); }
+    await submitOrExecute('toggle_user_verified',
+      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { verified: newVerified }, previous: { is_verified: u.is_verified }, changes: { is_verified: newVerified } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_toggle_user_verified', { p_user_id: u.id, p_verified: newVerified, p_reason: null });
+        if (error) throw error;
+        setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_verified: newVerified } : x));
+        flash(true, `User ${newVerified ? 'verified ✓' : 'unverified'}.`);
+      });
+    setBusyId(null);
   };
 
   // ── System Controller actions (ROOT only) ─────────────────────────────────────
@@ -1606,7 +1626,10 @@ export function AdminDashboardScreen({
     { key: 'vc' as Tab, label: 'VC', icon: <Swords size={14} /> },
     { key: 'stats' as Tab, label: 'Stats', icon: <Zap size={14} /> },
     { key: 'verify' as Tab, label: 'Verify', icon: <BadgeCheck size={14} /> },
-    { key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> },
+    // Payouts stay Super-Admin-only: execution runs through the external
+    // Paystack transfer endpoints, which cannot be deferred/replayed by the SQL
+    // approval dispatcher, so there is no safe maker-checker path for them.
+    ...(isSuperAdmin ? [{ key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> }] : []),
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
     { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
