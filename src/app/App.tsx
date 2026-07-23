@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
-import { initPushAlert, setPushAlertSubscriber, trackPushEvent } from '../lib/pushAlert';
+import { registerPushNotifications, unregisterPushNotifications, trackPushEvent } from '../lib/pushNotifications';
 import { identifyUser, trackEvent } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
@@ -279,12 +279,8 @@ export default function App() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  // Mount-once: initPushAlert() itself guards against double-injection
-  // (module-level flag + a DOM check for an existing script tag), so this
-  // stays safe even under React 18 StrictMode's double-invoke in dev.
-  useEffect(() => {
-    initPushAlert();
-  }, []);
+  // Native push registration happens after login (handleAuthSuccess), once we
+  // have a user to key the device token to — no mount-time work needed here.
 
   // Keep currentUser.role in sync with the DB. Without this, a role change
   // made server-side (e.g. Root promoting someone to Sub-Admin from the
@@ -1354,7 +1350,9 @@ export default function App() {
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
     setCurrentUser(enriched);
-    setPushAlertSubscriber(userProfile.id, userProfile.email);
+    // Register this device for native push (no-op on web); token is synced to
+    // the backend keyed to the user.
+    registerPushNotifications(userProfile.id);
     identifyUser(userProfile.id, { email: userProfile.email, role: userProfile.role, username: userProfile.username });
     setScreenStack([]);
     // Check if new user needs to pick interests
@@ -1368,6 +1366,8 @@ export default function App() {
 
   const handleSignOut = useCallback(async () => {
     setAuthLoading(true);
+    // Drop this device's push token so a signed-out user stops receiving pushes.
+    if (currentUser?.id) await unregisterPushNotifications(currentUser.id).catch(() => {});
     await clearRefreshToken();
     try {
       await insforge.auth.signOut();
@@ -1380,7 +1380,7 @@ export default function App() {
     setScreenStack([]);
     setActiveTab('home');
     setAuthLoading(false);
-  }, []);
+  }, [currentUser?.id]);
 
   // Screens where the bottom nav is visible for both roles.
   // Guests browse these screens too (home-first flow) — the nav must stay

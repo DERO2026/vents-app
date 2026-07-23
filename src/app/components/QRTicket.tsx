@@ -21,15 +21,22 @@ interface QRTicketProps {
 // dark-mode background so a phone camera can actually focus and lock on.
 function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Remember the last value drawn so a parent re-render (unrelated state) never
+  // re-encodes an identical QR — the encode + canvas paint only runs when the
+  // token actually changes.
+  const drawnRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!canvasRef.current) return;
-    QRCode.toCanvas(canvasRef.current, value, {
+    const canvas = canvasRef.current;
+    if (!canvas || drawnRef.current === value) return;
+    QRCode.toCanvas(canvas, value, {
       width: size,
       margin: 4,
       errorCorrectionLevel: 'L',
       color: { dark: '#0A0B14', light: '#ffffff' },
-    }).catch(console.error);
+    })
+      .then(() => { drawnRef.current = value; })
+      .catch(console.error);
   }, [value, size]);
 
   return (

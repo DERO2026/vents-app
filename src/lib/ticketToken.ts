@@ -29,6 +29,28 @@ function writeTokenCache(ticketId: string, token: string) {
 }
 
 /**
+ * Warm the token cache for a batch of tickets ahead of time (e.g. when the My
+ * Tickets list loads) so opening any one of them shows its QR instantly. Skips
+ * ids already cached, de-dupes, and fails silently offline. Fire-and-forget.
+ */
+export function prefetchTicketTokens(ticketIds: (string | null | undefined)[]): void {
+  const cache = readTokenCache();
+  const pending = Array.from(
+    new Set(ticketIds.filter((id): id is string => !!id && !cache[id]))
+  );
+  for (const ticketId of pending) {
+    insforge.database.rpc('generate_ticket_token' as any, { p_ticket_id: ticketId })
+      .then(
+        ({ data, error }: any) => {
+          if (error || !data) return;
+          writeTokenCache(ticketId, data as string);
+        },
+        () => { /* offline / unauthenticated — the QR screen will retry on open */ },
+      );
+  }
+}
+
+/**
  * Returns the signed v2 pass token for a ticket, or null until one is available
  * (from cache, or freshly minted). Callers render a "generating…" placeholder
  * while it's null rather than a QR that would be rejected at the door.

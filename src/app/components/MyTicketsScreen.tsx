@@ -1,8 +1,10 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
+import { ticketDisplayCode } from '../../lib/ticketCode';
+import { prefetchTicketTokens } from '../../lib/ticketToken';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -17,6 +19,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+
+  // Warm the signed-token cache for every visible ticket the moment the list
+  // loads, so tapping a ticket renders its QR instantly instead of showing
+  // "Generating secure pass…" while a token is minted on demand.
+  useEffect(() => {
+    prefetchTicketTokens(tickets.map((t) => t.ticketId));
+  }, [tickets]);
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -363,8 +372,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     }}
                   >
                     <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket ID</span>
-                    <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace' }}>
-                      {ticket.ticketId}
+                    <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                      {ticketDisplayCode(ticket.ticketId)}
                     </span>
                   </div>
                 </div>
