@@ -1123,6 +1123,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 value={forgotConfirmPassword}
                 onChange={setForgotConfirmPassword}
                 type={showForgotPassword ? 'text' : 'password'}
+                error={forgotConfirmPassword.length > 0 && forgotNewPassword !== forgotConfirmPassword ? 'Passwords do not match.' : undefined}
               />
             </div>
 

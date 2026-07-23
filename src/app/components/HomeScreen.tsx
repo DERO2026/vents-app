@@ -178,7 +178,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         boxShadow: '0 20px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.25)',
       }}
     >
-      <div style={{ aspectRatio: '3 / 4', position: 'relative' }}>
+      <div style={{ aspectRatio: '5 / 6', position: 'relative' }}>
         <ImageCarousel
           images={cardImages}
           alt={event.title}
@@ -238,37 +238,47 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             </span>
           )}
         </div>
-        <h4
-          style={{
-            color: '#F0F0FF',
-            fontSize: '12px',
-            fontWeight: 700,
-            lineHeight: 1.35,
-            marginBottom: '4px',
-            display: '-webkit-box',
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: 'vertical',
-            overflow: 'hidden',
-            height: '32px',
-          }}
-        >
-          {event.title}
-        </h4>
+        {/* Title and start time share one line — title truncates, time stays. */}
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
+          <h4
+            style={{
+              flex: 1,
+              minWidth: 0,
+              color: '#F0F0FF',
+              fontSize: '12px',
+              fontWeight: 700,
+              lineHeight: 1.35,
+              whiteSpace: 'nowrap',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+            }}
+          >
+            {event.title}
+          </h4>
+          {event.time && (
+            <span style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              {event.time}
+            </span>
+          )}
+        </div>
         {event.organizer && event.organizer !== 'Verified Organizer' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
             <BadgeChip tier={event.organizerVcBadge} />
           </div>
         )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-          <Calendar size={10} color="#94A3B8" />
-          <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px' }}>
-          <MapPin size={10} color="#94A3B8" />
-          <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '120px' }}>
-            {event.city}
-          </span>
+        {/* Date and city share one line to keep the card compact. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+            <Calendar size={10} color="#94A3B8" />
+            <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            <MapPin size={10} color="#94A3B8" />
+            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {event.city}
+            </span>
+          </div>
         </div>
         {countdown && (
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginBottom: '4px' }}>

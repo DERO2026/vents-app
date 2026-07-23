@@ -14,6 +14,7 @@ import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { Sentry } from '../../lib/sentry';
 import { ImageCropperModal } from './ImageCropperModal';
+import { ConfirmDialog } from './ConfirmDialog';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 
@@ -1408,10 +1409,11 @@ export function SettingsScreen({
   const [subScreen, setSubScreen] = useState<SubScreen>(null);
   const [clearingNotifs, setClearingNotifs] = useState(false);
   const [notifsCleared, setNotifsCleared] = useState(false);
+  const [showClearNotifsConfirm, setShowClearNotifsConfirm] = useState(false);
 
   const handleClearNotifications = async () => {
     if (!currentUser?.id || clearingNotifs) return;
-    if (!window.confirm('Clear all notification history? This cannot be undone.')) return;
+    setShowClearNotifsConfirm(false);
     setClearingNotifs(true);
     try {
       await getAuthToken();
@@ -1541,7 +1543,7 @@ export function SettingsScreen({
           <SettingRow
             icon={Trash2}
             label={clearingNotifs ? 'Clearing…' : notifsCleared ? 'Cleared ✓' : 'Clear Notification History'}
-            onPress={handleClearNotifications}
+            onPress={() => setShowClearNotifsConfirm(true)}
           />
         </Section>
 
@@ -1586,6 +1588,16 @@ export function SettingsScreen({
           VENTS v1.1.0 | © VENTS LTD
         </p>
       </div>
+
+      <ConfirmDialog
+        open={showClearNotifsConfirm}
+        title="Clear notification history?"
+        message="This will remove all notification history and cannot be undone."
+        confirmLabel="Clear"
+        danger
+        onConfirm={handleClearNotifications}
+        onCancel={() => setShowClearNotifsConfirm(false)}
+      />
     </div>
   );
 }

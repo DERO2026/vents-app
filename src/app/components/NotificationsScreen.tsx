@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Bell, Loader, Trash2 } from 'lucide-react';
 import { Notification } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { ConfirmDialog } from './ConfirmDialog';
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();
@@ -34,6 +35,7 @@ export function NotificationsScreen({
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [clearing, setClearing] = useState(false);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
   const swipeStartX = useRef<number | null>(null);
 
@@ -122,7 +124,7 @@ export function NotificationsScreen({
 
   const clearAllNotifications = async () => {
     if (!currentUser?.id || clearing) return;
-    if (!window.confirm('Clear all notifications? This cannot be undone.')) return;
+    setShowClearConfirm(false);
     setClearing(true);
     const prevItems = items;
     setItems([]);
@@ -222,7 +224,7 @@ export function NotificationsScreen({
           )}
           {items.length > 0 && (
             <button
-              onClick={clearAllNotifications}
+              onClick={() => setShowClearConfirm(true)}
               disabled={clearing}
               style={{
                 display: 'flex',
@@ -398,6 +400,16 @@ export function NotificationsScreen({
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={showClearConfirm}
+        title="Clear all notifications?"
+        message="This will remove every notification and cannot be undone."
+        confirmLabel="Clear All"
+        danger
+        onConfirm={clearAllNotifications}
+        onCancel={() => setShowClearConfirm(false)}
+      />
     </div>
   );
 }

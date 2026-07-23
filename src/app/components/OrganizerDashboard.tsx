@@ -399,7 +399,7 @@ export function OrganizerDashboard({
               flex: 1,
               background: 'rgba(123,47,190,0.15)',
               border: 'none',
-              borderRadius: '100px',
+              borderRadius: '16px',
               padding: '10px 20px',
               color: '#C084FC',
               fontFamily: 'Space Grotesk, sans-serif',
