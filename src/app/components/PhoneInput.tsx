@@ -133,7 +133,21 @@ export function PhoneInput({
   background = '#090514', borderColor = 'rgba(255,255,255,0.08)', radius = '12px',
 }: PhoneInputProps) {
   const [showPicker, setShowPicker] = useState(false);
-  const selected = COUNTRY_CODES.find((c) => c.code === countryCode) || DEFAULT_COUNTRY;
+
+  // Some dial codes are shared (+1 is USA and Canada). The parent stores only
+  // the dial code — deliberately, since both countries produce the identical
+  // E.164 number, so which one is chosen cannot change the value submitted.
+  // That makes the distinction purely a display concern, and it lives here:
+  // remember the entry the user actually tapped so the chip and the picker
+  // highlight stop snapping back to the first match (USA). If the dial code
+  // later changes to one this pick doesn't belong to, the filter below drops
+  // it and we fall back to the first match for that code.
+  const [pickedIso, setPickedIso] = useState<string | null>(null);
+  const matches = COUNTRY_CODES.filter((c) => c.code === countryCode);
+  const selected =
+    (pickedIso ? matches.find((c) => c.iso === pickedIso) : undefined) ||
+    matches[0] ||
+    DEFAULT_COUNTRY;
   const maxDigits = maxDigitsFor(selected);
   const displayValue = formatNationalNumber(value, selected);
 
@@ -203,14 +217,14 @@ export function PhoneInput({
                 <button
                   key={`${c.code}-${c.name}`}
                   type="button"
-                  onClick={() => { onCountryCodeChange(c.code); setShowPicker(false); }}
+                  onClick={() => { setPickedIso(c.iso); onCountryCodeChange(c.code); setShowPicker(false); }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: '12px',
                     width: '100%',
                     padding: '14px 20px',
-                    background: selected.name === c.name ? 'rgba(124,58,237,0.1)' : 'transparent',
+                    background: selected.iso === c.iso ? 'rgba(124,58,237,0.1)' : 'transparent',
                     border: 'none',
                     cursor: 'pointer',
                   }}
