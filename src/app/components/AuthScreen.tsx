@@ -119,6 +119,7 @@ function InputRow({
   type = 'text',
   right,
   error,
+  onEnter,
 }: {
   icon: React.ElementType;
   placeholder: string;
@@ -127,6 +128,8 @@ function InputRow({
   type?: string;
   right?: React.ReactNode;
   error?: string;
+  /** Submit the surrounding form when Enter is pressed in this field. */
+  onEnter?: () => void;
 }) {
   return (
     <div>
@@ -149,6 +152,7 @@ function InputRow({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onEnter ? (e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } } : undefined}
           style={INPUT_STYLE}
         />
         {right}
@@ -341,6 +345,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   );
 
   const handleEmailBlur = () => setEmailTouched(true);
+
+  // Pressing Enter in any auth field should do exactly what tapping the primary
+  // button does — including doing nothing when that button is disabled, so a
+  // stray Enter can't bypass validation the button already enforces.
+  const submitOnEnter = () => {
+    if (loading || !canSubmit) return;
+    handleSubmit();
+  };
 
   const fetchProfileAndSucceed = async (userId: string, userEmail: string, avatarUrl?: string) => {
     for (let i = 0; i < 20; i++) {
@@ -858,8 +870,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     };
     return (
       <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
-        <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(79,70,229,0.12)', border: '1px solid rgba(79,70,229,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
-          <ShieldCheck size={32} color="#818CF8" />
+        {/* Themed to the app's purple, not the stock indigo it shipped with. */}
+        <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
+          <ShieldCheck size={32} color="#A78BFA" />
         </div>
         <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
           Two-Factor Authentication
@@ -867,24 +880,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '28px', lineHeight: 1.5 }}>
           Enter the 6-digit code from your authenticator app.
         </p>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '8px' }}>
-          {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} style={{ width: '44px', height: '54px', background: '#090514', border: `1px solid ${totpCode.length > i ? 'rgba(129,140,248,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => totpInputRef.current?.focus()}>
-              <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700 }}>{totpCode[i] ?? ''}</span>
-            </div>
-          ))}
+        <div style={{ position: 'relative', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', gap: '10px', cursor: 'text' }}>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} style={{ width: '44px', height: '54px', background: '#090514', border: `1px solid ${totpCode.length > i ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700 }}>{totpCode[i] ?? ''}</span>
+              </div>
+            ))}
+          </div>
+          <input
+            ref={totpInputRef}
+            type="text"
+            inputMode="numeric"
+            pattern="\d*"
+            autoComplete="one-time-code"
+            maxLength={6}
+            value={totpCode}
+            onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onKeyDown={e => e.key === 'Enter' && handleTotpVerify()}
+            autoFocus
+            style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', opacity: 0, background: 'transparent', border: 'none', outline: 'none', fontSize: '16px', cursor: 'text', caretColor: 'transparent' }}
+          />
         </div>
-        <input
-          ref={totpInputRef}
-          type="tel"
-          inputMode="numeric"
-          maxLength={6}
-          value={totpCode}
-          onChange={e => setTotpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          onKeyDown={e => e.key === 'Enter' && handleTotpVerify()}
-          autoFocus
-          style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
-        />
         {totpError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px', marginBottom: '4px' }}>
             <AlertCircle size={14} color="#EF4444" />
@@ -1185,9 +1202,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </div>
             )}
 
-            <div 
-              onClick={() => otpInputRef.current?.focus()}
-              style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '24px', cursor: 'text' }}
+            {/* The boxes are decoration; the real field is a transparent input
+                laid over them. It used to be a 1px, pointer-events:none element
+                focused only via this onClick — which meant taps never reached
+                it and browsers could refuse focus on a zero-area invisible
+                control, so the keyboard never opened. */}
+            <div
+              style={{ position: 'relative', marginBottom: '24px' }}
+            >
+            <div
+              style={{ display: 'flex', justifyContent: 'center', gap: '8px', cursor: 'text' }}
             >
               {Array.from({ length: 6 }).map((_, i) => (
                 <div
@@ -1219,22 +1243,36 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             <input
               ref={otpInputRef}
               type="text"
+              inputMode="numeric"
               pattern="\d*"
+              autoComplete="one-time-code"
               maxLength={6}
               value={verificationCode}
               onChange={(e) => {
                 const val = e.target.value.replace(/\D/g, '');
                 setVerificationCode(val.slice(0, 6));
               }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && verificationCode.length === 6) handleVerifyOtp();
+              }}
               style={{
                 position: 'absolute',
+                inset: 0,
+                width: '100%',
+                height: '100%',
                 opacity: 0,
-                width: '1px',
-                height: '1px',
-                pointerEvents: 'none',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                // 16px keeps iOS from zooming the page when the field focuses.
+                fontSize: '16px',
+                cursor: 'text',
+                // Caret would otherwise show at the far left of the overlay.
+                caretColor: 'transparent',
               }}
               autoFocus
             />
+            </div>
 
             <button
               onClick={handleVerifyOtp}
@@ -1420,8 +1458,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     )}
                   </div>
 
-                  <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} />
-                  <InputRow icon={User} placeholder="Username" value={username} onChange={setUsername} />
+                  <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} onEnter={submitOnEnter} />
+                  <InputRow icon={User} placeholder="Username" value={username} onChange={setUsername} onEnter={submitOnEnter} />
                 </>
               )}
               {mode !== 'reset' && (
@@ -1433,6 +1471,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     onChange={(v) => { setEmail(v); if (emailTouched) setEmailTouched(true); setSuccessMessage(null); }}
                     type={mode === 'login' ? 'text' : 'email'}
                     error={emailError}
+                    onEnter={submitOnEnter}
                   />
                 </div>
               )}
@@ -1488,6 +1527,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   onChange={setPassword}
                   type={showPassword ? 'text' : 'password'}
                   error={passwordError}
+                  onEnter={submitOnEnter}
                   right={
                     <button
                       onClick={() => setShowPassword(!showPassword)}
@@ -1518,6 +1558,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   onChange={setConfirmPassword}
                   type={showPassword ? 'text' : 'password'}
                   error={confirmPasswordError}
+                  onEnter={submitOnEnter}
                 />
               )}
               {mode === 'signup' && (

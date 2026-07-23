@@ -1474,7 +1474,6 @@ export function HomeScreen({
                 style={{
                   flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
                   background: '#7B2FBE', border: 'none', color: '#fff', cursor: 'pointer',
-                  boxShadow: '0 4px 16px rgba(123,47,247,0.4)',
                 }}
               >Apply</button>
             </div>
