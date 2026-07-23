@@ -1804,11 +1804,9 @@ export function AdminDashboardScreen({
                           <span style={{ fontSize: '11px', color: '#A855F7', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Shield size={12} /> Root — role locked
                           </span>
-                        ) : isSubAdmin ? (
-                          // Block 19: role changes are a Super Admin action —
-                          // admin_set_user_role() now rejects Support Admins
-                          // (Sub-Admins) server-side regardless, so don't
-                          // show a dropdown that would just error on use.
+                        ) : isSubAdmin && ['admin', 'sub-admin'].includes(u.role) ? (
+                          // A Sub-Admin may never touch an Admin/Sub-Admin row,
+                          // even by request — handleRoleChange refuses it too.
                           <span style={{ fontSize: '11px', color: '#8B8FA8', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <Shield size={12} /> {u.role} — Super Admin only
                           </span>
@@ -1997,7 +1995,9 @@ export function AdminDashboardScreen({
                     </span>
                   </div>
                   <button
-                    onClick={() => ev.hidden_by_admin ? handleReinstateEvent(ev.id) : setConfirmModal({ title: 'Hide Event?', message: `Hide "${ev.title || 'this event'}" from all public feeds? You can reinstate it later.`, confirmLabel: 'Hide', danger: true, onConfirm: () => { setConfirmModal(null); handleHideEvent(ev.id); } })}
+                    onClick={() => ev.hidden_by_admin ? handleReinstateEvent(ev.id) : setConfirmModal({ title: 'Hide Event?', message: isSuperAdmin
+                        ? `Hide "${ev.title || 'this event'}" from all public feeds? You can reinstate it later.`
+                        : `Send a request to hide "${ev.title || 'this event'}"? It stays visible until an Admin approves it.`, confirmLabel: isSuperAdmin ? 'Hide' : 'Send Request', danger: true, onConfirm: () => { setConfirmModal(null); handleHideEvent(ev.id); } })}
                     style={{ background: ev.hidden_by_admin ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${ev.hidden_by_admin ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '6px 12px', color: ev.hidden_by_admin ? '#10B981' : '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                   >
                     {ev.hidden_by_admin ? 'Reinstate' : 'Hide'}
