@@ -1442,7 +1442,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   onCountryCodeChange={setPhoneCountryCode}
                   value={phone}
                   onChange={setPhone}
-                  height={45}
+                  height={52}
+                  background={FIELD_BG}
+                  borderColor={FIELD_BORDER}
+                  radius={FIELD_RADIUS}
                 />
               )}
               {mode === 'signup' && (
