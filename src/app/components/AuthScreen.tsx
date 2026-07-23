@@ -55,6 +55,16 @@ const INPUT_STYLE: React.CSSProperties = {
   fontFamily: 'Inter, sans-serif',
 };
 
+// Fields sit on a near-black radial background (#050010 → #020005). The old
+// #090514 fill was within a few percent of it, so inputs visually dissolved
+// into the page. These two constants keep every field — text rows, the date
+// input, the state picker — on one raised surface with a readable edge.
+const FIELD_BG = '#150B26';
+const FIELD_BORDER = 'rgba(255,255,255,0.16)';
+// Fields use a 16px radius; the submit button matches so the form reads as
+// one set of controls rather than a pill dropped under a stack of boxes.
+const FIELD_RADIUS = '16px';
+
 const BTN_PRIMARY: React.CSSProperties = {
   width: '100%',
   height: '52px',
@@ -63,7 +73,7 @@ const BTN_PRIMARY: React.CSSProperties = {
   justifyContent: 'center',
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
   border: 'none',
-  borderRadius: '100px',
+  borderRadius: FIELD_RADIUS,
   padding: '0 24px',
   color: '#fff',
   fontSize: '16px',
@@ -72,6 +82,20 @@ const BTN_PRIMARY: React.CSSProperties = {
   cursor: 'pointer',
   boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
 };
+
+// Profile photo limits. The file is cropped and re-encoded to JPEG before
+// upload, so this cap is about refusing absurd inputs early (and not burning a
+// mobile data plan decoding a 40MB RAW) rather than about the final object size.
+const MAX_AVATAR_BYTES = 8 * 1024 * 1024;
+const ALLOWED_AVATAR_TYPES = [
+  'image/jpeg', 'image/pjpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/heic', 'image/heif',
+];
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+  return `${Math.max(1, Math.round(bytes / 1024))}KB`;
+}
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
@@ -111,9 +135,9 @@ function InputRow({
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#090514',
-          border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
-          borderRadius: '16px',
+          background: FIELD_BG,
+          border: `1px solid ${error ? 'rgba(239,68,68,0.6)' : FIELD_BORDER}`,
+          borderRadius: FIELD_RADIUS,
           height: '52px',
           padding: '0 16px',
           gap: '12px',
@@ -213,11 +237,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [signupAvatarFile, setSignupAvatarFile] = useState<File | null>(null);
   const [signupAvatarPreview, setSignupAvatarPreview] = useState('');
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
 
   const handleUploadSignupAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
+    // Reset the input so picking the same file twice still fires onChange
+    // (otherwise a rejected file can't be re-selected after fixing nothing).
+    e.target.value = '';
     if (!file) return;
     setErrorMessage(null);
+
+    // accept="image/*" is only a picker hint — the user can switch the dialog
+    // to "All files" and choose anything, so the type must be checked here.
+    // Match on the real MIME type rather than the extension.
+    if (!ALLOWED_AVATAR_TYPES.includes(file.type)) {
+      setAvatarError('Please choose an image file (JPG, PNG, WebP, GIF or HEIC).');
+      return;
+    }
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError(`Image is ${formatBytes(file.size)} — the maximum is ${formatBytes(MAX_AVATAR_BYTES)}.`);
+      return;
+    }
+
+    setAvatarError(null);
     setCropImageSrc(URL.createObjectURL(file));
   };
 
@@ -247,6 +289,24 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     }
     return '';
   };
+
+  // Single source of truth for password strength, shared by the live checklist
+  // and the inline field error so the two can never disagree.
+  const passwordRules = [
+    { met: password.length >= 10, label: 'At least 10 characters' },
+    { met: /[a-z]/.test(password) && /[A-Z]/.test(password), label: 'Upper and lower case letters' },
+    { met: /\d/.test(password), label: 'At least one number' },
+  ];
+  const isSettingPassword = mode === 'signup' || mode === 'reset';
+  const unmetRuleCount = passwordRules.filter(r => !r.met).length;
+  // Only surface errors once the user has actually typed — an empty field on a
+  // freshly opened form is not a mistake yet.
+  const passwordError = isSettingPassword && password.length > 0 && unmetRuleCount > 0
+    ? `Password is missing ${unmetRuleCount} requirement${unmetRuleCount > 1 ? 's' : ''} below.`
+    : undefined;
+  const confirmPasswordError = isSettingPassword && confirmPassword.length > 0 && password !== confirmPassword
+    ? 'Passwords do not match.'
+    : undefined;
 
   const isEmailOrUsernameValid = (val: string) => {
     if (mode === 'login') {
@@ -863,7 +923,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       <style>{`
         ::-webkit-scrollbar { display: none; }
         input::placeholder { color: #94A3B8; }
-        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px #090514 inset !important; -webkit-text-fill-color: #FFFFFF !important; }
+        input:-webkit-autofill { -webkit-box-shadow: 0 0 0 1000px ${FIELD_BG} inset !important; -webkit-text-fill-color: #FFFFFF !important; }
         .auth-input-row:focus-within { border-color: #7B2FBE !important; }
         .auth-input-field:focus { border-color: #7B2FBE !important; outline: none; }
       `}</style>
@@ -939,7 +999,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 <div
                   key={i}
                   style={{
-                    width: '42px', height: '52px', background: '#090514',
+                    width: '42px', height: '52px', background: FIELD_BG,
                     border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
                     borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                   }}
@@ -1135,7 +1195,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   style={{
                     width: '42px',
                     height: '52px',
-                    background: '#090514',
+                    background: FIELD_BG,
                     border: `1.5px solid ${
                       verificationCode.length > i
                         ? '#A78BFA'
@@ -1338,7 +1398,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                       ref={signupFileInputRef}
                       onChange={handleUploadSignupAvatar}
                       style={{ display: 'none' }}
-                      accept="image/*"
+                      accept={ALLOWED_AVATAR_TYPES.join(',')}
                     />
                     <button
                       type="button"
@@ -1348,6 +1408,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     >
                       {avatarUploading ? 'Uploading...' : 'Upload Photo'}
                     </button>
+                    {avatarError ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '6px', maxWidth: '260px' }}>
+                        <AlertCircle size={12} color="#EF4444" style={{ flexShrink: 0 }} />
+                        <span style={{ color: '#EF4444', fontSize: '11px', textAlign: 'center' }}>{avatarError}</span>
+                      </div>
+                    ) : (
+                      <span style={{ color: '#8B8FA8', fontSize: '10px', marginTop: '6px' }}>
+                        JPG, PNG, WebP or GIF · max {formatBytes(MAX_AVATAR_BYTES)}
+                      </span>
+                    )}
                   </div>
 
                   <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} />
@@ -1396,9 +1466,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     }}
                     className="auth-input-field"
                     style={{
-                      width: '100%', maxWidth: '320px', height: '52px', background: '#090514',
-                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                      borderRadius: '16px', padding: '0 16px',
+                      width: '100%', maxWidth: '320px', height: '52px', background: FIELD_BG,
+                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.6)' : FIELD_BORDER}`,
+                      borderRadius: FIELD_RADIUS, padding: '0 16px',
                       color: dob ? '#FFFFFF' : '#94A3B8', fontSize: '15px',
                       outline: 'none', boxSizing: 'border-box',
                       colorScheme: 'dark',
@@ -1414,6 +1484,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   value={password}
                   onChange={setPassword}
                   type={showPassword ? 'text' : 'password'}
+                  error={passwordError}
                   right={
                     <button
                       onClick={() => setShowPassword(!showPassword)}
@@ -1424,16 +1495,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   }
                 />
               )}
-              {mode === 'signup' && password.length > 0 && (
+              {(mode === 'signup' || mode === 'reset') && password.length > 0 && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', padding: '2px 4px' }}>
-                  {[
-                    { met: password.length >= 10, label: 'At least 10 characters' },
-                    { met: /[a-z]/.test(password) && /[A-Z]/.test(password), label: 'Upper and lower case letters' },
-                    { met: /\d/.test(password), label: 'At least one number' },
-                  ].map(({ met, label }) => (
+                  {passwordRules.map(({ met, label }) => (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      {met ? <Check size={12} color="#10B981" /> : <X size={12} color="#8B8FA8" />}
-                      <span style={{ fontSize: '11px', color: met ? '#10B981' : '#8B8FA8' }}>{label}</span>
+                      {met ? <Check size={12} color="#10B981" /> : <X size={12} color="#EF4444" />}
+                      {/* Unmet rules read as errors, not as neutral hints — grey
+                          made a blocking requirement look optional. */}
+                      <span style={{ fontSize: '11px', color: met ? '#10B981' : '#EF4444' }}>{label}</span>
                     </div>
                   ))}
                 </div>
@@ -1445,6 +1514,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   value={confirmPassword}
                   onChange={setConfirmPassword}
                   type={showPassword ? 'text' : 'password'}
+                  error={confirmPasswordError}
                 />
               )}
               {mode === 'signup' && (
@@ -1456,9 +1526,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     style={{
                       display: 'flex',
                       alignItems: 'center',
-                      background: '#090514',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '14px',
+                      background: FIELD_BG,
+                      border: `1px solid ${FIELD_BORDER}`,
+                      borderRadius: FIELD_RADIUS,
                       padding: '14px 16px',
                       gap: '12px',
                       position: 'relative',
