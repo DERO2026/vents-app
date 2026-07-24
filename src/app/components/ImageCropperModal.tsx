@@ -4,6 +4,7 @@ import Cropper from 'react-easy-crop';
 import { X, Check, Crop as CropIcon } from 'lucide-react';
 import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { EventCardImage } from './EventCardImage';
+import { computeSmartCrop, type AreaPct } from '../../lib/smartCrop';
 
 interface ImageCropperModalProps {
   imageSrc: string;
@@ -96,7 +97,7 @@ function haptic(pattern: number | number[] = 8) {
 }
 
 const GUIDANCE =
-  'Your flyer becomes a portrait (4:5) master and is optimized for every VENTS card. Keep faces, titles, and logos inside the safe area — you can drag and zoom out to fit the whole flyer.';
+  'Keep important text, faces and logos inside the highlighted safe area to ensure they appear correctly across VENTS. Your flyer becomes a portrait (4:5) master — drag or zoom out to fit the whole image.';
 
 // The card contexts previewed live. All share the portrait image box, so one
 // rendered master is faithful to each; Event Details just uses a larger radius.
@@ -132,6 +133,8 @@ export function ImageCropperModal({
 
   const bitmapRef = useRef<Bitmap | null>(null);
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null);
+  const [smartCrop, setSmartCrop] = useState<AreaPct | null>(null);
+  const [cropperReady, setCropperReady] = useState(!isFlyer);
 
   const aspect = isFlyer
     ? (ratioKey === 'original' ? (naturalAspect ?? EVENT_CARD_ASPECT)
@@ -143,12 +146,18 @@ export function ImageCropperModal({
   useEffect(() => {
     if (!isFlyer) return;
     let alive = true;
+    // Fallback so a slow decode never blocks the cropper (centered crop).
+    const fallback = window.setTimeout(() => { if (alive) setCropperReady(true); }, 1400);
     decodeImage(imageSrc).then((bmp) => {
       if (!alive) return;
       bitmapRef.current = bmp;
       if (bmp.width && bmp.height) setNaturalAspect(bmp.width / bmp.height);
-    }).catch(() => {});
-    return () => { alive = false; };
+      // Content-aware smart initial crop for the master (portrait) ratio.
+      try { setSmartCrop(computeSmartCrop(bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
+      window.clearTimeout(fallback);
+      setCropperReady(true);
+    }).catch(() => { window.clearTimeout(fallback); setCropperReady(true); });
+    return () => { alive = false; window.clearTimeout(fallback); };
   }, [imageSrc, isFlyer]);
 
   // Dynamic minimum zoom: the whole flyer must always be viewable, whatever its
@@ -224,8 +233,10 @@ export function ImageCropperModal({
         </button>
       </div>
 
-      {/* Cropper */}
+      {/* Cropper — gated until the smart initial crop is computed (flyer) so it
+          mounts with the focus-aware crop already applied. */}
       <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
+        {cropperReady && (
         <Cropper
           image={imageSrc}
           crop={crop}
@@ -238,6 +249,7 @@ export function ImageCropperModal({
           showGrid={isFlyer}
           restrictPosition={!isFlyer}
           objectFit="cover"
+          initialCroppedAreaPercentages={isFlyer && ratioKey === 'card' && smartCrop ? smartCrop : undefined}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={onCropCompleteCallback}
@@ -246,14 +258,15 @@ export function ImageCropperModal({
           onInteractionStart={() => haptic(5)}
           style={{ cropAreaStyle: { borderRadius: isFlyer ? '22px' : '0', border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 0 0 9999px rgba(2,0,5,0.62)' } }}
         />
+        )}
 
         {/* Safe-area overlay, aligned to the real crop frame */}
         {isFlyer && cropSize && (
           <div aria-hidden style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: cropSize.width, height: cropSize.height, pointerEvents: 'none', borderRadius: '22px', overflow: 'hidden' }}>
             <div style={{ position: 'absolute', top: '8%', left: '7%', right: '7%', bottom: '11%', border: '1.5px dashed rgba(255,255,255,0.55)', borderRadius: '14px' }} />
-            <span style={zoneLabel('top')}>Logo</span>
+            <span style={zoneLabel('top')}>Logos · Sponsors</span>
             <span style={zoneLabel('center')}>Faces · Title</span>
-            <span style={zoneLabel('bottom')}>Key info</span>
+            <span style={zoneLabel('bottom')}>Dates · Info</span>
           </div>
         )}
       </div>
