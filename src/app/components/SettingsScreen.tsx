@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { analytics } from '../../lib/analyticsEvents';
 import { sanitize } from '../../lib/sanitize';
 import { REGION } from '../../lib/regionConfig';
 import {
@@ -396,6 +397,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         p_business_phone: `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}`,
       });
       if (rpcError) throw rpcError;
+      analytics.organizerVerificationSubmitted();
 
       // 4. Success confirmation, then land on the Pending status page.
       if (!mountedRef.current) return;
@@ -815,6 +817,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         .eq('id', currentUser.id);
 
       if (error) throw error;
+      analytics.profileUpdated();
       if (onProfileUpdated) {
         onProfileUpdated({
           full_name: sanitize(name),

@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
-import { registerPushNotifications, unregisterPushNotifications, trackPushEvent } from '../lib/pushNotifications';
-import { identifyUser, trackEvent, capturePageview } from '../lib/analytics';
+import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
+import { identifyUser, capturePageview } from '../lib/analytics';
+import { analytics } from '../lib/analyticsEvents';
 import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
@@ -1174,7 +1175,7 @@ export default function App() {
   }, []);
 
   const handleEventPress = useCallback((event: Event) => {
-    trackEvent('event_viewed', { eventId: event.id });
+    analytics.eventViewed({ eventId: event.id, eventTitle: event.title, category: event.category });
     // Jumping straight from one event's details to another (e.g. tapping a
     // "Related Events" card) — stash the current event so Back can restore
     // it instead of getting stuck (see eventHistoryStack above).
@@ -1241,8 +1242,17 @@ export default function App() {
               message: `Your ticket for ${ticket.event.title} has been confirmed! Check the Vents app for your QR code. - Vents`,
             }).catch(() => {});
           }
-          trackPushEvent('ticket_purchased', { eventId: ticket.event.id, eventTitle: ticket.event.title });
-          trackEvent('ticket_booked', { eventId: ticket.event.id, amount: ticket.totalAmount });
+          // Single canonical purchase-completion event (fired here, at the real
+          // RPC success — not in CheckoutScreen, which used to double/triple-count).
+          analytics.ticketPurchased({
+            eventId: ticket.event.id,
+            eventTitle: ticket.event.title,
+            ticketType: ticket.ticketType?.name,
+            quantity: ticket.quantity,
+            amount: ticket.totalAmount,
+            free: (ticket.totalAmount ?? 0) === 0,
+            reference: ticket.ticketId ?? undefined,
+          });
 
           // 3.6: Ticket confirmation notification
           insforge.database.from('notifications').insert([{
@@ -1305,7 +1315,7 @@ export default function App() {
     }
 
     const isSaved = savedEvents.includes(eventId);
-    trackEvent(isSaved ? 'event_unsaved' : 'event_saved', { eventId });
+    analytics.eventSaveToggled(eventId, !isSaved);
     // Optimistic update
     setSavedEvents((prev) =>
       isSaved ? prev.filter((id) => id !== eventId) : [...prev, eventId]
@@ -1379,6 +1389,7 @@ export default function App() {
 
   const handleSignOut = useCallback(async () => {
     setAuthLoading(true);
+    analytics.loggedOut();
     // Drop this device's push token so a signed-out user stops receiving pushes.
     if (currentUser?.id) await unregisterPushNotifications(currentUser.id).catch(() => {});
     await clearRefreshToken();
@@ -1968,8 +1979,12 @@ export default function App() {
               onBack={() => { setEditingEventId(null); goBack(); }}
               editEventId={editingEventId || undefined}
               onCreated={(event) => {
-                trackPushEvent('event_created', { eventId: event.id, eventTitle: event.title });
-                trackEvent('event_created', { eventId: event.id });
+                if (editingEventId) {
+                  analytics.eventEdited(event.id);
+                } else {
+                  const priceNum = parseFloat(String(event.ticketPrice).replace(/[^0-9.]/g, '')) || 0;
+                  analytics.eventCreated({ eventId: event.id, isFree: priceNum === 0, price: priceNum });
+                }
                 setOrgEvents((prev) => [event, ...prev]);
                 fetchEvents(true);
                 setOrgTab('home');

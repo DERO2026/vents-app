@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
 
 interface PromoteEventScreenProps {
@@ -131,6 +132,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             throw new Error(err.error || 'Activation failed');
           }
 
+          analytics.eventPromoted(selectedEventId, selectedPlan);
           setPaid(true);
           if (onPromoted) onPromoted();
         } catch (err: any) {

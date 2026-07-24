@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { analytics } from '../../lib/analyticsEvents';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -265,6 +266,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         p_bank_account_id: payoutAccountId,
       });
       if (error) throw new Error(error.message);
+      analytics.withdrawalRequested(kobo);
       setShowWithdraw(false);
       setWithdrawAmount('');
       await load();

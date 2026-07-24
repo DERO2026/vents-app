@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Bell, Loader, Trash2 } from 'lucide-react';
 import { Notification } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { analytics } from '../../lib/analyticsEvents';
 import { ConfirmDialog } from './ConfirmDialog';
 
 function formatRelativeTime(isoString: string): string {
@@ -94,6 +95,8 @@ export function NotificationsScreen({
 
   const markRead = async (id: string) => {
     try {
+      const opened = items.find((n) => n.id === id);
+      if (opened && !opened.read) analytics.notificationOpened((opened as any).type);
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
       const { error } = await insforge.database
         .from('notifications')

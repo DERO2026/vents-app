@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { useSignedTicketToken } from '../../lib/ticketToken';
+import { analytics } from '../../lib/analyticsEvents';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -63,6 +64,11 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const ticketCardRef = useRef<HTMLDivElement>(null);
   const signedToken = useSignedTicketToken(ticket.ticketId);
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
+
+  // Track when a holder opens their ticket QR (fires once per open).
+  useEffect(() => {
+    if (ticket.event?.id) analytics.ticketQrViewed(ticket.event.id);
+  }, [ticket.event?.id]);
 
   const handleShare = async () => {
     // Never include the raw ticket_id — only the signed token is ever a

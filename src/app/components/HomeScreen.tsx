@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
+import { analytics } from '../../lib/analyticsEvents';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatPrice } from './data';
@@ -763,6 +764,7 @@ export function HomeScreen({
   const [searchResults, setSearchResults] = useState<Event[] | null>(null);
   const [searchLoading, setSearchLoading] = useState(false);
 
+  const searchTrackTimer = useRef<number | null>(null);
   useEffect(() => {
     const q = searchQuery.trim();
     if (!q) { setSearchResults(null); setSearchLoading(false); return; }
@@ -795,13 +797,23 @@ export function HomeScreen({
           return { ...evt, bookingsCount: bookings, attendees: bookings };
         });
         if (!cancelled) setSearchResults(mapped);
+        // Debounced analytics: only log the search once the query settles
+        // (~900ms after the last keystroke), with the final result count —
+        // avoids one event per character typed.
+        if (searchTrackTimer.current) window.clearTimeout(searchTrackTimer.current);
+        searchTrackTimer.current = window.setTimeout(() => {
+          analytics.searchPerformed(q.length, mapped.length);
+        }, 900);
       } catch {
         if (!cancelled) setSearchResults([]);
       } finally {
         if (!cancelled) setSearchLoading(false);
       }
     })();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      if (searchTrackTimer.current) window.clearTimeout(searchTrackTimer.current);
+    };
   }, [searchQuery, currentUser]);
 
   // People search state (for full-screen search overlay)

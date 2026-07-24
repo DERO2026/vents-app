@@ -7,7 +7,7 @@ import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
-import { trackEvent } from '../../lib/analytics';
+import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
@@ -462,6 +462,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           email: email.trim().toLowerCase(),
         });
         if (error) throw error;
+        analytics.passwordResetRequested();
         setForgotSent(true);
         setForgotOtpStep(true);
 
@@ -613,10 +614,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         }
 
         if (data?.requireEmailVerification) {
-          trackEvent('user_signed_up', { role: strictRole });
+          analytics.signedUp(strictRole);
           setIsVerifying(true);
         } else if (data?.accessToken && data?.user) {
-          trackEvent('user_signed_up', { role: strictRole });
+          analytics.signedUp(strictRole);
           const avatarUrl = await uploadAvatarIfPending();
           await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
         }
@@ -706,6 +707,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           }
 
           localStorage.removeItem('auth_attempts');
+          analytics.loggedIn('password');
           onSuccess(profilePayload);
         }
       }
@@ -861,6 +863,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (valid) {
         setTotpPending(null);
         setTotpCode('');
+        analytics.loggedIn('2fa');
         onSuccess(totpPending.profilePayload);
       } else {
         setTotpError('Incorrect code. Try again — codes refresh every 30 seconds.');

@@ -3,7 +3,7 @@ import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users, CheckCircle2 
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
-import { trackEvent } from '../../lib/analytics';
+import { analytics } from '../../lib/analyticsEvents';
 import { insforge } from '../../lib/insforge';
 
 interface CheckoutScreenProps {
@@ -218,14 +218,17 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       attendees: buildAttendees(purchaserName, purchaserEmail),
       promoCode: promoApplied ? promoCode.trim() : undefined,
     };
-    trackEvent('ticket_purchase_completed', { eventId: event?.id, ticketType: ticketType?.name, quantity, total: 0, free: true });
+    // Completion is tracked once, downstream, when purchase_ticket succeeds
+    // (App.handleTicketPurchase → analytics.ticketPurchased). Here we only
+    // record the intent so the funnel has a start → complete pair.
+    analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: 0, free: true });
     onSuccess(ticket);
   };
 
   const handlePay = () => {
     setPayError(null);
     setAttendeesTouched(true);
-    trackEvent('checkout_initiated', { eventId: event?.id, ticketType: ticketType?.name, quantity, total });
+    analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
 
     const payerEmail = currentUser?.email || email.trim();
     if (!payerEmail || !isValidEmail(payerEmail)) {
@@ -306,7 +309,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             attendees: buildAttendees(purchaserName, payerEmail),
             promoCode: promoApplied ? promoCode.trim() : undefined,
           };
-          trackEvent('ticket_purchase_completed', { eventId: event.id, ticketType: ticketType.name, quantity, total });
+          // Purchase completion tracked downstream (App.handleTicketPurchase).
           onSuccess(ticket);
           setPaymentLoading(false);
         },
@@ -315,7 +318,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         },
       });
 
-      trackEvent('ticket_purchase_initiated', { eventId: event.id, ticketType: ticketType.name, quantity, total, reference });
       handler.openIframe();
     } catch (err: any) {
       setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));

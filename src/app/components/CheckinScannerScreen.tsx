@@ -19,6 +19,7 @@ import { useQrScanner } from './scanner/useQrScanner';
 import { ScannerFrame } from './scanner/ScannerFrame';
 import { ScanResultCard } from './scanner/ScanResultCard';
 import { validateTicket, type ScanOutcome } from './scanner/ticketValidation';
+import { analytics } from '../../lib/analyticsEvents';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -124,6 +125,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
         setStats((s) => ({ checkedIn: s.checkedIn + 1, total: Math.max(s.total, s.checkedIn + 1) }));
         loadStats(false);
       }
+      analytics.ticketScanned(result.status, selectedEvent?.id ?? undefined);
       setOutcome(result);
       later(() => {
         setOutcome(null);
