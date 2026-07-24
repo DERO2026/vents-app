@@ -1,3 +1,5 @@
+import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
+
 const shimmerStyle: React.CSSProperties = {
   background: 'linear-gradient(90deg, #1a1d2e 25%, #252840 50%, #1a1d2e 75%)',
   backgroundSize: '800px 100%',
@@ -33,7 +35,7 @@ export function SkeletonCard({ variant = 'event' }: SkeletonCardProps) {
           overflow: 'hidden',
         }}
       >
-        <div style={{ aspectRatio: '3 / 4', ...shimmerStyle, borderRadius: 0 }} />
+        <div style={{ aspectRatio: EVENT_CARD_ASPECT_CSS, ...shimmerStyle, borderRadius: 0 }} />
         <div style={{ padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <div style={{ height: '16px', width: '75%', ...shimmerStyle }} />
           <div style={{ height: '12px', width: '50%', ...shimmerStyle }} />

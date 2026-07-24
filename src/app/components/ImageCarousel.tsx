@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 
 interface ImageCarouselProps {
   images: string[];
@@ -83,7 +84,7 @@ export function ImageCarousel({
 
   if (validImages.length === 0 || currentFailed) {
     return (
-      <div style={{ ...style, background: FALLBACK_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', ...(naturalAspect ? { aspectRatio: '4 / 5', width: '100%' } : {}) }}>
+      <div style={{ ...style, background: FALLBACK_BG, display: 'flex', alignItems: 'center', justifyContent: 'center', ...(naturalAspect ? { aspectRatio: EVENT_CARD_ASPECT_CSS, width: '100%' } : {}) }}>
         <span style={{ fontSize: '32px' }}>{fallbackIcon}</span>
       </div>
     );

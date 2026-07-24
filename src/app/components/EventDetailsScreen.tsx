@@ -29,6 +29,7 @@ import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
+import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
 import { LazyImage } from './LazyImage';
@@ -488,7 +489,7 @@ export function EventDetailsScreen({
         <div
           style={{
             position: 'relative',
-            aspectRatio: '4 / 5',
+            aspectRatio: EVENT_CARD_ASPECT_CSS,
             borderRadius: '26px',
             overflow: 'hidden',
             border: '1px solid rgba(255,255,255,0.08)',

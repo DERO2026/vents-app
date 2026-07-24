@@ -8,6 +8,7 @@ import {
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
+import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatPrice } from './data';
@@ -179,7 +180,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         boxShadow: '0 20px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.25)',
       }}
     >
-      <div style={{ aspectRatio: '5 / 6', position: 'relative' }}>
+      <div style={{ aspectRatio: EVENT_CARD_ASPECT_CSS, position: 'relative' }}>
         <ImageCarousel
           images={cardImages}
           alt={event.title}

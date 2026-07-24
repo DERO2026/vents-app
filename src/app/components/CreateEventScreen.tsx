@@ -7,6 +7,7 @@ import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
+import { EVENT_CARD_ASPECT } from '../../lib/eventCardAspect';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { uploadImage } from '../../lib/mediaPipeline';
 import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
@@ -798,9 +799,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 imageSrc={cropSrc}
                 onCropComplete={handleCroppedFlier}
                 onClose={closeCropper}
-                aspect={3 / 4}
+                aspect={EVENT_CARD_ASPECT}
                 cropShape="rect"
                 title="Upload Event Flyer"
+                variant="flyer"
               />
             )}
             <div
