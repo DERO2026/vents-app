@@ -28,7 +28,14 @@ export function initAnalytics(key: string) {
     posthog.init(key, {
       api_host: apiHost,
       ui_host: uiHost,
-      capture_pageview: true,
+      // The app is a state-machine SPA: navigation swaps a `screen` state value
+      // and NEVER changes the URL (react-router is a dep but unused). PostHog's
+      // automatic pageview capture only fires on load + History API changes, so
+      // it would only ever record the first view and nothing as users navigate.
+      // We drive $pageview manually from the navigation state instead (see
+      // capturePageview + the effect in App.tsx), which also guarantees the
+      // initial view — so automatic capture is turned off to avoid a duplicate.
+      capture_pageview: false,
       capture_pageleave: true,
       autocapture: true,
       // Don't create anonymous person profiles for every visitor — only once a
@@ -46,6 +53,24 @@ export function initAnalytics(key: string) {
 
 export function trackEvent(event: string, properties?: Record<string, unknown>) {
   try { posthog.capture(event, properties); } catch {}
+}
+
+/**
+ * Manually record a $pageview for our state-based navigation. Because the real
+ * URL never changes, we synthesise a $current_url / $pathname from the screen
+ * name so PostHog groups views into distinct "pages" (e.g. /home, /event-details)
+ * in Activity and the web-analytics UI.
+ */
+export function capturePageview(path: string, properties?: Record<string, unknown>) {
+  try {
+    const clean = '/' + String(path).replace(/^\/+/, '');
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    posthog.capture('$pageview', {
+      $current_url: origin + clean,
+      $pathname: clean,
+      ...properties,
+    });
+  } catch {}
 }
 
 export function identifyUser(userId: string, properties?: Record<string, unknown>) {

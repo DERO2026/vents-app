@@ -3,7 +3,7 @@ import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfil
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
 import { registerPushNotifications, unregisterPushNotifications, trackPushEvent } from '../lib/pushNotifications';
-import { identifyUser, trackEvent } from '../lib/analytics';
+import { identifyUser, trackEvent, capturePageview } from '../lib/analytics';
 import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
@@ -281,6 +281,19 @@ export default function App() {
 
   // Native push registration happens after login (handleAuthSuccess), once we
   // have a user to key the device token to — no mount-time work needed here.
+
+  // Manual $pageview tracking. Navigation here swaps the `screen` state and
+  // never changes the URL, so PostHog's automatic pageview capture can't see
+  // it — every tab/route change (handleTabChange sets `screen` too) is fired
+  // as an explicit $pageview keyed to the screen name. The ref dedupes so a
+  // re-render that doesn't change the screen doesn't double-count.
+  const lastPageviewRef = useRef<string>('');
+  useEffect(() => {
+    if (screen === 'splash') return;
+    if (lastPageviewRef.current === screen) return;
+    lastPageviewRef.current = screen;
+    capturePageview(screen, { screen, tab: activeTab });
+  }, [screen, activeTab]);
 
   // Keep currentUser.role in sync with the DB. Without this, a role change
   // made server-side (e.g. Root promoting someone to Sub-Admin from the
