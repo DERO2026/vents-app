@@ -1,10 +1,9 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
-import { X, Check, Crop as CropIcon } from 'lucide-react';
+import { X, Check, Crop as CropIcon, RotateCcw } from 'lucide-react';
 import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
-import { EventCardImage } from './EventCardImage';
-import { computeSmartCrop, type AreaPct } from '../../lib/smartCrop';
+import { computeSmartCropCached, type AreaPct } from '../../lib/smartCrop';
 
 interface ImageCropperModalProps {
   imageSrc: string;
@@ -99,13 +98,17 @@ function haptic(pattern: number | number[] = 8) {
 const GUIDANCE =
   'Keep important text, faces and logos inside the highlighted safe area to ensure they appear correctly across VENTS. Your flyer becomes a portrait (4:5) master — drag or zoom out to fit the whole image.';
 
-// The card contexts previewed live. All share the portrait image box, so one
-// rendered master is faithful to each; Event Details just uses a larger radius.
-const PREVIEW_CONTEXTS = [
-  { key: 'explore', label: 'Explore', radius: 12 },
-  { key: 'trending', label: 'Trending', radius: 12 },
-  { key: 'featured', label: 'Featured', radius: 12 },
-  { key: 'details', label: 'Details', radius: 16 },
+// Live preview layouts at their REAL production aspect ratios, so the organizer
+// sees the exact crop each surface shows — Explore & Details are the portrait
+// card box (4:5); Trending & Featured are the compact horizontal card (a wide
+// band of the master). The master dataURL is object-fit:cover'd into each, which
+// is exactly how the cards render it — so preview == published.
+const TRENDING_ASPECT = 162 / 110; // HorizontalEventCard image box
+const PREVIEW_LAYOUTS = [
+  { key: 'explore', label: 'Explore', aspect: EVENT_CARD_ASPECT, radius: 12 },
+  { key: 'trending', label: 'Trending', aspect: TRENDING_ASPECT, radius: 10 },
+  { key: 'featured', label: 'Featured', aspect: TRENDING_ASPECT, radius: 10 },
+  { key: 'details', label: 'Details', aspect: EVENT_CARD_ASPECT, radius: 12 },
 ];
 
 export function ImageCropperModal({
@@ -135,6 +138,10 @@ export function ImageCropperModal({
   const [naturalAspect, setNaturalAspect] = useState<number | null>(null);
   const [smartCrop, setSmartCrop] = useState<AreaPct | null>(null);
   const [cropperReady, setCropperReady] = useState(!isFlyer);
+  // Reset-to-Auto: `dirty` flips once the user moves the image/zoom; `resetNonce`
+  // remounts the cropper with the smart crop as the initial region.
+  const [dirty, setDirty] = useState(false);
+  const [resetNonce, setResetNonce] = useState(0);
 
   const aspect = isFlyer
     ? (ratioKey === 'original' ? (naturalAspect ?? EVENT_CARD_ASPECT)
@@ -153,7 +160,7 @@ export function ImageCropperModal({
       bitmapRef.current = bmp;
       if (bmp.width && bmp.height) setNaturalAspect(bmp.width / bmp.height);
       // Content-aware smart initial crop for the master (portrait) ratio.
-      try { setSmartCrop(computeSmartCrop(bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
+      try { setSmartCrop(computeSmartCropCached(imageSrc, bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
       window.clearTimeout(fallback);
       setCropperReady(true);
     }).catch(() => { window.clearTimeout(fallback); setCropperReady(true); });
@@ -216,6 +223,15 @@ export function ImageCropperModal({
 
   const selectRatio = (key: string) => { setRatioKey(key); haptic(6); };
 
+  // Reset-to-Auto — remount the cropper so the smart (auto) crop re-applies.
+  const resetToAuto = () => { setCrop({ x: 0, y: 0 }); setZoom(1); setDirty(false); setResetNonce((n) => n + 1); haptic(10); };
+
+  // Non-blocking geometric guidance (#16). The portrait master is shown as a
+  // wide band in Trending/Featured, so top/bottom safe-area content is hidden
+  // there — deterministic from the layout ratios (no ML claim). Dismissible.
+  const [warnDismissed, setWarnDismissed] = useState(false);
+  const showWarning = isFlyer && !warnDismissed;
+
   return createPortal(
     <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 2000, display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -238,6 +254,7 @@ export function ImageCropperModal({
       <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
         {cropperReady && (
         <Cropper
+          key={resetNonce}
           image={imageSrc}
           crop={crop}
           zoom={zoom}
@@ -255,7 +272,9 @@ export function ImageCropperModal({
           onCropComplete={onCropCompleteCallback}
           onCropSizeChange={(s) => setCropSize(s)}
           onMediaLoaded={(m: any) => { if (isFlyer) recomputeMinZoom(m.naturalWidth, m.naturalHeight); }}
-          onInteractionStart={() => haptic(5)}
+          // Only genuine user gestures mark the crop "dirty" (not the initial
+          // programmatic zoom/crop that applies the smart crop on mount).
+          onInteractionStart={() => { haptic(5); if (isFlyer) setDirty(true); }}
           style={{ cropAreaStyle: { borderRadius: isFlyer ? '22px' : '0', border: '2px solid rgba(255,255,255,0.9)', boxShadow: '0 0 0 9999px rgba(2,0,5,0.62)' } }}
         />
         )}
@@ -263,10 +282,14 @@ export function ImageCropperModal({
         {/* Safe-area overlay, aligned to the real crop frame */}
         {isFlyer && cropSize && (
           <div aria-hidden style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', width: cropSize.width, height: cropSize.height, pointerEvents: 'none', borderRadius: '22px', overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', top: '8%', left: '7%', right: '7%', bottom: '11%', border: '1.5px dashed rgba(255,255,255,0.55)', borderRadius: '14px' }} />
+            {/* Universal safe zone — the region most likely to stay visible on
+                every surface (incl. the wide Trending/Featured band). */}
+            <div style={{ position: 'absolute', top: '8%', left: '7%', right: '7%', bottom: '11%', border: '1.5px dashed rgba(255,255,255,0.5)', borderRadius: '14px' }} />
+            {/* Tighter band = what the landscape cards keep; strongest hint. */}
+            <div style={{ position: 'absolute', top: '23%', left: '7%', right: '7%', bottom: '23%', border: '1px solid rgba(167,139,250,0.5)', borderRadius: '10px' }} />
             <span style={zoneLabel('top')}>Logos · Sponsors</span>
-            <span style={zoneLabel('center')}>Faces · Title</span>
-            <span style={zoneLabel('bottom')}>Dates · Info</span>
+            <span style={zoneLabel('center')}>Faces · Headliners · Title</span>
+            <span style={zoneLabel('bottom')}>Date · Venue · Info</span>
           </div>
         )}
       </div>
@@ -276,17 +299,42 @@ export function ImageCropperModal({
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '12px 14px calc(14px + env(safe-area-inset-bottom, 8px))', background: 'linear-gradient(to top, rgba(2,0,5,0.97) 60%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
           {error && <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
 
-          {/* Live multi-context preview — the same portrait image box the cards use */}
-          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-            {PREVIEW_CONTEXTS.map((c) => (
-              <div key={c.key} style={{ width: '58px' }}>
-                <EventCardImage src={previewUrl} radius={c.radius} style={{ border: '1px solid rgba(255,255,255,0.14)' }} />
+          {/* Non-blocking guidance the organizer can dismiss (#16) */}
+          {showWarning && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '10px', padding: '7px 10px' }}>
+              <span style={{ fontSize: '13px' }}>⚠️</span>
+              <span style={{ flex: 1, color: '#FCD9A6', fontSize: '10.5px', lineHeight: 1.35 }}>Trending &amp; Featured show a wide band — keep titles, faces and dates inside the inner (purple) zone so nothing important is cropped there.</span>
+              <button onClick={() => setWarnDismissed(true)} style={{ background: 'none', border: 'none', color: '#B9BED6', cursor: 'pointer', padding: '2px', flexShrink: 0 }} aria-label="Dismiss"><X size={14} /></button>
+            </div>
+          )}
+
+          {/* Live per-layout preview at each surface's REAL aspect — object-fit
+              cover'd exactly like the cards, so preview == published (#15). */}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', alignItems: 'flex-end' }}>
+            {PREVIEW_LAYOUTS.map((c) => (
+              <div key={c.key} style={{ width: '62px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                <div style={{ width: '100%', aspectRatio: String(c.aspect), borderRadius: c.radius, overflow: 'hidden', background: '#0B0618', border: '1px solid rgba(255,255,255,0.14)' }}>
+                  {previewUrl && <img src={previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                </div>
                 <div style={{ textAlign: 'center', color: '#B9BED6', fontSize: '9px', fontWeight: 600, marginTop: '3px' }}>{c.label}</div>
               </div>
             ))}
           </div>
 
-          <p style={{ margin: 0, color: '#C4C9E0', fontSize: '11px', lineHeight: 1.45, textAlign: 'center' }}>{GUIDANCE}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center' }}>
+            <p style={{ margin: 0, color: '#C4C9E0', fontSize: '11px', lineHeight: 1.45, textAlign: 'center', flex: 1 }}>{GUIDANCE}</p>
+          </div>
+
+          {/* Reset to Auto — restores the intelligent framing after manual edits (#17) */}
+          {dirty && (
+            <button onClick={resetToAuto} style={{
+              alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '6px',
+              background: 'rgba(167,139,250,0.16)', border: '1px solid rgba(167,139,250,0.5)',
+              borderRadius: '999px', padding: '7px 14px', color: '#DDD3FF', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+            }}>
+              <RotateCcw size={13} /> Reset to Auto
+            </button>
+          )}
 
           {/* Aspect selector */}
           <div style={{ display: 'flex', gap: '7px', justifyContent: 'center' }}>
@@ -308,7 +356,7 @@ export function ImageCropperModal({
 
           {/* Zoom — min is dynamic so the whole flyer is always reachable */}
           <input type="range" value={zoom} min={minZoom} max={5} step={0.01} aria-label="Zoom"
-            onChange={(e) => setZoom(Number(e.target.value))} onPointerUp={() => haptic(4)}
+            onChange={(e) => { setZoom(Number(e.target.value)); setDirty(true); }} onPointerUp={() => haptic(4)}
             style={{ width: '100%', height: '4px', borderRadius: '3px', outline: 'none', accentColor: '#A78BFA', cursor: 'pointer' }} />
         </div>
       ) : (

@@ -24,6 +24,19 @@ function centeredCrop(imgW: number, imgH: number, aspect: number): AreaPct {
   return { x: (x / imgW) * 100, y: (y / imgH) * 100, width: (cw / imgW) * 100, height: (ch / imgH) * 100 };
 }
 
+// Cache computed crop metadata per (image, aspect) so the analysis runs once
+// per upload and is never redone on re-render/remount (Reset to Auto, etc.).
+const _cache = new Map<string, AreaPct>();
+export function computeSmartCropCached(cacheKey: string, bitmap: Bitmap, aspect: number): AreaPct {
+  const key = `${cacheKey}|${aspect.toFixed(3)}`;
+  const hit = _cache.get(key);
+  if (hit) return hit;
+  const res = computeSmartCrop(bitmap, aspect);
+  _cache.set(key, res);
+  if (_cache.size > 24) _cache.delete(_cache.keys().next().value as string);
+  return res;
+}
+
 export function computeSmartCrop(bitmap: Bitmap, aspect: number): AreaPct {
   const imgW = bitmap.width, imgH = bitmap.height;
   if (!imgW || !imgH) return centeredCrop(imgW || 1, imgH || 1, aspect);
