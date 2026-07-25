@@ -41,7 +41,9 @@ export async function fetchVisionFocus(bitmap: Bitmap, timeoutMs = 13000): Promi
     if (!token) return null;
     const ctrl = new AbortController();
     const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
-    const res = await fetch('/api/vision/smart-crop', {
+    // Folded into the existing AI endpoint (serverless-function limit) — the
+    // image branch is keyed on the imageBase64 body field.
+    const res = await fetch('/api/extract-events', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ imageBase64: img.data, mimeType: img.mime }),
