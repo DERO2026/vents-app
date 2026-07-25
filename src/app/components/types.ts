@@ -49,6 +49,7 @@ export interface Event {
 export interface TicketAttendee {
   name: string;
   email: string;
+  phone?: string;
 }
 
 export interface PurchasedTicket {

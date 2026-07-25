@@ -1247,6 +1247,20 @@ export default function App() {
               message: `Your ticket for ${ticket.event.title} has been confirmed! Check the Vents app for your QR code. - Vents`,
             }).catch(() => {});
           }
+          // Email confirmation with full ticket details + validation info. The
+          // endpoint authenticates the buyer and emails only their own address
+          // with details pulled server-side — best-effort, never blocks.
+          (async () => {
+            try {
+              const token = await getAuthToken();
+              if (!token) return;
+              await fetch('/api/notify/status-email', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+                body: JSON.stringify({ request_type: 'ticket', event_id: ticket.event.id }),
+              });
+            } catch { /* ignore */ }
+          })();
           // Single canonical purchase-completion event (fired here, at the real
           // RPC success — not in CheckoutScreen, which used to double/triple-count).
           analytics.ticketPurchased({

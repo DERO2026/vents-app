@@ -147,7 +147,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // whose ticket it's scanning. Attendee 1 is always the purchaser (the
   // existing name/email fields above); this holds attendees 2..quantity.
   const [additionalAttendees, setAdditionalAttendees] = useState<TicketAttendee[]>(
-    () => Array.from({ length: Math.max(0, quantity - 1) }, () => ({ name: '', email: '' }))
+    () => Array.from({ length: Math.max(0, quantity - 1) }, () => ({ name: '', email: '', phone: '' }))
   );
   const [attendeesTouched, setAttendeesTouched] = useState(false);
 
@@ -164,7 +164,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
 
-  const additionalAttendeesValid = additionalAttendees.every((a) => a.name.trim().length > 0 && isValidEmail(a.email));
+  const additionalAttendeesValid = additionalAttendees.every(
+    (a) => a.name.trim().length > 0 && isValidEmail(a.email) && (a.phone ?? '').replace(/\D/g, '').length >= 7
+  );
 
   // A code the user typed but never successfully applied (or applied, then
   // edited) must block checkout rather than silently getting ignored — that
@@ -172,8 +174,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const promoPending = promoCode.trim().length > 0 && !promoApplied;
 
   const buildAttendees = (purchaserName: string, purchaserEmail: string): TicketAttendee[] => [
-    { name: purchaserName, email: purchaserEmail },
-    ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim() })),
+    { name: purchaserName, email: purchaserEmail, phone: phone.replace(/\D/g, '') ? `${selectedCountry.code}${phone.replace(/\D/g, '')}` : undefined },
+    ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim(), phone: (a.phone ?? '').trim() || undefined })),
   ];
 
   const handleApplyPromo = async () => {
@@ -247,7 +249,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     }
 
     if (!additionalAttendeesValid) {
-      setPayError(`Enter a name and valid email for all ${quantity} attendees.`);
+      setPayError(`Enter full name, email and phone number for all ${quantity} attendees.`);
       return;
     }
 
@@ -497,6 +499,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                       onChange={(v) => updateAttendee(i, 'email', v)}
                       type="email"
                       error={attendeeEmailError}
+                    />
+                    <Field
+                      label="Phone Number"
+                      placeholder="080 0000 0000"
+                      value={attendee.phone ?? ''}
+                      onChange={(v) => updateAttendee(i, 'phone', v)}
+                      type="tel"
+                      error={attendeesTouched && (attendee.phone ?? '').replace(/\D/g, '').length < 7 ? 'Valid phone required' : undefined}
                     />
                   </div>
                 );
