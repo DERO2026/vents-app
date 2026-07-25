@@ -5,7 +5,7 @@ import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefres
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
-import { prefetchTicketTokens } from '../lib/ticketToken';
+import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
 import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
@@ -1197,6 +1197,9 @@ export default function App() {
   }, [navigateTo]);
 
   const handleCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
+    // Real ticket id + signed token from the server (used for the instant QR).
+    let primaryTicketId: string | undefined;
+    let primaryToken: string | undefined;
     if (currentUser) {
       try {
         // Guard: skip re-inserting if this user already has active ticket(s)
@@ -1233,7 +1236,12 @@ export default function App() {
           // still valid at the moment CheckoutScreen's "Apply" check ran —
           // if it's since gone stale, this call throws and no ticket is
           // created, same as any other validation failure here.
-          const { error: insertError } = await insforge.database.rpc('purchase_ticket', {
+          // Purchase AND sign every pass in one server-side call, so the real
+          // ticket UUIDs + signed v2 tokens come back together. The success
+          // screen's `ticketId` was the payment reference (not a real ticket id),
+          // which is why minting a token there used to fail and hang on
+          // "Generating…". We now use the real id + pre-generated token.
+          const { data: tokenRows, error: insertError } = await insforge.database.rpc('purchase_ticket_with_tokens', {
             p_event_id: ticket.event.id,
             p_ticket_type: ticket.ticketType?.name ?? 'General',
             p_attendees: attendees,
@@ -1241,6 +1249,11 @@ export default function App() {
             p_promo_code: ticket.promoCode || null,
           });
           if (insertError) throw insertError;
+          // Seed the offline token cache immediately and capture the primary
+          // ticket's real id + token for the success screen (instant QR).
+          const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
+          rows.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
+          if (rows[0]) { primaryTicketId = rows[0].ticket_id; primaryToken = rows[0].token; }
           if (currentUser?.phone_number) {
             sendSMS({
               to: currentUser.phone_number,
@@ -1287,6 +1300,28 @@ export default function App() {
           });
         }
 
+        // Safety net: if the purchase path didn't hand back a signed pass —
+        // e.g. the user already had an active ticket for this event (the guard
+        // above skips the insert), or the RPC returned no rows — resolve their
+        // newest active ticket and ensure a token exists. Without this the
+        // success screen would fall back to the payment REFERENCE as an id,
+        // which can never be signed, and the QR would hang on "Generating…".
+        if (!primaryTicketId) {
+          const { data: mine } = await insforge.database
+            .from('tickets')
+            .select('id')
+            .eq('event_id', ticket.event.id)
+            .eq('user_id', currentUser.id)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(1);
+          const realId = Array.isArray(mine) && mine[0]?.id ? String(mine[0].id) : undefined;
+          if (realId) {
+            primaryTicketId = realId;
+            primaryToken = (await ensureTicketToken(realId)) || undefined;
+          }
+        }
+
         // Wait for tickets and events list refresh
         await fetchUserTickets(currentUser.id);
         await fetchEvents(true);
@@ -1294,7 +1329,9 @@ export default function App() {
         console.error("Failed to insert ticket on checkout:", err);
       }
     }
-    setPurchasedTicket(ticket);
+    // Hand the success screen the REAL ticket id + pre-generated token so its
+    // QR renders instantly from cache — never "Generating…".
+    setPurchasedTicket(primaryTicketId ? { ...ticket, ticketId: primaryTicketId, token: primaryToken } : ticket);
     setScreenStack([]);
     setScreen('payment-success');
   }, [currentUser, fetchEvents, fetchUserTickets]);

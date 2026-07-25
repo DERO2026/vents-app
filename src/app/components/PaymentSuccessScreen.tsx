@@ -41,7 +41,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   // The gate scanner accepts ONLY a signed v2 pass token — a raw id/JSON blob
   // is rejected as "missing cryptographic signature". Mint the same signed
   // token QRTicket uses so this post-purchase QR is scannable too.
-  const signedToken = useSignedTicketToken(ticket.ticketId);
+  const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
 
   const handleSave = () => {
     const content = [
@@ -278,9 +278,19 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   boxSizing: 'border-box',
                 }}
               >
+                {/* The pass is generated server-side WITH the purchase and seeded
+                    into the offline cache before this screen mounts, so the QR is
+                    drawn on the first paint. This branch is only reachable if the
+                    device lost connectivity at the exact moment of purchase — be
+                    honest and actionable rather than spinning on "Generating…". */}
                 {signedToken
                   ? <QRCode value={signedToken} size={280} />
-                  : <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</span>}
+                  : (
+                    <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 16px', lineHeight: 1.5 }}>
+                      Your ticket is confirmed and saved.<br />
+                      Open <strong style={{ color: '#C4B5FD' }}>My Tickets</strong> once you're back online to load your QR code.
+                    </span>
+                  )}
               </div>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                 {ticketDisplayCode(ticket.ticketId)}

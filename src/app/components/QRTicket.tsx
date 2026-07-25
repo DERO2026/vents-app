@@ -62,7 +62,7 @@ function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) 
 export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const [showConfetti] = useState(true);
   const ticketCardRef = useRef<HTMLDivElement>(null);
-  const signedToken = useSignedTicketToken(ticket.ticketId);
+  const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
   // Track when a holder opens their ticket QR (fires once per open).

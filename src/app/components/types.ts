@@ -70,6 +70,9 @@ export interface PurchasedTicket {
   // purchase_ticket so it can be re-verified and the redemption recorded.
   promoCode?: string;
   useVentsCents?: boolean;
+  // Signed v2 pass token, generated server-side WITH the purchase
+  // (purchase_ticket_with_tokens) so the QR renders instantly with no mint delay.
+  token?: string;
   vcDiscountNgn?: number;
 }
 
