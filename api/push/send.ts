@@ -19,7 +19,8 @@ import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 // Node crypto so no extra dependency is pulled in.
 
 function b64url(input: Buffer | string): string {
-  return Buffer.from(input).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const buf = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
+  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 async function getAccessToken(sa: { client_email: string; private_key: string }): Promise<string> {
