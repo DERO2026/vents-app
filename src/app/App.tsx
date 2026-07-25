@@ -5,6 +5,7 @@ import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefres
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
+import { prefetchTicketTokens } from '../lib/ticketToken';
 import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
@@ -852,6 +853,10 @@ export default function App() {
         });
 
         setAllTickets(mappedTickets);
+        // Warm the signed-token cache for every ticket as soon as the list is
+        // known — so opening any pass (a fresh purchase, or a past/upcoming
+        // ticket) renders its QR instantly instead of minting on open.
+        prefetchTicketTokens(mappedTickets.map((t) => t.ticketId));
       }
     } catch (err) {
       console.error('Failed to fetch user tickets:', err);

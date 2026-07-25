@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket } from 'lucide-react';
 import { PurchasedTicket } from './types';
+import { ticketDisplayCode } from '../../lib/ticketCode';
 import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
@@ -50,7 +51,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       `Venue: ${ticket.event.venue}, ${ticket.event.city}`,
       `Ticket: ${ticket.ticketType.name} × ${ticket.quantity}`,
       `Amount: ₦${(ticket.totalAmount ?? 0).toLocaleString()}`,
-      `Booking ID: ${ticket.ticketId}`,
+      `Booking ID: ${ticketDisplayCode(ticket.ticketId)}`,
       `Holder: ${ticket.holderName}`,
     ].join('\n');
     const blob = new Blob([content], { type: 'text/plain' });
@@ -66,7 +67,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
   const handleShare = async () => {
     const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
-    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nBooking ID: ${ticket.ticketId}\n${eventUrl}`;
+    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nBooking ID: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'My VENTS Ticket', text, url: eventUrl });
@@ -282,7 +283,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   : <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</span>}
               </div>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
-                {ticket.ticketId}
+                {ticketDisplayCode(ticket.ticketId)}
               </p>
               <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
                 Holder: {ticket.holderName} · {purchaseDate}

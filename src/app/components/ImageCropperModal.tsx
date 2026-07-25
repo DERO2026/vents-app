@@ -143,6 +143,10 @@ export function ImageCropperModal({
   // remounts the cropper with the smart crop as the initial region.
   const [dirty, setDirty] = useState(false);
   const [resetNonce, setResetNonce] = useState(0);
+  // Whether the smart (auto) crop is currently applied, and the crop region to
+  // seed the cropper with on its next (re)mount. null = show the whole flyer.
+  const [framed, setFramed] = useState(false);
+  const [cropOverride, setCropOverride] = useState<AreaPct | null>(null);
   // Vision (serverless) focus-aware framing — refines the instant heuristic.
   const [aiFraming, setAiFraming] = useState(false);
   const [visionFocus, setVisionFocus] = useState<VisionFocus | null>(null);
@@ -179,16 +183,14 @@ export function ImageCropperModal({
     return () => { alive = false; window.clearTimeout(fallback); };
   }, [imageSrc, isFlyer]);
 
-  // Apply the vision focus once it arrives — but only if the organizer hasn't
-  // already adjusted the crop (manual always wins). Remounts so the new initial
-  // crop takes effect; Reset to Auto then restores THIS (the best) framing.
+  // When the vision focus arrives, upgrade the PREPARED smart crop (used by the
+  // Auto-frame button) — but never auto-apply it. The cropper stays on the full
+  // flyer until the organizer chooses to auto-frame or adjusts manually.
   useEffect(() => {
-    if (!visionFocus || dirty || ratioKey !== 'card') return;
+    if (!visionFocus) return;
     const bmp = bitmapRef.current;
     if (!bmp?.width || !bmp?.height) return;
     setSmartCrop(cropFromFocus(bmp.width, bmp.height, EVENT_CARD_ASPECT, visionFocus.focus.x, visionFocus.focus.y));
-    setResetNonce((n) => n + 1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visionFocus]);
 
   // Dynamic minimum zoom: the whole flyer must always be viewable, whatever its
@@ -202,8 +204,11 @@ export function ImageCropperModal({
     const contain = Math.min(Ai, Ac) / Math.max(Ai, Ac);
     const mz = Math.max(0.1, Math.min(1, contain));
     setMinZoom(mz);
-    setZoom((z) => Math.max(mz, Math.min(z, 3)));
-  }, [aspect]);
+    // Open showing the WHOLE uploaded flyer (fit) — never auto-zoom into a crop.
+    // But when Auto-frame is active (cropOverride set), let the applied crop
+    // drive the zoom instead of snapping back to fit on the remount.
+    if (!cropOverride) setZoom(mz);
+  }, [aspect, cropOverride]);
 
   const onCropCompleteCallback = useCallback((_a: any, areaPixels: PixelCrop) => {
     setCroppedAreaPixels(areaPixels);
@@ -247,8 +252,24 @@ export function ImageCropperModal({
 
   const selectRatio = (key: string) => { setRatioKey(key); haptic(6); };
 
-  // Reset-to-Auto — remount the cropper so the smart (auto) crop re-applies.
-  const resetToAuto = () => { setCrop({ x: 0, y: 0 }); setZoom(1); setDirty(false); setResetNonce((n) => n + 1); haptic(10); };
+  // Apply the smart/AI crop (opt-in) by remounting with it as the initial region.
+  const applyAutoFrame = () => {
+    if (!smartCrop) return;
+    setCropOverride(smartCrop);
+    setCrop({ x: 0, y: 0 });
+    setDirty(false); setFramed(true);
+    setResetNonce((n) => n + 1);
+    haptic(10);
+  };
+  // Return to the full uploaded flyer (fit) — the professional default.
+  const showFullFlyer = () => {
+    setCropOverride(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(minZoom);
+    setDirty(false); setFramed(false);
+    setResetNonce((n) => n + 1);
+    haptic(8);
+  };
 
   // Non-blocking geometric guidance (#16). The portrait master is shown as a
   // wide band in Trending/Featured, so top/bottom safe-area content is hidden
@@ -290,7 +311,7 @@ export function ImageCropperModal({
           showGrid={isFlyer}
           restrictPosition={!isFlyer}
           objectFit="cover"
-          initialCroppedAreaPercentages={isFlyer && ratioKey === 'card' && smartCrop ? smartCrop : undefined}
+          initialCroppedAreaPercentages={isFlyer && cropOverride ? cropOverride : undefined}
           onCropChange={setCrop}
           onZoomChange={setZoom}
           onCropComplete={onCropCompleteCallback}
@@ -317,13 +338,6 @@ export function ImageCropperModal({
           </div>
         )}
 
-        {/* Vision smart-framing indicator (serverless). */}
-        {isFlyer && aiFraming && (
-          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 'calc(64px + env(safe-area-inset-top, 44px))', zIndex: 3, display: 'flex', alignItems: 'center', gap: '7px', background: 'rgba(20,14,36,0.72)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: '999px', padding: '6px 12px', backdropFilter: 'blur(8px)', pointerEvents: 'none' }}>
-            <Sparkles size={13} color="#C4B5FD" />
-            <span style={{ color: '#DDD3FF', fontSize: '11px', fontWeight: 700 }}>Smart framing…</span>
-          </div>
-        )}
       </div>
 
       {/* Controls */}
@@ -357,14 +371,15 @@ export function ImageCropperModal({
             <p style={{ margin: 0, color: '#C4C9E0', fontSize: '11px', lineHeight: 1.45, textAlign: 'center', flex: 1 }}>{GUIDANCE}</p>
           </div>
 
-          {/* Reset to Auto — restores the intelligent framing after manual edits (#17) */}
-          {dirty && (
-            <button onClick={resetToAuto} style={{
-              alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '6px',
-              background: 'rgba(167,139,250,0.16)', border: '1px solid rgba(167,139,250,0.5)',
-              borderRadius: '999px', padding: '7px 14px', color: '#DDD3FF', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-            }}>
-              <RotateCcw size={13} /> Reset to Auto
+          {/* Opt-in framing toggle. Default view is the whole flyer; the organizer
+              can let VENTS auto-frame, or return to the full flyer at any time. */}
+          {(framed || dirty) ? (
+            <button onClick={showFullFlyer} style={frameBtn}>
+              <RotateCcw size={13} /> Show full flyer
+            </button>
+          ) : (
+            <button onClick={applyAutoFrame} disabled={!smartCrop} style={{ ...frameBtn, opacity: smartCrop ? 1 : 0.5, cursor: smartCrop ? 'pointer' : 'default' }}>
+              <Sparkles size={13} /> {aiFraming ? 'Preparing smart frame…' : 'Auto-frame'}
             </button>
           )}
 
@@ -424,6 +439,11 @@ async function renderAvatar(bmp: Bitmap, cropped: PixelCrop): Promise<Blob> {
 const floatBtn: React.CSSProperties = {
   background: 'rgba(20,14,36,0.6)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '999px',
   width: '36px', height: '36px', color: '#EDEBFF', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)',
+};
+const frameBtn: React.CSSProperties = {
+  alignSelf: 'center', display: 'flex', alignItems: 'center', gap: '6px',
+  background: 'rgba(167,139,250,0.16)', border: '1px solid rgba(167,139,250,0.5)',
+  borderRadius: '999px', padding: '7px 14px', color: '#DDD3FF', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
 };
 const doneBtn: React.CSSProperties = {
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '999px',
