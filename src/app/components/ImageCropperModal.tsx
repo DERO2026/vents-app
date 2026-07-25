@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
-import { X, Check, Crop as CropIcon, RotateCcw } from 'lucide-react';
+import { X, Check, Crop as CropIcon, RotateCcw, Sparkles } from 'lucide-react';
 import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
-import { computeSmartCropCached, type AreaPct } from '../../lib/smartCrop';
+import { computeSmartCropCached, cropFromFocus, type AreaPct } from '../../lib/smartCrop';
+import { fetchVisionFocus, type VisionFocus } from '../../lib/visionCrop';
 
 interface ImageCropperModalProps {
   imageSrc: string;
@@ -142,6 +143,9 @@ export function ImageCropperModal({
   // remounts the cropper with the smart crop as the initial region.
   const [dirty, setDirty] = useState(false);
   const [resetNonce, setResetNonce] = useState(0);
+  // Vision (serverless) focus-aware framing — refines the instant heuristic.
+  const [aiFraming, setAiFraming] = useState(false);
+  const [visionFocus, setVisionFocus] = useState<VisionFocus | null>(null);
 
   const aspect = isFlyer
     ? (ratioKey === 'original' ? (naturalAspect ?? EVENT_CARD_ASPECT)
@@ -159,13 +163,33 @@ export function ImageCropperModal({
       if (!alive) return;
       bitmapRef.current = bmp;
       if (bmp.width && bmp.height) setNaturalAspect(bmp.width / bmp.height);
-      // Content-aware smart initial crop for the master (portrait) ratio.
+      // 1) Instant on-device heuristic — the cropper opens focus-framed with no wait.
       try { setSmartCrop(computeSmartCropCached(imageSrc, bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
       window.clearTimeout(fallback);
       setCropperReady(true);
+      // 2) Refine with the serverless vision endpoint (faces/logos/title). Best-
+      //    effort; null on any failure/timeout leaves the heuristic in place.
+      setAiFraming(true);
+      fetchVisionFocus(bmp).then((r) => {
+        if (!alive) return;
+        setAiFraming(false);
+        if (r) setVisionFocus(r);
+      }).catch(() => { if (alive) setAiFraming(false); });
     }).catch(() => { window.clearTimeout(fallback); setCropperReady(true); });
     return () => { alive = false; window.clearTimeout(fallback); };
   }, [imageSrc, isFlyer]);
+
+  // Apply the vision focus once it arrives — but only if the organizer hasn't
+  // already adjusted the crop (manual always wins). Remounts so the new initial
+  // crop takes effect; Reset to Auto then restores THIS (the best) framing.
+  useEffect(() => {
+    if (!visionFocus || dirty || ratioKey !== 'card') return;
+    const bmp = bitmapRef.current;
+    if (!bmp?.width || !bmp?.height) return;
+    setSmartCrop(cropFromFocus(bmp.width, bmp.height, EVENT_CARD_ASPECT, visionFocus.focus.x, visionFocus.focus.y));
+    setResetNonce((n) => n + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visionFocus]);
 
   // Dynamic minimum zoom: the whole flyer must always be viewable, whatever its
   // orientation. At zoom 1 react-easy-crop's media COVERS the crop frame; to
@@ -290,6 +314,14 @@ export function ImageCropperModal({
             <span style={zoneLabel('top')}>Logos · Sponsors</span>
             <span style={zoneLabel('center')}>Faces · Headliners · Title</span>
             <span style={zoneLabel('bottom')}>Date · Venue · Info</span>
+          </div>
+        )}
+
+        {/* Vision smart-framing indicator (serverless). */}
+        {isFlyer && aiFraming && (
+          <div style={{ position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 'calc(64px + env(safe-area-inset-top, 44px))', zIndex: 3, display: 'flex', alignItems: 'center', gap: '7px', background: 'rgba(20,14,36,0.72)', border: '1px solid rgba(167,139,250,0.4)', borderRadius: '999px', padding: '6px 12px', backdropFilter: 'blur(8px)', pointerEvents: 'none' }}>
+            <Sparkles size={13} color="#C4B5FD" />
+            <span style={{ color: '#DDD3FF', fontSize: '11px', fontWeight: 700 }}>Smart framing…</span>
           </div>
         )}
       </div>

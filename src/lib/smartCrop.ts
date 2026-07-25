@@ -37,6 +37,22 @@ export function computeSmartCropCached(cacheKey: string, bitmap: Bitmap, aspect:
   return res;
 }
 
+// Build a crop rectangle (percentages) for the target aspect centred on a
+// normalised focal point (0..1) — used with the vision endpoint's focus result.
+export function cropFromFocus(imgW: number, imgH: number, aspect: number, fx: number, fy: number): AreaPct {
+  if (!imgW || !imgH) return { x: 0, y: 0, width: 100, height: 100 };
+  const imgAspect = imgW / imgH;
+  let cw: number, ch: number;
+  if (imgAspect > aspect) { ch = imgH; cw = imgH * aspect; }
+  else { cw = imgW; ch = imgW / aspect; }
+  // Centre the window on the focal point, then clamp inside the image.
+  let x = fx * imgW - cw / 2;
+  let y = fy * imgH - ch / 2;
+  x = Math.max(0, Math.min(imgW - cw, x));
+  y = Math.max(0, Math.min(imgH - ch, y));
+  return { x: (x / imgW) * 100, y: (y / imgH) * 100, width: (cw / imgW) * 100, height: (ch / imgH) * 100 };
+}
+
 export function computeSmartCrop(bitmap: Bitmap, aspect: number): AreaPct {
   const imgW = bitmap.width, imgH = bitmap.height;
   if (!imgW || !imgH) return centeredCrop(imgW || 1, imgH || 1, aspect);
