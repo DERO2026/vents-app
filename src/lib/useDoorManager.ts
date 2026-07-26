@@ -15,6 +15,8 @@ export interface DoorStats {
   checked_in: number;
   remaining: number;
   attendance_pct: number;
+  duplicate_attempts: number;
+  invalid_attempts: number;
 }
 
 export interface FeedItem {
@@ -47,10 +49,30 @@ export interface Attendee {
   user_id: string | null;
   buyer_name: string | null;
   avatar_url: string | null;
+  scanner_name: string | null;
+  device_id: string | null;
 }
 
 export type DoorFilter =
   | 'all' | 'checked_in' | 'pending' | 'vip' | 'regular' | 'refunded' | 'cancelled';
+
+export type ScanResult = 'valid' | 'duplicate' | 'invalid' | 'wrong_event' | 'refunded' | 'cancelled';
+
+export interface ScanLogItem {
+  id: string;
+  ticket_id: string | null;
+  holder_name: string | null;
+  ticket_type: string | null;
+  scanned_by: string | null;
+  scanner_name: string | null;
+  result: ScanResult;
+  reason: string | null;
+  message: string | null;
+  device_id: string | null;
+  gate_name: string | null;
+  is_manual_override: boolean;
+  created_at: string;
+}
 
 export interface ManualCheckInResult {
   ok: boolean;
@@ -64,7 +86,8 @@ export interface ManualCheckInResult {
 }
 
 const PAGE_SIZE = 40;
-const EMPTY_STATS: DoorStats = { total: 0, checked_in: 0, remaining: 0, attendance_pct: 0 };
+const SCAN_LOG_PAGE_SIZE = 40;
+const EMPTY_STATS: DoorStats = { total: 0, checked_in: 0, remaining: 0, attendance_pct: 0, duplicate_attempts: 0, invalid_attempts: 0 };
 
 // A stable, per-install device id so the ledger can attribute check-ins to a
 // physical scanning device (multi-gate audit). Not PII; purely local.
@@ -93,8 +116,16 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
   const [hasMore, setHasMore] = useState(true);
   const [live, setLive] = useState(false);
 
+  const [scanLog, setScanLog] = useState<ScanLogItem[]>([]);
+  const [scanLogFilter, setScanLogFilter] = useState<ScanResult | 'all'>('all');
+  const [loadingScanLog, setLoadingScanLog] = useState(false);
+  const [loadingMoreScanLog, setLoadingMoreScanLog] = useState(false);
+  const [hasMoreScanLog, setHasMoreScanLog] = useState(true);
+
   const offsetRef = useRef(0);
+  const scanLogOffsetRef = useRef(0);
   const reqIdRef = useRef(0); // guards against out-of-order search/filter responses
+  const scanLogReqIdRef = useRef(0);
 
   // ── Stats + activity feed ──────────────────────────────────────────────────
   const refreshStats = useCallback(async () => {
@@ -144,6 +175,41 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
 
   useEffect(() => { refreshStats(); }, [refreshStats]);
 
+  // ── Full scan history (every attempt — valid, duplicate, invalid, wrong
+  // event, refunded, cancelled) — searchable/filterable audit trail, separate
+  // from the "Live Activity" feed which only shows successful admissions.
+  const loadScanLog = useCallback(async (reset: boolean) => {
+    if (!eventId) return;
+    const myReq = ++scanLogReqIdRef.current;
+    if (reset) { scanLogOffsetRef.current = 0; setLoadingScanLog(true); }
+    else setLoadingMoreScanLog(true);
+
+    const { data, error } = await insforge.database.rpc('get_scan_log' as any, {
+      p_event_id: eventId,
+      p_result: scanLogFilter === 'all' ? null : scanLogFilter,
+      p_limit: SCAN_LOG_PAGE_SIZE,
+      p_offset: reset ? 0 : scanLogOffsetRef.current,
+    });
+
+    if (myReq !== scanLogReqIdRef.current) return;
+    const rows = (!error && Array.isArray(data) ? data : []) as ScanLogItem[];
+    setScanLog((prev) => (reset ? rows : [...prev, ...rows]));
+    setHasMoreScanLog(rows.length === SCAN_LOG_PAGE_SIZE);
+    scanLogOffsetRef.current = (reset ? 0 : scanLogOffsetRef.current) + rows.length;
+    setLoadingScanLog(false);
+    setLoadingMoreScanLog(false);
+  }, [eventId, scanLogFilter]);
+
+  const loadMoreScanLog = useCallback(() => {
+    if (!loadingScanLog && !loadingMoreScanLog && hasMoreScanLog) loadScanLog(false);
+  }, [loadingScanLog, loadingMoreScanLog, hasMoreScanLog, loadScanLog]);
+
+  useEffect(() => {
+    if (!eventId) return;
+    const t = setTimeout(() => loadScanLog(true), 250);
+    return () => clearTimeout(t);
+  }, [eventId, scanLogFilter, loadScanLog]);
+
   // ── Realtime subscription: refetch stats/feed on every door broadcast ───────
   useEffect(() => {
     if (!eventId) return;
@@ -152,7 +218,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => { refreshStats(); loadList(true); }, 300);
+      debounce = setTimeout(() => { refreshStats(); loadList(true); loadScanLog(true); }, 300);
     };
 
     insforge.realtime.connect()
@@ -162,16 +228,18 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
 
     insforge.realtime.on('checkin', bump);
     insforge.realtime.on('ticket', bump);
+    insforge.realtime.on('scan_attempt', bump);
 
     return () => {
       if (debounce) clearTimeout(debounce);
       insforge.realtime.off?.('checkin', bump);
       insforge.realtime.off?.('ticket', bump);
+      insforge.realtime.off?.('scan_attempt', bump);
       if (subscribed) insforge.realtime.unsubscribe(channel);
       setLive(false);
     };
-    // loadList/refreshStats are stable per (eventId, search, filter); we only
-    // want to (re)subscribe when the event changes.
+    // loadList/refreshStats/loadScanLog are stable per (eventId, search, filter,
+    // scanLogFilter); we only want to (re)subscribe when the event changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [eventId]);
 
@@ -208,5 +276,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     search, setSearch, filter, setFilter, gateName, setGateName,
     loadingList, loadingMore, hasMore, live,
     loadMore, refresh: refreshStats, manualCheckIn,
+    scanLog, scanLogFilter, setScanLogFilter,
+    loadingScanLog, loadingMoreScanLog, hasMoreScanLog, loadMoreScanLog,
   };
 }

@@ -8,6 +8,30 @@ function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
 
+// Server-side-only SMS send. SENDCHAMP_API_KEY is a plain (non-VITE_) env var
+// so Vite never inlines it into the client bundle — the key that used to ship
+// in vercel.json's `env` block (and therefore in every client build) has been
+// rotated and removed; only this server function holds the new one now.
+// Best-effort: SMS never blocks the caller's real action (purchase, admin
+// decision) if Sendchamp is unreachable or misconfigured.
+async function sendSmsViaSendchamp(to: string, message: string): Promise<boolean> {
+  const apiKey = process.env.SENDCHAMP_API_KEY;
+  if (!apiKey || !to) return false;
+  const base = process.env.SENDCHAMP_BASE_URL || 'https://api.sendchamp.com/api/v1';
+  try {
+    const res = await fetch(`${base}/sms/send`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
+      body: JSON.stringify({ to, message, sender_name: 'VENTS', route: 'dnd' }),
+    });
+    if (!res.ok) console.warn('[sms] Sendchamp send failed', { status: res.status });
+    return res.ok;
+  } catch (e) {
+    console.warn('[sms] Sendchamp send threw', { e: String(e) });
+    return false;
+  }
+}
+
 // Friendly ticket code — same deterministic derivation as src/lib/ticketCode.ts
 // so the email matches what the app shows on the pass.
 function ticketDisplayCode(ticketId: string): string {
@@ -165,6 +189,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const ev = (await evRes.json().catch(() => []))?.[0] || {};
       const dateStr = ev.event_date ? new Date(ev.event_date).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short' }) : 'See app';
 
+      // Confirmation SMS to the buyer's own on-file number — pulled server-side
+      // (never client-supplied), same text the client used to send directly
+      // with the now-revoked Sendchamp key. Best-effort, never blocks the email.
+      fetch(`${baseUrlEarly}/api/database/records/users?id=eq.${encodeURIComponent(session.userId)}&select=phone_number`, { headers: h })
+        .then((r) => r.json().catch(() => []))
+        .then((rows: any[]) => {
+          const phone = Array.isArray(rows) ? rows[0]?.phone_number : null;
+          if (phone) return sendSmsViaSendchamp(phone, `Your ticket for ${ev.title || 'your event'} has been confirmed! Check the Vents app for your QR code. - Vents`);
+        })
+        .catch(() => {});
+
       // Group tickets by the UNIQUE email entered for each attendee — this is
       // the actual fix. Previously every ticket in the batch, regardless of
       // whose name/email was on it, was summarized into one email sent only to
@@ -274,13 +309,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!ownerId) return res.status(404).json({ error: 'Request not found' });
 
     const userRes = await fetch(
-      `${baseUrl}/api/database/records/users?id=eq.${encodeURIComponent(ownerId)}&select=full_name,email`,
+      `${baseUrl}/api/database/records/users?id=eq.${encodeURIComponent(ownerId)}&select=full_name,email,phone_number`,
       { headers: insforgeHeaders }
     );
     if (!userRes.ok) return res.status(userRes.status).json({ error: 'Could not load user' });
     const userRows = await userRes.json();
     const user = Array.isArray(userRows) ? userRows[0] : null;
     if (!user?.email) return res.status(404).json({ error: 'User not found' });
+
+    // Organizer-request decision SMS — mirrors the text the client used to
+    // send directly with the now-revoked Sendchamp key. Admin-ness and the
+    // request itself were already verified above; best-effort, never blocks.
+    if (request_type === 'organizer' && user.phone_number && (decision === 'approved' || decision === 'rejected')) {
+      const smsMsg = decision === 'approved'
+        ? 'Congratulations! Your request to become an organizer on Vents has been approved. You can now create and manage events. - Vents'
+        : 'Your organizer request on Vents was not approved at this time. Contact support@getvents.com for more information. - Vents';
+      sendSmsViaSendchamp(user.phone_number, smsMsg).catch(() => {});
+    }
 
     const sent = request_type === 'organizer'
       ? await sendOrganizerRequestDecisionEmail({

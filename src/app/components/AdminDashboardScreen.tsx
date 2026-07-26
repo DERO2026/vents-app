@@ -10,7 +10,6 @@ import {
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { AdminActionsTab } from './AdminActionsTab';
-import { sendSMS } from '../../lib/sendchamp';
 import { extractEventsFromText, publishEvents, isEventExtractionConfigured, type ImportedEvent } from '../../lib/eventImporter';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -1151,20 +1150,10 @@ export function AdminDashboardScreen({
         if (req?.user_id) {
           await insforge.database.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
         }
-        if (req?.users?.phone_number) {
-          sendSMS({
-            to: req.users.phone_number,
-            message: `Congratulations! Your request to become an organizer on Vents has been approved. You can now create and manage events. - Vents`,
-          }).catch(() => {});
-        }
-      } else if (status === 'rejected') {
-        if (req?.users?.phone_number) {
-          sendSMS({
-            to: req.users.phone_number,
-            message: `Your organizer request on Vents was not approved at this time. Contact support@getvents.com for more information. - Vents`,
-          }).catch(() => {});
-        }
       }
+      // Decision SMS is now sent server-side by notifyByEmail's endpoint
+      // (api/notify/status-email.ts) — it looks up the phone number itself and
+      // sends with the same text, no client-held Sendchamp key required.
       notifyByEmail('organizer', id, status, adminNote);
     }
   };

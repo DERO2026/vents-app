@@ -3,7 +3,7 @@
 // Verifies Paystack webhook HMAC-SHA512 signature before processing.
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
-import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
+import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
 import crypto from 'crypto';
 
 function fmtNaira(kobo) {
@@ -142,6 +142,67 @@ export default async function handler(req, res) {
           decision: row.status,
           reason: row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
         }).catch((e) => console.error('[Paystack webhook] payout email failed:', e?.message || e));
+      }
+    } catch (err: any) {
+      console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
+    }
+  }
+
+  // ── Ticket refund status ──────────────────────────────────────────────
+  // Same reasoning as the transfer webhooks above: the synchronous /refund
+  // create-call response only means "accepted", not "money moved" -- these
+  // events are the authoritative completion signal.
+  if (event?.event === 'refund.processed' || event?.event === 'refund.failed') {
+    const refundId = event.data?.id != null ? String(event.data.id) : null;
+
+    if (!refundId) {
+      console.error('[Paystack webhook] refund event missing data.id', event.data);
+      return res.status(200).json({ received: true });
+    }
+
+    try {
+      const baseUrl = process.env.VITE_INSFORGE_URL;
+      const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+      if (!baseUrl || !anonKey) {
+        console.error('[Paystack webhook] VITE_INSFORGE_URL or VITE_INSFORGE_ANON_KEY not set');
+        return res.status(200).json({ received: true });
+      }
+
+      const insforgeHeaders = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${anonKey}`,
+        apikey: anonKey,
+      };
+
+      if (event.event === 'refund.processed') {
+        const rpcRes = await fetch(`${baseUrl}/api/database/rpc/finalize_ticket_refund`, {
+          method: 'POST',
+          headers: insforgeHeaders,
+          body: JSON.stringify({ p_refund_id: refundId }),
+        });
+        const rows = await rpcRes.json().catch(() => null);
+        const row = Array.isArray(rows) ? rows[0] : rows?.data ?? rows;
+        console.log('[Paystack webhook] refund.processed -> finalize_ticket_refund result:', row?.status, 'for', refundId);
+
+        if (row?.status === 'finalized' && row?.buyer_email) {
+          sendTicketRefundEmail({
+            to: row.buyer_email,
+            name: row.buyer_name || 'there',
+            eventTitle: row.event_title || 'your event',
+            ticketType: row.ticket_type || 'Regular',
+            amountNaira: fmtNaira(Number(row.refunded_amount_kobo) || 0),
+            reason: row.reason || 'Refund requested by the organizer.',
+          }).catch((e) => console.error('[Paystack webhook] refund email failed:', e?.message || e));
+        }
+      } else {
+        const rpcRes = await fetch(`${baseUrl}/api/database/rpc/fail_ticket_refund`, {
+          method: 'POST',
+          headers: insforgeHeaders,
+          body: JSON.stringify({ p_refund_id: refundId, p_reason: event.data?.message || event.event }),
+        });
+        const rows = await rpcRes.json().catch(() => null);
+        const row = Array.isArray(rows) ? rows[0] : rows?.data ?? rows;
+        console.log('[Paystack webhook] refund.failed -> fail_ticket_refund result:', row?.status, 'for', refundId);
       }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);

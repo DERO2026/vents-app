@@ -2,9 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, ScanLine, Shield, CalendarX, Search, X, CheckCircle2,
   Clock, Wand2, RefreshCw, Ticket as TicketIcon, Mail, Phone, Hash, Wifi, WifiOff,
+  Copy as CopyIcon, XCircle, AlertTriangle, Ban, RotateCcw, UserCheck,
 } from 'lucide-react';
 import { Event } from './types';
-import { useDoorManager, Attendee, DoorFilter, FeedItem } from '../../lib/useDoorManager';
+import { useDoorManager, Attendee, DoorFilter, FeedItem, ScanLogItem, ScanResult } from '../../lib/useDoorManager';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -26,6 +27,25 @@ const FILTERS: { id: DoorFilter; label: string }[] = [
   { id: 'refunded', label: 'Refunded' },
   { id: 'cancelled', label: 'Cancelled' },
 ];
+
+const SCAN_LOG_FILTERS: { id: ScanResult | 'all'; label: string }[] = [
+  { id: 'all', label: 'All Scans' },
+  { id: 'valid', label: 'Valid' },
+  { id: 'duplicate', label: 'Duplicate' },
+  { id: 'invalid', label: 'Invalid' },
+  { id: 'wrong_event', label: 'Wrong Event' },
+  { id: 'refunded', label: 'Refunded' },
+  { id: 'cancelled', label: 'Cancelled' },
+];
+
+const SCAN_RESULT_META: Record<ScanResult, { label: string; color: string; icon: React.ComponentType<{ size: number; color: string }> }> = {
+  valid:       { label: 'Valid',       color: '#10B981', icon: CheckCircle2 },
+  duplicate:   { label: 'Duplicate',   color: '#FFB830', icon: CopyIcon },
+  invalid:     { label: 'Invalid',     color: '#EF4444', icon: XCircle },
+  wrong_event: { label: 'Wrong Event', color: '#F59E0B', icon: AlertTriangle },
+  refunded:    { label: 'Refunded',    color: '#EF4444', icon: RotateCcw },
+  cancelled:   { label: 'Cancelled',   color: '#8B8FA8', icon: Ban },
+};
 
 interface DoorManagerScreenProps {
   event: Event;
@@ -145,10 +165,14 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
       <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}>
         {/* Stats */}
         <div style={{ padding: '14px 18px 4px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '10px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
             <Stat label="Checked In" value={dm.stats.checked_in} color={C.green} glow />
             <Stat label="Remaining" value={dm.stats.remaining} color={C.text} />
             <Stat label="Sold" value={dm.stats.total} color={C.purple} />
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '10px' }}>
+            <Stat label="Duplicate Scans" value={dm.stats.duplicate_attempts} color={C.gold} small />
+            <Stat label="Invalid / Fake" value={dm.stats.invalid_attempts} color={C.red} small />
           </div>
           <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '16px', padding: '13px 15px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
@@ -222,6 +246,41 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
             </div>
           )}
         </Section>
+
+        {/* Scan history — every attempt (valid, duplicate, invalid, wrong event,
+            refunded, cancelled), searchable via the result filter, distinct from
+            the "Live Activity" feed above which only shows successful admissions. */}
+        <Section title="Scan History">
+          <div style={{ display: 'flex', gap: '7px', overflowX: 'auto', paddingBottom: '10px', scrollbarWidth: 'none' }}>
+            {SCAN_LOG_FILTERS.map((f) => {
+              const on = dm.scanLogFilter === f.id;
+              return (
+                <button key={f.id} onClick={() => dm.setScanLogFilter(f.id)} style={{
+                  flexShrink: 0, padding: '7px 13px', borderRadius: '100px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+                  background: on ? 'rgba(124,58,237,0.18)' : C.card, color: on ? C.purple : C.sub,
+                  border: `1px solid ${on ? 'rgba(167,139,250,0.5)' : C.line}`, whiteSpace: 'nowrap',
+                }}>{f.label}</button>
+              );
+            })}
+          </div>
+
+          {dm.loadingScanLog ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+              {[0, 1, 2].map((i) => <div key={i} style={{ height: 58, borderRadius: 13, background: C.card, border: `1px solid ${C.line}` }} />)}
+            </div>
+          ) : dm.scanLog.length === 0 ? (
+            <Empty text="No scans recorded yet for this filter." />
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+              {dm.scanLog.map((s) => <ScanLogRow key={s.id} s={s} />)}
+              {dm.hasMoreScanLog && (
+                <button onClick={dm.loadMoreScanLog} disabled={dm.loadingMoreScanLog} style={{ ...ghostBtn, flex: 'none', marginTop: 4 }}>
+                  {dm.loadingMoreScanLog ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+            </div>
+          )}
+        </Section>
         <div style={{ height: '24px' }} />
       </div>
 
@@ -246,10 +305,10 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
 const iconBtn: React.CSSProperties = { background: C.card, border: `1px solid ${C.line}`, borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 };
 const scanBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '9px 14px', cursor: 'pointer', flexShrink: 0, boxShadow: '0 4px 16px rgba(123,47,190,0.4)' };
 
-function Stat({ label, value, color, glow }: { label: string; value: number; color: string; glow?: boolean }) {
+function Stat({ label, value, color, glow, small }: { label: string; value: number; color: string; glow?: boolean; small?: boolean }) {
   return (
-    <div style={{ background: C.card, border: `1px solid ${glow ? 'rgba(16,185,129,0.3)' : C.line}`, borderRadius: '16px', padding: '13px 10px', textAlign: 'center', boxShadow: glow ? `0 0 22px ${C.greenGlow}` : 'none' }}>
-      <div style={{ color, fontSize: '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Space Grotesk, sans-serif' }}>{value}</div>
+    <div style={{ background: C.card, border: `1px solid ${glow ? 'rgba(16,185,129,0.3)' : C.line}`, borderRadius: '16px', padding: small ? '10px' : '13px 10px', textAlign: 'center', boxShadow: glow ? `0 0 22px ${C.greenGlow}` : 'none' }}>
+      <div style={{ color, fontSize: small ? '20px' : '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Space Grotesk, sans-serif' }}>{value}</div>
       <div style={{ color: C.sub, fontSize: '10.5px', fontWeight: 600, marginTop: '3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
     </div>
   );
@@ -288,6 +347,33 @@ function FeedRow({ time, name, detail, tone, icon, vip }: { time: string; name: 
   );
 }
 
+function ScanLogRow({ s }: { s: ScanLogItem }) {
+  const meta = SCAN_RESULT_META[s.result] || SCAN_RESULT_META.invalid;
+  const Icon = meta.icon;
+  const name = s.holder_name || (s.result === 'valid' || s.result === 'duplicate' ? 'Verified Attendee' : 'Unresolved scan');
+  const detailParts = [
+    s.ticket_type,
+    s.scanner_name ? `Scanned by ${s.scanner_name}` : null,
+    s.gate_name,
+    s.is_manual_override ? 'Manual' : null,
+    !s.holder_name && s.message ? s.message : null,
+  ].filter(Boolean);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: C.card, border: `1px solid ${meta.color}40`, borderRadius: '13px', padding: '10px 12px', contentVisibility: 'auto' as any, containIntrinsicSize: '58px' as any }}>
+      <div style={{ width: 28, height: 28, borderRadius: '50%', background: meta.color + '22', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        <Icon size={14} color={meta.color} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <p style={{ color: C.text, fontSize: '13.5px', fontWeight: 700, margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {name}<span style={{ marginLeft: 7, color: meta.color, fontSize: '10.5px', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{meta.label}</span>
+        </p>
+        <p style={{ color: C.sub, fontSize: '11.5px', margin: '1px 0 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detailParts.join(' · ') || '—'}</p>
+      </div>
+      <span style={{ color: C.faint, fontSize: '11px', fontWeight: 600, flexShrink: 0 }}>{fmtTime(s.created_at)}</span>
+    </div>
+  );
+}
+
 const vipChip: React.CSSProperties = { marginLeft: 6, color: C.gold, fontSize: '9px', fontWeight: 800, letterSpacing: '0.06em', background: 'rgba(255,184,48,0.14)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px', padding: '1px 6px', verticalAlign: 'middle' };
 
 function StatusBadge({ a }: { a: Attendee }) {
@@ -298,7 +384,7 @@ function StatusBadge({ a }: { a: Attendee }) {
       <div style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: C.green, fontSize: '12px', fontWeight: 800 }}>
         <CheckCircle2 size={14} />{a.is_manual_override ? 'Manual' : 'In'}
       </div>
-      <div style={{ color: C.faint, fontSize: '10.5px', marginTop: '1px' }}>{fmtTime(a.checked_in_at)}</div>
+      <div style={{ color: C.faint, fontSize: '10.5px', marginTop: '1px' }}>{fmtTime(a.checked_in_at)}{a.scanner_name ? ` · ${a.scanner_name}` : ''}</div>
     </div>
   );
   return <Badge text="Pending" color={C.sub} dim />;
@@ -366,6 +452,7 @@ function DetailsSheet({ a, scanningDisabled, confirming, acting, onConfirmStart,
           <Row icon={<Clock size={15} color={C.purple} />} label="Purchased" value={fmtDate(a.purchased_at)} />
           <Row icon={<CheckCircle2 size={15} color={payColor} />} label="Payment" value={(a.payment_status || 'unknown').replace(/^\w/, (c) => c.toUpperCase())} />
           {a.checked_in && <Row icon={<Clock size={15} color={C.green} />} label="Checked in" value={`${fmtDate(a.checked_in_at)} · ${fmtTime(a.checked_in_at)}`} />}
+          {a.checked_in && <Row icon={<UserCheck size={15} color={C.purple} />} label="Scanned by" value={a.scanner_name || (a.is_manual_override ? 'Manual override' : 'Unknown')} />}
         </div>
 
         {/* Manual override */}

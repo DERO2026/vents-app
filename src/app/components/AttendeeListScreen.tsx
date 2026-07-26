@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft, Search, CheckCircle, XCircle, Download } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide-react';
+import { insforge, getAuthToken } from '../../lib/insforge';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -16,8 +16,10 @@ interface Attendee {
   email: string;
   ticketType: string;
   ticketId: string;
+  ticketIdShort: string;
   quantity: number;
   status: CheckInStatus;
+  paymentStatus: string;
   initials: string;
   avatarColor: string;
 }
@@ -64,9 +66,11 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
               name,
               email: u.email || '',
               ticketType: t.ticket_type || 'Regular',
-              ticketId: t.id.slice(0, 8).toUpperCase(),
+              ticketId: t.id,
+              ticketIdShort: t.id.slice(0, 8).toUpperCase(),
               quantity: t.quantity || 1,
               status: (t.payment_status === 'paid' ? 'pending' : 'cancelled') as CheckInStatus,
+              paymentStatus: t.payment_status,
               initials,
               avatarColor: colorForName(name),
             };
@@ -89,7 +93,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
       !query ||
       a.name.toLowerCase().includes(query.toLowerCase()) ||
       a.email.toLowerCase().includes(query.toLowerCase()) ||
-      a.ticketId.toLowerCase().includes(query.toLowerCase());
+      a.ticketIdShort.toLowerCase().includes(query.toLowerCase());
     const matchS = statusFilter === 'all' || a.status === statusFilter;
     return matchQ && matchS;
   });
@@ -102,6 +106,38 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
           : a
       )
     );
+  };
+
+  const [refundingId, setRefundingId] = useState<string | null>(null);
+
+  const handleRefund = async (attendee: Attendee) => {
+    const reason = window.prompt(`Reason for refunding ${attendee.name}'s ${attendee.ticketType} ticket? (shown to the attendee)`);
+    if (!reason || !reason.trim()) return;
+    if (!window.confirm(`Refund ${attendee.name}'s ticket? This cancels the ticket and cannot be undone.`)) return;
+
+    setRefundingId(attendee.id);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch('/api/wallet/refund-ticket', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ticket_id: attendee.ticketId, reason: reason.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Refund failed');
+
+      setAttendees((prev) =>
+        prev.map((a) =>
+          a.id === attendee.id
+            ? { ...a, status: 'cancelled', paymentStatus: json.status === 'refunded' ? 'refunded' : 'refund_pending' }
+            : a
+        )
+      );
+    } catch (err: any) {
+      window.alert(err.message || 'Refund failed');
+    } finally {
+      setRefundingId(null);
+    }
   };
 
   return (
@@ -189,14 +225,32 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                           <p style={{ color: '#8B8FA8', fontSize: '11px' }}>{attendee.email}</p>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px' }}>
                             <span style={{ background: 'rgba(167,139,250,0.1)', color: '#A78BFA', fontSize: '10px', fontWeight: 600, padding: '1px 6px', borderRadius: '4px' }}>{attendee.ticketType}</span>
-                            <span style={{ color: '#8B8FA8', fontSize: '10px', fontFamily: 'monospace' }}>{attendee.ticketId}</span>
+                            <span style={{ color: '#8B8FA8', fontSize: '10px', fontFamily: 'monospace' }}>{attendee.ticketIdShort}</span>
                             {attendee.quantity > 1 && <span style={{ color: '#8B8FA8', fontSize: '10px' }}>×{attendee.quantity}</span>}
+                            {attendee.paymentStatus === 'refunded' && (
+                              <span style={{ color: '#EF4444', fontSize: '10px', fontWeight: 600 }}>Refunded</span>
+                            )}
+                            {attendee.paymentStatus === 'refund_pending' && (
+                              <span style={{ color: '#F59E0B', fontSize: '10px', fontWeight: 600 }}>Refund pending</span>
+                            )}
                           </div>
                         </div>
-                        <button onClick={() => toggleCheckIn(attendee.id)} disabled={attendee.status === 'cancelled'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: sc.bg, border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: attendee.status === 'cancelled' ? 'not-allowed' : 'pointer', flexShrink: 0 }}>
-                          <StatusIcon size={13} color={sc.color} />
-                          <span style={{ color: sc.color, fontSize: '11px', fontWeight: 600 }}>{sc.label}</span>
-                        </button>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                          {attendee.paymentStatus === 'paid' && (
+                            <button
+                              onClick={() => handleRefund(attendee)}
+                              disabled={refundingId === attendee.id}
+                              title="Refund this ticket"
+                              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '8px', width: '30px', height: '30px', cursor: refundingId === attendee.id ? 'wait' : 'pointer' }}
+                            >
+                              <Undo2 size={13} color="#EF4444" />
+                            </button>
+                          )}
+                          <button onClick={() => toggleCheckIn(attendee.id)} disabled={attendee.status === 'cancelled'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: sc.bg, border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: attendee.status === 'cancelled' ? 'not-allowed' : 'pointer' }}>
+                            <StatusIcon size={13} color={sc.color} />
+                            <span style={{ color: sc.color, fontSize: '11px', fontWeight: 600 }}>{sc.label}</span>
+                          </button>
+                        </div>
                       </div>
                     );
                   })}

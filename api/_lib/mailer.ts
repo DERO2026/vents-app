@@ -142,6 +142,26 @@ export async function sendPayoutDecisionEmail(params: {
   );
 }
 
+export async function sendTicketRefundEmail(params: {
+  to: string;
+  name: string;
+  eventTitle: string;
+  ticketType: string;
+  amountNaira: string;
+  reason: string;
+}): Promise<boolean> {
+  const { to, name, eventTitle, ticketType, amountNaira, reason } = params;
+  return sendEmail(
+    to,
+    `Your ticket for ${eventTitle} has been refunded`,
+    wrapTemplate('Ticket refunded', `
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Hi ${escapeHtml(name)},</p>
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">Your <strong>${escapeHtml(ticketType)}</strong> ticket for <strong>${escapeHtml(eventTitle)}</strong> has been refunded. ${amountNaira} will be returned to your original payment method — this can take a few business days to reflect, depending on your bank.</p>
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6; background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.25); border-radius: 10px; padding: 12px 14px;"><strong>Reason:</strong> ${escapeHtml(reason)}</p>
+    `)
+  );
+}
+
 function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }

@@ -6,7 +6,6 @@ import { registerPushNotifications, unregisterPushNotifications } from '../lib/p
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
-import { sendSMS } from '../lib/sendchamp';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 
 import { SplashScreen } from './components/SplashScreen';
@@ -1254,12 +1253,9 @@ export default function App() {
           const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
           rows.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
           if (rows[0]) { primaryTicketId = rows[0].ticket_id; primaryToken = rows[0].token; }
-          if (currentUser?.phone_number) {
-            sendSMS({
-              to: currentUser.phone_number,
-              message: `Your ticket for ${ticket.event.title} has been confirmed! Check the Vents app for your QR code. - Vents`,
-            }).catch(() => {});
-          }
+          // Confirmation SMS is now sent server-side (see api/notify/status-email.ts,
+          // request_type: 'ticket') using the on-file phone number — the client no
+          // longer holds a Sendchamp key to send it directly.
           // Email confirmation with full ticket details + validation info. The
           // endpoint authenticates the buyer and emails only their own address
           // with details pulled server-side — best-effort, never blocks.
