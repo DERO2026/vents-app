@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import QRCode from 'qrcode';
 import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail, sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
@@ -35,6 +36,53 @@ async function sendTicketEmailResend(to: string, subject: string, html: string):
   } catch { return false; }
 }
 
+// Real signed pass token — same generate_ticket_token() RPC the app itself
+// uses (src/lib/ticketToken.ts), so the QR emailed to an attendee is a
+// genuine, scanner-valid v2 signed token, not a placeholder. A couple of
+// quick retries absorb transient network blips without failing the whole send.
+async function mintTicketToken(ticketId: string, baseUrl: string, headers: Record<string, string>): Promise<string | null> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${baseUrl}/api/database/rpc/generate_ticket_token`, {
+        method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ p_ticket_id: ticketId }),
+      });
+      if (res.ok) {
+        const token = await res.json().catch(() => null);
+        if (typeof token === 'string' && token) return token;
+      }
+      console.warn('[ticket-email] mint token failed', { ticketId, attempt, status: res.status });
+    } catch (e) {
+      console.warn('[ticket-email] mint token threw', { ticketId, attempt, e });
+    }
+    if (attempt < 2) await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
+  }
+  return null;
+}
+
+// Render the signed token as a PNG QR and host it in the (public) `tickets`
+// storage bucket so it can be embedded as a normal <img src> — the only email
+// image approach that reliably renders across Gmail/Apple Mail/Outlook without
+// relying on data-URI or attachment/cid support we can't verify from here.
+// Best-effort: a failure here degrades to a text code in the email, it never
+// blocks the send.
+async function renderAndHostQr(token: string, ticketId: string, baseUrl: string, headers: Record<string, string>): Promise<string | null> {
+  try {
+    const png = await QRCode.toBuffer(token, { width: 480, margin: 2, errorCorrectionLevel: 'L', color: { dark: '#0A0B14', light: '#ffffff' } });
+    const fd = new FormData();
+    fd.append('file', new File([png], `qr-${ticketId}-${Date.now()}.png`, { type: 'image/png' }));
+    const res = await fetch(`${baseUrl}/api/storage/buckets/tickets/objects`, { method: 'POST', headers, body: fd });
+    if (!res.ok) { console.warn('[ticket-email] QR upload failed', { ticketId, status: res.status }); return null; }
+    const data = await res.json().catch(() => null);
+    if (data?.url) return data.url as string;
+    if (data?.key) return `${baseUrl}/api/storage/buckets/tickets/objects/${encodeURIComponent(data.key)}`;
+    return null;
+  } catch (e) {
+    console.warn('[ticket-email] QR render/upload threw', { ticketId, e });
+    return null;
+  }
+}
+
 // Fires the approval/rejection email for an organizer-role request or a CAC
 // brand-verification request. Called by the admin client right after the
 // status-changing RPC succeeds — never blocks the admin action if it fails.
@@ -59,9 +107,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const anonKeyEarly = process.env.VITE_INSFORGE_ANON_KEY;
 
   // ── Self-serve ticket confirmation (non-admin) ─────────────────────────────
-  // A buyer confirms their OWN purchase. We authenticate them, verify they
-  // actually own tickets for the event, then email ONLY their own address with
-  // real details pulled from the DB (never trusting client-supplied content).
+  // The buyer triggers this right after a group purchase. We authenticate
+  // THEM, verify the tickets belong to their purchase, then send ONE email PER
+  // UNIQUE ATTENDEE EMAIL — each containing only that attendee's own ticket(s)
+  // with a real, scanner-valid signed QR — never all tickets bundled into the
+  // buyer's inbox. Every detail (event, holder, ticket type, QR) is pulled
+  // server-side from the DB; nothing here trusts client-supplied content.
   if ((req.body || {}).request_type === 'ticket') {
     const { event_id } = req.body || {};
     if (!event_id || typeof event_id !== 'string') return res.status(400).json({ error: 'event_id required' });
@@ -72,7 +123,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const h = { Authorization: authHeader, apikey: anonKeyEarly } as Record<string, string>;
     try {
-      // The caller's own tickets for this event (RLS also restricts to owner).
+      // The caller's own tickets for this event (RLS also restricts to owner —
+      // only the buyer can trigger delivery, but each ticket is then routed to
+      // the attendee email that was entered for IT at checkout).
       const tRes = await fetch(`${baseUrlEarly}/api/database/records/tickets?event_id=eq.${encodeURIComponent(event_id)}&user_id=eq.${encodeURIComponent(session.userId)}&select=id,ticket_type,holder_name,holder_email,created_at,status&order=created_at.desc&limit=20`, { headers: h });
       if (!tRes.ok) return res.status(tRes.status).json({ error: 'Could not load tickets' });
       const tickets = (await tRes.json().catch(() => [])) as any[];
@@ -84,42 +137,70 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const evRes = await fetch(`${baseUrlEarly}/api/database/records/events?id=eq.${encodeURIComponent(event_id)}&select=title,event_date,location`, { headers: h });
       const ev = (await evRes.json().catch(() => []))?.[0] || {};
-      const toEmail = session.email || batch[0].holder_email;
-      if (!toEmail) return res.status(400).json({ error: 'No email on file' });
-
       const dateStr = ev.event_date ? new Date(ev.event_date).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short' }) : 'See app';
-      const rows = batch.map((t) => `
-        <tr>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;">${escapeHtml(t.holder_name || 'Guest')}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;">${escapeHtml(t.ticket_type || 'General')}</td>
-          <td style="padding:10px 12px;border-bottom:1px solid #eee;font-family:monospace;">${escapeHtml(ticketDisplayCode(t.id))}</td>
-        </tr>`).join('');
-      const html = `
-        <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#111;">
-          <div style="background:linear-gradient(135deg,#7B2FBE,#4F46E5);padding:24px;border-radius:14px 14px 0 0;color:#fff;">
-            <div style="font-size:13px;letter-spacing:1px;opacity:.85;">VENTS · TICKET CONFIRMED</div>
-            <div style="font-size:22px;font-weight:800;margin-top:6px;">${escapeHtml(ev.title || 'Your event')}</div>
-          </div>
-          <div style="border:1px solid #eee;border-top:none;border-radius:0 0 14px 14px;padding:20px;">
-            <p style="margin:0 0 4px;"><strong>📅 ${escapeHtml(dateStr)}</strong></p>
-            <p style="margin:0 0 16px;color:#555;">📍 ${escapeHtml(ev.location || 'See app for venue')}</p>
-            <p style="margin:0 0 8px;font-weight:700;">Your ${batch.length} ticket${batch.length > 1 ? 's' : ''}:</p>
-            <table style="width:100%;border-collapse:collapse;font-size:14px;">
-              <thead><tr>
-                <th style="text-align:left;padding:8px 12px;color:#888;font-size:11px;text-transform:uppercase;">Attendee</th>
-                <th style="text-align:left;padding:8px 12px;color:#888;font-size:11px;text-transform:uppercase;">Type</th>
-                <th style="text-align:left;padding:8px 12px;color:#888;font-size:11px;text-transform:uppercase;">Code</th>
-              </tr></thead>
-              <tbody>${rows}</tbody>
-            </table>
-            <div style="margin-top:18px;padding:14px;background:#F5F1FF;border-radius:10px;font-size:13px;color:#4B2E83;">
-              <strong>Entry & validation:</strong> Open the Vents app → <em>My Tickets</em> and present the QR code at the door. Each QR is signed and single-use — screenshots that don't match will be declined.
-            </div>
-          </div>
-        </div>`;
 
-      const sent = await sendTicketEmailResend(toEmail, `🎟️ Your tickets for ${ev.title || 'your event'}`, html);
-      return res.status(200).json({ sent });
+      // Group tickets by the UNIQUE email entered for each attendee — this is
+      // the actual fix. Previously every ticket in the batch, regardless of
+      // whose name/email was on it, was summarized into one email sent only to
+      // the buyer. Falls back to the buyer's own session email only for a row
+      // that (should never, but defensively) has no holder_email on file.
+      const groups = new Map<string, any[]>();
+      for (const t of batch) {
+        const key = (t.holder_email || session.email || '').trim().toLowerCase();
+        if (!key) continue;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(t);
+      }
+      if (groups.size === 0) return res.status(400).json({ error: 'No attendee email on file' });
+
+      let sentCount = 0;
+      const results: Array<{ email: string; sent: boolean }> = [];
+
+      for (const [attendeeEmail, myTickets] of groups) {
+        // One real signed QR per ticket, hosted so it renders as a normal
+        // inline image in any mail client (see renderAndHostQr). Best-effort
+        // per ticket — a failed QR degrades that row to a text code instead of
+        // failing the whole recipient's email.
+        const blocks = await Promise.all(myTickets.map(async (t) => {
+          const token = await mintTicketToken(t.id, baseUrlEarly, h);
+          const qrUrl = token ? await renderAndHostQr(token, t.id, baseUrlEarly, h) : null;
+          return { ticket: t, qrUrl };
+        }));
+
+        const isBuyer = attendeeEmail === (session.email || '').trim().toLowerCase();
+        const ticketBlocksHtml = blocks.map(({ ticket: t, qrUrl }) => `
+          <div style="border:1px solid #eee;border-radius:12px;padding:16px;margin-top:14px;text-align:center;">
+            <p style="margin:0 0 2px;font-weight:700;font-size:14px;">${escapeHtml(t.holder_name || 'Guest')}</p>
+            <p style="margin:0 0 12px;color:#888;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">${escapeHtml(t.ticket_type || 'General')}</p>
+            ${qrUrl
+              ? `<img src="${qrUrl}" alt="Ticket QR code" width="220" height="220" style="display:block;margin:0 auto;border-radius:8px;border:1px solid #eee;" />`
+              : `<div style="padding:20px;background:#F7F7F9;border-radius:8px;color:#888;font-size:12px;">QR unavailable — open My Tickets in the app to view it.</div>`}
+            <p style="margin:12px 0 0;font-family:monospace;font-size:13px;letter-spacing:0.03em;">${escapeHtml(ticketDisplayCode(t.id))}</p>
+          </div>`).join('');
+
+        const html = `
+          <div style="font-family:Arial,Helvetica,sans-serif;max-width:560px;margin:0 auto;color:#111;">
+            <div style="background:linear-gradient(135deg,#7B2FBE,#4F46E5);padding:24px;border-radius:14px 14px 0 0;color:#fff;">
+              <div style="font-size:13px;letter-spacing:1px;opacity:.85;">VENTS · TICKET CONFIRMED</div>
+              <div style="font-size:22px;font-weight:800;margin-top:6px;">${escapeHtml(ev.title || 'Your event')}</div>
+            </div>
+            <div style="border:1px solid #eee;border-top:none;border-radius:0 0 14px 14px;padding:20px;">
+              <p style="margin:0 0 4px;"><strong>📅 ${escapeHtml(dateStr)}</strong></p>
+              <p style="margin:0 0 16px;color:#555;">📍 ${escapeHtml(ev.location || 'See app for venue')}</p>
+              <p style="margin:0 0 4px;font-weight:700;">${isBuyer && blocks.length !== batch.length ? `Your ${blocks.length} ticket${blocks.length > 1 ? 's' : ''}` : `Your ticket${blocks.length > 1 ? 's' : ''}`}:</p>
+              ${ticketBlocksHtml}
+              <div style="margin-top:18px;padding:14px;background:#F5F1FF;border-radius:10px;font-size:13px;color:#4B2E83;">
+                <strong>Entry &amp; validation:</strong> Present this QR code at the door, or open the Vents app → <em>My Tickets</em>. Each QR is signed and single-use — screenshots that don't match will be declined.
+              </div>
+            </div>
+          </div>`;
+
+        const sent = await sendTicketEmailResend(attendeeEmail, `🎟️ Your ticket${blocks.length > 1 ? 's' : ''} for ${ev.title || 'your event'}`, html);
+        if (sent) sentCount++;
+        results.push({ email: attendeeEmail, sent });
+      }
+
+      return res.status(200).json({ sent: sentCount > 0, recipients: results.length, delivered: sentCount, results });
     } catch (err: any) {
       return res.status(500).json({ error: err?.message || 'Ticket email failed' });
     }

@@ -569,6 +569,20 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (existsResult?.phone_taken) throw new Error('Phone number already exists');
         if (existsResult?.username_taken) throw new Error('Username already exists');
 
+        // check_user_exists only flags VERIFIED accounts, so an abandoned,
+        // unverified signup sharing this email/phone/username can still be
+        // sitting in the database — which would make the signUp() call below
+        // fail on the platform's own uniqueness constraint. Reclaim (delete)
+        // any such stale, unconfirmed row first so this signup can proceed.
+        // No-op if nothing matches; never touches a verified account.
+        try {
+          await insforge.database.rpc('reclaim_unverified_signup', {
+            p_email: normalizedEmail,
+            p_phone: normalizedPhone,
+            p_username: normalizedUsername,
+          });
+        } catch { /* best-effort — a real collision still surfaces via signUp()'s own error below */ }
+
         await checkAuthRateLimit('signup', normalizedEmail);
         // Server-side re-check, not just the client-side signupsDisabled
         // gate above — catches any caller hitting this RPC layer directly.

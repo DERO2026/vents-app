@@ -85,6 +85,7 @@
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
     "@tailwindcss/vite": "4.1.12",
+    "@types/node": "^26.1.1",
     "@vercel/node": "^5.8.21",
     "@vitejs/plugin-react": "4.7.0",
     "jsdom": "^29.1.1",
