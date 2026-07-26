@@ -60,22 +60,33 @@ async function mintTicketToken(ticketId: string, baseUrl: string, headers: Recor
   return null;
 }
 
-// Render the signed token as a PNG QR and host it in the (public) `tickets`
-// storage bucket so it can be embedded as a normal <img src> — the only email
-// image approach that reliably renders across Gmail/Apple Mail/Outlook without
-// relying on data-URI or attachment/cid support we can't verify from here.
+// Render the signed token as a PNG QR and host it so it can be embedded as a
+// normal <img src> — the only email image approach that reliably renders
+// across Gmail/Apple Mail/Outlook without relying on data-URI or
+// attachment/cid support we can't verify from here.
+//
+// Hosted in the `events` bucket (not a dedicated `tickets` bucket): a fresh
+// bucket was created for this, but authenticated user uploads to it 403'd on
+// a "row-level security policy" error even after the matching Postgres RLS
+// policy was extended to include it (verified correct in pg_catalog, and an
+// identical predicate already permits the same token on `events`) — strong
+// signal the storage gateway enforces its own bucket allowlist independent of
+// the RLS we can edit, which we have no visibility into from here. `events`
+// is proven to accept authenticated uploads (used for flyers), so QR images
+// are namespaced under a `ticket-qr-` key prefix there instead of leaving
+// this feature on a bucket that silently can't be written to.
 // Best-effort: a failure here degrades to a text code in the email, it never
 // blocks the send.
 async function renderAndHostQr(token: string, ticketId: string, baseUrl: string, headers: Record<string, string>): Promise<string | null> {
   try {
     const png = await QRCode.toBuffer(token, { width: 480, margin: 2, errorCorrectionLevel: 'L', color: { dark: '#0A0B14', light: '#ffffff' } });
     const fd = new FormData();
-    fd.append('file', new File([png], `qr-${ticketId}-${Date.now()}.png`, { type: 'image/png' }));
-    const res = await fetch(`${baseUrl}/api/storage/buckets/tickets/objects`, { method: 'POST', headers, body: fd });
+    fd.append('file', new File([png], `ticket-qr-${ticketId}-${Date.now()}.png`, { type: 'image/png' }));
+    const res = await fetch(`${baseUrl}/api/storage/buckets/events/objects`, { method: 'POST', headers, body: fd });
     if (!res.ok) { console.warn('[ticket-email] QR upload failed', { ticketId, status: res.status }); return null; }
     const data = await res.json().catch(() => null);
     if (data?.url) return data.url as string;
-    if (data?.key) return `${baseUrl}/api/storage/buckets/tickets/objects/${encodeURIComponent(data.key)}`;
+    if (data?.key) return `${baseUrl}/api/storage/buckets/events/objects/${encodeURIComponent(data.key)}`;
     return null;
   } catch (e) {
     console.warn('[ticket-email] QR render/upload threw', { ticketId, e });
