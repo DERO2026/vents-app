@@ -1,0 +1,29 @@
+-- ── CRITICAL FIX: public.users readable in full by any authenticated user ───
+-- Audit finding: `public_profiles_read` (`FOR SELECT TO authenticated USING
+-- (true)`) applied to the RAW users table with no column restriction. Since
+-- Postgres RLS is row-level, not column-level, and the table already had a
+-- full-column SELECT grant to `authenticated`, this let ANY signed-in user
+-- read every column of every other user's row -- including totp_secret
+-- (full 2FA bypass for any account), email, original_email, phone_number,
+-- date_of_birth, banned_until, reason, deleted_by.
+--
+-- The platform already has a deliberately-designed safe surface for viewing
+-- OTHER users' profiles: the public.public_profiles view / get_public_profiles()
+-- function (see 20260619121252_mask-admin-role-in-public-profiles.sql),
+-- which SECURITY DEFINER-exposes only id/full_name/username/avatar_url/
+-- cover_url/is_verified/state/role (admin masked as organizer). A grep of the
+-- client confirms every existing "view someone else's profile" read already
+-- goes through that view (ExploreScreen.tsx, HomeScreen.tsx) or a gated
+-- SECURITY DEFINER RPC (get_event_attendees, used by AttendeeListScreen.tsx
+-- and DoorManagerScreen.tsx) -- nothing legitimate depends on raw cross-user
+-- access to public.users, so this policy can be dropped outright with no
+-- loss of functionality:
+--   - select_own_user (id = auth.uid()) is untouched -- a user's own profile
+--     screen, and the login flow's own TOTP read, keep working exactly as
+--     before.
+--   - admin_select_users (is_admin()) is untouched -- the admin dashboard's
+--     user management keeps working exactly as before.
+--   - public_profiles_read is the ONLY policy removed; it was the sole
+--     source of the cross-user full-row leak.
+
+DROP POLICY IF EXISTS public_profiles_read ON public.users;

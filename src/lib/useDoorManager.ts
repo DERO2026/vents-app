@@ -215,6 +215,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     if (!eventId) return;
     const channel = `door:${eventId}`;
     let subscribed = false;
+    let torn = false;
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
       if (debounce) clearTimeout(debounce);
@@ -223,7 +224,10 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
 
     insforge.realtime.connect()
       .then(() => insforge.realtime.subscribe(channel))
-      .then(() => { subscribed = true; setLive(true); })
+      .then(() => {
+        if (torn) { insforge.realtime.unsubscribe(channel); return; }
+        subscribed = true; setLive(true);
+      })
       .catch(() => setLive(false));
 
     insforge.realtime.on('checkin', bump);
@@ -231,6 +235,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     insforge.realtime.on('scan_attempt', bump);
 
     return () => {
+      torn = true;
       if (debounce) clearTimeout(debounce);
       insforge.realtime.off?.('checkin', bump);
       insforge.realtime.off?.('ticket', bump);

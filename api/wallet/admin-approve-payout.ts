@@ -29,9 +29,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   try {
-    // is_admin() is enforced inside this RPC — a non-admin caller gets a
-    // clean rejection here, before we ever touch Paystack.
-    const fetchRes = await fetch(`${baseUrl}/api/database/rpc/admin_get_payout_for_processing`, {
+    // is_admin() is enforced inside this RPC. Critically, this ATOMICALLY
+    // flips the request from 'pending' to 'processing' (a compare-and-swap
+    // UPDATE ... WHERE status = 'pending') BEFORE we ever touch Paystack —
+    // this is what makes concurrent approvals of the same request safe: only
+    // the caller whose UPDATE actually matched the row (claimed === true)
+    // proceeds to fire a real transfer. A second, concurrent/duplicate call
+    // for the same request_id gets claimed === false and stops here.
+    const fetchRes = await fetch(`${baseUrl}/api/database/rpc/admin_claim_payout_for_processing`, {
       method: 'POST',
       headers: insforgeHeaders,
       body: JSON.stringify({ p_request_id: request_id }),
@@ -43,10 +48,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rows = await fetchRes.json();
     const row = Array.isArray(rows) ? rows[0] : rows;
     if (!row) return res.status(404).json({ error: 'Payout request not found' });
-    if (row.status !== 'pending') {
+    if (!row.claimed) {
       return res.status(409).json({ error: `Request is already ${row.status}, not pending` });
     }
     if (!row.recipient_code) {
+      // We already claimed (flipped to 'processing') above — release it back
+      // to 'pending' rather than leaving it stuck with no transfer in flight.
+      await fetch(`${baseUrl}/api/database/rpc/admin_release_payout_claim`, {
+        method: 'POST',
+        headers: insforgeHeaders,
+        body: JSON.stringify({ p_request_id: request_id, p_reason: 'No verified bank account on file' }),
+      }).catch(() => {});
       return res.status(422).json({ error: 'Organizer has no verified bank account on file' });
     }
 
@@ -71,15 +83,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const transferJson = await transferRes.json();
 
     if (!transferRes.ok || !transferJson.status) {
-      // Nothing was marked processing — the request stays 'pending' and
-      // the funds stay held, so the admin can safely retry.
+      // Paystack rejected the transfer outright — release the claim back to
+      // 'pending' (guarded server-side to only work when no transfer_code
+      // was ever attached) so the admin can safely retry.
+      await fetch(`${baseUrl}/api/database/rpc/admin_release_payout_claim`, {
+        method: 'POST',
+        headers: insforgeHeaders,
+        body: JSON.stringify({ p_request_id: request_id, p_reason: 'Paystack transfer initiation failed: ' + (transferJson.message || `HTTP ${transferRes.status}`) }),
+      }).catch(() => {});
       return res.status(502).json({ error: transferJson.message || 'Paystack transfer initiation failed' });
     }
 
-    // Paystack accepted the transfer. Depending on the account's OTP
-    // settings this may still require finalization on Paystack's side —
-    // transfer.success / transfer.failed webhooks are the authoritative
-    // completion signal (see api/webhook/paystack.ts), not this response.
+    // Paystack accepted the transfer. The request is already 'processing'
+    // (claimed atomically above) — this just attaches the reference.
+    // Depending on the account's OTP settings this may still require
+    // finalization on Paystack's side — transfer.success / transfer.failed
+    // webhooks are the authoritative completion signal (see
+    // api/webhook/paystack.ts), not this response.
     await fetch(`${baseUrl}/api/database/rpc/admin_mark_payout_processing`, {
       method: 'POST',
       headers: insforgeHeaders,

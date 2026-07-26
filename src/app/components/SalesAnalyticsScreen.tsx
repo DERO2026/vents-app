@@ -193,14 +193,6 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScreenProps) {
-  if (!currentUser) {
-    return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
-        Loading analytics...
-      </div>
-    );
-  }
-
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
     totalRevenue: number;
@@ -344,6 +336,14 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
 
     fetchAnalytics();
   }, [currentUser]);
+
+  if (!currentUser) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+        Loading analytics...
+      </div>
+    );
+  }
 
   return (
     <div

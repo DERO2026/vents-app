@@ -461,6 +461,8 @@ export function ProfileScreen({
                   {vcBalance !== null && (
                     <div
                       onClick={() => onNavigate('referral')}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('referral'); } }}
+                      role="button" tabIndex={0}
                       style={{
                         background: 'rgba(245,158,11,0.12)',
                         border: '1px solid rgba(245,158,11,0.3)',

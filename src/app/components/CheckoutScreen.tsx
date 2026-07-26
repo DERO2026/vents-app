@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users, CheckCircle2 } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
@@ -140,6 +140,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [promoChecking, setPromoChecking] = useState(false);
   const [loading, setLoading] = useState(false);
   const [paymentLoading, setPaymentLoading] = useState(false);
+  // Synchronous single-flight guard: refs update immediately (unlike state,
+  // which batches), so this closes the window between a fast double-tap and
+  // React re-rendering the disabled button. paymentLoading state still
+  // drives the visual disabled state; this ref is the actual re-entrancy lock.
+  const payingRef = useRef(false);
   const [payError, setPayError] = useState<string | null>(null);
 
   // Group purchases (quantity > 1) need one distinct name+email per ticket
@@ -228,6 +233,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   };
 
   const handlePay = () => {
+    // Single-flight guard: a fast double-tap (or click-flood on a laggy
+    // connection) used to be able to invoke this twice before the Paystack
+    // iframe finished opening, spawning two concurrent payment handlers with
+    // distinct references. This must be checked before anything else runs.
+    if (payingRef.current) return;
+
     setPayError(null);
     setAttendeesTouched(true);
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
@@ -253,8 +264,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    // Free tickets bypass Paystack
+    // Free tickets bypass Paystack — still needs the same single-flight lock
+    // as the paid path (handleFreeTicket calls onSuccess synchronously and
+    // this screen navigates away, so there's no matching unlock needed).
     if (total === 0) {
+      payingRef.current = true;
+      setPaymentLoading(true);
       handleFreeTicket();
       return;
     }
@@ -275,6 +290,13 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
     const rawPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
     const publicKey = rawPublicKey.replace(new RegExp('^\\uFEFF'), '').trim();
+
+    // Lock immediately, before opening the iframe — this is the actual fix:
+    // previously the button stayed enabled (and re-entrant) for the entire
+    // window between this click and the Paystack popup finishing its own
+    // async load.
+    payingRef.current = true;
+    setPaymentLoading(true);
 
     try {
       const handler = PaystackPop.setup({
@@ -297,7 +319,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           ],
         },
         callback: (response: { reference: string }) => {
-          setPaymentLoading(true);
           const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
           const ticket: PurchasedTicket = {
             event,
@@ -312,16 +333,20 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             promoCode: promoApplied ? promoCode.trim() : undefined,
           };
           // Purchase completion tracked downstream (App.handleTicketPurchase).
+          // Deliberately leave payingRef/paymentLoading locked — this screen
+          // is about to be navigated away from on success, not reused.
           onSuccess(ticket);
-          setPaymentLoading(false);
         },
         onClose: () => {
+          payingRef.current = false;
           setPaymentLoading(false);
         },
       });
 
       handler.openIframe();
     } catch (err: any) {
+      payingRef.current = false;
+      setPaymentLoading(false);
       setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));
     }
   };

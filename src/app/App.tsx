@@ -43,10 +43,6 @@ import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
 import { InterestsScreen } from './components/InterestsScreen';
-import { PrivacyScreen } from './components/PrivacyScreen';
-import { TermsScreen } from './components/TermsScreen';
-import { RefundPolicyScreen } from './components/RefundPolicyScreen';
-import { HelpPage } from './components/HelpPage';
 import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
 
 // Bump this on every release. Compared against app_config.min_client_version
@@ -159,13 +155,6 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 }
 
 export default function App() {
-  // Serve public legal pages without the app shell
-  const pathname = window.location.pathname;
-  if (pathname === '/privacy') return <PrivacyScreen />;
-  if (pathname === '/terms') return <TermsScreen />;
-  if (pathname === '/refunds') return <RefundPolicyScreen />;
-  if (pathname === '/help') return <HelpPage />;
-
   const [screen, setScreen] = useState<Screen>('splash');
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
@@ -1075,12 +1064,20 @@ export default function App() {
     if (!currentUser?.id) return;
     const channel = `user:${currentUser.id}`;
     let subscribed = false;
+    let torn = false;
     insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe(channel).then(() => { subscribed = true; });
+      insforge.realtime.subscribe(channel).then(() => {
+        // If cleanup already ran before this resolved, the effect's own
+        // unsubscribe below never saw `subscribed = true` in time and would
+        // otherwise leak this channel forever — unsubscribe immediately instead.
+        if (torn) { insforge.realtime.unsubscribe(channel); return; }
+        subscribed = true;
+      });
     }).catch(() => {});
     const onNotif = () => fetchUnreadCount();
     insforge.realtime.on('new_notification', onNotif);
     return () => {
+      torn = true;
       insforge.realtime.off?.('new_notification', onNotif);
       if (subscribed) insforge.realtime.unsubscribe(channel);
     };

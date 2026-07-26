@@ -171,6 +171,8 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
   return (
     <div
       onClick={() => onPress(event)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPress(event); } }}
+      role="button" tabIndex={0}
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '100%',
@@ -346,6 +348,8 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
   return (
     <div
       onClick={() => onPress(event)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onPress(event); } }}
+      role="button" tabIndex={0}
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '162px',
@@ -602,6 +606,8 @@ function FeaturedCarousel({
       <div
         className="px-4"
         onClick={() => onEventPress(event)}
+        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEventPress(event); } }}
+        role="button" tabIndex={0}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}

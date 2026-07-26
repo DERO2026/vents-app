@@ -305,6 +305,8 @@ export function NotificationsScreen({
                   </div>
                   <div
                     onClick={() => { if (offsetX === 0) markRead(notif.id); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (offsetX === 0) markRead(notif.id); } }}
+                    role="button" tabIndex={0}
                     onTouchStart={(e) => handleSwipeStart(notif.id, e.touches[0].clientX)}
                     onTouchMove={(e) => handleSwipeMove(notif.id, e.touches[0].clientX)}
                     onTouchEnd={() => handleSwipeEnd(notif.id)}

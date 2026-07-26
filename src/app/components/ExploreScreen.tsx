@@ -224,6 +224,8 @@ export function ExploreScreen({
                       <div
                         key={u.id}
                         onClick={() => onUserPress(u)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onUserPress(u); } }}
+                        role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: '#090514' }}
                       >
                         <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
@@ -281,6 +283,8 @@ export function ExploreScreen({
                       <div
                         key={partnerId}
                         onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge); } }}
+                        role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '0', cursor: 'pointer', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
                       >
                         <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>

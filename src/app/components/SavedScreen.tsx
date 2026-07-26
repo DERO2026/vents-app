@@ -54,6 +54,8 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
               <div
                 key={event.id}
                 onClick={() => onEventPress(event)}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onEventPress(event); } }}
+                role="button" tabIndex={0}
                 className="flex gap-3 cursor-pointer active:opacity-90 p-3"
                 style={{
                   background: '#090514',

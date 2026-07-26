@@ -563,14 +563,6 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 }
 
 function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
-  if (!currentUser) {
-    return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
-        Loading profile details...
-      </div>
-    );
-  }
-
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -848,6 +840,14 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     fontFamily: 'Inter, sans-serif',
     boxSizing: 'border-box',
   };
+
+  if (!currentUser) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+        Loading profile details...
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005' }}>

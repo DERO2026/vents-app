@@ -10,8 +10,12 @@ const ALLOWED_ORIGINS = ['https://getvents.com', 'https://www.getvents.com'];
 function isAllowedOrigin(origin: string | undefined): boolean {
   if (!origin) return false;
   if (ALLOWED_ORIGINS.includes(origin)) return true;
-  // Vercel preview/branch deployments, e.g. https://vents-app-git-foo-team.vercel.app
-  if (/^https:\/\/[a-z0-9-]+\.vercel\.app$/.test(origin)) return true;
+  // Vercel preview/branch deployments for THIS project only, e.g.
+  // https://vents-git-foo-team.vercel.app or https://vents-<hash>-team.vercel.app.
+  // Narrowed from a blanket `*.vercel.app` match (audit finding: that allowed
+  // any attacker's own throwaway Vercel project to receive
+  // Access-Control-Allow-Origin + an Authorization header allowance).
+  if (/^https:\/\/vents(-[a-z0-9-]+)?\.vercel\.app$/.test(origin)) return true;
   // Local dev
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
   return false;

@@ -22,6 +22,7 @@ interface Attendee {
   paymentStatus: string;
   initials: string;
   avatarColor: string;
+  checkedInAt: string | null;
 }
 
 const AVATAR_COLORS = ['#EC4899', '#3B82F6', '#F59E0B', '#22C55E', '#8B5CF6', '#06B6D4', '#F97316', '#EF4444'];
@@ -48,31 +49,43 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
     if (!eventId) { setLoading(false); return; }
     async function load() {
       try {
-        const { data, error } = await insforge.database
-          .from('tickets')
-          .select('id, quantity, ticket_type, payment_status, created_at, users(full_name, email, username)')
-          .eq('event_id', eventId)
-          .eq('status', 'active')
-          .order('created_at', { ascending: false });
+        // Uses the same gated, single-query RPC as the Door Manager dashboard
+        // (get_event_attendees — authorized via is_event_door_manager) instead
+        // of a raw `tickets -> users(*)` embed, which depended on an
+        // over-broad `public.users` RLS policy that let ANY authenticated
+        // user read every other user's row (email, phone, DOB, TOTP secret,
+        // ban history) via any table/embed touching `users`. That policy has
+        // been removed; this RPC only ever returns the safe attendee fields
+        // needed here (holder_name/holder_email), scoped to the caller's own
+        // event.
+        const { data, error } = await insforge.database.rpc('get_event_attendees' as any, {
+          p_event_id: eventId,
+          p_search: null,
+          p_filter: 'all',
+          p_limit: 200,
+          p_offset: 0,
+        });
 
         if (error) throw error;
-        if (data) {
+        if (Array.isArray(data)) {
           setAttendees((data as any[]).map((t) => {
-            const u = t.users || {};
-            const name = u.full_name || u.username || 'Unknown';
+            const name = t.holder_name || t.buyer_name || 'Unknown';
             const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+            const status: CheckInStatus =
+              t.status !== 'active' ? 'cancelled' : t.checked_in ? 'checked-in' : 'pending';
             return {
-              id: t.id,
+              id: t.ticket_id,
               name,
-              email: u.email || '',
+              email: t.holder_email || '',
               ticketType: t.ticket_type || 'Regular',
-              ticketId: t.id,
-              ticketIdShort: t.id.slice(0, 8).toUpperCase(),
-              quantity: t.quantity || 1,
-              status: (t.payment_status === 'paid' ? 'pending' : 'cancelled') as CheckInStatus,
+              ticketId: t.ticket_id,
+              ticketIdShort: t.ticket_id.slice(0, 8).toUpperCase(),
+              quantity: 1,
+              status,
               paymentStatus: t.payment_status,
               initials,
               avatarColor: colorForName(name),
+              checkedInAt: t.checked_in_at || null,
             };
           }));
         }
@@ -97,16 +110,6 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
     const matchS = statusFilter === 'all' || a.status === statusFilter;
     return matchQ && matchS;
   });
-
-  const toggleCheckIn = (id: string) => {
-    setAttendees((prev) =>
-      prev.map((a) =>
-        a.id === id && a.status !== 'cancelled'
-          ? { ...a, status: a.status === 'checked-in' ? 'pending' : 'checked-in' }
-          : a
-      )
-    );
-  };
 
   const [refundingId, setRefundingId] = useState<string | null>(null);
 
@@ -246,10 +249,11 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                               <Undo2 size={13} color="#EF4444" />
                             </button>
                           )}
-                          <button onClick={() => toggleCheckIn(attendee.id)} disabled={attendee.status === 'cancelled'} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: sc.bg, border: 'none', borderRadius: '8px', padding: '6px 10px', cursor: attendee.status === 'cancelled' ? 'not-allowed' : 'pointer' }}>
+                          {/* Read-only — reflects the real check-in ledger. Use Door Manager to check attendees in. */}
+                          <div title={attendee.checkedInAt ? `Checked in ${new Date(attendee.checkedInAt).toLocaleString()}` : undefined} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: sc.bg, borderRadius: '8px', padding: '6px 10px' }}>
                             <StatusIcon size={13} color={sc.color} />
                             <span style={{ color: sc.color, fontSize: '11px', fontWeight: 600 }}>{sc.label}</span>
-                          </button>
+                          </div>
                         </div>
                       </div>
                     );

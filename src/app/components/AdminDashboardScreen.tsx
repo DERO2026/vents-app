@@ -768,9 +768,13 @@ export function AdminDashboardScreen({
 
   useEffect(() => {
     let subscribed = false;
+    let torn = false;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
     insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe('admin:stats').then(() => { subscribed = true; });
+      insforge.realtime.subscribe('admin:stats').then(() => {
+        if (torn) { insforge.realtime.unsubscribe('admin:stats'); return; }
+        subscribed = true;
+      });
     }).catch(() => {});
     const onStatsChanged = () => {
       if (tabRef.current !== 'stats') return;
@@ -779,6 +783,7 @@ export function AdminDashboardScreen({
     };
     insforge.realtime.on('admin_stats_changed', onStatsChanged);
     return () => {
+      torn = true;
       if (debounceTimer) clearTimeout(debounceTimer);
       insforge.realtime.off?.('admin_stats_changed', onStatsChanged);
       if (subscribed) insforge.realtime.unsubscribe('admin:stats');

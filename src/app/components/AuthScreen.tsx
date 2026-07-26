@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
@@ -243,6 +243,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
 
+  // Revoke whichever blob URLs are still outstanding when this screen finally
+  // unmounts (signup/login normally happens once per session, but a user
+  // backing out of signup entirely would otherwise leak these for the rest
+  // of the tab's lifetime). Tracked via refs, not the state values directly,
+  // so the cleanup below always sees the latest URL rather than a stale
+  // closure over whatever was current on first render.
+  const cropImageSrcRef = useRef(cropImageSrc);
+  cropImageSrcRef.current = cropImageSrc;
+  const signupAvatarPreviewRef = useRef(signupAvatarPreview);
+  signupAvatarPreviewRef.current = signupAvatarPreview;
+  useEffect(() => {
+    return () => {
+      if (cropImageSrcRef.current) URL.revokeObjectURL(cropImageSrcRef.current);
+      if (signupAvatarPreviewRef.current) URL.revokeObjectURL(signupAvatarPreviewRef.current);
+    };
+  }, []);
+
   const handleUploadSignupAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     // Reset the input so picking the same file twice still fires onChange
@@ -264,14 +281,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     }
 
     setAvatarError(null);
-    setCropImageSrc(URL.createObjectURL(file));
+    setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
   };
 
   const handleCropComplete = (croppedBlob: Blob) => {
     const croppedFile = new File([croppedBlob], 'avatar.jpg', { type: 'image/jpeg' });
     setSignupAvatarFile(croppedFile);
-    setSignupAvatarPreview(URL.createObjectURL(croppedBlob));
-    setCropImageSrc(null);
+    setSignupAvatarPreview((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(croppedBlob); });
+    setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return null; });
   };
 
   const uploadAvatarIfPending = async (): Promise<string> => {

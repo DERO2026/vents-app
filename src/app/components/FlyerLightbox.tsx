@@ -18,10 +18,19 @@ export function FlyerLightbox({ images, initialIndex = 0, alt, onClose }: FlyerL
   const [visible, setVisible] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const closingRef = useRef(false);
+  const closeBtnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const raf = requestAnimationFrame(() => setVisible(true));
-    return () => cancelAnimationFrame(raf);
+    // Basic focus management for screen-reader/keyboard users: move focus
+    // into the dialog on open, restore it to whatever had focus before on
+    // close, so keyboard focus doesn't stay stranded behind this overlay.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    closeBtnRef.current?.focus();
+    return () => {
+      cancelAnimationFrame(raf);
+      previouslyFocused?.focus?.();
+    };
   }, []);
 
   const handleClose = () => {
@@ -56,6 +65,9 @@ export function FlyerLightbox({ images, initialIndex = 0, alt, onClose }: FlyerL
       onClick={handleClose}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      role="dialog"
+      aria-modal="true"
+      aria-label={alt}
       style={{
         position: 'fixed',
         inset: 0,
@@ -70,7 +82,7 @@ export function FlyerLightbox({ images, initialIndex = 0, alt, onClose }: FlyerL
     >
       <img
         src={validImages[index]}
-        alt={alt}
+        alt={validImages.length > 1 ? `${alt} (image ${index + 1} of ${validImages.length})` : alt}
         onClick={(e) => e.stopPropagation()}
         style={{
           maxWidth: '92%',
@@ -83,6 +95,8 @@ export function FlyerLightbox({ images, initialIndex = 0, alt, onClose }: FlyerL
       />
 
       <button
+        ref={closeBtnRef}
+        aria-label="Close"
         onClick={(e) => { e.stopPropagation(); handleClose(); }}
         style={{
           position: 'absolute', top: '20px', right: '16px',

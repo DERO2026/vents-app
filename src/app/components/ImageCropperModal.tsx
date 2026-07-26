@@ -43,6 +43,14 @@ async function decodeImage(imageSrc: string): Promise<Bitmap> {
   }
 }
 
+// ImageBitmap holds decoded pixel data outside normal JS heap accounting
+// (often GPU/off-heap backed) and only releases it via .close() — ordinary
+// GC isn't guaranteed to reclaim it promptly, especially in a mobile
+// WebView. The <img> fallback path has no such method. Safe to call on either.
+function closeBitmap(bmp: Bitmap | null | undefined) {
+  if (bmp && typeof (bmp as any).close === 'function') (bmp as any).close();
+}
+
 // Canvas blur (ctx.filter) isn't supported on every WebView; detect once.
 let _blurSupport: boolean | null = null;
 function supportsCanvasBlur(): boolean {
@@ -173,7 +181,8 @@ export function ImageCropperModal({
     // Fallback so a slow decode never blocks the cropper (centered crop).
     const fallback = window.setTimeout(() => { if (alive) setCropperReady(true); }, 1400);
     decodeImage(imageSrc).then((bmp) => {
-      if (!alive) return;
+      if (!alive) { closeBitmap(bmp); return; }
+      closeBitmap(bitmapRef.current);
       bitmapRef.current = bmp;
       if (bmp.width && bmp.height) setNaturalAspect(bmp.width / bmp.height);
       // 1) Instant on-device heuristic — the cropper opens focus-framed with no wait.
@@ -189,7 +198,7 @@ export function ImageCropperModal({
         if (r) setVisionFocus(r);
       }).catch(() => { if (alive) setAiFraming(false); });
     }).catch(() => { window.clearTimeout(fallback); setCropperReady(true); });
-    return () => { alive = false; window.clearTimeout(fallback); };
+    return () => { alive = false; window.clearTimeout(fallback); closeBitmap(bitmapRef.current); bitmapRef.current = null; };
   }, [imageSrc, isFlyer]);
 
   // When the vision focus arrives, upgrade the PREPARED smart crop (used by the
@@ -247,10 +256,15 @@ export function ImageCropperModal({
       setError(null);
       setBusy(true);
       haptic(12);
-      const bmp = bitmapRef.current ?? (await decodeImage(imageSrc));
+      const reused = bitmapRef.current;
+      const bmp = reused ?? (await decodeImage(imageSrc));
       const blob = isFlyer
         ? await renderMaster(bmp, croppedAreaPixels, 0.92)
         : await renderAvatar(bmp, croppedAreaPixels);
+      // Only close it if this was a one-off fallback decode (not the one
+      // held in bitmapRef, which the effect above owns and already closes
+      // on unmount/imageSrc change).
+      if (!reused) closeBitmap(bmp);
       onCropComplete(blob);
     } catch (e) {
       console.error('Failed to crop image:', e);

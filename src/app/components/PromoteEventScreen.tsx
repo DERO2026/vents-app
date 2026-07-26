@@ -50,14 +50,6 @@ const DURATIONS: { value: Duration; label: string }[] = [
 ];
 
 export function PromoteEventScreen({ onBack, currentUser, initialEventId, onPromoted }: PromoteEventScreenProps) {
-  if (!currentUser) {
-    return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
-        Loading promotions...
-      </div>
-    );
-  }
-
   const [selectedPlan, setSelectedPlan] = useState<Plan>('featured');
   const [selectedDuration, setSelectedDuration] = useState<Duration>(7);
   const [loading, setLoading] = useState(false);
@@ -145,6 +137,14 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       onClose: () => { setLoading(false); },
     });
   };
+
+  if (!currentUser) {
+    return (
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+        Loading promotions...
+      </div>
+    );
+  }
 
   if (paid) {
     return (

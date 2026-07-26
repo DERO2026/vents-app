@@ -97,8 +97,12 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     // Realtime: subscribe to user's channel and reload on new message from this conversation
     const channel = `user:${currentUser.id}`;
     let subscribed = false;
+    let torn = false;
     insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe(channel).then(() => { subscribed = true; });
+      insforge.realtime.subscribe(channel).then(() => {
+        if (torn) { insforge.realtime.unsubscribe(channel); return; }
+        subscribed = true;
+      });
     }).catch(() => {});
 
     const handler = (payload: any) => {
@@ -114,6 +118,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     // Fallback poll every 8s in case WS drops
     const interval = setInterval(load, 8000);
     return () => {
+      torn = true;
       clearInterval(interval);
       insforge.realtime.off?.('new_message', handler);
       if (subscribed) insforge.realtime.unsubscribe(channel);
