@@ -22,18 +22,33 @@ function ticketDisplayCode(ticketId: string): string {
 const escapeHtml = (s: string) => String(s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string));
 
 // Self-contained Resend send (mirrors _lib/mailer.ts's config) so this
-// non-admin, self-serve ticket path doesn't depend on that module.
+// non-admin, self-serve ticket path doesn't depend on that module. Logs the
+// actual Resend error on failure — this used to return a bare `false` with no
+// diagnostic trail at all, making a real delivery failure indistinguishable
+// from a config gap. One retry on a 429 (rate limit), since we're intentionally
+// sending several of these back-to-back for a group purchase.
 async function sendTicketEmailResend(to: string, subject: string, html: string): Promise<boolean> {
   const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) { console.warn('[ticket-email] RESEND_API_KEY not set — skipping'); return false; }
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: 'Vents <support@getvents.com>', to: [to], subject, html }),
-    });
-    return res.ok;
-  } catch { return false; }
+  if (!apiKey) { console.warn('[ticket-email] RESEND_API_KEY not set — skipping', { to }); return false; }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: 'Vents <support@getvents.com>', to: [to], subject, html }),
+      });
+      if (res.ok) return true;
+      const body = await res.text().catch(() => '');
+      console.warn('[ticket-email] Resend send failed', { to, status: res.status, body: body.slice(0, 300), attempt });
+      if (res.status === 429 && attempt === 0) { await new Promise((r) => setTimeout(r, 600)); continue; }
+      return false;
+    } catch (e) {
+      console.warn('[ticket-email] Resend send threw', { to, attempt, e: String(e) });
+      if (attempt === 0) { await new Promise((r) => setTimeout(r, 400)); continue; }
+      return false;
+    }
+  }
+  return false;
 }
 
 // Real signed pass token — same generate_ticket_token() RPC the app itself
