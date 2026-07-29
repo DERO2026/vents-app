@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, OrganizerEvent } from './components/types';
+import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
@@ -570,36 +570,6 @@ export default function App() {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, [hydrateAuth]);
 
-  // Item 4: Load organizer's events from DB on mount/user change
-  useEffect(() => {
-    if (!currentUser?.id || !hasAnyOrganizerCapability(currentUser)) return;
-    insforge.database
-      .from('events')
-      .select('*')
-      .eq('organizer_id', currentUser.id)
-      .then(({ data: dbOrgEvents }) => {
-        if (!dbOrgEvents) return;
-        setOrgEvents((dbOrgEvents as any[]).map((e: any) => ({
-          id: e.id,
-          title: e.title || '',
-          category: e.category || 'Other',
-          description: e.description || '',
-          date: e.event_date ? e.event_date.split('T')[0] : '',
-          startTime: e.event_date ? (e.event_date.includes('T') ? e.event_date.split('T')[1].slice(0, 5) : '') : '',
-          venue: e.location || '',
-          city: '',
-          capacity: String(e.ticket_goal || 1000),
-          ticketName: 'Regular',
-          ticketPrice: String(e.price || '0'),
-          ticketQty: String(e.ticket_goal || 1000),
-          contactPhone: '',
-          showPhone: false,
-          status: (e.status === 'live' ? 'approved' : e.status === 'draft' ? 'under_review' : e.status) as any,
-          createdAt: new Date(e.created_at).getTime(),
-        })));
-      });
-  }, [currentUser?.id, currentUser?.role]);
-
   // Safety Timeout to prevent stuck splash screen on network/auth hang
   useEffect(() => {
     const safetyTimeout = setTimeout(() => {
@@ -1128,39 +1098,10 @@ export default function App() {
   });
 
   const [pendingSignup, setPendingSignup] = useState(false);
-  const [orgEvents, setOrgEvents] = useState<OrganizerEvent[]>([]);
-
-  // Simulate review pipeline: under_review → approved (after 5s) → live (after 3s more)
-  const underReviewIds = orgEvents.filter((e) => e.status === 'under_review').map((e) => e.id).join(',');
-  const approvedIds = orgEvents.filter((e) => e.status === 'approved').map((e) => e.id).join(',');
-
-  useEffect(() => {
-    if (!underReviewIds) return;
-    const ids = underReviewIds.split(',').filter(Boolean);
-    const timers = ids.map((id) =>
-      setTimeout(() => {
-        setOrgEvents((prev) =>
-          prev.map((e) => (e.id === id && e.status === 'under_review' ? { ...e, status: 'approved' } : e))
-        );
-      }, 5000)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [underReviewIds]);
-
-  useEffect(() => {
-    if (!approvedIds) return;
-    const ids = approvedIds.split(',').filter(Boolean);
-    const timers = ids.map((id) =>
-      setTimeout(() => {
-        setOrgEvents((prev) =>
-          prev.map((e) => (e.id === id && e.status === 'approved' ? { ...e, status: 'live' } : e))
-        );
-      }, 3000)
-    );
-    return () => timers.forEach(clearTimeout);
-  }, [approvedIds]);
-
-
+  // Per-event context for screens navigated to from ManageEventsScreen
+  // (Analytics needs to know which event to scope to; undefined = aggregate).
+  const [analyticsEventId, setAnalyticsEventId] = useState<string | undefined>(undefined);
+  const [analyticsEventTitle, setAnalyticsEventTitle] = useState<string | undefined>(undefined);
 
   const handleTabChange = useCallback((tab: TabId) => {
     setActiveTab(tab);
@@ -1415,6 +1356,27 @@ export default function App() {
     if (target === 'create-event') setEditingEventId(null);
     navigateTo(target as Screen);
   }, [navigateTo]);
+
+  // Resolve a ManageEventsScreen row (OrganizerEventOverview, which is
+  // real-time but not the full public Event shape) into the richer `Event`
+  // object that AttendeeListScreen/DoorManagerScreen/CheckinScannerScreen
+  // expect as `selectedEvent`. Prefer the fully-mapped row from the public
+  // feed (dbEvents) when this event is live and already in it; otherwise
+  // (draft, ended, or not yet in the feed) fall back to a minimal object
+  // built from the overview row itself — same fallback shape already used
+  // by the working onScanTickets pattern elsewhere in this file.
+  const resolveOrgEventSelection = useCallback((ov: { id: string; title: string; description: string | null; location: string | null; eventDate: string | null; price: number }): Event => {
+    const fromFeed = dbEvents.find((e) => e.id === ov.id);
+    if (fromFeed) return fromFeed;
+    return {
+      id: ov.id,
+      title: ov.title,
+      description: ov.description || '',
+      venue: ov.location || '',
+      date: ov.eventDate ? ov.eventDate.split('T')[0] : '',
+      price: ov.price,
+    } as any;
+  }, [dbEvents]);
 
   const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
     const enriched = {
@@ -1802,36 +1764,8 @@ export default function App() {
                         if (logErr2) console.warn('Organizer log failed:', logErr2.message, logErr2.code);
                       }
                     }
-                    // Fetch this organizer's events from DB and populate orgEvents
-                    try {
-                      const { data: dbOrgEvents } = await insforge.database
-                        .from('events')
-                        .select('*')
-                        .eq('organizer_id', currentUser.id);
-                      if (dbOrgEvents && dbOrgEvents.length > 0) {
-                        const mapped: OrganizerEvent[] = (dbOrgEvents as any[]).map((e: any) => ({
-                          id: e.id,
-                          title: e.title || '',
-                          category: e.category || 'Other',
-                          description: e.description || '',
-                          date: e.event_date ? e.event_date.split('T')[0] : '',
-                          startTime: e.event_date ? (e.event_date.includes('T') ? e.event_date.split('T')[1].slice(0, 5) : '') : '',
-                          venue: e.location || '',
-                          city: '',
-                          capacity: '1000',
-                          ticketName: 'Regular',
-                          ticketPrice: String(e.price || '0'),
-                          ticketQty: '1000',
-                          contactPhone: '',
-                          showPhone: false,
-                          status: (e.status === 'live' ? 'approved' : e.status === 'draft' ? 'under_review' : e.status) as any,
-                          createdAt: new Date(e.created_at).getTime(),
-                        }));
-                        setOrgEvents(mapped);
-                      }
-                    } catch (err) {
-                      console.error('Failed to fetch organizer events:', err);
-                    }
+                    // My Events (ManageEventsScreen) now loads its own data live
+                    // via useOrganizerEvents — nothing to prefetch here.
                   }
                 } else {
                   setUserRole('attendee');
@@ -2034,14 +1968,15 @@ export default function App() {
                   const priceNum = parseFloat(String(event.ticketPrice).replace(/[^0-9.]/g, '')) || 0;
                   analytics.eventCreated({ eventId: event.id, isFree: priceNum === 0, price: priceNum });
                 }
-                setOrgEvents((prev) => [event, ...prev]);
+                // My Events refetches itself live (realtime-subscribed via
+                // useOrganizerEvents) — the events/tickets triggers this
+                // create/update just landed will fire it automatically.
                 fetchEvents(true);
                 setOrgTab('home');
                 setScreen('manage-events');
                 setScreenStack([]);
               }}
               onUpdated={(event) => {
-                setOrgEvents((prev) => prev.map((e) => (e.id === event.id ? event : e)));
                 fetchEvents(true);
                 setEditingEventId(null);
                 setOrgTab('home');
@@ -2053,18 +1988,29 @@ export default function App() {
           {screen === 'manage-events' && (
             <ManageEventsScreen
               onBack={goBack}
-              onNavigate={handleOrgNavigate}
-              orgEvents={orgEvents}
-              onEditEvent={(id, updates) =>
-                setOrgEvents((prev) => prev.map((e) => (e.id === id ? { ...e, ...updates } : e)))
-              }
+              currentUser={currentUser}
+              onCreateEvent={() => { setEditingEventId(null); navigateTo('create-event'); }}
               onOpenEdit={(eventId) => {
                 setEditingEventId(eventId);
                 navigateTo('create-event');
               }}
-              onDeleteEvent={(id) =>
-                setOrgEvents((prev) => prev.filter((e) => e.id !== id))
-              }
+              onViewAttendees={(event) => {
+                setSelectedEvent(resolveOrgEventSelection(event));
+                navigateTo('attendee-list');
+              }}
+              onViewAnalytics={(event) => {
+                setAnalyticsEventId(event.id);
+                setAnalyticsEventTitle(event.title);
+                navigateTo('sales-analytics');
+              }}
+              onOpenDoorManager={(event) => {
+                setSelectedEvent(resolveOrgEventSelection(event));
+                navigateTo('door-manager');
+              }}
+              onOpenScanner={(event) => {
+                setSelectedEvent(resolveOrgEventSelection(event));
+                navigateTo('checkin-scanner');
+              }}
               onPromoteEvent={(eventId) => {
                 setPromotionEventId(eventId);
                 navigateTo('promote-event');
@@ -2072,7 +2018,7 @@ export default function App() {
             />
           )}
           {screen === 'sales-analytics' && (
-            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} />
+            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} eventId={analyticsEventId} eventTitle={analyticsEventTitle} />
           )}
           {screen === 'attendee-list' && (
             <AttendeeListScreen onBack={goBack} eventId={selectedEvent?.id} eventTitle={selectedEvent?.title} />

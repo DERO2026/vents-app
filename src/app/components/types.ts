@@ -165,3 +165,37 @@ export interface OrganizerEvent {
   status: OrgEventStatus;
   createdAt: number;
 }
+
+// Real, live-computed status for the Organizer Hub dashboard — derived
+// entirely from actual DB state (event.status + event_date + sold-out math),
+// never from a client-side timer. 'live'/'draft' mirror the DB's own CHECK
+// constraint values; 'ended'/'sold_out' are computed overlays on top of a
+// 'live' event, not separate DB status values.
+export type OrganizerEventDisplayStatus = 'live' | 'draft' | 'ended' | 'sold_out';
+
+// One row from get_organizer_events_overview() — the single-call source of
+// truth for "My Created Events" (real status + live ticket/revenue/check-in
+// aggregates), replacing the old OrganizerEvent's static, pre-sale-only fields.
+export interface OrganizerEventOverview {
+  id: string;
+  title: string;
+  description: string | null;
+  location: string | null;
+  eventDate: string | null;
+  price: number;
+  ticketGoal: number;
+  ticketTypes: Array<{ id: string; name: string; price: number; quantity: number; description?: string }>;
+  status: 'live' | 'draft';
+  is18Plus: boolean;
+  createdAt: string;
+  soldCount: number;
+  soldQuantity: number;
+  pendingCount: number;
+  cancelledCount: number;
+  refundedCount: number;
+  revenueKobo: number;
+  checkedInCount: number;
+  isEnded: boolean;
+  isSoldOut: boolean;
+  displayStatus: OrganizerEventDisplayStatus;
+}

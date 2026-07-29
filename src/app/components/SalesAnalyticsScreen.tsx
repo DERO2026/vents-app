@@ -6,6 +6,11 @@ import { insforge } from '../../lib/insforge';
 interface SalesAnalyticsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
   onBack: () => void;
+  // When set, scopes every figure on this screen to just this one event
+  // (e.g. opened from an event card's "Analytics" action) instead of the
+  // organizer's full portfolio.
+  eventId?: string;
+  eventTitle?: string;
 }
 
 function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
@@ -192,7 +197,7 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScreenProps) {
+export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: SalesAnalyticsScreenProps) {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
     totalRevenue: number;
@@ -232,23 +237,24 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
     async function fetchAnalytics() {
       if (!currentUser?.id) return;
       try {
-        const { data: myEvents, error: eventsError } = await insforge.database
-          .from('events')
-          .select('id, price')
-          .eq('organizer_id', currentUser.id);
+        let eventIds: string[];
+        if (eventId) {
+          // Per-event mode — scope straight to the one event, no portfolio query.
+          eventIds = [eventId];
+        } else {
+          const { data: myEvents, error: eventsError } = await insforge.database
+            .from('events')
+            .select('id')
+            .eq('organizer_id', currentUser.id);
 
-        if (eventsError) throw eventsError;
+          if (eventsError) throw eventsError;
 
-        if (!myEvents || myEvents.length === 0) {
-          setLoading(false);
-          return;
+          if (!myEvents || myEvents.length === 0) {
+            setLoading(false);
+            return;
+          }
+          eventIds = myEvents.map((e: any) => e.id);
         }
-
-        const eventIds = myEvents.map((e: any) => e.id);
-        const eventPriceMap = myEvents.reduce((acc: any, e: any) => {
-          acc[e.id] = Number(e.price || 0);
-          return acc;
-        }, {});
 
         // Matches the canonical "sold" definition used everywhere else
         // (get_event_ticket_stats, see Data Consistency migration):
@@ -280,8 +286,14 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
         if (tickets) {
           tickets.forEach((t: any) => {
             const qty = t.quantity || 1;
-            const price = eventPriceMap[t.event_id] || 0;
-            const rev = price * qty;
+            // Use the ticket's own stored amount (the real price actually
+            // paid — accounts for the specific ticket type and any promo
+            // discount applied at purchase time) rather than a flat
+            // event.price lookup, which silently ignored ticket-type pricing
+            // and promo discounts. Matches get_event_ticket_stats' convention
+            // of not re-multiplying by quantity (rows from purchase_ticket
+            // are always qty=1 with amount already being that ticket's price).
+            const rev = Number(t.amount) || 0;
             totalRev += rev;
             totalQty += qty;
 
@@ -335,7 +347,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
     }
 
     fetchAnalytics();
-  }, [currentUser]);
+  }, [currentUser, eventId]);
 
   if (!currentUser) {
     return (
@@ -382,7 +394,9 @@ export function SalesAnalyticsScreen({ currentUser, onBack }: SalesAnalyticsScre
         </button>
         <div>
           <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Sales Analytics</h1>
-          <p style={{ color: '#8B8FA8', fontSize: '12px' }}>This week · All events</p>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
+            {eventId ? (eventTitle || 'This event') : 'This week · All events'}
+          </p>
         </div>
       </div>
 
