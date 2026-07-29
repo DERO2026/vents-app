@@ -312,10 +312,10 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/admin-reject-payout', {
+      const res = await fetch('/api/v1/wallet/admin-payout-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ request_id: id, reason: reason.trim() }),
+        body: JSON.stringify({ action: 'reject', request_id: id, reason: reason.trim() }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Reject failed');
@@ -356,10 +356,10 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/admin-cancel-payout', {
+      const res = await fetch('/api/v1/wallet/admin-payout-action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ request_id: id, reason: reason.trim() }),
+        body: JSON.stringify({ action: 'cancel', request_id: id, reason: reason.trim() }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Cancel failed');
