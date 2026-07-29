@@ -184,7 +184,27 @@ export function ImageCropperModal({
       if (!alive) { closeBitmap(bmp); return; }
       closeBitmap(bitmapRef.current);
       bitmapRef.current = bmp;
-      if (bmp.width && bmp.height) setNaturalAspect(bmp.width / bmp.height);
+      // Compute the contain-fit zoom RIGHT HERE, synchronously with
+      // cropperReady flipping true, so the Cropper's very first render
+      // already shows the whole image — not a separate, later update driven
+      // by react-easy-crop's own onMediaLoaded (which used to leave a real
+      // window, sometimes a full extra frame, where zoom sat at its default
+      // of 1 = react-easy-crop's COVER scale, i.e. already cropped/zoomed
+      // in). Using bmp.width/height (decoded with imageOrientation:
+      // 'from-image', so EXIF-rotated phone photos are already correctly
+      // oriented) instead of the plain <img> onMediaLoaded reports also
+      // fixes a real mismatch: a portrait phone photo stored with a
+      // landscape EXIF-rotated raw pixel grid would otherwise compute the
+      // WRONG contain ratio from the img's raw (unrotated) naturalWidth/
+      // naturalHeight, permanently minor-zooming even a "fit" flyer.
+      if (bmp.width && bmp.height) {
+        const Ai = bmp.width / bmp.height;
+        setNaturalAspect(Ai);
+        const contain = Math.min(Ai, aspect) / Math.max(Ai, aspect);
+        const mz = Math.max(0.05, Math.min(1, contain));
+        setMinZoom(mz);
+        setZoom(mz);
+      }
       // 1) Instant on-device heuristic — the cropper opens focus-framed with no wait.
       try { setSmartCrop(computeSmartCropCached(imageSrc, bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
       window.clearTimeout(fallback);
@@ -211,22 +231,27 @@ export function ImageCropperModal({
     setSmartCrop(cropFromFocus(bmp.width, bmp.height, EVENT_CARD_ASPECT, visionFocus.focus.x, visionFocus.focus.y));
   }, [visionFocus]);
 
-  // Dynamic minimum zoom: the whole flyer must always be viewable, whatever its
-  // orientation. At zoom 1 react-easy-crop's media COVERS the crop frame; to
-  // CONTAIN it (see all of it) the zoom ratio is min(Ai,Ac)/max(Ai,Ac). This
-  // replaces the old hardcoded minZoom=1 that trapped landscape/square uploads.
-  const recomputeMinZoom = useCallback((mediaW: number, mediaH: number) => {
-    if (!mediaW || !mediaH) return;
-    const Ai = mediaW / mediaH;
-    const Ac = aspect;
-    const contain = Math.min(Ai, Ac) / Math.max(Ai, Ac);
-    const mz = Math.max(0.1, Math.min(1, contain));
+  // Re-fit whenever the user switches aspect ratio (Portrait/Square/Wide/
+  // Original) — the INITIAL fit-on-open is handled synchronously in the
+  // decode effect above (same state batch as cropperReady flipping true, so
+  // there's no separate async step that could render a wrong/cropped frame
+  // first). This effect only needs to handle the ratio changing later, using
+  // the bitmap already decoded (bitmapRef), not react-easy-crop's own
+  // (EXIF-unaware) onMediaLoaded.
+  useEffect(() => {
+    if (!isFlyer) return;
+    const bmp = bitmapRef.current;
+    if (!bmp?.width || !bmp?.height) return;
+    const Ai = bmp.width / bmp.height;
+    const contain = Math.min(Ai, aspect) / Math.max(Ai, aspect);
+    const mz = Math.max(0.05, Math.min(1, contain));
     setMinZoom(mz);
-    // Open showing the WHOLE uploaded flyer (fit) — never auto-zoom into a crop.
-    // But when Auto-frame is active (cropOverride set), let the applied crop
-    // drive the zoom instead of snapping back to fit on the remount.
+    // Open/re-fit showing the WHOLE flyer — never auto-zoom into a crop. But
+    // when Auto-frame is active (cropOverride set), let the applied crop
+    // drive the zoom instead of snapping back to fit.
     if (!cropOverride) setZoom(mz);
-  }, [aspect, cropOverride]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [aspect, isFlyer]);
 
   const onCropCompleteCallback = useCallback((_a: any, areaPixels: PixelCrop) => {
     setCroppedAreaPixels(areaPixels);
@@ -361,7 +386,6 @@ export function ImageCropperModal({
           onZoomChange={setZoom}
           onCropComplete={onCropCompleteCallback}
           onCropSizeChange={(s) => setCropSize(s)}
-          onMediaLoaded={(m: any) => { if (isFlyer) recomputeMinZoom(m.naturalWidth, m.naturalHeight); }}
           // Only genuine user gestures mark the crop "dirty" (not the initial
           // programmatic zoom/crop that applies the smart crop on mount).
           onInteractionStart={handleInteractionStart}
