@@ -100,7 +100,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     description: string;
   }
   const [ticketTypes, setTicketTypes] = useState<TicketFormType[]>([
-    { name: 'Standard', price: '', quantity: '', description: 'General Admission' }
+    { name: '', price: '', quantity: '', description: '' }
   ]);
   const [contactPhone, setContactPhone] = useState('');
   const [contactPhoneCountryCode, setContactPhoneCountryCode] = useState<string>(DEFAULT_COUNTRY.code);
@@ -204,7 +204,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               quantity: t.quantity != null ? String(t.quantity) : '',
               description: t.description || '',
             }))
-          : [{ name: 'Standard', price: row.price != null ? String(row.price) : '', quantity: row.ticket_goal != null ? String(row.ticket_goal) : '', description: 'General Admission' }];
+          : [{ name: '', price: row.price != null ? String(row.price) : '', quantity: row.ticket_goal != null ? String(row.ticket_goal) : '', description: '' }];
         setTicketTypes(tts);
         setIs18Plus(!!row.is_18_plus);
         originalStatusRef.current = row.status || 'live';

@@ -50,6 +50,7 @@ export function OrganizerDashboard({
           .from('events')
           .select('*')
           .eq('organizer_id', currentUser.id)
+          .is('deleted_at', null)
           .order('created_at', { ascending: false });
 
         if (eventsError) throw eventsError;

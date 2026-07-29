@@ -154,14 +154,16 @@ export function ProfileScreen({
         const { count: eCount } = await insforge.database
           .from('events')
           .select('id', { count: 'exact', head: true })
-          .eq('organizer_id', currentUser.id);
+          .eq('organizer_id', currentUser.id)
+          .is('deleted_at', null);
         setEventsCreated(eCount || 0);
 
         // 2. Attendees count (sum of active tickets sold for their created events)
         const { data: userEvents } = await insforge.database
           .from('events')
           .select('id')
-          .eq('organizer_id', currentUser.id);
+          .eq('organizer_id', currentUser.id)
+          .is('deleted_at', null);
 
         if (userEvents && userEvents.length > 0) {
           const eventIds = userEvents.map((e: any) => e.id);

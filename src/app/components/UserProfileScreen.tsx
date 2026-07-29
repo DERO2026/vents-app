@@ -99,14 +99,16 @@ export function UserProfileScreen({
         const { count: eCount } = await insforge.database
           .from('events')
           .select('id', { count: 'exact', head: true })
-          .eq('organizer_id', user.id);
+          .eq('organizer_id', user.id)
+          .is('deleted_at', null);
         setEventsCreated(eCount || 0);
 
         // 2. Attendees count
         const { data: userEvents } = await insforge.database
           .from('events')
           .select('id')
-          .eq('organizer_id', user.id);
+          .eq('organizer_id', user.id)
+          .is('deleted_at', null);
 
         if (userEvents && userEvents.length > 0) {
           const eventIds = userEvents.map((e: any) => e.id);

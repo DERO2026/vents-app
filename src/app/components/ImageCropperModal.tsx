@@ -347,7 +347,10 @@ export function ImageCropperModal({
           zoom={zoom}
           minZoom={isFlyer ? minZoom : 1}
           maxZoom={5}
-          zoomSpeed={0.25}
+          // Lower than react-easy-crop's default (1) so both pinch and
+          // wheel/trackpad zoom feel controlled rather than twitchy —
+          // a small gesture should nudge the zoom, not jump several steps.
+          zoomSpeed={0.15}
           aspect={aspect}
           cropShape={isFlyer ? 'rect' : cropShape}
           showGrid={!isFlyer}

@@ -312,6 +312,8 @@ export function EventDetailsScreen({
           .from('events')
           .select('*')
           .eq('category', event.category)
+          .eq('status', 'live')
+          .is('deleted_at', null)
           .neq('id', event.id)
           .limit(4);
         

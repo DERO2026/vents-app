@@ -245,7 +245,8 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
           const { data: myEvents, error: eventsError } = await insforge.database
             .from('events')
             .select('id')
-            .eq('organizer_id', currentUser.id);
+            .eq('organizer_id', currentUser.id)
+            .is('deleted_at', null);
 
           if (eventsError) throw eventsError;
 

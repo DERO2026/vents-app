@@ -182,8 +182,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '0 16px 24px',
+          // BottomNav is position:absolute, 70px tall + its own safe-area
+          // padding — a flat 24px left the last ticket card partially hidden
+          // behind it on shorter-safe-area devices. Matches the same
+          // clearance convention already used by Home/Explore/Profile/Saved.
+          padding: '0 16px calc(90px + env(safe-area-inset-bottom))',
           scrollbarWidth: 'none',
+          WebkitOverflowScrolling: 'touch',
         }}
       >
         {loading ? (

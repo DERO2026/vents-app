@@ -19,6 +19,11 @@ interface ManageEventsScreenProps {
   onOpenDoorManager: (event: OrganizerEventOverview) => void;
   onOpenScanner: (event: OrganizerEventOverview) => void;
   onPromoteEvent?: (eventId: string) => void;
+  // Called immediately after a successful soft-delete so the caller can
+  // evict the event from any other in-memory cache it holds (Home feed,
+  // Saved, event-details) — this screen's own list already self-heals via
+  // useOrganizerEvents' refresh, but nothing else in the app knows to.
+  onEventDeleted?: (eventId: string) => void;
 }
 
 // ─── Midnight Neon palette (shared with Door Manager for a consistent
@@ -52,7 +57,7 @@ function fmtDate(iso: string | null): string {
 
 export function ManageEventsScreen({
   onBack, currentUser, onOpenEdit, onCreateEvent, onViewAttendees, onViewAnalytics,
-  onOpenDoorManager, onOpenScanner, onPromoteEvent,
+  onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted,
 }: ManageEventsScreenProps) {
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
   const [query, setQuery] = useState('');
@@ -100,6 +105,7 @@ export function ManageEventsScreen({
       // preserves ticket/payment history and can be restored by an admin.
       const { error: err } = await insforge.database.rpc('soft_delete_event', { p_event_id: deleteTarget.id });
       if (err) throw err;
+      onEventDeleted?.(deleteTarget.id);
       setDeleteTarget(null);
       refresh(true);
     } catch (e: any) {

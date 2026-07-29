@@ -364,7 +364,10 @@ export default function App() {
                 console.error('Failed to load event from deep link:', evtError);
                 return;
               }
-              if (evtData) {
+              // A deleted event is still readable by its own organizer/admin
+              // under RLS (soft-delete is restorable) — but a deep link should
+              // never open a deleted event for anyone, including its owner.
+              if (evtData && !evtData.deleted_at) {
                 setSelectedEvent(mapDbEventToFrontend(evtData));
                 setScreen('event-details');
               }
@@ -2014,6 +2017,16 @@ export default function App() {
               onPromoteEvent={(eventId) => {
                 setPromotionEventId(eventId);
                 navigateTo('promote-event');
+              }}
+              onEventDeleted={(eventId) => {
+                // Evict from every other in-memory cache immediately — the
+                // Home feed / Saved / event-details "isSaved" checks all
+                // derive from this same dbEvents array, and would otherwise
+                // keep showing the deleted event until the next throttled
+                // fetchEvents() call.
+                setDbEvents((prev) => prev.filter((e) => e.id !== eventId));
+                setSavedEvents((prev) => prev.filter((id) => id !== eventId));
+                if (selectedEvent?.id === eventId) setSelectedEvent(null);
               }}
             />
           )}

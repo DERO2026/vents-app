@@ -10,7 +10,8 @@ import {
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { AdminActionsTab } from './AdminActionsTab';
-import { extractEventsFromText, publishEvents, isEventExtractionConfigured, type ImportedEvent } from '../../lib/eventImporter';
+import { extractEventsFromText, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
+import { uploadImage } from '../../lib/mediaPipeline';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -53,6 +54,7 @@ interface EventRow {
   status: string | null;
   image_url: string | null;
   event_date: string | null;
+  deleted_at: string | null;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
@@ -624,6 +626,7 @@ export function AdminDashboardScreen({
   const [deletedUsers, setDeletedUsers] = useState<UserRow[]>([]);
   const [deletedUsersLoading, setDeletedUsersLoading] = useState(false);
   const [eventSearch, setEventSearch] = useState('');
+  const [eventsFilter, setEventsFilter] = useState<'active' | 'deleted'>('active');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -686,11 +689,40 @@ export function AdminDashboardScreen({
   const [publishLoading, setPublishLoading] = useState(false);
   const [publishMsg, setPublishMsg] = useState<string | null>(null);
   const [extractionConfigured, setExtractionConfigured] = useState(true);
+  // Manual flyer override per imported event (keyed by its index in
+  // importResults) — lets an admin replace/attach a flyer before publishing,
+  // instead of only ever using whatever image the AI extraction found.
+  const [importFlyers, setImportFlyers] = useState<Record<number, { file: File; previewUrl: string }>>({});
+  const [flyerUploading, setFlyerUploading] = useState<number | null>(null);
 
   useEffect(() => {
     if (tab !== 'import-events') return;
     isEventExtractionConfigured().then(setExtractionConfigured);
   }, [tab]);
+
+  // Revoke every flyer preview blob URL on unmount so they don't leak.
+  useEffect(() => {
+    return () => { Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl)); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleImportFlyerSelect = (index: number, file: File) => {
+    setImportFlyers((prev) => {
+      const existing = prev[index];
+      if (existing) URL.revokeObjectURL(existing.previewUrl);
+      return { ...prev, [index]: { file, previewUrl: URL.createObjectURL(file) } };
+    });
+  };
+
+  const clearImportFlyer = (index: number) => {
+    setImportFlyers((prev) => {
+      const existing = prev[index];
+      if (existing) URL.revokeObjectURL(existing.previewUrl);
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  };
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -725,7 +757,7 @@ export function AdminDashboardScreen({
     setStatsLoading(true);
     Promise.all([
       insforge.database.from('users').select('id', { count: 'exact', head: true }),
-      insforge.database.from('events').select('id', { count: 'exact', head: true }),
+      insforge.database.from('events').select('id', { count: 'exact', head: true }).is('deleted_at', null),
       insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
       // vc_transactions.type is 'earn'/'spend'/'refund'/'referral' — there is
       // no 'credit' value, so this used to always compute vcTotal as 0.
@@ -1163,14 +1195,16 @@ export function AdminDashboardScreen({
     }
   };
 
-  const loadEvents = useCallback(async () => {
+  const loadEvents = useCallback(async (filter: 'active' | 'deleted') => {
     setEventsLoading(true);
     try {
-      const { data, error } = await insforge.database
+      let q = insforge.database
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, deleted_at, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .order('created_at', { ascending: false })
         .limit(50);
+      q = filter === 'deleted' ? q.not('deleted_at', 'is', null) : q.is('deleted_at', null);
+      const { data, error } = await q;
       if (error) throw error;
       setEvents(data || []);
     } catch (err: any) {
@@ -1180,8 +1214,20 @@ export function AdminDashboardScreen({
 
   useEffect(() => {
     if ((!isAdminOrSubAdmin) || tab !== 'events') return;
-    loadEvents();
-  }, [tab, loadEvents, currentUser, isRoot]);
+    loadEvents(eventsFilter);
+  }, [tab, loadEvents, currentUser, isRoot, eventsFilter]);
+
+  const handleRestoreEvent = async (eventId: string) => {
+    const label = events.find(e => e.id === eventId)?.title || eventId;
+    await submitOrExecute('restore_event',
+      { target_type: 'event', target_id: eventId, target_label: label, previous: { deleted: true }, changes: { deleted: false } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_restore_deleted_event', { p_event_id: eventId });
+        if (error) throw error;
+        setEvents(prev => prev.filter(e => e.id !== eventId));
+        flash(true, 'Event restored — it is live again.');
+      });
+  };
 
   useEffect(() => {
     if ((!isAdminOrSubAdmin) || tab !== 'reports') return;
@@ -1949,12 +1995,22 @@ export function AdminDashboardScreen({
                 style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '13px' }}
               />
             </div>
-            <button onClick={loadEvents} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
+            <button onClick={() => loadEvents(eventsFilter)} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '0 14px', color: '#8B8FA8', cursor: 'pointer' }}>
               <RefreshCw size={15} />
             </button>
           </div>
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            {(['active', 'deleted'] as const).map(f => (
+              <button key={f} onClick={() => setEventsFilter(f)} style={{
+                flex: 1, padding: '8px', borderRadius: '10px', cursor: 'pointer', fontSize: '12px', fontWeight: 700,
+                background: eventsFilter === f ? 'rgba(124,58,237,0.18)' : '#090514',
+                color: eventsFilter === f ? '#A78BFA' : '#8B8FA8',
+                border: `1px solid ${eventsFilter === f ? 'rgba(167,139,250,0.5)' : 'rgba(255,255,255,0.07)'}`,
+              }}>{f === 'active' ? 'Active' : 'Deleted'}</button>
+            ))}
+          </div>
           <span style={{ color: '#8B8FA8', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
-            {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).length} events
+            {(eventSearch ? events.filter(ev => ev.title?.toLowerCase().includes(eventSearch.toLowerCase())) : events).length} {eventsFilter === 'deleted' ? 'deleted ' : ''}events
           </span>
           {eventsLoading ? (
             <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '120px', color: '#8B8FA8', fontSize: '13px' }}>Loading events…</div>
@@ -1988,14 +2044,23 @@ export function AdminDashboardScreen({
                       {ev.hidden_by_admin && ev.hidden_at && ` · Hidden ${new Date(ev.hidden_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}`}
                     </span>
                   </div>
-                  <button
-                    onClick={() => ev.hidden_by_admin ? handleReinstateEvent(ev.id) : setConfirmModal({ title: 'Hide Event?', message: isSuperAdmin
-                        ? `Hide "${ev.title || 'this event'}" from all public feeds? You can reinstate it later.`
-                        : `Send a request to hide "${ev.title || 'this event'}"? It stays visible until an Admin approves it.`, confirmLabel: isSuperAdmin ? 'Hide' : 'Send Request', danger: true, onConfirm: () => { setConfirmModal(null); handleHideEvent(ev.id); } })}
-                    style={{ background: ev.hidden_by_admin ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${ev.hidden_by_admin ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '6px 12px', color: ev.hidden_by_admin ? '#10B981' : '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
-                  >
-                    {ev.hidden_by_admin ? 'Reinstate' : 'Hide'}
-                  </button>
+                  {ev.deleted_at ? (
+                    <button
+                      onClick={() => setConfirmModal({ title: 'Restore Event?', message: `Restore "${ev.title || 'this event'}"? It will become live again immediately.`, confirmLabel: 'Restore', danger: false, onConfirm: () => { setConfirmModal(null); handleRestoreEvent(ev.id); } })}
+                      style={{ background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '10px', padding: '6px 12px', color: '#10B981', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                    >
+                      Restore
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => ev.hidden_by_admin ? handleReinstateEvent(ev.id) : setConfirmModal({ title: 'Hide Event?', message: isSuperAdmin
+                          ? `Hide "${ev.title || 'this event'}" from all public feeds? You can reinstate it later.`
+                          : `Send a request to hide "${ev.title || 'this event'}"? It stays visible until an Admin approves it.`, confirmLabel: isSuperAdmin ? 'Hide' : 'Send Request', danger: true, onConfirm: () => { setConfirmModal(null); handleHideEvent(ev.id); } })}
+                      style={{ background: ev.hidden_by_admin ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${ev.hidden_by_admin ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`, borderRadius: '10px', padding: '6px 12px', color: ev.hidden_by_admin ? '#10B981' : '#EF4444', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                    >
+                      {ev.hidden_by_admin ? 'Reinstate' : 'Hide'}
+                    </button>
+                  )}
                 </div>
                 );
               })}
@@ -2641,7 +2706,7 @@ export function AdminDashboardScreen({
                 if (results.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
                 else setSelectedImports(new Set(results.map((_, i) => i)));
               } catch (err: any) {
-                setImportError(err?.message || 'Failed to format events. Check your API key and try again.');
+                setImportError(friendlyPublishError(err) || 'Failed to format events. Check your API key and try again.');
               } finally {
                 setImportLoading(false);
               }
@@ -2693,6 +2758,18 @@ export function AdminDashboardScreen({
                         <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: selected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: selected ? '#7B2FF7' : 'transparent', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           {selected && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800 }}>✓</span>}
                         </div>
+
+                        {/* Flyer thumbnail — manual override preview takes priority over the AI-found image_url */}
+                        <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.06)' }}>
+                          {importFlyers[i] ? (
+                            <img src={importFlyers[i].previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : event.image_url ? (
+                            <img src={event.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                          ) : (
+                            <ImageIcon size={18} color="#555C7A" />
+                          )}
+                        </div>
+
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
                           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.location}</p>
@@ -2704,6 +2781,27 @@ export function AdminDashboardScreen({
                             {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.state}</span>}
                           </div>
                           {event.description && <p style={{ color: '#6B7280', fontSize: '11px', margin: '6px 0 0', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{event.description}</p>}
+
+                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
+                            <label style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#A78BFA', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
+                              {importFlyers[i] ? 'Replace flyer' : event.image_url ? 'Replace flyer' : 'Add flyer'}
+                              <input
+                                type="file"
+                                accept="image/*"
+                                style={{ display: 'none' }}
+                                onChange={(e) => {
+                                  const file = e.target.files?.[0];
+                                  if (file) handleImportFlyerSelect(i, file);
+                                  e.target.value = '';
+                                }}
+                              />
+                            </label>
+                            {importFlyers[i] && (
+                              <button onClick={() => clearImportFlyer(i)} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#EF4444', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
+                                Remove
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -2714,14 +2812,34 @@ export function AdminDashboardScreen({
               {/* Publish button */}
               <button
                 onClick={async () => {
-                  const toPublish = importResults.filter((_, i) => selectedImports.has(i));
-                  if (toPublish.length === 0) return;
+                  const selectedIndices = importResults.map((_, i) => i).filter((i) => selectedImports.has(i));
+                  if (selectedIndices.length === 0) return;
                   setPublishLoading(true);
                   setPublishMsg(null);
                   try {
+                    // Upload any manually-attached flyers first so publishEvents
+                    // writes the real hosted URL as image_url — the event card
+                    // must show the correct image immediately, not the AI's
+                    // (possibly missing/wrong) extracted one.
+                    const toPublish = await Promise.all(selectedIndices.map(async (i) => {
+                      const event = importResults[i];
+                      const flyer = importFlyers[i];
+                      if (!flyer) return event;
+                      try {
+                        setFlyerUploading(i);
+                        const asset = await uploadImage(flyer.file, { bucket: 'events', filenameBase: `import-${Date.now()}-${i}` });
+                        return { ...event, image_url: asset.url };
+                      } catch (e) {
+                        console.error('[admin-import] flyer upload failed for index', i, e);
+                        return event; // fall back to the AI's image_url rather than blocking the whole publish
+                      }
+                    }));
+                    setFlyerUploading(null);
                     const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', insforge.database);
                     if (result.success > 0) {
                       setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
+                      Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl));
+                      setImportFlyers({});
                       setImportResults([]);
                       setSelectedImports(new Set());
                       setImportText('');
@@ -2729,8 +2847,9 @@ export function AdminDashboardScreen({
                       setPublishMsg(`✗ All ${result.failed} event${result.failed !== 1 ? 's' : ''} failed to publish.${result.lastError ? ` Error: ${result.lastError}` : ''}`);
                     }
                   } catch (err: any) {
-                    setPublishMsg(`✗ ${err?.message || 'Publish failed.'}`);
+                    setPublishMsg(`✗ ${friendlyPublishError(err)}`);
                   } finally {
+                    setFlyerUploading(null);
                     setPublishLoading(false);
                   }
                 }}
@@ -2740,7 +2859,7 @@ export function AdminDashboardScreen({
                 {publishLoading ? (
                   <>
                     <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                    Publishing...
+                    {flyerUploading !== null ? 'Uploading flyer…' : 'Publishing...'}
                   </>
                 ) : (
                   `Publish ${selectedImports.size} Selected Event${selectedImports.size !== 1 ? 's' : ''}`
