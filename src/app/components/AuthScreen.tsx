@@ -11,6 +11,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
+import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 
 // Best-effort abuse guard for traffic going through this screen — InsForge's
 // own /api/auth/* endpoints run outside our schema, so this can't stop a
@@ -37,6 +38,11 @@ interface AuthScreenProps {
   onBack: () => void;
   onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
   resetToken?: string;
+  // Set when the user arrived via the "Verify Account" link in the
+  // verification email (?verify_email=) or is resuming a signup that was
+  // left mid-verification on a previous visit — jumps straight to the OTP
+  // screen instead of the sign-up form.
+  pendingVerificationEmail?: string;
   // Kill switch (app_config.disable_signups) — the server-side signup path
   // itself can't be gated (InsForge's own /api/auth/signup runs outside
   // our schema), so this blocks the client's own signup attempt and the
@@ -167,7 +173,7 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, signupsDisabled = false }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -196,6 +202,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [verificationCode, setVerificationCode] = useState('');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Resume a signup left mid-verification: either the caller told us
+  // exactly which email (arrived via the "Verify Account" email link), or
+  // there's a still-fresh pending verification saved locally from a prior
+  // visit (app closed/backgrounded before the OTP was entered).
+  useEffect(() => {
+    if (isVerifying) return;
+    const resumeEmail = pendingVerificationEmail || getPendingVerification()?.email;
+    if (resumeEmail) {
+      setEmail(resumeEmail);
+      setIsVerifying(true);
+      if (pendingVerificationEmail) savePendingVerification(pendingVerificationEmail);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingVerificationEmail]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
 
   // Forgot-password flow: Step 1 (verification code) → Step 2 (new password),
   // two discrete screens instead of one combined form.
@@ -647,6 +676,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (data?.requireEmailVerification) {
           analytics.signedUp(strictRole);
           setIsVerifying(true);
+          savePendingVerification(normalizedEmail);
+          sendVerifyAccountEmail(normalizedEmail);
         } else if (data?.accessToken && data?.user) {
           analytics.signedUp(strictRole);
           const avatarUrl = await uploadAvatarIfPending();
@@ -825,6 +856,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (error) throw error;
 
       if (data?.user) {
+        clearPendingVerification();
         const avatarUrl = await uploadAvatarIfPending();
         await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
       }
@@ -833,6 +865,64 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleResendCode = async () => {
+    if (resending || resendCooldown > 0) return;
+    setResending(true);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    try {
+      await insforge.auth.resendVerificationEmail({
+        email: email.trim().toLowerCase(),
+        redirectTo: `${window.location.origin}/`,
+      });
+      sendVerifyAccountEmail(email.trim().toLowerCase());
+      setSuccessMessage('A new code is on its way — check your inbox.');
+      setResendCooldown(30);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Could not resend the code. Please try again shortly.');
+    } finally {
+      setResending(false);
+    }
+  };
+
+  const handleChangeEmail = () => {
+    clearPendingVerification();
+    setIsVerifying(false);
+    setVerificationCode('');
+    setErrorMessage(null);
+    setSuccessMessage(null);
+    // Leave name/username/phone/etc. filled in — only the email needs to change.
+    setEmail('');
+  };
+
+  // Best-effort branded companion email with a one-tap "Verify Account"
+  // button that lands the user straight back on this OTP screen (email
+  // pre-filled) instead of making them re-navigate the app from scratch.
+  // The 6-digit code itself is still delivered separately by InsForge's own
+  // verification email — this repo has no access to that code's value, so
+  // it can't be embedded here. Never blocks or fails the signup flow.
+  const sendVerifyAccountEmail = (toEmail: string) => {
+    const verifyUrl = `${window.location.origin}/?verify_email=${encodeURIComponent(toEmail)}`;
+    insforge.emails.send({
+      to: toEmail,
+      subject: 'Verify your Vents account',
+      html: `
+        <div style="font-family:Inter,Arial,sans-serif;background:#020005;padding:32px 24px;color:#F0F0FF;">
+          <h1 style="font-size:20px;margin:0 0 16px;">Almost there 👋</h1>
+          <p style="font-size:14px;line-height:1.6;color:#C4C9E0;margin:0 0 24px;">
+            We've sent a separate email with your 6-digit verification code. Tap the button below to jump straight back into Vents and enter it.
+          </p>
+          <a href="${verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#7B2FBE,#4F46E5);color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;">
+            Verify Account
+          </a>
+          <p style="font-size:12px;color:#8B8FA8;margin:24px 0 0;">
+            If the button doesn't work, open the Vents app or getvents.com and enter the code from the other email.
+          </p>
+        </div>
+      `,
+    }).catch((err: any) => console.warn('Verify-account email failed to send (non-blocking):', err));
   };
 
   // 3.5: Ban screen
@@ -1237,6 +1327,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </div>
             )}
 
+            {successMessage && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'rgba(34, 197, 94, 0.1)',
+                  border: '1px solid rgba(34, 197, 94, 0.3)',
+                  borderRadius: '12px',
+                  padding: '12px 16px',
+                  marginBottom: '20px',
+                  textAlign: 'left',
+                }}
+              >
+                <Check size={18} color="#22C55E" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#22C55E', fontSize: '13px', lineHeight: 1.4 }}>{successMessage}</span>
+              </div>
+            )}
+
             {/* The boxes are decoration; the real field is a transparent input
                 laid over them. It used to be a 1px, pointer-events:none element
                 focused only via this onClick — which meant taps never reached
@@ -1323,11 +1432,24 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             </button>
 
             <button
-              onClick={() => {
-                setIsVerifying(false);
-                setVerificationCode('');
-                setErrorMessage(null);
+              onClick={handleResendCode}
+              disabled={resending || resendCooldown > 0}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: (resending || resendCooldown > 0) ? '#555C7A' : '#A78BFA',
+                fontSize: '14px',
+                cursor: (resending || resendCooldown > 0) ? 'not-allowed' : 'pointer',
+                fontWeight: 600,
+                display: 'block',
+                margin: '0 auto 14px',
               }}
+            >
+              {resending ? 'Sending…' : resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
+            </button>
+
+            <button
+              onClick={handleChangeEmail}
               style={{
                 background: 'none',
                 border: 'none',
@@ -1337,7 +1459,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 fontWeight: 500,
               }}
             >
-              Back to Sign Up
+              Change Email
             </button>
           </div>
         ) : (

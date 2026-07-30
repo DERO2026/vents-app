@@ -3,6 +3,7 @@ import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfil
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
 import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
+import { getPendingVerification } from '../lib/pendingVerification';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
@@ -159,6 +160,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -335,6 +337,18 @@ export default function App() {
         if (token && type === 'reset_password' && status !== null) {
           setResetToken(token);
           setAuthMode('reset');
+          setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Intercept the "Verify Account" link from the verification email:
+        // ?verify_email=<email> — jump straight to the OTP screen with the
+        // email pre-filled instead of dropping the user on the welcome page.
+        const verifyEmailParam = params.get('verify_email');
+        if (verifyEmailParam) {
+          setPendingVerificationEmail(verifyEmailParam);
+          setAuthMode('signup');
           setScreen('auth');
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -617,7 +631,17 @@ export default function App() {
           setActiveTab('home');
         }
       } else {
-        setScreen('welcome');
+        // A signup left mid-verification (app closed/backgrounded before the
+        // OTP was entered) resumes straight into the OTP screen instead of
+        // dropping the user on the welcome page and losing their place.
+        const pending = getPendingVerification();
+        if (pending) {
+          setPendingVerificationEmail(pending.email);
+          setAuthMode('signup');
+          setScreen('auth');
+        } else {
+          setScreen('welcome');
+        }
       }
     }
   }, [screen, splashMinTimePassed, authLoading, currentUser]);
@@ -1637,6 +1661,7 @@ export default function App() {
               onBack={goBack}
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
+              pendingVerificationEmail={pendingVerificationEmail}
               signupsDisabled={featureFlags.disableSignups}
             />
           )}
