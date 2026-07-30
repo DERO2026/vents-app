@@ -42,6 +42,7 @@ export interface TicketImageParams {
   venue: string;
   ticketTypeLabel: string;
   holderName: string;
+  referenceNumber: string;
   /** Signed v2 pass token — only ever rendered as the QR image, never as text. */
   signedToken: string | null;
 }
@@ -80,6 +81,7 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
   ctx.fillStyle = '#8B8FA8';
   ctx.font = '13px Inter, sans-serif';
   ctx.fillText(`Holder: ${params.holderName}`, 40, 250);
+  ctx.fillText(`Ticket Reference No.: ${params.referenceNumber}`, 40, 272);
 
   if (params.signedToken) {
     const qrDataUrl = await QRCode.toDataURL(params.signedToken, {

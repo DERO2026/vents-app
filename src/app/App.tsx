@@ -1978,6 +1978,16 @@ export default function App() {
                 setOrgTab('home');
                 setScreen('manage-events');
                 setScreenStack([]);
+                // A brand-new LIVE publish (never a draft or an edit) gets an
+                // immediate, impossible-to-miss chance to promote it — with
+                // "manage-events" already sitting under it on the stack so
+                // skipping lands the organizer straight on My Events, exactly
+                // where they'd otherwise promote it later.
+                if (!editingEventId && event.status === 'live') {
+                  setPromotionEventId(event.id);
+                  setScreen('promote-event');
+                  setScreenStack(['manage-events']);
+                }
               }}
               onUpdated={(event) => {
                 fetchEvents(true);

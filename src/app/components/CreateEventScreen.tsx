@@ -1124,6 +1124,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               <Label>Total Capacity *</Label>
               <input
                 type="number"
+                min={1}
+                max={1000000}
                 placeholder="500"
                 value={capacity}
                 onChange={(e) => setCapacity(e.target.value)}

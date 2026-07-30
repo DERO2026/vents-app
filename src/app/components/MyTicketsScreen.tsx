@@ -392,7 +392,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       alignItems: 'center',
                     }}
                   >
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket ID</span>
+                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</span>
                     <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
                       {ticketDisplayCode(ticket.ticketId)}
                     </span>

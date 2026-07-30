@@ -6,6 +6,7 @@ import { formatPrice } from './data';
 import { useSignedTicketToken } from '../../lib/ticketToken';
 import { analytics } from '../../lib/analyticsEvents';
 import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
+import { ticketDisplayCode } from '../../lib/ticketCode';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -110,6 +111,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         venue: ticket.event.venue,
         ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
         holderName: ticket.holderName,
+        referenceNumber: ticketDisplayCode(ticket.ticketId),
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
@@ -236,6 +238,15 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                     <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Qty</p>
                     <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>×{ticket.quantity}</p>
                   </div>
+                </div>
+
+                {/* Ticket reference number — matches the wording used in the
+                    Refund Policy so support requests can be matched to a ticket. */}
+                <div className="flex items-center justify-between px-1 mb-4">
+                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</p>
+                  <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                    {ticketDisplayCode(ticket.ticketId)}
+                  </p>
                 </div>
 
                 {/* Tear line */}

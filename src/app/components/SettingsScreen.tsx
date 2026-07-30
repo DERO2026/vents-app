@@ -1626,11 +1626,17 @@ function DeleteAccountScreen({
     setLoading(true);
     setError(null);
     try {
+      // Ensure hc.userToken is set so auth.uid() resolves inside the RPC —
+      // without this, a stale/unset client token intermittently makes the
+      // function see auth.uid() as null and fail with "Not authenticated"
+      // even though the user is genuinely signed in.
+      await getAuthToken();
       const { error: rpcErr } = await insforge.database.rpc('delete_own_account' as any);
       if (rpcErr) throw rpcErr;
       setStep('done');
       setTimeout(() => onDeleted(), 3000);
     } catch (err: any) {
+      console.error('Account deletion failed:', err);
       setError('Account deletion failed. Please try again or contact support@getvents.com.');
     } finally {
       setLoading(false);

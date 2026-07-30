@@ -48,7 +48,10 @@ export const eventCreateSchema = z.object({
     name: safeText(1, 100),
     description: safeText(0, 500),
     price: z.number().min(0),
-    quantity: z.number().min(1),
+    // No artificial event-size cap — this ceiling exists only to keep a
+    // single ticket type's inventory within a sane integer range (stadiums,
+    // multi-day festivals, etc. all fit well under it), not to limit event size.
+    quantity: z.number().min(1).max(1_000_000),
   })).min(1),
 });
 

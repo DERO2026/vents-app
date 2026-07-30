@@ -55,7 +55,7 @@ export function RefundPolicyScreen() {
       </Section>
 
       <Section title="5. Cancelled Events">
-        If an organizer cancels their event all ticket holders will receive an automatic full refund within 5–7 business days. You will be notified by email and in-app notification as soon as the cancellation is confirmed. No action is required from you — the refund is processed automatically.
+        If an organizer cancels their event, you will be notified by email and in-app notification as soon as the cancellation is confirmed, and your ticket is refunded in full at no cost to you. Refunds for a cancelled event are initiated by the organizer or by Vents on the organizer's behalf, and typically clear within 5–7 business days of the cancellation being confirmed. If you have not received a refund confirmation within 7 business days of a cancellation, contact <a href="mailto:support@getvents.com" style={{ color: '#A78BFA' }}>support@getvents.com</a> and we will process it directly.
       </Section>
 
       <Section title="6. Organizer Responsibilities">

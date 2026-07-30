@@ -369,9 +369,25 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           ) : (
             <>
               <TrendingUp size={16} color="#fff" />
-              Promote for {formatPrice(price)}
+              Boost Event for {formatPrice(price)}
             </>
           )}
+        </button>
+        <button
+          onClick={onBack}
+          disabled={loading}
+          style={{
+            width: '100%',
+            background: 'none',
+            border: 'none',
+            padding: '12px',
+            color: '#8B8FA8',
+            fontSize: '13px',
+            fontWeight: 600,
+            cursor: loading ? 'not-allowed' : 'pointer',
+          }}
+        >
+          Skip for now — I'll promote later from My Events
         </button>
       </div>
     </div>

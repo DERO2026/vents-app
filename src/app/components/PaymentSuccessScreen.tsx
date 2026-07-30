@@ -59,6 +59,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         venue: `${ticket.event.venue}, ${ticket.event.city}`,
         ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
         holderName: ticket.holderName,
+        referenceNumber: ticketDisplayCode(ticket.ticketId),
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
@@ -74,7 +75,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
   const handleShare = async () => {
     const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
-    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nBooking ID: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
+    const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nTicket Reference: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
     if (navigator.share) {
       try {
         await navigator.share({ title: 'My VENTS Ticket', text, url: eventUrl });
@@ -299,6 +300,9 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                     </span>
                   )}
               </div>
+              <p style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '2px' }}>
+                Ticket Reference Number
+              </p>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                 {ticketDisplayCode(ticket.ticketId)}
               </p>

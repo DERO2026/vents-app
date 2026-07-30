@@ -1322,8 +1322,6 @@ export function HomeScreen({
                           onPress={onEventPress}
                           isSaved={savedEventsSet.has(event.id)}
                           onToggleSave={onToggleSave}
-                          badgeText={`${event.bookingsCount || 0} GOING`}
-                          badgeColor="rgba(239, 68, 68, 0.9)"
                         />
                       ))}
                     </div>

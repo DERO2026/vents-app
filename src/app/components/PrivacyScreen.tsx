@@ -67,14 +67,14 @@ export function PrivacyScreen() {
       </Section>
 
       <Section title="7. Data Retention">
-        We retain your account data for as long as your account is active. If you delete your account all personal data — name, email, phone, photo, and bio — is permanently deleted within 30 days. Anonymised financial records (transaction references and amounts) are retained for 7 years as required by Nigerian financial regulations, even after account deletion.
+        We retain your account data for as long as your account is active. If you delete your account, your identifying personal data — name, email, phone number, profile photo, and bio — is anonymised immediately, and your login is deactivated at the same time. Ticket purchase records are retained in anonymised form for 7 years as required by Nigerian financial regulations, even after account deletion.
       </Section>
 
       <Section title="8. Your Rights">
         Under the Nigeria Data Protection Act (NDPA) 2023, you have the right to:<br /><br />
         • <b style={{ color: '#F0F0FF' }}>Access</b> a copy of your personal data<br />
         • <b style={{ color: '#F0F0FF' }}>Correct</b> inaccurate data<br />
-        • <b style={{ color: '#F0F0FF' }}>Delete</b> your account and all associated personal data<br />
+        • <b style={{ color: '#F0F0FF' }}>Delete</b> your account, immediately anonymising your identifying personal data (see Section 7)<br />
         • <b style={{ color: '#F0F0FF' }}>Opt out</b> of marketing communications at any time<br />
         • <b style={{ color: '#F0F0FF' }}>Request a copy</b> of your data in a portable format<br />
         • <b style={{ color: '#F0F0FF' }}>Lodge a complaint</b> with the Nigeria Data Protection Commission (NDPC)<br /><br />
