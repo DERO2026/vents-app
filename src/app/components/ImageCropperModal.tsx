@@ -135,10 +135,16 @@ export function ImageCropperModal({
   const [ratioKey, setRatioKey] = useState('card');
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
-  const [zoom, setZoom] = useState(1);
-  const [minZoom, setMinZoom] = useState(1);
+  // Start deliberately far BELOW any real fit value (never 1 = react-easy-
+  // crop's cover/cropped scale). Worst case this shows one frame more
+  // zoomed-out than the final fit — never a cropped one — until the exact
+  // fit is computed below from react-easy-crop's own measurements.
+  const [zoom, setZoom] = useState(0.05);
+  const [minZoom, setMinZoom] = useState(0.05);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<PixelCrop | null>(null);
   const [cropSize, setCropSize] = useState<{ width: number; height: number } | null>(null);
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -184,26 +190,15 @@ export function ImageCropperModal({
       if (!alive) { closeBitmap(bmp); return; }
       closeBitmap(bitmapRef.current);
       bitmapRef.current = bmp;
-      // Compute the contain-fit zoom RIGHT HERE, synchronously with
-      // cropperReady flipping true, so the Cropper's very first render
-      // already shows the whole image — not a separate, later update driven
-      // by react-easy-crop's own onMediaLoaded (which used to leave a real
-      // window, sometimes a full extra frame, where zoom sat at its default
-      // of 1 = react-easy-crop's COVER scale, i.e. already cropped/zoomed
-      // in). Using bmp.width/height (decoded with imageOrientation:
-      // 'from-image', so EXIF-rotated phone photos are already correctly
-      // oriented) instead of the plain <img> onMediaLoaded reports also
-      // fixes a real mismatch: a portrait phone photo stored with a
-      // landscape EXIF-rotated raw pixel grid would otherwise compute the
-      // WRONG contain ratio from the img's raw (unrotated) naturalWidth/
-      // naturalHeight, permanently minor-zooming even a "fit" flyer.
+      // Record the EXIF-corrected natural aspect (bmp is decoded with
+      // imageOrientation:'from-image', so a phone photo stored with a
+      // landscape EXIF-rotated raw pixel grid is already the right way up
+      // here). The actual minZoom/zoom fit is computed below by directly
+      // measuring the cropper's own container (see the ResizeObserver
+      // effect further down) — NOT from this aspect ratio alone. See that
+      // effect's comment for why an aspect-only formula is wrong.
       if (bmp.width && bmp.height) {
-        const Ai = bmp.width / bmp.height;
-        setNaturalAspect(Ai);
-        const contain = Math.min(Ai, aspect) / Math.max(Ai, aspect);
-        const mz = Math.max(0.05, Math.min(1, contain));
-        setMinZoom(mz);
-        setZoom(mz);
+        setNaturalAspect(bmp.width / bmp.height);
       }
       // 1) Instant on-device heuristic — the cropper opens focus-framed with no wait.
       try { setSmartCrop(computeSmartCropCached(imageSrc, bmp, EVENT_CARD_ASPECT)); } catch { /* ignore */ }
@@ -231,27 +226,53 @@ export function ImageCropperModal({
     setSmartCrop(cropFromFocus(bmp.width, bmp.height, EVENT_CARD_ASPECT, visionFocus.focus.x, visionFocus.focus.y));
   }, [visionFocus]);
 
-  // Re-fit whenever the user switches aspect ratio (Portrait/Square/Wide/
-  // Original) — the INITIAL fit-on-open is handled synchronously in the
-  // decode effect above (same state batch as cropperReady flipping true, so
-  // there's no separate async step that could render a wrong/cropped frame
-  // first). This effect only needs to handle the ratio changing later, using
-  // the bitmap already decoded (bitmapRef), not react-easy-crop's own
-  // (EXIF-unaware) onMediaLoaded.
+  // Measure the cropper's own mounting container directly — the ONLY
+  // reliable source for the fit/contain zoom. Two other approaches were
+  // tried and measured WRONG against the real rendered DOM before this one:
+  // (1) an aspect-ratio-only formula (min(Ai,Ac)/max(Ai,Ac)) silently
+  //     assumes the container's pixel aspect equals the crop-frame aspect
+  //     — false in testing (container 584x682 vs crop frame 545.9x682.4) —
+  //     and over-zoomed by ~7%, clipping the top/bottom of an image that
+  //     should have been fully visible.
+  // (2) trusting react-easy-crop's own onMediaLoaded-reported mediaSize
+  //     turned out to NOT match its actual rendered size at zoom=1
+  //     (reported 341x682, but the real .reactEasyCrop_Image element
+  //     measured 584x1168 via getBoundingClientRect) — a library quirk/
+  //     timing issue that produced zoom=1 (fully uncorrected = cropped).
+  // Self-measuring the container and applying react-easy-crop's own
+  // documented cover-to-container zoom=1 formula
+  // (scale = max(containerW/naturalW, containerH/naturalH)) is
+  // version-independent and was verified to exactly predict the real
+  // overflow measured in (1) above.
   useEffect(() => {
     if (!isFlyer) return;
-    const bmp = bitmapRef.current;
-    if (!bmp?.width || !bmp?.height) return;
-    const Ai = bmp.width / bmp.height;
-    const contain = Math.min(Ai, aspect) / Math.max(Ai, aspect);
-    const mz = Math.max(0.05, Math.min(1, contain));
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const box = entries[0]?.contentRect;
+      if (box && box.width > 0 && box.height > 0) setContainerSize({ width: box.width, height: box.height });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isFlyer]);
+
+  useEffect(() => {
+    if (!isFlyer || !containerSize || !cropSize || naturalAspect == null) return;
+    // Only the RATIO of naturalW:naturalH matters below, so any convenient
+    // unit works — not the real decoded pixel dimensions.
+    const naturalW = naturalAspect >= 1 ? 1000 : 1000 * naturalAspect;
+    const naturalH = naturalAspect >= 1 ? 1000 / naturalAspect : 1000;
+    const coverScale = Math.max(containerSize.width / naturalW, containerSize.height / naturalH);
+    const baseW = naturalW * coverScale;
+    const baseH = naturalH * coverScale;
+    const mz = Math.max(0.01, Math.min(cropSize.width / baseW, cropSize.height / baseH));
     setMinZoom(mz);
-    // Open/re-fit showing the WHOLE flyer — never auto-zoom into a crop. But
-    // when Auto-frame is active (cropOverride set), let the applied crop
-    // drive the zoom instead of snapping back to fit.
-    if (!cropOverride) setZoom(mz);
+    // Show the WHOLE flyer — never auto-zoom into a crop. But when
+    // Auto-frame is active (cropOverride set) or the user has already
+    // adjusted (dirty), let that drive the zoom instead of snapping to fit.
+    if (!cropOverride && !dirty) setZoom(mz);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [aspect, isFlyer]);
+  }, [isFlyer, containerSize, cropSize, naturalAspect, aspect]);
 
   const onCropCompleteCallback = useCallback((_a: any, areaPixels: PixelCrop) => {
     setCroppedAreaPixels(areaPixels);
@@ -363,7 +384,7 @@ export function ImageCropperModal({
 
       {/* Cropper — gated until the smart initial crop is computed (flyer) so it
           mounts with the focus-aware crop already applied. */}
-      <div style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
+      <div ref={containerRef} style={{ flex: 1, position: 'relative', background: '#000', overflow: 'hidden' }}>
         {cropperReady && (
         <Cropper
           key={resetNonce}
