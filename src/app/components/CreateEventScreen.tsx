@@ -13,6 +13,7 @@ import { uploadImage } from '../../lib/mediaPipeline';
 import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { hasCapability } from '../../lib/permissions';
+import { LocationPicker } from './LocationPicker';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -86,6 +87,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [endTime, setEndTime] = useState('');
   const [venue, setVenue] = useState('');
   const [address, setAddress] = useState('');
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
   const [showStateModal, setShowStateModal] = useState(false);
@@ -196,6 +199,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setStateName(parts[1] || '');
         setCity(parts[2] || '');
         setAddress(parts[3] || '');
+        setLatitude(row.latitude != null ? Number(row.latitude) : null);
+        setLongitude(row.longitude != null ? Number(row.longitude) : null);
         setCapacity(row.ticket_goal != null ? String(row.ticket_goal) : '');
         const tts: TicketFormType[] = Array.isArray(row.ticket_types) && row.ticket_types.length
           ? row.ticket_types.map((t: any) => ({
@@ -423,6 +428,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              latitude,
+              longitude,
               event_date: eventTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
@@ -525,6 +532,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              latitude,
+              longitude,
               event_date: eventTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
@@ -669,11 +678,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           alignItems: 'center',
           gap: '12px',
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
+          position: 'relative',
         }}
       >
         {/* No way back once the event is published — there's nothing left
             to navigate back to (it's already live). */}
-        {!published && (
+        {!published ? (
           <button
             onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
             disabled={submitting}
@@ -687,12 +697,23 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               alignItems: 'center',
               justifyContent: 'center',
               cursor: submitting ? 'not-allowed' : 'pointer',
+              flexShrink: 0,
+              position: 'relative',
+              zIndex: 1,
             }}
           >
             <ArrowLeft size={16} color="#C4C9E0" />
           </button>
-        )}
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{published ? 'Event Published' : editEventId ? 'Edit Event' : 'Create Event'}</h1>
+        ) : <div style={{ width: '36px', flexShrink: 0 }} />}
+        <h1
+          style={{
+            color: '#F0F0FF', fontSize: '18px', fontWeight: 700,
+            position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
+          }}
+        >
+          {published ? 'Event Published' : editEventId ? 'Edit Event' : 'Create Event'}
+        </h1>
+        <div style={{ width: '36px', flexShrink: 0 }} />
       </div>
 
       {/* Step indicator */}
@@ -1047,11 +1068,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             </div>
             <div>
               <Label>Full Address</Label>
-              <input
-                placeholder="Street address, area"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
-                style={INPUT_STYLE}
+              <LocationPicker
+                value={{ address, lat: latitude, lng: longitude }}
+                onChange={(v) => {
+                  setAddress(v.address);
+                  setLatitude(v.lat);
+                  setLongitude(v.lng);
+                }}
               />
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>

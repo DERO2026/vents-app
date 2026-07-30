@@ -674,7 +674,7 @@ export function HomeScreen({
   currentUser,
   hasMore,
   onLoadMore,
-  unreadNotificationsCount: _unreadNotificationsCount,
+  unreadNotificationsCount,
 }: HomeScreenProps) {
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -1173,9 +1173,22 @@ export function HomeScreen({
           </button>
           <button
             onClick={onNotificationsPress}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
           >
             <Bell size={16} color="#C4C9E0" />
+            {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute', top: '-4px', right: '-4px',
+                  minWidth: '16px', height: '16px', padding: '0 4px',
+                  borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
+                }}
+              >
+                {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+              </span>
+            )}
           </button>
           {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button

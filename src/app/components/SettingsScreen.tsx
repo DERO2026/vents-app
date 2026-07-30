@@ -156,11 +156,12 @@ function Divider() {
 
 function SubHeader({ title, onBack }: { title: string; onBack: () => void }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-      <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', borderBottom: '1px solid rgba(255,255,255,0.06)', position: 'relative' }}>
+      <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '34px', height: '34px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0, position: 'relative', zIndex: 1 }}>
         <ArrowLeft size={15} color="#C4C9E0" />
       </button>
-      <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>{title}</h2>
+      <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>{title}</h2>
+      <div style={{ width: '34px', flexShrink: 0 }} />
     </div>
   );
 }
@@ -1471,14 +1472,15 @@ export function SettingsScreen({
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', position: 'relative' }}>
         <button
           onClick={onBack}
-          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', zIndex: 1 }}
         >
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700 }}>Settings</h1>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>Settings</h1>
+        <div style={{ width: '36px', flexShrink: 0 }} />
       </div>
 
       {/* Content */}

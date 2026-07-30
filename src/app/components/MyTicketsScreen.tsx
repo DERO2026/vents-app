@@ -101,11 +101,27 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         style={{
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
           gap: '12px',
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
+          position: 'relative',
         }}
       >
-        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, flex: 1 }}>My Tickets</h1>
+        <div style={{ width: '36px', flexShrink: 0 }} />
+        <h1
+          style={{
+            color: '#FFFFFF',
+            fontSize: '20px',
+            fontWeight: 700,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            textAlign: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          My Tickets
+        </h1>
         {onRefresh && (
           <button
             onClick={handleRefresh}

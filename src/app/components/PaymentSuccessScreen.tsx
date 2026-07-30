@@ -6,6 +6,7 @@ import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
 import { useSignedTicketToken } from '../../lib/ticketToken';
+import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -43,26 +44,32 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   // token QRTicket uses so this post-purchase QR is scannable too.
   const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
 
-  const handleSave = () => {
-    const content = [
-      `VENTS TICKET`,
-      `Event: ${ticket.event.title}`,
-      `Date: ${ticket.event.date} at ${ticket.event.time}`,
-      `Venue: ${ticket.event.venue}, ${ticket.event.city}`,
-      `Ticket: ${ticket.ticketType.name} × ${ticket.quantity}`,
-      `Amount: ₦${(ticket.totalAmount ?? 0).toLocaleString()}`,
-      `Booking ID: ${ticketDisplayCode(ticket.ticketId)}`,
-      `Holder: ${ticket.holderName}`,
-    ].join('\n');
-    const blob = new Blob([content], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${ticket.ticketId}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setSaveToast(true);
-    setTimeout(() => setSaveToast(false), 2500);
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    // Was downloading a plain .txt receipt with no QR — replaced with a real
+    // ticket image (title, date/venue, ticket type, and the actual scannable
+    // QR) so what's saved is something the user can actually show at a gate.
+    if (saving) return;
+    setSaving(true);
+    try {
+      const blob = await renderTicketImage({
+        title: ticket.event.title,
+        dateTimeLabel: `${ticket.event.date} · ${ticket.event.time}`,
+        venue: `${ticket.event.venue}, ${ticket.event.city}`,
+        ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
+        holderName: ticket.holderName,
+        signedToken,
+      });
+      if (!blob) throw new Error('Failed to render ticket image');
+      downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+      setSaveToast(true);
+      setTimeout(() => setSaveToast(false), 2500);
+    } catch (err) {
+      console.error('Failed to save ticket image:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleShare = async () => {
@@ -320,6 +327,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={handleSave}
+            disabled={saving}
             style={{
               flex: 1,
               background: '#090514',
@@ -330,11 +338,12 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               alignItems: 'center',
               justifyContent: 'center',
               gap: '7px',
-              cursor: 'pointer',
+              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: saving ? 0.6 : 1,
             }}
           >
             <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Save</span>
+            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>{saving ? 'Saving…' : 'Save'}</span>
           </button>
           <button
             onClick={handleShare}

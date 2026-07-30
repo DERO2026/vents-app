@@ -159,11 +159,19 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
         flexShrink: 0,
+        position: 'relative',
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1 }}>
           <ArrowLeft size={24} color="#A78BFA" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0 }}>Messages</h1>
+        <h1
+          style={{
+            color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0,
+            position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
+          }}
+        >
+          Messages
+        </h1>
       </div>
 
       {toast && (

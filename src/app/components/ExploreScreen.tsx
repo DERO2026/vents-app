@@ -178,8 +178,8 @@ export function ExploreScreen({
         </div>
       )}
       {/* ── Header ── */}
-      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           Messages
         </h1>
       </div>

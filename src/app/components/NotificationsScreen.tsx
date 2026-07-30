@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Bell, Loader, Trash2 } from 'lucide-react';
+import { ArrowLeft, Bell, Loader, Trash2, CheckCheck } from 'lucide-react';
 import { Notification } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
@@ -179,73 +179,92 @@ export function NotificationsScreen({
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
+          position: 'relative',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={onBack}
-            style={{
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '50%',
-              width: '36px',
-              height: '36px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-            }}
-          >
-            <ArrowLeft size={16} color="#C4C9E0" />
-          </button>
-          <div>
-            <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Notifications</h1>
-            {unreadCount > 0 && (
-              <span style={{ color: '#8B8FA8', fontSize: '12px' }}>
-                {unreadCount} unread
-              </span>
-            )}
-          </div>
+        <button
+          onClick={onBack}
+          style={{
+            background: '#090514',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '50%',
+            width: '36px',
+            height: '36px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            cursor: 'pointer',
+            flexShrink: 0,
+          }}
+        >
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 'calc(20px + env(safe-area-inset-top))',
+            bottom: '14px',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>Notifications</h1>
+          {unreadCount > 0 && (
+            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+              {unreadCount} unread
+            </span>
+          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
+              title="Mark all read"
+              aria-label="Mark all read"
               style={{
                 background: 'rgba(167,139,250,0.1)',
                 border: '1px solid rgba(167,139,250,0.2)',
-                borderRadius: '10px',
-                padding: '6px 12px',
-                color: '#A78BFA',
-                fontSize: '12px',
-                fontWeight: 500,
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 cursor: 'pointer',
+                flexShrink: 0,
               }}
             >
-              Mark all read
+              <CheckCheck size={16} color="#A78BFA" />
             </button>
           )}
           {items.length > 0 && (
             <button
               onClick={() => setShowClearConfirm(true)}
               disabled={clearing}
+              title="Clear all"
+              aria-label="Clear all"
               style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '5px',
                 background: 'rgba(239,68,68,0.1)',
                 border: '1px solid rgba(239,68,68,0.25)',
-                borderRadius: '10px',
-                padding: '6px 12px',
-                color: '#EF4444',
-                fontSize: '12px',
-                fontWeight: 500,
+                borderRadius: '50%',
+                width: '36px',
+                height: '36px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
                 cursor: clearing ? 'not-allowed' : 'pointer',
                 opacity: clearing ? 0.6 : 1,
+                flexShrink: 0,
               }}
             >
-              <Trash2 size={12} />
-              Clear All
+              <Trash2 size={15} color="#EF4444" />
             </button>
           )}
         </div>
@@ -299,9 +318,23 @@ export function NotificationsScreen({
                   {/* Delete-reveal background */}
                   <div style={{
                     position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 20px',
+                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
                   }}>
-                    <Trash2 size={18} color="#EF4444" />
+                    <div
+                      style={{
+                        width: '34px',
+                        height: '34px',
+                        borderRadius: '50%',
+                        background: 'rgba(239,68,68,0.2)',
+                        border: '1px solid rgba(239,68,68,0.35)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Trash2 size={15} color="#EF4444" />
+                    </div>
                   </div>
                   <div
                     onClick={() => { if (offsetX === 0) markRead(notif.id); }}

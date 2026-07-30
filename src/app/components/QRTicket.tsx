@@ -5,6 +5,7 @@ import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { useSignedTicketToken } from '../../lib/ticketToken';
 import { analytics } from '../../lib/analyticsEvents';
+import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -30,13 +31,25 @@ function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas || drawnRef.current === value) return;
-    QRCode.toCanvas(canvas, value, {
+    // A background token refresh mints a NEW value for the same ticket
+    // (rotating nonce/expiry), so this can re-fire after the QR is already
+    // showing. Render into a detached offscreen canvas first and blit it in
+    // one paint — QRCode.toCanvas clears the target before drawing, which
+    // would otherwise flash the visible canvas blank for a frame.
+    const offscreen = document.createElement('canvas');
+    QRCode.toCanvas(offscreen, value, {
       width: size,
       margin: 4,
       errorCorrectionLevel: 'L',
       color: { dark: '#0A0B14', light: '#ffffff' },
     })
-      .then(() => { drawnRef.current = value; })
+      .then(() => {
+        canvas.width = offscreen.width;
+        canvas.height = offscreen.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(offscreen, 0, 0);
+        drawnRef.current = value;
+      })
       .catch(console.error);
   }, [value, size]);
 
@@ -58,10 +71,8 @@ function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) 
   );
 }
 
-
 export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const [showConfetti] = useState(true);
-  const ticketCardRef = useRef<HTMLDivElement>(null);
   const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
@@ -82,47 +93,59 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     }
   };
 
-  const handleSave = () => {
-    // Encode ticket details as a data-URI download. Deliberately does NOT
-    // include the raw ticket_id or the signed token as text — the token is
-    // only meaningful as the QR image already rendered on this screen.
-    const canvas = document.createElement('canvas');
-    canvas.width = 400;
-    canvas.height = 100;
-    const ctx = canvas.getContext('2d')!;
-    ctx.fillStyle = '#020005';
-    ctx.fillRect(0, 0, 400, 100);
-    ctx.fillStyle = '#F0F0FF';
-    ctx.font = 'bold 16px Inter, sans-serif';
-    ctx.fillText(ticket.event.title, 16, 32);
-    ctx.fillStyle = '#8B8FA8';
-    ctx.font = '12px Inter, sans-serif';
-    ctx.fillText(`${ticket.event.date} · ${ticket.event.venue}`, 16, 54);
-    ctx.fillText(`${ticket.ticketType.name} · x${ticket.quantity}`, 16, 76);
-    const link = document.createElement('a');
-    link.download = `vents-ticket-${Date.now()}.png`;
-    link.href = canvas.toDataURL();
-    link.click();
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    // Render a real, self-contained ticket image (event title, date/venue,
+    // ticket type, and the actual scannable QR) — not just a text receipt —
+    // so what downloads is what the user expects to be able to show at the
+    // door. Deliberately does NOT include the raw ticket_id or signed token
+    // as text anywhere; only the rendered QR image carries the credential.
+    if (saving) return;
+    setSaving(true);
+    try {
+      const blob = await renderTicketImage({
+        title: ticket.event.title,
+        dateTimeLabel: `${ticket.event.date} · ${ticket.event.time}`,
+        venue: ticket.event.venue,
+        ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
+        holderName: ticket.holderName,
+        signedToken,
+      });
+      if (!blob) throw new Error('Failed to render ticket image');
+      downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+    } catch (err) {
+      console.error('Failed to save ticket image:', err);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {/* Header */}
-      <div 
+      <div
         className="flex items-center justify-between px-4 pb-4"
-        style={{ paddingTop: 'calc(14px + env(safe-area-inset-top))' }}
+        style={{ paddingTop: 'calc(14px + env(safe-area-inset-top))', position: 'relative' }}
       >
         <button
           onClick={onBack}
           className="w-11 h-11 rounded-full flex items-center justify-center"
-          style={{ background: '#090514' }}
+          style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1 }}
         >
           <ArrowLeft size={18} color="#F0F0FF" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>My Ticket</h1>
+        <h1
+          style={{
+            color: '#F0F0FF', fontSize: '18px', fontWeight: 700,
+            position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
+          }}
+        >
+          My Ticket
+        </h1>
         <button
           onClick={handleShare}
-          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#090514' }}>
+          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1 }}>
           <Share2 size={16} color="#F0F0FF" />
         </button>
       </div>
@@ -286,16 +309,19 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
+            disabled={saving}
             className="flex-1 flex items-center justify-center gap-2"
             style={{
               height: '50px',
               background: '#090514',
               borderRadius: '14px',
               border: '1px solid rgba(255,255,255,0.08)',
+              opacity: saving ? 0.6 : 1,
+              cursor: saving ? 'not-allowed' : 'pointer',
             }}
           >
             <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>Save Ticket</span>
+            <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{saving ? 'Saving…' : 'Save Ticket'}</span>
           </button>
           <button
             onClick={onGoHome}

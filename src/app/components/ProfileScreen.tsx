@@ -324,8 +324,8 @@ export function ProfileScreen({
         </div>
       )}
       {/* Header */}
-      <div 
-        className="flex items-center justify-between px-4 pb-3"
+      <div
+        className="flex items-center justify-center px-4 pb-3"
         style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
       >
         <h1
@@ -338,7 +338,6 @@ export function ProfileScreen({
         >
           Profile
         </h1>
-        <div />
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>

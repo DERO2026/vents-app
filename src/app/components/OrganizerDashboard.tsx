@@ -171,53 +171,69 @@ export function OrganizerDashboard({
           zIndex: 100,
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {onBack && (
-            <button
-              onClick={onBack}
-              style={{
-                background: 'rgba(255, 255, 255, 0.03)',
-                border: '1px solid rgba(255, 255, 255, 0.06)',
-                borderRadius: '50%',
-                width: '40px',
-                height: '40px',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                transition: 'all 0.2s ease',
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
-                e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
-              }}
-            >
-              <ArrowLeft size={18} color="#C4C9E0" />
-            </button>
-          )}
-          <div>
-            <p style={{ color: '#94A3B8', fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
-              {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
-            </p>
-            <h1
-              style={{
-                color: '#FFFFFF',
-                fontSize: '24px',
-                fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
-                margin: 0,
-                letterSpacing: '-0.02em',
-              }}
-            >
-              Creator Studio
-            </h1>
-          </div>
+        {onBack ? (
+          <button
+            onClick={onBack}
+            style={{
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.06)',
+              borderRadius: '50%',
+              width: '40px',
+              height: '40px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              flexShrink: 0,
+              position: 'relative',
+              zIndex: 1,
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.08)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = 'rgba(255, 255, 255, 0.03)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+            }}
+          >
+            <ArrowLeft size={18} color="#C4C9E0" />
+          </button>
+        ) : <div style={{ width: '40px', flexShrink: 0 }} />}
+
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 0,
+            bottom: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <p style={{ color: '#94A3B8', fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
+            {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
+          </p>
+          <h1
+            style={{
+              color: '#FFFFFF',
+              fontSize: '20px',
+              fontWeight: 700,
+              fontFamily: 'Space Grotesk, sans-serif',
+              margin: 0,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Creator Studio
+          </h1>
         </div>
 
+        <div style={{ width: '40px', flexShrink: 0 }} />
       </header>
 
       {/* Main Content Area */}
