@@ -873,6 +873,7 @@ export default function App() {
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
         .eq('hidden_by_admin', false)
+        .is('deleted_at', null)
         .gte('event_date', new Date().toISOString().split('T')[0])
         .in('status', ['live', 'published']);
 
