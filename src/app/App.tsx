@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
-import { registerPushNotifications, unregisterPushNotifications } from '../lib/pushNotifications';
+import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
+import { Capacitor } from '@capacitor/core';
 import { getPendingVerification } from '../lib/pendingVerification';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
@@ -389,6 +390,27 @@ export default function App() {
             }, (err) => console.error('Deep link event fetch failed:', err));
         }
 
+        // Intercept profile deep links: ?user=<userId> — the format both
+        // InboxScreen and UserProfileScreen's "Share Profile" buttons
+        // generate. Previously unhandled (App.tsx only parsed
+        // insforge_error/insforge_status/token/verify_email/ref/event), so
+        // every shared profile link opened the app to the home screen.
+        const userDeepLink = params.get('user');
+        if (userDeepLink) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+          insforge.database
+            .from('public_profiles')
+            .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+            .eq('id', userDeepLink)
+            .maybeSingle()
+            .then(({ data: userData, error: userError }) => {
+              if (userError || !userData) return;
+              setSelectedUser(mapDbUserToUserProfile(userData));
+              setScreen('user-profile');
+            }, (err) => console.error('Deep link user fetch failed:', err));
+        }
+
         // 2. Fetch user session.
         // On localhost, the httpOnly refresh cookie is blocked cross-origin, so we
         // fall back to a refresh token stored in secure storage (set at login) —
@@ -541,6 +563,13 @@ export default function App() {
         if (profile?.status === 'suspended') {
           await insforge.auth.signOut().catch(() => {});
           await clearRefreshToken();
+          // Same as the normal sign-out path below — without this the
+          // suspended user's device keeps its push token registered (and
+          // its registration listener bound to their id), so it keeps
+          // receiving pushes, and a different user logging in on the same
+          // device could have their token misattributed to the suspended
+          // account (see pushNotifications.ts's currentUserId fix).
+          if (sessionUserId) await unregisterPushNotifications(sessionUserId).catch(() => {});
           setCurrentUser(null);
           setAuthError('Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.');
           setAuthLoading(false);
@@ -1404,6 +1433,90 @@ export default function App() {
     } as any;
   }, [dbEvents]);
 
+  // Tapping a push notification previously did nothing — the plugin
+  // listener (pushNotifications.ts) only fired an analytics event; the
+  // "route deep links here" comment above it was never implemented. Wired
+  // via a ref so the handler registered once with the native plugin always
+  // dispatches through the LATEST navigation closures, not whatever was in
+  // scope the moment the listener was attached (which could be stale by
+  // the time a user actually taps a notification, possibly minutes later
+  // with the app backgrounded).
+  const pushActionRef = useRef<(data: Record<string, any>) => void>(() => {});
+  pushActionRef.current = (data: Record<string, any>) => {
+    if (data.eventId) {
+      insforge.database
+        .from('events')
+        .select('*')
+        .eq('id', data.eventId)
+        .maybeSingle()
+        .then(({ data: evtData, error: evtError }) => {
+          if (evtError || !evtData || evtData.deleted_at) return;
+          setSelectedEvent(mapDbEventToFrontend(evtData));
+          setScreenStack([]);
+          setScreen('event-details');
+        });
+      return;
+    }
+    if (data.userId) {
+      insforge.database
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+        .eq('id', data.userId)
+        .maybeSingle()
+        .then(({ data: userData, error: userError }) => {
+          if (userError || !userData) return;
+          setSelectedUser(mapDbUserToUserProfile(userData));
+          setScreenStack([]);
+          setScreen('user-profile');
+        });
+      return;
+    }
+    if (data.screen === 'notifications') { setScreenStack([]); setScreen('notifications'); return; }
+    if (data.screen === 'my-tickets') { setScreenStack([]); setScreen('my-tickets'); return; }
+    if (data.screen === 'wallet') { setScreenStack([]); setScreen('wallet'); return; }
+  };
+
+  useEffect(() => {
+    setPushActionHandler((data) => pushActionRef.current(data));
+    return () => setPushActionHandler(null);
+  }, []);
+
+  // Native deep links (a shared https://getvents.com/?event=… or vents://
+  // link opened while the app is installed) previously had no handler at
+  // all — there was no @capacitor/app listener anywhere in the codebase, so
+  // App.tsx's URL parsing (which only runs once, off window.location.search
+  // during the initial hydrateAuth pass) never saw these: a Capacitor
+  // WebView's window.location is the local bundle URL, not the link that
+  // opened the app. This requires the platform-side association to route
+  // getvents.com/vents:// links to the app in the first place — Android's
+  // intent-filter is set up in AndroidManifest.xml; a full domain-verified
+  // Android App Link additionally needs a hosted
+  // /.well-known/assetlinks.json with the release signing certificate's
+  // SHA-256 fingerprint, and iOS Universal Links need an
+  // apple-app-site-association file plus the Associated Domains
+  // entitlement — neither is wired up yet (no iOS project exists in this
+  // repo yet, and the Android release fingerprint isn't available here).
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let removeListener: (() => void) | undefined;
+    (async () => {
+      const { App: CapacitorApp } = await import('@capacitor/app');
+      const sub = await CapacitorApp.addListener('appUrlOpen', ({ url }) => {
+        try {
+          const parsed = new URL(url);
+          const eventId = parsed.searchParams.get('event');
+          const userId = parsed.searchParams.get('user');
+          if (eventId) pushActionRef.current({ eventId });
+          else if (userId) pushActionRef.current({ userId });
+        } catch (err) {
+          console.warn('[deep-link] failed to parse appUrlOpen url:', err);
+        }
+      });
+      removeListener = () => sub.remove();
+    })();
+    return () => removeListener?.();
+  }, []);
+
   const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
     const enriched = {
       ...userProfile,
@@ -1703,6 +1816,7 @@ export default function App() {
               hasMore={hasMoreEvents}
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
+              blockedUserIds={[...blockedIds]}
             />
           )}
           {screen === 'explore' && (

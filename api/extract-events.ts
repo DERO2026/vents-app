@@ -96,7 +96,13 @@ ${text}`
     const data = await response.json();
     const content = data.content?.[0]?.text || '[]';
 
-    let events: any[] = [];
+    // Claude is asked for a JSON array but nothing enforces that shape — if
+    // it ever returns an object instead (e.g. {"events": [...]}), a single
+    // object, or anything else non-array, `events.filter` below used to
+    // throw "events.filter is not a function", caught by the outer
+    // try/catch, and surfaced as an opaque 500 "Unknown error" with no clue
+    // what actually happened.
+    let events: any = [];
     try {
       events = JSON.parse(content);
     } catch {
@@ -105,8 +111,11 @@ ${text}`
         try { events = JSON.parse(match[0]); } catch { events = []; }
       }
     }
+    if (!Array.isArray(events)) {
+      events = Array.isArray(events?.events) ? events.events : [];
+    }
 
-    return res.status(200).json({ events: events.filter((e: any) => e && e.title) });
+    return res.status(200).json({ events: (events as any[]).filter((e: any) => e && e.title) });
   } catch (error: any) {
     return res.status(500).json({ error: error.message || 'Unknown error' });
   }

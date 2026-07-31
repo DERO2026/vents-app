@@ -18,6 +18,26 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Custom-scheme deep link (works immediately, no domain
+                 verification needed) — handled by the appUrlOpen listener
+                 in src/app/App.tsx. e.g. vents://open?event=<id> -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="vents" />
+            </intent-filter>
+            <!-- getvents.com App Link. autoVerify requires a hosted
+                 /.well-known/assetlinks.json (release signing cert SHA-256
+                 fingerprint) to actually auto-open the app instead of the
+                 browser — not yet set up. Until then this intent-filter is
+                 inert (Android falls back to the browser), which is safe. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="getvents.com" />
+            </intent-filter>
         </activity>
 
         <provider

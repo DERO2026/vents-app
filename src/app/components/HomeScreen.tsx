@@ -39,6 +39,11 @@ interface HomeScreenProps {
   hasMore?: boolean;
   onLoadMore?: () => void;
   unreadNotificationsCount?: number;
+  // Organizer ids this user has blocked (App Store Guideline 1.2 UGC
+  // requirement) — App.tsx's fetchEvents already excludes these from the
+  // base feed, but search and category/price/state filtering both ran over
+  // their own separately-fetched result sets that didn't apply this filter.
+  blockedUserIds?: string[];
 }
 
 
@@ -675,7 +680,9 @@ export function HomeScreen({
   hasMore,
   onLoadMore,
   unreadNotificationsCount,
+  blockedUserIds,
 }: HomeScreenProps) {
+  const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -798,11 +805,17 @@ export function HomeScreen({
           const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
           (statsRes || []).forEach((t: any) => { bookingsMap[t.event_id] = t.sold_count || 0; });
         }
-        const mapped = rows.map((r) => {
-          const evt = mapDbEventToFrontend(r);
-          const bookings = bookingsMap[evt.id] || 0;
-          return { ...evt, bookingsCount: bookings, attendees: bookings };
-        });
+        // search_events_fuzzy has no knowledge of this specific viewer's
+        // block list (it's a general-purpose RPC, not per-user), so blocked
+        // organizers' events would otherwise reappear the moment a user
+        // searches even though the base feed already excludes them.
+        const mapped = rows
+          .filter((r) => !blockedIdSet.has(r.organizer_id))
+          .map((r) => {
+            const evt = mapDbEventToFrontend(r);
+            const bookings = bookingsMap[evt.id] || 0;
+            return { ...evt, bookingsCount: bookings, attendees: bookings };
+          });
         if (!cancelled) setSearchResults(mapped);
         // Debounced analytics: only log the search once the query settles
         // (~900ms after the last keystroke), with the final result count —
@@ -821,7 +834,7 @@ export function HomeScreen({
       cancelled = true;
       if (searchTrackTimer.current) window.clearTimeout(searchTrackTimer.current);
     };
-  }, [searchQuery, currentUser]);
+  }, [searchQuery, currentUser, blockedIdSet]);
 
   // People search state (for full-screen search overlay)
   const [searchPeople, setSearchPeople] = useState<any[]>([]);
@@ -866,22 +879,93 @@ export function HomeScreen({
   // every card on every render pass — matters once the feed is long.
   const savedEventsSet = useMemo(() => new Set(savedEvents), [savedEvents]);
 
+  // Category/state/price filters used to run over `dbEvents` alone — the
+  // currently-loaded, paginated home feed (20 events at a time). Picking a
+  // category with no matches in that first page read as "the filters are
+  // broken" even when matching events existed further down the feed. When
+  // any real filter is active (and no text search — that already queries
+  // the whole dataset via search_events_fuzzy) this fetches a much larger,
+  // server-filtered set instead of relying on whatever happens to be
+  // preloaded. null = no active filter fetch (fall back to dbEvents).
+  const [filterResults, setFilterResults] = useState<Event[] | null>(null);
+  const [filterLoading, setFilterLoading] = useState(false);
+  const filtersActive = activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week'
+    || stateFilter !== 'all'
+    || priceFilter !== 'all';
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (q || !filtersActive) { setFilterResults(null); setFilterLoading(false); return; }
+    let cancelled = false;
+    setFilterLoading(true);
+    (async () => {
+      try {
+        const userDob = (currentUser as any)?.date_of_birth;
+        const userAgeYears = userDob
+          ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+          : 99;
+
+        let query = insforge.database
+          .from('events')
+          .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
+          .eq('hidden_by_admin', false)
+          .is('deleted_at', null)
+          .gte('event_date', new Date().toISOString().split('T')[0])
+          .in('status', ['live', 'published']);
+
+        if (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') {
+          query = query.eq('category', activeCategory);
+        }
+        if (priceFilter === 'free') query = query.eq('price', 0);
+        if (priceFilter === 'paid') query = query.gt('price', 0);
+        if (stateFilter !== 'all') query = query.ilike('location', `%, ${stateFilter},%`);
+        if (userAgeYears < 18) query = query.eq('is_18_plus', false);
+        if (blockedIdSet.size > 0) query = query.not('organizer_id', 'in', `(${[...blockedIdSet].join(',')})`);
+
+        const { data, error } = await query.limit(200);
+        if (cancelled) return;
+        if (error || !data) { setFilterResults([]); return; }
+
+        const mapped = data.map((e: any) => {
+          const orgUser = e.users;
+          return mapDbEventToFrontend({
+            ...e,
+            organizer_name: orgUser?.username || orgUser?.full_name || null,
+            organizer_vc_badge: orgUser?.vc_badge || null,
+          });
+        });
+        setFilterResults(mapped);
+      } catch {
+        if (!cancelled) setFilterResults([]);
+      } finally {
+        if (!cancelled) setFilterLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [searchQuery, activeCategory, priceFilter, stateFilter, currentUser, blockedIdSet, filtersActive]);
+
   // While a search query is active, filter/sort the server's fuzzy-matched
   // results instead of the locally loaded feed page — search_events_fuzzy
-  // already spans every upcoming event, not just what's paginated in.
+  // already spans every upcoming event, not just what's paginated in. Same
+  // reasoning for a category/state/price filter with no search query — use
+  // the dedicated server-filtered fetch above instead of just dbEvents.
   const searchActive = !!searchQuery.trim();
-  const baseEvents = searchActive ? (searchResults ?? []) : dbEvents;
+  const baseEvents = searchActive ? (searchResults ?? []) : filtersActive ? (filterResults ?? []) : dbEvents;
 
   // Filter events locally based on requirements. Memoized so an unrelated
   // re-render (e.g. toggling a save, which only changes savedEventsSet)
   // doesn't re-run this filter+sort pass over the whole events array.
   const filteredEvents = useMemo(() => baseEvents.filter((event) => {
-    // Category filter (today/week are date-based; featured events appear in all tabs)
+    if (blockedIdSet.has((event as any).organizer_id)) return false;
+
+    // Category filter (today/week are date-based). Featured events used to
+    // bypass this entirely (`event.isFeatured ||`) — a featured Music event
+    // would show up under every single category tab, which reads as the
+    // filter being broken rather than as a promotion.
     const matchCategory =
       activeCategory === 'all' ||
       activeCategory === 'today' ||
       activeCategory === 'week' ||
-      event.isFeatured ||
       event.category.toLowerCase() === activeCategory.toLowerCase();
 
     const evtDt = event.event_date ? new Date(event.event_date) : (event.date ? new Date(event.date) : null);
@@ -915,7 +999,7 @@ export function HomeScreen({
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
     const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
     return dtA - dtB;
-  }), [baseEvents, activeCategory, stateFilter, priceFilter, upcomingOnly]);
+  }), [baseEvents, activeCategory, stateFilter, priceFilter, upcomingOnly, blockedIdSet]);
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
   const upcomingDbEvents = dbEvents.filter(e => {
@@ -1339,11 +1423,11 @@ export function HomeScreen({
                   {isDefaultState ? 'Explore Events' : 'Search Results'}
                 </h3>
                 <span style={{ color: '#94A3B8', fontSize: '11px' }}>
-                  {searchActive && searchLoading ? 'Searching…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
+                  {searchActive && searchLoading ? 'Searching…' : filtersActive && filterLoading ? 'Loading…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
 
-              {searchActive && searchLoading ? (
+              {(searchActive && searchLoading) || (filtersActive && filterLoading) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="feed" />)}
                 </div>

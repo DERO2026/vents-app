@@ -17,6 +17,14 @@ import { trackEvent } from './analytics';
 
 const isNative = Capacitor.isNativePlatform();
 let registered = false;
+// The 'registration' listener is only ever attached once (guarded by
+// `registered` below) but can fire again on a later call to
+// PushNotifications.register() for a DIFFERENT user on the same device —
+// it must always persist the token against whoever is currently logged in,
+// not the user who happened to be logged in when the listener was first
+// attached. Read via this module-level variable instead of closing over
+// the userId parameter.
+let currentUserId: string | null = null;
 
 /** Analytics passthrough kept for existing call sites (was PushAlert tracking). */
 export function trackPushEvent(eventName: string, properties?: Record<string, string>) {
@@ -36,12 +44,20 @@ async function persistToken(userId: string, token: string) {
   }
 }
 
+// Set by App.tsx so a tapped notification can navigate — kept outside React
+// state since this fires from a native plugin listener, not a component.
+let pushActionHandler: ((data: Record<string, any>) => void) | null = null;
+export function setPushActionHandler(handler: ((data: Record<string, any>) => void) | null) {
+  pushActionHandler = handler;
+}
+
 /**
  * Request permission, register with FCM, and sync the device token for this
  * user. Safe to call on every login — listeners attach once. No-ops on web.
  */
 export async function registerPushNotifications(userId: string): Promise<void> {
   if (!isNative || !userId) return;
+  currentUserId = userId;
 
   // Import lazily so the web bundle never pulls native plugin code.
   const { PushNotifications } = await import('@capacitor/push-notifications');
@@ -61,7 +77,9 @@ export async function registerPushNotifications(userId: string): Promise<void> {
       registered = true;
 
       PushNotifications.addListener('registration', (token) => {
-        persistToken(userId, token.value);
+        // Always the user currently logged in on this device, not whoever
+        // was logged in when this listener was first attached.
+        if (currentUserId) persistToken(currentUserId, token.value);
       });
 
       PushNotifications.addListener('registrationError', (err) => {
@@ -74,10 +92,15 @@ export async function registerPushNotifications(userId: string): Promise<void> {
         trackEvent('push_received', { title: notif.title || '' });
       });
 
-      // User tapped a notification — route deep links here if the payload
-      // carries one (data.screen / data.eventId).
+      // User tapped a notification — route to the relevant screen if the
+      // payload carries one (data.screen / data.eventId), via a handler
+      // App.tsx registers with setPushActionHandler. Previously this only
+      // fired an analytics event, so every push was a dead end that opened
+      // the home screen.
       PushNotifications.addListener('pushNotificationActionPerformed', (action) => {
         trackEvent('push_opened', { title: action.notification.title || '' });
+        const data = action.notification.data as Record<string, any> | undefined;
+        if (data && pushActionHandler) pushActionHandler(data);
       });
     }
 
@@ -94,6 +117,7 @@ export async function unregisterPushNotifications(userId: string): Promise<void>
     const { PushNotifications } = await import('@capacitor/push-notifications');
     await PushNotifications.removeAllListeners();
     registered = false;
+    currentUserId = null;
     // Best-effort server cleanup; the token itself is device-scoped.
     try { await insforge.database.rpc('remove_push_tokens_for_user' as any, { p_user_id: userId }); } catch { /* ignore */ }
   } catch { /* ignore */ }

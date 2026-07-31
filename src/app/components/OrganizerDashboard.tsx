@@ -34,6 +34,7 @@ export function OrganizerDashboard({
 }: OrganizerDashboardProps) {
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [revenue, setRevenue] = useState(0);
   const [ticketsSold, setTicketsSold] = useState(0);
   const [orgEvents, setOrgEvents] = useState<any[]>([]);
@@ -43,57 +44,79 @@ export function OrganizerDashboard({
     async function loadDashboardData() {
       if (!currentUser?.id) return;
       setLoading(true);
+      setLoadError(null);
       try {
         // 1. Fetch events created by the organizer — organizers always see their own events
-        //    regardless of hidden_by_admin (that flag only hides from public feeds)
+        //    regardless of hidden_by_admin (that flag only hides from public feeds).
+        //    Bounded: an organizer with more events than this is unrealistic today,
+        //    but an unbounded .select('*') here silently degrades (and silently
+        //    under-reports revenue below) once one isn't.
         const { data: eventsData, error: eventsError } = await insforge.database
           .from('events')
           .select('*')
           .eq('organizer_id', currentUser.id)
           .is('deleted_at', null)
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(300);
 
         if (eventsError) throw eventsError;
 
         if (eventsData) {
           setOrgEvents(eventsData);
 
-          // 2. Real revenue = SUM(amount) and tickets sold = COUNT where payment_status='paid'
+          // 2. Revenue and tickets sold — same aggregate RPC ManageEventsScreen
+          //    and SalesAnalyticsScreen use (get_event_ticket_stats), so this
+          //    figure can never again disagree with those screens for the
+          //    same organizer. Aggregated server-side instead of pulling every
+          //    raw ticket row to sum in the browser, and its sold_count/
+          //    sold_quantity are correctly status='active' AND
+          //    payment_status='paid' — a refunded ticket (payment_status
+          //    still 'paid', status flipped to 'cancelled'/'refunded') no
+          //    longer inflates this total the way the old raw
+          //    payment_status='paid'-only query did.
           if (eventsData.length > 0) {
             const eventIds = eventsData.map((e: any) => e.id);
-            const { data: ticketsData, error: ticketsError } = await insforge.database
-              .from('tickets')
-              .select('id, event_id, quantity, amount, payment_status')
-              .in('event_id', eventIds)
-              .eq('payment_status', 'paid');
+            const { data: statsData, error: statsError } = await insforge.database
+              .rpc('get_event_ticket_stats', { p_event_ids: eventIds });
 
-            if (!ticketsError && ticketsData) {
-              let totalTickets = 0;
-              let totalRev = 0;
-              const soldByEvent: Record<string, number> = {};
-              ticketsData.forEach((ticket: any) => {
-                totalTickets += Number(ticket.quantity) || 1;
-                totalRev += Number(ticket.amount) || 0;
-                soldByEvent[ticket.event_id] = (soldByEvent[ticket.event_id] || 0) + (Number(ticket.quantity) || 1);
-              });
-              setTicketsSold(totalTickets);
-              setRevenue(totalRev);
+            if (statsError) throw statsError;
 
-              // Chart data: top 5 events by tickets sold
-              const chart = eventsData
-                .slice(0, 5)
-                .map((e: any) => ({
-                  name: (e.title as string).length > 12 ? (e.title as string).slice(0, 12) + '…' : e.title,
-                  sold: soldByEvent[e.id] || 0,
-                  goal: Number(e.ticket_goal) || 500,
-                }))
-                .sort((a: any, b: any) => b.sold - a.sold);
-              setChartData(chart);
-            }
+            let totalTickets = 0;
+            let totalRevKobo = 0;
+            const soldByEvent: Record<string, number> = {};
+            (statsData || []).forEach((s: any) => {
+              const qty = Number(s.sold_quantity) || 0;
+              totalTickets += qty;
+              totalRevKobo += Number(s.revenue_kobo) || 0;
+              soldByEvent[s.event_id] = qty;
+            });
+            setTicketsSold(totalTickets);
+            setRevenue(totalRevKobo / 100);
+
+            // Chart data: top 5 events by tickets sold (was slice(0,5) of the
+            // newest events, then sorted — labeled "top 5 by tickets sold"
+            // but was actually the 5 newest events).
+            const chart = eventsData
+              .map((e: any) => ({
+                name: (e.title as string).length > 12 ? (e.title as string).slice(0, 12) + '…' : e.title,
+                sold: soldByEvent[e.id] || 0,
+                goal: Number(e.ticket_goal) || 500,
+              }))
+              .sort((a: any, b: any) => b.sold - a.sold)
+              .slice(0, 5);
+            setChartData(chart);
+          } else {
+            setTicketsSold(0);
+            setRevenue(0);
+            setChartData([]);
           }
         }
-      } catch (err) {
+      } catch (err: any) {
+        // A failed load previously rendered identically to "you have no
+        // events, ₦0 revenue" — indistinguishable, and the worst possible
+        // false message for an organizer checking numbers on event day.
         console.error("Failed to load organizer dashboard data:", err);
+        setLoadError(err?.message || 'Could not load your dashboard. Pull to refresh or try again shortly.');
       } finally {
         setLoading(false);
       }
@@ -138,6 +161,46 @@ export function OrganizerDashboard({
             Loading Creator Hub...
           </span>
         </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div
+        style={{
+          background: '#020005',
+          width: '100%',
+          height: '100%',
+          minHeight: '100vh',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: 'Inter, sans-serif',
+          padding: '24px',
+          textAlign: 'center',
+        }}
+      >
+        <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>
+          Couldn't load your dashboard
+        </p>
+        <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', maxWidth: '280px' }}>{loadError}</p>
+        <button
+          onClick={onBack}
+          style={{
+            background: 'rgba(123,47,190,0.15)',
+            border: '1px solid rgba(123,47,190,0.4)',
+            borderRadius: '12px',
+            padding: '10px 20px',
+            color: '#C4B5FD',
+            fontSize: '13px',
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Go Back
+        </button>
       </div>
     );
   }

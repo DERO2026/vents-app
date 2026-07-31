@@ -42,12 +42,17 @@ const STATUS_CONFIG: Record<CheckInStatus, { color: string; bg: string; label: s
 export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeListScreenProps) {
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<CheckInStatus | 'all'>('all');
 
   useEffect(() => {
     if (!eventId) { setLoading(false); return; }
+    let cancelled = false;
     async function load() {
+      setLoading(true);
+      setLoadError(null);
       try {
         // Uses the same gated, single-query RPC as the Door Manager dashboard
         // (get_event_attendees — authorized via is_event_door_manager) instead
@@ -58,45 +63,69 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         // been removed; this RPC only ever returns the safe attendee fields
         // needed here (holder_name/holder_email), scoped to the caller's own
         // event.
-        const { data, error } = await insforge.database.rpc('get_event_attendees' as any, {
-          p_event_id: eventId,
-          p_search: null,
-          p_filter: 'all',
-          p_limit: 200,
-          p_offset: 0,
-        });
-
-        if (error) throw error;
-        if (Array.isArray(data)) {
-          setAttendees((data as any[]).map((t) => {
-            const name = t.holder_name || t.buyer_name || 'Unknown';
-            const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-            const status: CheckInStatus =
-              t.status !== 'active' ? 'cancelled' : t.checked_in ? 'checked-in' : 'pending';
-            return {
-              id: t.ticket_id,
-              name,
-              email: t.holder_email || '',
-              ticketType: t.ticket_type || 'Regular',
-              ticketId: t.ticket_id,
-              ticketIdShort: t.ticket_id.slice(0, 8).toUpperCase(),
-              quantity: 1,
-              status,
-              paymentStatus: t.payment_status,
-              initials,
-              avatarColor: colorForName(name),
-              checkedInAt: t.checked_in_at || null,
-            };
-          }));
+        //
+        // The RPC itself caps p_limit at 200 per call (LEAST(p_limit, 200)),
+        // so a single call was a hard ceiling on total attendees shown, and
+        // this screen's "N / total" and search/filter all silently only ever
+        // saw that first page. Loop pages of 200 by offset until a partial
+        // page comes back — for a ticketing app, "the attendee list stops
+        // working past 200 people" is a hard failure on the day it matters
+        // most, not an edge case.
+        const PAGE_SIZE = 200;
+        let offset = 0;
+        const allRows: any[] = [];
+        for (;;) {
+          const { data, error } = await insforge.database.rpc('get_event_attendees' as any, {
+            p_event_id: eventId,
+            p_search: null,
+            p_filter: 'all',
+            p_limit: PAGE_SIZE,
+            p_offset: offset,
+          });
+          if (error) throw error;
+          const rows = Array.isArray(data) ? data : [];
+          allRows.push(...rows);
+          if (rows.length < PAGE_SIZE) break;
+          offset += PAGE_SIZE;
+          // Sanity cap so a data anomaly can't spin this into an infinite
+          // fetch loop — 20,000 attendees is far beyond any real event here.
+          if (offset >= 20000) break;
         }
-      } catch (err) {
+
+        if (cancelled) return;
+        setAttendees(allRows.map((t) => {
+          const name = t.holder_name || t.buyer_name || 'Unknown';
+          const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+          const status: CheckInStatus =
+            t.status !== 'active' ? 'cancelled' : t.checked_in ? 'checked-in' : 'pending';
+          return {
+            id: t.ticket_id,
+            name,
+            email: t.holder_email || '',
+            ticketType: t.ticket_type || 'Regular',
+            ticketId: t.ticket_id,
+            ticketIdShort: t.ticket_id.slice(0, 8).toUpperCase(),
+            quantity: 1,
+            status,
+            paymentStatus: t.payment_status,
+            initials,
+            avatarColor: colorForName(name),
+            checkedInAt: t.checked_in_at || null,
+          };
+        }));
+      } catch (err: any) {
+        // A failed load previously rendered as an empty attendee list —
+        // indistinguishable from "this event genuinely has no attendees",
+        // with no retry.
         console.error('AttendeeListScreen load error', err);
+        if (!cancelled) setLoadError(err?.message || 'Could not load attendees. Pull to refresh or try again.');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
-  }, [eventId]);
+    return () => { cancelled = true; };
+  }, [eventId, reloadKey]);
 
   const checkedIn = attendees.filter((a) => a.status === 'checked-in').length;
   const total = attendees.filter((a) => a.status !== 'cancelled').length;
@@ -167,6 +196,17 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontSize: '14px' }}>
           Loading attendees…
+        </div>
+      ) : loadError ? (
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center', gap: '12px' }}>
+          <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Couldn't load attendees</p>
+          <p style={{ color: '#8B8FA8', fontSize: '13px' }}>{loadError}</p>
+          <button
+            onClick={() => setReloadKey((k) => k + 1)}
+            style={{ background: 'rgba(123,47,190,0.15)', border: '1px solid rgba(123,47,190,0.4)', borderRadius: '10px', padding: '8px 16px', color: '#C4B5FD', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Retry
+          </button>
         </div>
       ) : !eventId ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontSize: '14px', padding: '24px', textAlign: 'center' }}>

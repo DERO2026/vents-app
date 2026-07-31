@@ -236,7 +236,12 @@ export function UserProfileScreen({
         {/* Share button */}
         <button
           onClick={async () => {
-            const shareUrl = `https://getvents.com/user/${user.id}`;
+            // Query-param form, not a /user/:id path — the app is a client-
+            // rendered SPA with no router mounted for path-based routes, so
+            // a /user/:id link only ever resolves to index.html with no
+            // matching route and dead-ends at home. App.tsx already parses
+            // ?event=/?user= off window.location.search on load.
+            const shareUrl = `${window.location.origin}/?user=${user.id}`;
             const shareData = { title: `${user.username || user.name} on Vents`, url: shareUrl };
             try {
               if (navigator.share) {

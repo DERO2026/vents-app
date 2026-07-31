@@ -308,15 +308,28 @@ export function EventDetailsScreen({
     const fetchRelatedEvents = async () => {
       setLoadingRelated(true);
       try {
-        const { data, error } = await insforge.database
+        let relatedQuery = insforge.database
           .from('events')
           .select('*')
           .eq('category', event.category)
-          .eq('status', 'live')
+          .in('status', ['live', 'published'])
           .is('deleted_at', null)
-          .neq('id', event.id)
-          .limit(4);
-        
+          .eq('hidden_by_admin', false)
+          .neq('id', event.id);
+
+        // Every other event surface (home feed, search) hides 18+ events
+        // from users below the age threshold — this carousel had no such
+        // gate at all. The viewer's own date_of_birth isn't threaded down
+        // to this screen, but the event they're currently viewing is a
+        // reliable proxy: if it's not 18+, never surface an 18+ related
+        // event alongside it (the common case — an all-ages event's related
+        // carousel should never suddenly include an 18+ one).
+        if (!(event as any).is_18_plus) {
+          relatedQuery = relatedQuery.eq('is_18_plus', false);
+        }
+
+        const { data, error } = await relatedQuery.limit(4);
+
         if (error) throw error;
         if (data) {
           const mapped = data.map(mapDbEventToFrontend);
