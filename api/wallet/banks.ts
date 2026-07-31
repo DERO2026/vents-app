@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 
 // Simple in-memory cache — Paystack's bank list changes rarely and this
@@ -12,6 +13,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
+
+  const session = await verifyInsforgeSession(req.headers.authorization);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {

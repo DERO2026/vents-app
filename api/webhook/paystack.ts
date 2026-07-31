@@ -29,7 +29,10 @@ export default async function handler(req, res) {
     .update(rawBody)
     .digest('hex');
 
-  if (signature !== expected) {
+  const signatureBuf = Buffer.from(signature, 'hex');
+  const expectedBuf = Buffer.from(expected, 'hex');
+  const valid = signatureBuf.length === expectedBuf.length && crypto.timingSafeEqual(signatureBuf, expectedBuf);
+  if (!valid) {
     console.warn('Paystack webhook signature mismatch');
     return res.status(401).json({ error: 'Invalid signature' });
   }
