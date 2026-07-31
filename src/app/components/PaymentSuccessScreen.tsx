@@ -38,6 +38,7 @@ function QRCode({ value, size = 280 }: { value: string; size?: number }) {
 export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: PaymentSuccessScreenProps) {
   const firedRef = useRef(false);
   const [saveToast, setSaveToast] = useState(false);
+  const [saveError, setSaveError] = useState(false);
   const [shareToast, setShareToast] = useState(false);
   // The gate scanner accepts ONLY a signed v2 pass token — a raw id/JSON blob
   // is rejected as "missing cryptographic signature". Mint the same signed
@@ -63,11 +64,18 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
-      downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
-      setSaveToast(true);
-      setTimeout(() => setSaveToast(false), 2500);
+      const saved = await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+      if (saved) {
+        setSaveToast(true);
+        setTimeout(() => setSaveToast(false), 2500);
+      } else {
+        setSaveError(true);
+        setTimeout(() => setSaveError(false), 3000);
+      }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
+      setSaveError(true);
+      setTimeout(() => setSaveError(false), 3000);
     } finally {
       setSaving(false);
     }
@@ -317,7 +325,12 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       {/* Toast notifications */}
       {saveToast && (
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#10B981', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Ticket saved to downloads</span>
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Ticket saved</span>
+        </div>
+      )}
+      {saveError && (
+        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#EF4444', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {shareToast && (

@@ -95,6 +95,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   };
 
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(false);
 
   const handleSave = async () => {
     // Render a real, self-contained ticket image (event title, date/venue,
@@ -104,6 +105,8 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     // as text anywhere; only the rendered QR image carries the credential.
     if (saving) return;
     setSaving(true);
+    setSaveError(false);
+    let failed = false;
     try {
       const blob = await renderTicketImage({
         title: ticket.event.title,
@@ -115,16 +118,26 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
-      downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+      failed = !(await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`));
     } catch (err) {
       console.error('Failed to save ticket image:', err);
+      failed = true;
     } finally {
       setSaving(false);
+      if (failed) {
+        setSaveError(true);
+        setTimeout(() => setSaveError(false), 3000);
+      }
     }
   };
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#020005' }}>
+      {saveError && (
+        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#EF4444', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
+        </div>
+      )}
       {/* Header */}
       <div
         className="flex items-center justify-between px-4 pb-4"

@@ -1,4 +1,7 @@
 import QRCode from 'qrcode';
+import { Capacitor } from '@capacitor/core';
+import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Share } from '@capacitor/share';
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -112,13 +115,62 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 
-export function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.download = filename;
-  link.href = url;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      // FileReader gives a data: URL — Filesystem.writeFile wants the raw
+      // base64 payload only.
+      const result = reader.result as string;
+      resolve(result.slice(result.indexOf(',') + 1));
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// `<a download>` is a browser-only mechanism — inside a Capacitor WebView
+// (iOS/Android) it silently does nothing, so a native user would see a
+// "Saved!" confirmation for a file that never actually saved anywhere.
+// On native, write the image to cache and hand it to the OS share sheet
+// (the standard way an installed app lets a user save-to-Photos or share
+// a generated file, since neither platform allows a WebView to write
+// straight into the system Photos/Downloads location on its own).
+// Returns whether the save/share genuinely happened — callers should only
+// show a success message when this resolves true.
+export async function downloadBlob(blob: Blob, filename: string): Promise<boolean> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const base64Data = await blobToBase64(blob);
+      const written = await Filesystem.writeFile({
+        path: filename,
+        data: base64Data,
+        directory: Directory.Cache,
+      });
+      await Share.share({
+        title: 'Save Ticket',
+        url: written.uri,
+        dialogTitle: 'Save or share your ticket',
+      });
+      return true;
+    } catch (err) {
+      console.error('Native ticket save/share failed:', err);
+      return false;
+    }
+  }
+
+  try {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return true;
+  } catch (err) {
+    console.error('Ticket download failed:', err);
+    return false;
+  }
 }
