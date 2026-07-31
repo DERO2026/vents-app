@@ -105,9 +105,17 @@ export default async function handler(req, res) {
 
     try {
       const baseUrl = process.env.VITE_INSFORGE_URL;
-      const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
-      if (!baseUrl || !anonKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or VITE_INSFORGE_ANON_KEY not set');
+      // complete_organizer_payout/fail_organizer_payout have no internal
+      // auth check of their own (they trust this webhook's HMAC verification
+      // above, not RLS) — calling them with the anon key meant ANY signed-in
+      // user could hit the same RPC directly over the InsForge REST surface
+      // and finalize/reverse their own payout early. Requires the admin-only
+      // API_KEY secret (never the client-exposed VITE_ anon key) now that
+      // EXECUTE has been revoked from anon/authenticated in
+      // migrations/20260731070000_lockdown-payout-completion-rpcs.sql.
+      const adminKey = process.env.INSFORGE_API_KEY;
+      if (!baseUrl || !adminKey) {
+        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
         return res.status(200).json({ received: true });
       }
 
@@ -120,8 +128,8 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${anonKey}`,
-          apikey: anonKey,
+          Authorization: `Bearer ${adminKey}`,
+          apikey: adminKey,
         },
         body: JSON.stringify(body),
       });

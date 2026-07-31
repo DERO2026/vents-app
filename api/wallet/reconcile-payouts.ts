@@ -32,12 +32,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   const baseUrl = process.env.VITE_INSFORGE_URL;
   const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
-  if (!secret || !baseUrl || !anonKey) {
+  // complete_organizer_payout/fail_organizer_payout have no auth check of
+  // their own — calling them with the anon key meant any signed-in user
+  // could invoke the same RPC directly and finalize/reverse their own
+  // payout early. Requires the admin-only API_KEY secret now that EXECUTE
+  // has been revoked from anon/authenticated (see
+  // migrations/20260731070000_lockdown-payout-completion-rpcs.sql).
+  const adminApiKey = process.env.INSFORGE_API_KEY;
+  if (!secret || !baseUrl || !anonKey || !adminApiKey) {
     return res.status(500).json({ error: 'Payout system not configured' });
   }
 
   const adminHeaders = { 'Content-Type': 'application/json', Authorization: authHeader, apikey: anonKey };
-  const systemHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${anonKey}`, apikey: anonKey };
+  const systemHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${adminApiKey}`, apikey: adminApiKey };
 
   try {
     // is_admin() is enforced inside this RPC — a non-admin caller gets a
