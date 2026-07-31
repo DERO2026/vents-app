@@ -1,6 +1,9 @@
+import { useEffect, useState } from 'react';
 import { Bookmark, MapPin, Calendar, ArrowLeft } from 'lucide-react';
 import { Event } from './types';
 import { formatPrice } from './data';
+import { mapDbEventToFrontend } from './HomeScreen';
+import { insforge } from '../../lib/insforge';
 
 interface SavedScreenProps {
   savedEventIds: string[];
@@ -10,8 +13,60 @@ interface SavedScreenProps {
   onBack?: () => void;
 }
 
+// Deliberately queries by the full savedEventIds list rather than filtering
+// dbEvents — dbEvents is only the currently-loaded, paginated home feed
+// (20 events at a time), so an event saved beyond that first page used to
+// vanish from this screen entirely (a primary nav tab showing "0 events
+// saved" for a user who had, in fact, saved events). Falls back to
+// whatever's already in dbEvents for instant paint, then replaces it with
+// the authoritative fetch.
 export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvents, onBack }: SavedScreenProps) {
-  const savedEvents = dbEvents.filter((e) => savedEventIds.includes(e.id));
+  const [savedEvents, setSavedEvents] = useState<Event[]>(() => dbEvents.filter((e) => savedEventIds.includes(e.id)));
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function fetchSavedEvents() {
+      if (savedEventIds.length === 0) {
+        if (!cancelled) { setSavedEvents([]); setLoading(false); }
+        return;
+      }
+      setLoading(true);
+      try {
+        const { data, error } = await insforge.database
+          .from('events')
+          .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
+          .in('id', savedEventIds)
+          .eq('hidden_by_admin', false)
+          .is('deleted_at', null);
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        const mapped = (data || []).map((e: any) => {
+          const orgUser = e.users;
+          return mapDbEventToFrontend({
+            ...e,
+            organizer_name: orgUser?.username || orgUser?.full_name || null,
+            organizer_vc_badge: orgUser?.vc_badge || null,
+          });
+        });
+        // Preserve save order (most-recently-saved first isn't tracked here,
+        // so keep savedEventIds' order, which the caller controls).
+        const byId = new Map(mapped.map((e) => [e.id, e]));
+        setSavedEvents(savedEventIds.map((id) => byId.get(id)).filter((e): e is Event => !!e));
+      } catch (err) {
+        console.error('Failed to fetch saved events:', err);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    fetchSavedEvents();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedEventIds.join(',')]);
 
   return (
     <div className="flex flex-col h-full" style={{ background: '#020005' }}>
@@ -35,7 +90,11 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
       </div>
 
       <div className="flex-1 overflow-y-auto px-4" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
-        {savedEvents.length === 0 ? (
+        {loading && savedEvents.length === 0 && savedEventIds.length > 0 ? (
+          <div className="flex flex-col items-center justify-center h-full pb-20">
+            <p style={{ color: '#8B8FA8', fontSize: '14px' }}>Loading saved events…</p>
+          </div>
+        ) : savedEvents.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full pb-20">
             <div
               className="w-20 h-20 rounded-full flex items-center justify-center mb-4"

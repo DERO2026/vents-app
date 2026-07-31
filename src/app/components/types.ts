@@ -126,6 +126,7 @@ export type Screen =
   | 'ticket-select'
   | 'checkout'
   | 'payment-success'
+  | 'payment-failed'
   | 'org-dashboard'
   | 'create-event'
   | 'manage-events'

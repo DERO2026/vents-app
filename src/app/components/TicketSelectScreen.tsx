@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
+import { insforge } from '../../lib/insforge';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -10,7 +11,40 @@ interface TicketSelectScreenProps {
 }
 
 export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectScreenProps) {
-  const ticketTypes = event.ticketTypes || [];
+  const baseTicketTypes = event.ticketTypes || [];
+  // `event.ticketTypes[].available` comes from the event's static
+  // ticket_types JSON (its original quantity, never decremented by sales) —
+  // it can be stale by however long since the feed/search query that
+  // produced this `event` ran. Re-derive real availability live, right
+  // before the buyer picks a quantity, using the exact same capacity rule
+  // purchase_ticket enforces server-side (active tickets, any payment
+  // status) — see migrations/20260731212751_get-event-ticket-type-availability.sql.
+  const [liveSoldByType, setLiveSoldByType] = useState<Record<string, number> | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await insforge.database
+          .rpc('get_event_ticket_type_availability', { p_event_id: event.id });
+        if (cancelled || error || !Array.isArray(data)) return;
+        const map: Record<string, number> = {};
+        (data as any[]).forEach((row: any) => { map[row.ticket_type] = Number(row.sold_count) || 0; });
+        setLiveSoldByType(map);
+      } catch {
+        /* fall back to the static available count below */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [event.id]);
+
+  const ticketTypes = liveSoldByType
+    ? baseTicketTypes.map((t) => ({
+        ...t,
+        available: Math.max(0, t.available - (liveSoldByType[t.name] ?? 0)),
+      }))
+    : baseTicketTypes;
+
   const [selectedId, setSelectedId] = useState(ticketTypes[0]?.id ?? '');
   const [flyerOpen, setFlyerOpen] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>(

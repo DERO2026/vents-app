@@ -30,6 +30,7 @@ import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
 import { PaymentSuccessScreen } from './components/PaymentSuccessScreen';
+import { PaymentFailedScreen } from './components/PaymentFailedScreen';
 import { OrganizerDashboard } from './components/OrganizerDashboard';
 import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
@@ -666,6 +667,10 @@ export default function App() {
   const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null);
   const [selectedTicketQty, setSelectedTicketQty] = useState(1);
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
+  // Set when Paystack has already captured payment but purchase_ticket_with_tokens
+  // failed server-side (sold out, stale promo, dropped connection, etc.) — the
+  // success screen must never render in this case since no ticket was issued.
+  const [paymentFailure, setPaymentFailure] = useState<{ eventTitle: string; reference: string; message: string } | null>(null);
 
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
 
@@ -1162,140 +1167,133 @@ export default function App() {
   }, [navigateTo]);
 
   const handleCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
+    if (!currentUser) {
+      setPurchasedTicket(ticket);
+      setScreenStack([]);
+      setScreen('payment-success');
+      return;
+    }
+
     // Real ticket id + signed token from the server (used for the instant QR).
     let primaryTicketId: string | undefined;
     let primaryToken: string | undefined;
-    if (currentUser) {
-      try {
-        // Guard: skip re-inserting if this user already has active ticket(s)
-        // for this event. A group purchase creates one row per attendee, so
-        // this can no longer assume "at most one" row — .limit(1) instead of
-        // .maybeSingle(), which would throw once more than one row exists.
-        const { data: existingTickets, error: checkError } = await insforge.database
-          .from('tickets')
-          .select('id')
-          .eq('event_id', ticket.event.id)
-          .eq('user_id', currentUser.id)
-          .eq('status', 'active')
-          .limit(1);
 
-        if (checkError) throw checkError;
+    try {
+      // Every ticket in the group needs its own name+email so each gets
+      // a distinct row (and QR code) the door scanner can check in
+      // individually. CheckoutScreen always supplies `attendees` for
+      // group (quantity > 1) purchases; fall back to a single entry
+      // built from the ticket's own holder fields for the instant
+      // free-ticket path (quantity === 1, no CheckoutScreen involved).
+      const attendees = ticket.attendees && ticket.attendees.length > 0
+        ? ticket.attendees
+        : [{ name: ticket.holderName || currentUser.full_name || 'Guest', email: currentUser.email }];
 
-        if (!existingTickets || existingTickets.length === 0) {
-          // Every ticket in the group needs its own name+email so each gets
-          // a distinct row (and QR code) the door scanner can check in
-          // individually. CheckoutScreen always supplies `attendees` for
-          // group (quantity > 1) purchases; fall back to a single entry
-          // built from the ticket's own holder fields for the instant
-          // free-ticket path (quantity === 1, no CheckoutScreen involved).
-          const attendees = ticket.attendees && ticket.attendees.length > 0
-            ? ticket.attendees
-            : [{ name: ticket.holderName || currentUser.full_name || 'Guest', email: currentUser.email }];
+      // No client-side "does the user already have a ticket" pre-check here
+      // — purchase_ticket itself is idempotent on the EXACT payment_ref
+      // (migrations/20260731060000_fix-purchase-ticket-idempotency-key.sql),
+      // so a genuine retry of the same payment safely re-returns the same
+      // ticket ids, while a NEW payment_ref (a real repeat purchase — a
+      // different tier, more seats, buying for a friend) always proceeds to
+      // a real purchase. A pre-check keyed on "any active ticket exists"
+      // would silently skip that second, already-charged purchase.
+      //
+      // p_payment_status is no longer accepted from the client — the RPC
+      // derives paid/pending purely from the event's own server-side price,
+      // and only confirm_ticket_payment (webhook-verified) can ever flip a
+      // priced ticket to 'paid'. purchase_ticket also re-validates the promo
+      // code itself (expiry, usage limit, active flag, event eligibility)
+      // rather than trusting CheckoutScreen's earlier "Apply" check — if any
+      // of that has since gone stale, or the event sold out between the
+      // ticket-select screen and this call, the RPC throws and NO ticket is
+      // created. Paystack has already captured the money at this point, so
+      // that failure must never be swallowed into a fake success screen —
+      // see the catch block below.
+      const { data: tokenRows, error: insertError } = await insforge.database.rpc('purchase_ticket_with_tokens', {
+        p_event_id: ticket.event.id,
+        p_ticket_type: ticket.ticketType?.name ?? 'General',
+        p_attendees: attendees,
+        p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+        p_promo_code: ticket.promoCode || null,
+      });
+      if (insertError) throw insertError;
 
-          // p_payment_status is no longer accepted from the client — the RPC
-          // now derives paid/pending purely from the event's own server-side
-          // price, and only confirm_ticket_payment (webhook-verified) can
-          // ever flip a priced ticket to 'paid'.
-          // purchase_ticket re-validates the promo code itself (expiry,
-          // usage limit, active flag) rather than trusting that it was
-          // still valid at the moment CheckoutScreen's "Apply" check ran —
-          // if it's since gone stale, this call throws and no ticket is
-          // created, same as any other validation failure here.
-          // Purchase AND sign every pass in one server-side call, so the real
-          // ticket UUIDs + signed v2 tokens come back together. The success
-          // screen's `ticketId` was the payment reference (not a real ticket id),
-          // which is why minting a token there used to fail and hang on
-          // "Generating…". We now use the real id + pre-generated token.
-          const { data: tokenRows, error: insertError } = await insforge.database.rpc('purchase_ticket_with_tokens', {
-            p_event_id: ticket.event.id,
-            p_ticket_type: ticket.ticketType?.name ?? 'General',
-            p_attendees: attendees,
-            p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
-            p_promo_code: ticket.promoCode || null,
-          });
-          if (insertError) throw insertError;
-          // Seed the offline token cache immediately and capture the primary
-          // ticket's real id + token for the success screen (instant QR).
-          const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
-          rows.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
-          if (rows[0]) { primaryTicketId = rows[0].ticket_id; primaryToken = rows[0].token; }
-          // Confirmation SMS is now sent server-side (see api/notify/status-email.ts,
-          // request_type: 'ticket') using the on-file phone number — the client no
-          // longer holds a Sendchamp key to send it directly.
-          // Email confirmation with full ticket details + validation info. The
-          // endpoint authenticates the buyer and emails only their own address
-          // with details pulled server-side — best-effort, never blocks.
-          (async () => {
-            try {
-              const token = await getAuthToken();
-              if (!token) return;
-              await fetch('/api/notify/status-email', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-                body: JSON.stringify({ request_type: 'ticket', event_id: ticket.event.id }),
-              });
-            } catch { /* ignore */ }
-          })();
-          // Single canonical purchase-completion event (fired here, at the real
-          // RPC success — not in CheckoutScreen, which used to double/triple-count).
-          analytics.ticketPurchased({
-            eventId: ticket.event.id,
-            eventTitle: ticket.event.title,
-            ticketType: ticket.ticketType?.name,
-            quantity: ticket.quantity,
-            amount: ticket.totalAmount,
-            free: (ticket.totalAmount ?? 0) === 0,
-            reference: ticket.ticketId ?? undefined,
-          });
-
-          // 3.6: Ticket confirmation notification
-          insforge.database.from('notifications').insert([{
-            user_id: currentUser.id,
-            type: 'booking',
-            title: 'Ticket confirmed! 🎉',
-            body: attendees.length > 1
-              ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
-              : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
-            icon: '🎟️',
-          }]).then(({ error: notifyErr }: any) => {
-            if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
-          });
-        }
-
-        // Safety net: if the purchase path didn't hand back a signed pass —
-        // e.g. the user already had an active ticket for this event (the guard
-        // above skips the insert), or the RPC returned no rows — resolve their
-        // newest active ticket and ensure a token exists. Without this the
-        // success screen would fall back to the payment REFERENCE as an id,
-        // which can never be signed, and the QR would hang on "Generating…".
-        if (!primaryTicketId) {
-          const { data: mine } = await insforge.database
-            .from('tickets')
-            .select('id')
-            .eq('event_id', ticket.event.id)
-            .eq('user_id', currentUser.id)
-            .eq('status', 'active')
-            .order('created_at', { ascending: false })
-            .limit(1);
-          const realId = Array.isArray(mine) && mine[0]?.id ? String(mine[0].id) : undefined;
-          if (realId) {
-            primaryTicketId = realId;
-            primaryToken = (await ensureTicketToken(realId)) || undefined;
-          }
-        }
-
-        // Wait for tickets and events list refresh
-        await fetchUserTickets(currentUser.id);
-        await fetchEvents(true);
-      } catch (err) {
-        console.error("Failed to insert ticket on checkout:", err);
+      const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
+      if (rows.length === 0) {
+        throw new Error('No ticket was returned by the server.');
       }
+      // Seed the offline token cache immediately and capture the primary
+      // ticket's real id + token for the success screen (instant QR).
+      rows.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
+      primaryTicketId = rows[0].ticket_id;
+      primaryToken = rows[0].token;
+
+      // Confirmation SMS is now sent server-side (see api/notify/status-email.ts,
+      // request_type: 'ticket') using the on-file phone number — the client no
+      // longer holds a Sendchamp key to send it directly.
+      // Email confirmation with full ticket details + validation info. The
+      // endpoint authenticates the buyer and emails only their own address
+      // with details pulled server-side — best-effort, never blocks.
+      (async () => {
+        try {
+          const token = await getAuthToken();
+          if (!token) return;
+          await fetch('/api/notify/status-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ request_type: 'ticket', event_id: ticket.event.id }),
+          });
+        } catch { /* ignore */ }
+      })();
+      // Single canonical purchase-completion event (fired here, at the real
+      // RPC success — not in CheckoutScreen, which used to double/triple-count).
+      analytics.ticketPurchased({
+        eventId: ticket.event.id,
+        eventTitle: ticket.event.title,
+        ticketType: ticket.ticketType?.name,
+        quantity: ticket.quantity,
+        amount: ticket.totalAmount,
+        free: (ticket.totalAmount ?? 0) === 0,
+        reference: ticket.ticketId ?? undefined,
+      });
+
+      // 3.6: Ticket confirmation notification
+      insforge.database.from('notifications').insert([{
+        user_id: currentUser.id,
+        type: 'booking',
+        title: 'Ticket confirmed! 🎉',
+        body: attendees.length > 1
+          ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
+          : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
+        icon: '🎟️',
+      }]).then(({ error: notifyErr }: any) => {
+        if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
+      });
+
+      // Wait for tickets and events list refresh
+      await fetchUserTickets(currentUser.id);
+      await fetchEvents(true);
+
+      // Hand the success screen the REAL ticket id + pre-generated token so
+      // its QR renders instantly from cache — never "Generating…".
+      setPurchasedTicket({ ...ticket, ticketId: primaryTicketId, token: primaryToken });
+      setScreenStack([]);
+      setScreen('payment-success');
+    } catch (err: any) {
+      // Paystack has already captured this payment (or it was a free
+      // ticket, in which case there's nothing to reconcile) — a failure
+      // here must never route to the success screen. Surface it with the
+      // reference so the user can get support, and never trigger a
+      // duplicate charge automatically.
+      console.error('Failed to create ticket after payment:', err);
+      setPaymentFailure({
+        eventTitle: ticket.event.title,
+        reference: ticket.ticketId ?? 'unknown',
+        message: err?.message || 'Something went wrong while confirming your ticket.',
+      });
+      setScreenStack([]);
+      setScreen('payment-failed');
     }
-    // Hand the success screen the REAL ticket id + pre-generated token so its
-    // QR renders instantly from cache — never "Generating…".
-    setPurchasedTicket(primaryTicketId ? { ...ticket, ticketId: primaryTicketId, token: primaryToken } : ticket);
-    setScreenStack([]);
-    setScreen('payment-success');
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
   const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
@@ -1947,6 +1945,19 @@ export default function App() {
                 setScreen('my-tickets');
               }}
               onGoHome={() => {
+                setScreen('home');
+                setActiveTab('home');
+                setScreenStack([]);
+              }}
+            />
+          )}
+          {screen === 'payment-failed' && paymentFailure && (
+            <PaymentFailedScreen
+              eventTitle={paymentFailure.eventTitle}
+              reference={paymentFailure.reference}
+              message={paymentFailure.message}
+              onGoHome={() => {
+                setPaymentFailure(null);
                 setScreen('home');
                 setActiveTab('home');
                 setScreenStack([]);
