@@ -135,8 +135,9 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
     title: event.title,
     description: event.description,
     image_url: event.image_url || null,
+    // events has no separate venue/city/state columns — only the composite
+    // `location` string (same convention CreateEventScreen uses on insert).
     location: locationString,
-    venue: venue || null,
     event_date: eventDate,
     price,
     category: categories[0] || '',
