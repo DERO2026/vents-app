@@ -1,6 +1,7 @@
 import { getAuthToken } from './insforge';
 import { REGION } from './regionConfig';
 import { withTimeoutFallback } from './withTimeoutFallback';
+import { isKnownState, isKnownCity } from './nigeriaLocations';
 
 // Never let a raw SDK/framework error reach an admin's screen (leaks
 // internal implementation details like "InsForgeError: ..."). Log the real
@@ -22,11 +23,15 @@ export interface ImportedEvent {
   description: string;
   date: string;
   time: string;
-  location: string;
+  venue: string;
+  address: string;
+  city: string;
   state: string;
-  category: string;
+  categories: string[];
+  ticket_type_name: string;
   is_free: boolean;
   price: number;
+  capacity: number;
   image_url: string;
   source_url: string;
 }
@@ -80,7 +85,15 @@ export async function isEventExtractionConfigured(): Promise<boolean> {
 const PUBLISH_CONCURRENCY = 4;
 const PUBLISH_TIMEOUT_MS = 12000;
 
-async function publishOne(event: ImportedEvent, organizerId: string, database: any): Promise<{ ok: true } | { ok: false; error: string }> {
+// True only if this import has everything a manually-created event requires
+// (matches CreateEventScreen's own required fields). Anything less publishes
+// as a draft instead of guessing — the admin completes it via the normal
+// Edit Event screen, the same surface a manual creation would use.
+function isImportComplete(event: ImportedEvent): boolean {
+  return !!(event.title?.trim() && event.venue?.trim() && event.date && isKnownState(event.state) && event.city?.trim());
+}
+
+async function publishOne(event: ImportedEvent, organizerId: string, database: any): Promise<{ ok: true; draft: boolean } | { ok: false; error: string }> {
   const time = event.time || '10:00';
   // Imported events don't carry their own timezone info, so this assumes
   // the offset matches VENTS' current single launch region (see
@@ -91,20 +104,53 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
     ? `${event.date}T${time}:00${REGION.timezoneOffset}`
     : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
+  // Never trust an AI-guessed state/city that doesn't match a real Nigerian
+  // state/LGA — a wrong value here is worse than a blank one, since a blank
+  // field visibly prompts the admin to fill it in during review instead of
+  // silently shipping a bad location.
+  const state = isKnownState(event.state) ? event.state : '';
+  const city = isKnownCity(state, event.city) || (state && event.city?.trim()) ? event.city.trim() : '';
+  const venue = (event.venue || '').trim();
+  const address = (event.address || '').trim();
+
+  // Same composite-string convention CreateEventScreen uses, so an imported
+  // event edits identically to a manually-created one afterward.
+  const locationParts = [venue, state, city].filter(Boolean);
+  const locationString = locationParts.join(', ') + (address ? `, ${address}` : '');
+
+  const categories = Array.isArray(event.categories) && event.categories.length ? event.categories : [];
+  const capacity = Number(event.capacity) > 0 ? Number(event.capacity) : 0;
+  const price = event.is_free ? 0 : Number(event.price) || 0;
+  const ticketTypes = [{
+    id: 't_0',
+    name: (event.ticket_type_name || 'General Admission').trim(),
+    price,
+    quantity: capacity > 0 ? capacity : 500,
+    description: '',
+  }];
+
+  const complete = isImportComplete(event);
+
   const row = {
     title: event.title,
     description: event.description,
     image_url: event.image_url || null,
-    location: event.location,
+    location: locationString,
+    venue: venue || null,
     event_date: eventDate,
-    price: 0,
-    category: event.category,
+    price,
+    category: categories[0] || '',
+    categories,
     organizer_id: organizerId,
-    status: 'live',
+    // Incomplete location data (missing venue/state/city) never goes live —
+    // it publishes as a draft so the admin finishes it in Edit Event first,
+    // exactly like an organizer completing their own in-progress draft.
+    status: complete ? 'live' : 'draft',
     is_featured: false,
     hidden_by_admin: false,
     is_18_plus: false,
-    ticket_goal: 0,
+    ticket_goal: capacity,
+    ticket_types: ticketTypes,
     start_time: time,
   };
 
@@ -114,7 +160,7 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
         Promise.resolve(database.from('events').insert(row)),
         { timeoutMs: PUBLISH_TIMEOUT_MS, timeoutMessage: 'Publish timed out' }
       );
-      if (!error) return { ok: true };
+      if (!error) return { ok: true, draft: !complete };
       if (attempt === 0) { await new Promise((r) => setTimeout(r, 500)); continue; }
       return { ok: false, error: friendlyPublishError(error) };
     } catch (e: any) {
@@ -129,8 +175,9 @@ export async function publishEvents(
   events: ImportedEvent[],
   organizerId: string,
   database: any
-): Promise<{ success: number; failed: number; lastError?: string }> {
+): Promise<{ success: number; drafted: number; failed: number; lastError?: string }> {
   let success = 0;
+  let drafted = 0;
   let failed = 0;
   let lastError: string | undefined;
 
@@ -140,6 +187,7 @@ export async function publishEvents(
     for (const r of results) {
       if (r.ok) {
         success++;
+        if (r.draft) drafted++;
       } else {
         failed++;
         lastError = (r as { ok: false; error: string }).error;
@@ -147,5 +195,5 @@ export async function publishEvents(
     }
   }
 
-  return { success, failed, lastError };
+  return { success, drafted, failed, lastError };
 }

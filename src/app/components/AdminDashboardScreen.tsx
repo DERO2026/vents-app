@@ -2778,13 +2778,18 @@ export function AdminDashboardScreen({
 
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
-                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.location}</p>
+                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.venue || 'No venue'}</p>
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                             <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>
                               {event.is_free ? 'FREE' : `₦${Number(event.price || 0).toLocaleString()}`}
                             </span>
-                            {event.category && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.category}</span>}
-                            {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.state}</span>}
+                            {event.categories?.[0] && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.categories[0]}</span>}
+                            {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.city ? `${event.city}, ` : ''}{event.state}</span>}
+                            {!(event.venue && event.state && event.city) && (
+                              <span style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#F59E0B', fontSize: '10px', fontWeight: 600 }}>
+                                Needs review — will save as draft
+                              </span>
+                            )}
                           </div>
                           {event.description && <p style={{ color: '#6B7280', fontSize: '11px', margin: '6px 0 0', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{event.description}</p>}
 
@@ -2843,7 +2848,13 @@ export function AdminDashboardScreen({
                     setFlyerUploading(null);
                     const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', insforge.database);
                     if (result.success > 0) {
-                      setPublishMsg(`✓ Published ${result.success} event${result.success !== 1 ? 's' : ''} successfully${result.failed > 0 ? ` (${result.failed} failed)` : ''}.`);
+                      const liveCount = result.success - result.drafted;
+                      const parts = [
+                        liveCount > 0 ? `${liveCount} published live` : null,
+                        result.drafted > 0 ? `${result.drafted} saved as draft (missing venue/state/city — complete in Edit Event)` : null,
+                        result.failed > 0 ? `${result.failed} failed` : null,
+                      ].filter(Boolean);
+                      setPublishMsg(`✓ ${parts.join(', ')}.`);
                       Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl));
                       setImportFlyers({});
                       setImportResults([]);

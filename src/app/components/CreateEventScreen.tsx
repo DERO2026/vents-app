@@ -14,6 +14,7 @@ import { PhoneInput, DEFAULT_COUNTRY } from './PhoneInput';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { hasCapability } from '../../lib/permissions';
 import { LocationPicker } from './LocationPicker';
+import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -29,29 +30,6 @@ const MAX_GALLERY_FLIERS = 4;
 type Step = 1 | 2 | 3 | 4;
 
 const CATEGORIES = CATEGORY_LIST.map(c => c.id);
-
-const NIGERIA_CITIES: Record<string, string[]> = {
-  'Lagos': ['Lagos Island', 'Lagos Mainland', 'Ikeja', 'Lekki', 'Victoria Island', 'Ajah', 'Ikorodu', 'Surulere', 'Yaba', 'Badagry'],
-  'Abuja': ['Garki', 'Maitama', 'Wuse', 'Asokoro', 'Gwagwalada', 'Kubwa', 'Bwari', 'Kuje', 'Abaji'],
-  'Rivers': ['Port Harcourt', 'Obio-Akpor', 'Eleme', 'Bonny', 'Okrika', 'Oyigbo', 'Degema'],
-  'Kano': ['Kano Municipal', 'Fagge', 'Gwale', 'Tarauni', 'Ungogo', 'Nassarawa', 'Kumbotso'],
-  'Oyo': ['Ibadan', 'Ogbomosho', 'Oyo', 'Iseyin', 'Saki', 'Eruwa', 'Fiditi'],
-  'Anambra': ['Awka', 'Onitsha', 'Nnewi', 'Ekwulobia', 'Aguata', 'Ogidi', 'Nkpor'],
-  'Delta': ['Warri', 'Asaba', 'Ughelli', 'Sapele', 'Agbor', 'Abraka', 'Kwale'],
-  'Enugu': ['Enugu', 'Nsukka', 'Agbani', 'Oji River', 'Udi', 'Awgu'],
-  'Imo': ['Owerri', 'Orlu', 'Okigwe', 'Mbaise', 'Oguta', 'Nkwerre'],
-  'Ogun': ['Abeokuta', 'Sagamu', 'Ijebu-Ode', 'Ota', 'Ifo', 'Ilaro'],
-  'Kaduna': ['Kaduna', 'Zaria', 'Kafanchan', 'Soba', 'Jema\'a', 'Lere'],
-  'Cross River': ['Calabar', 'Ikom', 'Ogoja', 'Obudu', 'Akamkpa'],
-  'Akwa Ibom': ['Uyo', 'Eket', 'Ikot Ekpene', 'Abak', 'Oron'],
-  'Edo': ['Benin City', 'Auchi', 'Ekpoma', 'Uromi', 'Igarra'],
-  'Osun': ['Osogbo', 'Ile-Ife', 'Ilesa', 'Ede', 'Iwo'],
-  'Kwara': ['Ilorin', 'Offa', 'Erin-Ile', 'Omu-Aran', 'Patigi'],
-  'Bayelsa': ['Yenagoa', 'Sagbama', 'Ogbia', 'Kolokuma', 'Ekeremor'],
-  'Plateau': ['Jos', 'Bukuru', 'Pankshin', 'Shendam', 'Wase'],
-  'Borno': ['Maiduguri', 'Biu', 'Gwoza', 'Dikwa', 'Monguno'],
-  'Sokoto': ['Sokoto', 'Wurno', 'Gwadabawa', 'Binji', 'Tambuwal'],
-};
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',

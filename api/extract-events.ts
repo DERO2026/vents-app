@@ -60,19 +60,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `Today is ${today}. Extract all events from this text. May contain one or multiple events.
+          content: `Today is ${today}. Extract all events from this text into the VENTS event schema. May contain one or multiple events.
 
-For each event extract or infer:
+For each event return exactly these fields:
 - title: event name
-- description: 2-3 sentence description. Write one if not provided based on event name
-- date: YYYY-MM-DD. Assume 2026 if year missing. Use 2-4 weeks from today if no date
+- description: 2-3 sentence description. Write one if not provided, based on the event name
+- date: YYYY-MM-DD. Assume 2026 if year missing. Use 2-4 weeks from today if no date given at all
 - time: HH:MM 24hr. Default 10:00 if missing
-- location: venue name
-- state: Nigerian state. Infer from venue/city. Delta State University Oleh = Delta. Baze University = Abuja. ASUU Secretariat = check city context. De Aria/Club Deluxe/Vault Social House = Lagos. The Ozone E-centre = Lagos
-- category: exactly one of: Music, Technology, Food & Drinks, Comedy Shows, Arts & Culture, Sports & Wellness, Conferences, Family Events, Nightlife, Fashion, Health & Wellness, Education, Business & Finance, Religious & Spiritual, Charity & Fundraising, Film & Media, Travel & Adventure, Art Exhibition, Open Mic, Workshop
-- is_free: true
-- price: 0
-- image_url: ""
+- venue: the venue/building/business name ONLY (e.g. "Eko Hotel & Suites", "Baze University") — never a full address, never a city or state
+- address: street-level address detail if explicitly given (street name, area/district). Empty string "" if not stated — do NOT guess or reuse the venue name here
+- city: the city or LGA name, ONLY if explicitly stated or unambiguous from a well-known venue (e.g. "Eko Hotel" -> "Lagos Island" is NOT safe to guess — leave empty unless genuinely confident). Empty string "" if uncertain
+- state: exactly one of these 37 values, ONLY if you are confident: Abia, Adamawa, Akwa Ibom, Anambra, Bauchi, Bayelsa, Benue, Borno, Cross River, Delta, Ebonyi, Edo, Ekiti, Enugu, "Federal Capital Territory (Abuja)", Gombe, Imo, Jigawa, Kaduna, Kano, Katsina, Kebbi, Kogi, Kwara, Lagos, Nasarawa, Niger, Ogun, Ondo, Osun, Oyo, Plateau, Rivers, Sokoto, Taraba, Yobe, Zamfara. Empty string "" if you cannot confidently determine it — never guess, and never put a venue/building name here
+- categories: array of 1-3 values from: Music, Technology, Food & Drinks, Comedy Shows, Arts & Culture, Sports & Wellness, Conferences, Family Events, Nightlife, Fashion, Health & Wellness, Education, Business & Finance, Religious & Spiritual, Charity & Fundraising, Film & Media, Travel & Adventure, Art Exhibition, Open Mic, Workshop
+- ticket_type_name: name of the ticket tier if stated (e.g. "Regular", "VIP"), else "General Admission"
+- is_free: true if the event is free or no price is stated
+- price: ticket price in NGN as a number. 0 if free/unstated
+- capacity: total ticket capacity/quantity as a number if stated, else 0 (means "not specified" — never invent a number)
+- image_url: "" (never fabricate a URL)
+
+Leave any field empty ("" or 0) rather than guessing — an admin will fill in anything left blank before publishing. Never place a venue, building, or organization name into the state or city field.
 
 Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ].
 
