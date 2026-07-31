@@ -48,9 +48,17 @@ export default async function handler(req, res) {
 
     try {
       const baseUrl = process.env.VITE_INSFORGE_URL;
-      const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
-      if (!baseUrl || !anonKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or VITE_INSFORGE_ANON_KEY not set');
+      // confirm_ticket_payment has no internal auth check of its own (it
+      // trusts this webhook's HMAC verification above, not RLS) — calling
+      // it with the anon key meant any signed-in user could hit the same
+      // RPC directly over the InsForge REST surface with a self-chosen
+      // reference/amount and mark their own tickets paid. Requires the
+      // admin-only API_KEY secret now that EXECUTE has been revoked from
+      // anon/authenticated in
+      // migrations/20260731194723_lockdown-ticket-payment-confirm-refund-rpcs.sql.
+      const adminKey = process.env.INSFORGE_API_KEY;
+      if (!baseUrl || !adminKey) {
+        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
         return res.status(200).json({ received: true });
       }
 
@@ -62,8 +70,8 @@ export default async function handler(req, res) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${anonKey}`,
-          apikey: anonKey,
+          Authorization: `Bearer ${adminKey}`,
+          apikey: adminKey,
         },
         body: JSON.stringify({ p_reference: reference, p_amount_kobo: amountKobo }),
       });
@@ -170,16 +178,23 @@ export default async function handler(req, res) {
 
     try {
       const baseUrl = process.env.VITE_INSFORGE_URL;
-      const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
-      if (!baseUrl || !anonKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or VITE_INSFORGE_ANON_KEY not set');
+      // finalize_ticket_refund / fail_ticket_refund are keyed only on
+      // Paystack's own numeric refund id (short, sequential, enumerable)
+      // with no internal auth check — calling them with the anon key meant
+      // that id alone was enough to revert someone else's in-flight refund
+      // over the InsForge REST surface. Requires the admin-only API_KEY
+      // secret now that EXECUTE has been revoked from anon/authenticated in
+      // migrations/20260731194723_lockdown-ticket-payment-confirm-refund-rpcs.sql.
+      const adminKey = process.env.INSFORGE_API_KEY;
+      if (!baseUrl || !adminKey) {
+        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
         return res.status(200).json({ received: true });
       }
 
       const insforgeHeaders = {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${anonKey}`,
-        apikey: anonKey,
+        Authorization: `Bearer ${adminKey}`,
+        apikey: adminKey,
       };
 
       if (event.event === 'refund.processed') {
