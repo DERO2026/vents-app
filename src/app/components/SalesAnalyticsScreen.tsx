@@ -235,7 +235,10 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
 
   useEffect(() => {
     async function fetchAnalytics() {
-      if (!currentUser?.id) return;
+      if (!currentUser?.id) {
+        setLoading(false);
+        return;
+      }
       try {
         let eventIds: string[];
         if (eventId) {
