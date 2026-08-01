@@ -39,3 +39,9 @@ dist-ssr
 .windsurf
 
 .vercel
+
+# Firebase native config — device-registration secrets for push
+# notifications (see IOS_LAUNCH_CHECKLIST.md §5). Download these from the
+# Firebase Console per-platform and place them locally; never commit them.
+android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
