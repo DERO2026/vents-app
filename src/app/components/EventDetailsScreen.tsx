@@ -35,6 +35,7 @@ import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
 import { LazyImage } from './LazyImage';
 import { FlyerLightbox } from './FlyerLightbox';
+import { EventMap } from './EventMap';
 
 interface EventDetailsScreenExtraProps {
   currentUserId?: string;
@@ -784,47 +785,40 @@ export function EventDetailsScreen({
             border: '1px solid rgba(255,255,255,0.06)',
             borderRadius: '20px',
             padding: '16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
             marginBottom: '16px',
           }}
         >
-          <div
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '10px',
-              background: 'rgba(168,85,247,0.12)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <MapPin size={16} color="#A855F7" />
-          </div>
-          <div>
-            <div style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600 }}>
-              {event.venue}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'rgba(168,85,247,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <MapPin size={16} color="#A855F7" />
             </div>
-            <div style={{ color: '#94A3B8', fontSize: '12px' }}>
-              {event.area}, {event.city}, {event.state}
+            <div>
+              <div style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600 }}>
+                {event.venue}
+              </div>
+              <div style={{ color: '#94A3B8', fontSize: '12px' }}>
+                {event.area}, {event.city}, {event.state}
+              </div>
             </div>
           </div>
-          <button
-            onClick={() => setShowMapDialog(true)}
-            style={{
-              marginLeft: 'auto',
-              background: 'rgba(168,85,247,0.12)',
-              border: '1px solid rgba(168,85,247,0.2)',
-              borderRadius: '8px',
-              padding: '5px 10px',
-              cursor: 'pointer',
-            }}
-          >
-            <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600 }}>View Map</span>
-          </button>
+          <EventMap
+            latitude={event.latitude}
+            longitude={event.longitude}
+            venue={event.venue}
+            address={`${event.area}, ${event.city}, ${event.state}`}
+            onGetDirections={() => setShowMapDialog(true)}
+          />
         </div>
 
         {/* Add to Calendar — icsUrl is memoized + explicitly revoked (see

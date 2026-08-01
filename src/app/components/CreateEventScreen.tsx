@@ -69,6 +69,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [address, setAddress] = useState('');
   const [latitude, setLatitude] = useState<number | null>(null);
   const [longitude, setLongitude] = useState<number | null>(null);
+  const [placeId, setPlaceId] = useState<string | null>(null);
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
   const [showStateModal, setShowStateModal] = useState(false);
@@ -181,6 +182,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setAddress(parts[3] || '');
         setLatitude(row.latitude != null ? Number(row.latitude) : null);
         setLongitude(row.longitude != null ? Number(row.longitude) : null);
+        setPlaceId(row.place_id || null);
         setCapacity(row.ticket_goal != null ? String(row.ticket_goal) : '');
         const tts: TicketFormType[] = Array.isArray(row.ticket_types) && row.ticket_types.length
           ? row.ticket_types.map((t: any) => ({
@@ -473,6 +475,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               location: locationString,
               latitude,
               longitude,
+              place_id: placeId,
               event_date: eventTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
@@ -577,6 +580,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               location: locationString,
               latitude,
               longitude,
+              place_id: placeId,
               event_date: eventTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
@@ -1132,6 +1136,17 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   setAddress(v.address);
                   setLatitude(v.lat);
                   setLongitude(v.lng);
+                  if (v.placeId) setPlaceId(v.placeId);
+                  // venue/city/state only arrive on an actual place
+                  // selection or pin drag (never on free-typed fallback
+                  // text — see LocationValue's doc comment), so this never
+                  // clobbers a manual edit mid-keystroke. Still an
+                  // auto-fill, not a lock: every field below stays a plain
+                  // editable input/dropdown the organizer can override
+                  // immediately after picking a place.
+                  if (v.venue) setVenue(v.venue);
+                  if (v.city) setCity(v.city);
+                  if (v.state) setStateName(v.state);
                 }}
               />
             </div>

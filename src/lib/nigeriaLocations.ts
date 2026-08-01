@@ -62,3 +62,24 @@ export function isKnownCity(state: string | null | undefined, city: string | nul
   if (!state || !city) return false;
   return (NIGERIA_CITIES[state] || []).includes(city);
 }
+
+// Google Places' addressComponents return a state's long_name in whatever
+// form Google's geocoding data has it in (e.g. "Lagos", "Lagos State",
+// "Abuja", "Federal Capital Territory") — never guaranteed to exactly match
+// this app's canonical NIGERIA_STATE_NAMES strings. Used to normalize a
+// Places result into a state CreateEventScreen's picker/dropdown actually
+// recognizes, so LocationPicker's auto-fill doesn't silently produce an
+// unselected state. Returns null (never guesses) if nothing matches.
+export function matchNigeriaState(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const norm = input.trim().toLowerCase().replace(/\s+state$/, '').trim();
+  if (!norm) return null;
+  if (norm === 'fct' || norm === 'abuja' || norm.includes('federal capital')) {
+    return 'Federal Capital Territory (Abuja)';
+  }
+  const found = NIGERIA_STATE_NAMES.find((s) => {
+    const sNorm = s.toLowerCase().replace(/\s+state$/, '');
+    return sNorm === norm || s.toLowerCase() === norm;
+  });
+  return found || null;
+}

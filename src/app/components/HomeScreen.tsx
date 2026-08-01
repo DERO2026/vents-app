@@ -160,6 +160,9 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     created_at: dbEvent.created_at,
     event_date: dbEvent.event_date,
     is_18_plus: dbEvent.is_18_plus === true,
+    latitude: dbEvent.latitude != null ? Number(dbEvent.latitude) : null,
+    longitude: dbEvent.longitude != null ? Number(dbEvent.longitude) : null,
+    placeId: dbEvent.place_id || null,
   };
 }
 

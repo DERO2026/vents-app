@@ -49,6 +49,14 @@ export interface Event {
   created_at?: string;
   event_date?: string;
   is_18_plus?: boolean;
+  // Geocoded venue coordinates (events.latitude/longitude) and the Google
+  // Places ID captured at creation (events.place_id, may be null for
+  // events created before Prompt 3's LocationPicker upgrade, or ones with
+  // manually-typed addresses that never resolved to a place). Used by the
+  // embedded map on EventDetailsScreen (Prompt 4).
+  latitude?: number | null;
+  longitude?: number | null;
+  placeId?: string | null;
 }
 
 export interface TicketAttendee {

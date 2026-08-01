@@ -1,11 +1,34 @@
 import { useEffect, useRef, useState } from 'react';
-import { MapPin, Loader } from 'lucide-react';
+import { MapPin, Loader, WifiOff } from 'lucide-react';
 import { loadGoogleMaps } from '../../lib/googleMaps';
+import { matchNigeriaState } from '../../lib/nigeriaLocations';
 
 export interface LocationValue {
   address: string;
   lat: number | null;
   lng: number | null;
+  // Populated only on an actual place SELECTION (gmp-select) or a marker
+  // drag/map-click reverse-geocode — never on free-typed fallback text, so
+  // a consumer can safely auto-fill its own venue/city/state fields only
+  // when these are present, without clobbering manual edits on every
+  // keystroke.
+  venue?: string;
+  city?: string;
+  state?: string;
+  country?: string;
+  placeId?: string;
+}
+
+// Pulls city/state/country out of a Places addressComponents array. Google
+// nests these under `types` on each component rather than fixed keys, so
+// this has to search by type rather than index.
+function parseAddressComponents(components: any[] | undefined): { city: string; state: string; country: string } {
+  const byType = (type: string) => components?.find((c) => c.types?.includes(type))?.longText
+    ?? components?.find((c) => c.types?.includes(type))?.long_name ?? '';
+  const city = byType('locality') || byType('administrative_area_level_2') || '';
+  const rawState = byType('administrative_area_level_1');
+  const country = byType('country');
+  return { city, state: matchNigeriaState(rawState) || rawState, country };
 }
 
 const FALLBACK_INPUT_STYLE: React.CSSProperties = {
@@ -44,7 +67,14 @@ export function LocationPicker({
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>(
+    typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'loading'
+  );
+  // Bumped by the online-reconnect handler to force the SDK-load effect
+  // below to run again — it can't just watch `status` directly, since that
+  // would also re-run (and re-append a second Autocomplete element into the
+  // DOM) on every unrelated status change.
+  const [retryKey, setRetryKey] = useState(0);
   const [text, setText] = useState(value.address);
   const valueRef = useRef(value);
   valueRef.current = value;
@@ -53,10 +83,29 @@ export function LocationPicker({
     setText(value.address);
   }, [value.address]);
 
+  // A genuinely offline device gets a distinct message from "unavailable"
+  // (misconfigured key, blocked request, etc.) — same symptom (no search),
+  // different cause, different fix for the user. Retries automatically the
+  // moment the device reconnects rather than leaving a stale error up.
+  useEffect(() => {
+    const goOffline = () => setStatus((s) => (s === 'ready' ? s : 'offline'));
+    const goOnline = () => {
+      setStatus((s) => (s === 'offline' ? 'loading' : s));
+      setRetryKey((k) => k + 1);
+    };
+    window.addEventListener('offline', goOffline);
+    window.addEventListener('online', goOnline);
+    return () => {
+      window.removeEventListener('offline', goOffline);
+      window.removeEventListener('online', goOnline);
+    };
+  }, []);
+
   // Step 1: load the SDK. Only flips `status` — no DOM work here, since the
   // container this effect would need to mount into doesn't exist until AFTER
   // status is 'ready' triggers its render (chicken-and-egg otherwise).
   useEffect(() => {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) { setStatus('offline'); return; }
     let cancelled = false;
     loadGoogleMaps()
       .then(() => {
@@ -64,10 +113,12 @@ export function LocationPicker({
       })
       .catch((e) => {
         console.error('Location search unavailable:', e);
-        if (!cancelled) setStatus('unavailable');
+        if (cancelled) return;
+        setStatus(navigator.onLine === false ? 'offline' : 'unavailable');
       });
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [retryKey]);
 
   // Step 2: once `status === 'ready'`, the container div has rendered —
   // mount the autocomplete element into it exactly once.
@@ -88,13 +139,25 @@ export function LocationPicker({
       try {
         const prediction = event.placePrediction;
         const place = prediction.toPlace();
-        await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location'] });
+        await place.fetchFields({
+          fields: ['displayName', 'formattedAddress', 'location', 'addressComponents', 'id'],
+        });
         const loc = place.location;
         const lat = loc ? loc.lat() : null;
         const lng = loc ? loc.lng() : null;
         const address = place.formattedAddress || place.displayName || '';
+        const { city, state, country } = parseAddressComponents(place.addressComponents);
         setText(address);
-        onChange({ address, lat, lng });
+        onChange({
+          address,
+          lat,
+          lng,
+          venue: place.displayName || undefined,
+          city: city || undefined,
+          state: state || undefined,
+          country: country || undefined,
+          placeId: place.id || undefined,
+        });
         if (lat != null && lng != null) placeMarker(lat, lng);
       } catch (err) {
         console.error('Failed to resolve selected place:', err);
@@ -151,10 +214,24 @@ export function LocationPicker({
       return;
     }
     geocoderRef.current.geocode({ location: { lat, lng } }, (results: any[], geoStatus: string) => {
-      const address = geoStatus === 'OK' && results?.[0] ? results[0].formatted_address : valueRef.current.address;
+      const result = geoStatus === 'OK' ? results?.[0] : null;
+      const address = result ? result.formatted_address : valueRef.current.address;
+      const { city, state, country } = parseAddressComponents(result?.address_components);
       setText(address);
       if (autocompleteElRef.current) autocompleteElRef.current.value = address;
-      onChange({ address, lat, lng });
+      onChange({
+        address,
+        lat,
+        lng,
+        // A reverse-geocoded point has no distinct "place name" the way a
+        // Places selection does (e.g. dragging the pin to an empty field
+        // isn't "a place") — venue/placeId intentionally omitted so the
+        // caller doesn't overwrite a manually-typed venue name with a
+        // street address.
+        city: city || undefined,
+        state: state || undefined,
+        country: country || undefined,
+      });
     });
   }
 
@@ -189,11 +266,18 @@ export function LocationPicker({
           <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
             {status === 'loading'
               ? <Loader size={15} color="#555C7A" className="animate-spin" />
+              : status === 'offline'
+              ? <WifiOff size={15} color="#F59E0B" />
               : <MapPin size={15} color={value.lat != null ? '#22D3EE' : '#555C7A'} />}
           </div>
         )}
       </div>
 
+      {status === 'offline' && (
+        <p style={{ color: '#F59E0B', fontSize: '11px', marginTop: '6px' }}>
+          You're offline — location search will resume automatically once you're back online. You can still type the address manually.
+        </p>
+      )}
       {status === 'unavailable' && (
         <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
           Location search is unavailable right now — you can still type the address manually.
