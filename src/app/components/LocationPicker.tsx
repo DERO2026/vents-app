@@ -7,11 +7,10 @@ export interface LocationValue {
   address: string;
   lat: number | null;
   lng: number | null;
-  // Populated only on an actual place SELECTION (gmp-select) or a marker
-  // drag/map-click reverse-geocode — never on free-typed fallback text, so
-  // a consumer can safely auto-fill its own venue/city/state fields only
-  // when these are present, without clobbering manual edits on every
-  // keystroke.
+  // Populated only on an actual place SELECTION or a marker drag/map-click
+  // reverse-geocode — never on free-typed text, so a consumer can safely
+  // auto-fill its own venue/city/state fields only when these are present,
+  // without clobbering manual edits on every keystroke.
   venue?: string;
   city?: string;
   state?: string;
@@ -31,12 +30,12 @@ function parseAddressComponents(components: any[] | undefined): { city: string; 
   return { city, state: matchNigeriaState(rawState) || rawState, country };
 }
 
-const FALLBACK_INPUT_STYLE: React.CSSProperties = {
+const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
   background: '#090514',
   border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: '12px',
-  padding: '12px 14px',
+  padding: '12px 38px 12px 14px',
   color: '#F0F0FF',
   fontSize: '14px',
   fontFamily: 'Inter, sans-serif',
@@ -44,14 +43,28 @@ const FALLBACK_INPUT_STYLE: React.CSSProperties = {
   boxSizing: 'border-box',
 };
 
-// Searchable address/venue picker for Nigerian locations, backed by Google's
-// PlaceAutocompleteElement (google.maps.places.Autocomplete is blocked for
-// API keys created after March 2025 — this project only has "Places API
-// (New)" enabled, which the legacy widget does not work against). Falls back
-// to a plain text input (still saved as address text, just without
-// coordinates) if the Maps script fails to load — organizers must always be
-// able to enter SOME address even if the API key is misconfigured or the
-// network blocks Google.
+interface Suggestion {
+  key: string;
+  mainText: string;
+  secondaryText: string;
+  prediction: any;
+}
+
+// Searchable address/venue picker for Nigerian locations.
+//
+// Previously delegated entirely to Google's <gmp-place-autocomplete> web
+// component, which renders its OWN dropdown internally via shadow DOM. That
+// dropdown relies on the CSS anchor-positioning/Popover APIs to escape
+// ancestor clipping — unsupported in some WebViews, and this form's
+// scrollable body (CreateEventScreen.tsx's `overflowY: 'auto'` wrapper)
+// creates exactly the kind of overflow clipping context that silently
+// hides an absolutely-positioned fallback dropdown with zero console
+// errors (the API call succeeds; only the *visual* list vanishes).
+//
+// Rebuilt on the underlying data API instead — AutocompleteSuggestion.
+// fetchAutocompleteSuggestions() — so this component owns the dropdown
+// markup directly: a plain `position: absolute` list anchored to this
+// input's own wrapper, immune to that failure mode by construction.
 export function LocationPicker({
   value,
   onChange,
@@ -61,21 +74,30 @@ export function LocationPicker({
   onChange: (v: LocationValue) => void;
   placeholder?: string;
 }) {
-  const autocompleteContainerRef = useRef<HTMLDivElement>(null);
-  const autocompleteElRef = useRef<any>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
+  // Groups requests from the same search into one Google billing session —
+  // reset after a selection (or on mount) per Google's session-token
+  // guidance, so a whole "type → pick a result" flow bills as one session
+  // instead of one per keystroke.
+  const sessionTokenRef = useRef<any>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Guards against a slow, stale fetch resolving AFTER a newer one and
+  // clobbering fresher suggestions — only the most recent request's result
+  // is ever applied.
+  const requestSeqRef = useRef(0);
+
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>(
     typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'loading'
   );
-  // Bumped by the online-reconnect handler to force the SDK-load effect
-  // below to run again — it can't just watch `status` directly, since that
-  // would also re-run (and re-append a second Autocomplete element into the
-  // DOM) on every unrelated status change.
   const [retryKey, setRetryKey] = useState(0);
   const [text, setText] = useState(value.address);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
   const valueRef = useRef(value);
   valueRef.current = value;
 
@@ -101,15 +123,19 @@ export function LocationPicker({
     };
   }, []);
 
-  // Step 1: load the SDK. Only flips `status` — no DOM work here, since the
-  // container this effect would need to mount into doesn't exist until AFTER
-  // status is 'ready' triggers its render (chicken-and-egg otherwise).
+  // Load the SDK (places + geocoding + maps + marker libraries — see
+  // googleMaps.ts). Only flips `status`; the map effect below waits for
+  // 'ready' before touching the DOM.
   useEffect(() => {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) { setStatus('offline'); return; }
     let cancelled = false;
     loadGoogleMaps()
       .then(() => {
-        if (!cancelled) setStatus('ready');
+        if (cancelled) return;
+        const google = (window as any).google;
+        geocoderRef.current = new google.maps.Geocoder();
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+        setStatus('ready');
       })
       .catch((e) => {
         console.error('Location search unavailable:', e);
@@ -119,52 +145,6 @@ export function LocationPicker({
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
-
-  // Step 2: once `status === 'ready'`, the container div has rendered —
-  // mount the autocomplete element into it exactly once.
-  useEffect(() => {
-    if (status !== 'ready' || !autocompleteContainerRef.current || autocompleteElRef.current) return;
-    const google = (window as any).google;
-    geocoderRef.current = new google.maps.Geocoder();
-
-    const el = new google.maps.places.PlaceAutocompleteElement({
-      includedRegionCodes: ['ng'],
-    });
-    el.placeholder = placeholder;
-    if (valueRef.current.address) el.value = valueRef.current.address;
-    autocompleteContainerRef.current.appendChild(el);
-    autocompleteElRef.current = el;
-
-    el.addEventListener('gmp-select', async (event: any) => {
-      try {
-        const prediction = event.placePrediction;
-        const place = prediction.toPlace();
-        await place.fetchFields({
-          fields: ['displayName', 'formattedAddress', 'location', 'addressComponents', 'id'],
-        });
-        const loc = place.location;
-        const lat = loc ? loc.lat() : null;
-        const lng = loc ? loc.lng() : null;
-        const address = place.formattedAddress || place.displayName || '';
-        const { city, state, country } = parseAddressComponents(place.addressComponents);
-        setText(address);
-        onChange({
-          address,
-          lat,
-          lng,
-          venue: place.displayName || undefined,
-          city: city || undefined,
-          state: state || undefined,
-          country: country || undefined,
-          placeId: place.id || undefined,
-        });
-        if (lat != null && lng != null) placeMarker(lat, lng);
-      } catch (err) {
-        console.error('Failed to resolve selected place:', err);
-      }
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status]);
 
   useEffect(() => {
     if (status !== 'ready' || !mapDivRef.current || mapRef.current) return;
@@ -187,6 +167,20 @@ export function LocationPicker({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status]);
+
+  // Click-outside-to-close. Suggestion rows use onMouseDown (fires before
+  // blur) to actually select — if this used onClick instead, the input's
+  // blur would close the dropdown and unmount the row before the click
+  // event ever reached it.
+  useEffect(() => {
+    function onDocMouseDown(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => document.removeEventListener('mousedown', onDocMouseDown);
+  }, []);
 
   function placeMarker(lat: number, lng: number) {
     const google = (window as any).google;
@@ -218,7 +212,6 @@ export function LocationPicker({
       const address = result ? result.formatted_address : valueRef.current.address;
       const { city, state, country } = parseAddressComponents(result?.address_components);
       setText(address);
-      if (autocompleteElRef.current) autocompleteElRef.current.value = address;
       onChange({
         address,
         lat,
@@ -235,40 +228,180 @@ export function LocationPicker({
     });
   }
 
+  // The actual Autocomplete service call. Debounced 300ms from onChange
+  // below (step 1 of the requested fix: confirm this is really firing).
+  async function fetchSuggestions(query: string) {
+    // TEMP DEBUG (requested): confirms onChange -> debounce -> this
+    // function is actually being reached, and what Google returns, without
+    // digging through devtools network tab. Safe to remove once confirmed.
+    console.log('[LocationPicker] fetchSuggestions running for:', JSON.stringify(query));
+
+    if (status !== 'ready') {
+      console.log('[LocationPicker] skipped — status is', status, '(SDK not ready yet)');
+      return;
+    }
+    const google = (window as any).google;
+    if (!google?.maps?.places?.AutocompleteSuggestion) {
+      console.error('[LocationPicker] google.maps.places.AutocompleteSuggestion is undefined — places library did not load correctly');
+      return;
+    }
+
+    const mySeq = ++requestSeqRef.current;
+    setSearching(true);
+    try {
+      const { suggestions: raw } = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+        input: query,
+        includedRegionCodes: ['ng'],
+        sessionToken: sessionTokenRef.current,
+      });
+      console.log('[LocationPicker] fetchAutocompleteSuggestions returned', raw?.length ?? 0, 'result(s)');
+
+      if (mySeq !== requestSeqRef.current) return; // a newer request already superseded this one
+
+      const mapped: Suggestion[] = (raw || [])
+        .filter((s: any) => s.placePrediction)
+        .map((s: any, i: number) => {
+          const p = s.placePrediction;
+          const main = p.mainText?.text ?? p.text?.text ?? '';
+          const secondary = p.secondaryText?.text ?? '';
+          return { key: p.placeId || String(i), mainText: main, secondaryText: secondary, prediction: p };
+        });
+      setSuggestions(mapped);
+      setDropdownOpen(mapped.length > 0);
+    } catch (err) {
+      console.error('[LocationPicker] fetchAutocompleteSuggestions failed:', err);
+      if (mySeq === requestSeqRef.current) {
+        setSuggestions([]);
+        setDropdownOpen(false);
+      }
+    } finally {
+      if (mySeq === requestSeqRef.current) setSearching(false);
+    }
+  }
+
+  function handleTextChange(next: string) {
+    setText(next);
+    // Free-typed text with no place selected yet: keep any prior pin but
+    // update the address string so the form still saves something even if
+    // the user never picks a suggestion.
+    onChange({ address: next, lat: value.lat, lng: value.lng });
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    const query = next.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setDropdownOpen(false);
+      requestSeqRef.current++; // invalidate any in-flight request
+      return;
+    }
+    // 300ms debounce — step "optimise API usage": avoids firing a request
+    // on every single keystroke while still feeling instant to type into.
+    debounceRef.current = setTimeout(() => fetchSuggestions(query), 300);
+  }
+
+  async function handleSelect(s: Suggestion) {
+    setDropdownOpen(false);
+    setSuggestions([]);
+    try {
+      const place = s.prediction.toPlace();
+      await place.fetchFields({
+        fields: ['displayName', 'formattedAddress', 'location', 'addressComponents', 'id'],
+      });
+      const loc = place.location;
+      const lat = loc ? loc.lat() : null;
+      const lng = loc ? loc.lng() : null;
+      const address = place.formattedAddress || place.displayName || '';
+      const { city, state, country } = parseAddressComponents(place.addressComponents);
+      setText(address);
+      onChange({
+        address,
+        lat,
+        lng,
+        venue: place.displayName || undefined,
+        city: city || undefined,
+        state: state || undefined,
+        country: country || undefined,
+        placeId: place.id || undefined,
+      });
+      if (lat != null && lng != null) placeMarker(lat, lng);
+    } catch (err) {
+      console.error('Failed to resolve selected place:', err);
+    } finally {
+      // New session for the next search, per Google's billing guidance —
+      // one token covers "type → select", not the whole component lifetime.
+      const google = (window as any).google;
+      if (google?.maps?.places?.AutocompleteSessionToken) {
+        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+      }
+    }
+  }
+
   return (
-    <div>
-      <style>{`
-        gmp-place-autocomplete {
-          --gmpx-color-surface: #090514;
-          --gmpx-color-on-surface: #F0F0FF;
-          --gmpx-color-on-surface-variant: #8B8FA8;
-          --gmpx-color-primary: #A78BFA;
-          --gmpx-font-family-base: Inter, sans-serif;
-          width: 100%;
-        }
-      `}</style>
+    <div ref={wrapperRef}>
       <div style={{ position: 'relative' }}>
-        <div ref={autocompleteContainerRef} style={{ width: '100%', display: status === 'ready' ? 'block' : 'none' }} />
-        {status !== 'ready' && (
-          <input
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value);
-              // Free-typed text with no place selected yet: keep any prior pin
-              // but update the address string so the form still saves something.
-              onChange({ address: e.target.value, lat: value.lat, lng: value.lng });
+        <input
+          value={text}
+          onChange={(e) => handleTextChange(e.target.value)}
+          onFocus={() => { if (suggestions.length > 0) setDropdownOpen(true); }}
+          placeholder={placeholder}
+          disabled={status === 'loading'}
+          style={INPUT_STYLE}
+        />
+        <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
+          {status === 'loading' || searching
+            ? <Loader size={15} color="#555C7A" className="animate-spin" />
+            : status === 'offline'
+            ? <WifiOff size={15} color="#F59E0B" />
+            : <MapPin size={15} color={value.lat != null ? '#22D3EE' : '#555C7A'} />}
+        </div>
+
+        {/* The dropdown itself — inline, absolutely positioned directly
+            under the input, scoped z-index. Never a full-screen overlay or
+            fixed-position modal. */}
+        {dropdownOpen && suggestions.length > 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              left: 0,
+              right: 0,
+              zIndex: 50,
+              background: '#0D0A1A',
+              border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '12px',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.5)',
+              maxHeight: '260px',
+              overflowY: 'auto',
             }}
-            placeholder={placeholder}
-            style={{ ...FALLBACK_INPUT_STYLE, paddingRight: '38px' }}
-          />
-        )}
-        {status !== 'ready' && (
-          <div style={{ position: 'absolute', right: '12px', top: '50%', transform: 'translateY(-50%)' }}>
-            {status === 'loading'
-              ? <Loader size={15} color="#555C7A" className="animate-spin" />
-              : status === 'offline'
-              ? <WifiOff size={15} color="#F59E0B" />
-              : <MapPin size={15} color={value.lat != null ? '#22D3EE' : '#555C7A'} />}
+          >
+            {suggestions.map((s) => (
+              <div
+                key={s.key}
+                onMouseDown={(e) => { e.preventDefault(); handleSelect(s); }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '8px',
+                  padding: '10px 12px',
+                  cursor: 'pointer',
+                  borderBottom: '1px solid rgba(255,255,255,0.05)',
+                }}
+                onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(168,85,247,0.08)'; }}
+                onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
+              >
+                <MapPin size={14} color="#A78BFA" style={{ marginTop: '2px', flexShrink: 0 }} />
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {s.mainText}
+                  </div>
+                  {s.secondaryText && (
+                    <div style={{ color: '#8B8FA8', fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {s.secondaryText}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
