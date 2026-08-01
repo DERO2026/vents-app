@@ -45,3 +45,25 @@ dist-ssr
 # Firebase Console per-platform and place them locally; never commit them.
 android/app/google-services.json
 ios/App/App/GoogleService-Info.plist
+
+# Native build outputs — the android/ and (once `npx cap add ios` is run)
+# ios/ project sources ARE committed (they carry intentional native config:
+# AndroidManifest.xml intent-filters, Info.plist keys, entitlements, signing
+# settings), but generated build artifacts under them never should be.
+# android/ already has its own nested .gitignore covering build/, .gradle/,
+# etc. — these are kept here too for visibility and to cover ios/, which
+# has no such file yet.
+android/build/
+android/app/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+ios/App/Pods/
+ios/App/build/
+ios/App/DerivedData/
+ios/App/App/output/
+ios/**/*.xcuserstate
+ios/**/xcuserdata/
+*.ipa
+*.apk
+*.aab
