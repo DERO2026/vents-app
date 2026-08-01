@@ -40,6 +40,11 @@ export interface Event {
   isPromoted?: boolean;
   promoPlan?: string | null;
   bookingsCount?: number;
+  savesCount?: number;
+  // Server-computed via get_event_trending_scores — recent booking velocity
+  // weighted well above lifetime sales/saves. Only populated on events that
+  // came through App.tsx's fetchEvents; 0/undefined elsewhere.
+  trendingScore?: number;
   organizer_id?: string;
   created_at?: string;
   event_date?: string;

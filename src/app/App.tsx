@@ -994,6 +994,7 @@ export default function App() {
         let promotionsData: any[] = [];
         let ticketsData: any[] = [];
         let savesData: any[] = [];
+        let trendingScoreData: any[] = [];
 
         if (eventIds.length > 0) {
           const nowStr = new Date().toISOString();
@@ -1021,6 +1022,14 @@ export default function App() {
             .select('event_id')
             .in('event_id', eventIds);
           if (savesRes) savesData = savesRes;
+
+          // Real trending score — recent booking velocity (last 72h) weighted
+          // far above lifetime sales/saves, computed server-side so it can't
+          // be gamed by anything client-side and stays accurate as sales
+          // happen. Used only by HomeScreen's dedicated Trending section;
+          // does not affect the Explore feed's own promoted-first sort below.
+          const { data: trendingRes } = await insforge.database.rpc('get_event_trending_scores', { p_event_ids: eventIds });
+          if (trendingRes) trendingScoreData = trendingRes;
         }
 
         const bookingsCountMap: Record<string, number> = {};
@@ -1031,6 +1040,11 @@ export default function App() {
         const savesCountMap: Record<string, number> = {};
         (savesData as any[]).forEach((s: any) => {
           savesCountMap[s.event_id] = (savesCountMap[s.event_id] || 0) + 1;
+        });
+
+        const trendingScoreMap: Record<string, number> = {};
+        trendingScoreData.forEach((t: any) => {
+          trendingScoreMap[t.event_id] = Number(t.trending_score) || 0;
         });
 
         const promotionPlanMap: Record<string, string> = {};
@@ -1058,6 +1072,7 @@ export default function App() {
             bookingsCount: bookings,
             attendees: bookings,
             savesCount: saves,
+            trendingScore: trendingScoreMap[evt.id] || 0,
           };
         });
 

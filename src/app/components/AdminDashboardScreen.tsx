@@ -57,6 +57,8 @@ interface EventRow {
   image_url: string | null;
   event_date: string | null;
   deleted_at: string | null;
+  is_featured: boolean;
+  featured_until: string | null;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
@@ -1233,7 +1235,7 @@ export function AdminDashboardScreen({
     try {
       let q = insforge.database
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, deleted_at, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .order('created_at', { ascending: false })
         .limit(50);
       q = filter === 'deleted' ? q.not('deleted_at', 'is', null) : q.is('deleted_at', null);
@@ -1329,6 +1331,29 @@ export function AdminDashboardScreen({
         if (error) throw error;
         setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: false, hidden_at: null } : e));
         flash(true, 'Event reinstated.');
+      });
+  };
+
+  // The only two legitimate paths into the Featured section are a paid
+  // 'featured' promotion (activate_event_promotion) or this admin action
+  // (admin_set_event_featured, migrations/20260801134748) — an event is
+  // never featured just for being created, and a 'trending'/'boosted'
+  // promotion purchase can no longer set is_featured as a side effect.
+  const handleToggleFeatured = async (eventId: string, currentlyFeatured: boolean) => {
+    const label = events.find(e => e.id === eventId)?.title || eventId;
+    const nextFeatured = !currentlyFeatured;
+    await submitOrExecute('toggle_event_featured',
+      { target_type: 'event', target_id: eventId, target_label: label, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
+      async () => {
+        const { error } = await insforge.database.rpc('admin_set_event_featured', {
+          p_event_id: eventId,
+          p_featured: nextFeatured,
+          p_duration_days: nextFeatured ? 14 : null,
+        });
+        if (error) throw error;
+        const featuredUntil = nextFeatured ? new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString() : null;
+        setEvents(prev => prev.map(e => e.id === eventId ? { ...e, is_featured: nextFeatured, featured_until: featuredUntil } : e));
+        flash(true, nextFeatured ? 'Event featured for 14 days.' : 'Event removed from Featured.');
       });
   };
 
@@ -2087,6 +2112,15 @@ export function AdminDashboardScreen({
                       {ev.hidden_by_admin && ev.hidden_at && ` · Hidden ${new Date(ev.hidden_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}`}
                     </span>
                   </div>
+                  {!ev.deleted_at && (
+                    <button
+                      onClick={() => handleToggleFeatured(ev.id, !!ev.is_featured)}
+                      title={ev.is_featured ? `Featured until ${ev.featured_until ? new Date(ev.featured_until).toLocaleDateString('en-NG') : 'unknown'}` : 'Not featured — only a paid Featured promotion or this action places an event here'}
+                      style={{ background: ev.is_featured ? 'rgba(251,191,36,0.12)' : 'rgba(255,255,255,0.04)', border: `1px solid ${ev.is_featured ? 'rgba(251,191,36,0.35)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '10px', padding: '6px 12px', color: ev.is_featured ? '#FBBF24' : '#8B8FA8', fontSize: '12px', fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                    >
+                      {ev.is_featured ? '★ Featured' : '☆ Feature'}
+                    </button>
+                  )}
                   {ev.deleted_at ? (
                     <button
                       onClick={() => setConfirmModal({ title: 'Restore Event?', message: `Restore "${ev.title || 'this event'}"? It will become live again immediately.`, confirmLabel: 'Restore', danger: false, onConfirm: () => { setConfirmModal(null); handleRestoreEvent(ev.id); } })}

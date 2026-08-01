@@ -1017,12 +1017,16 @@ export function HomeScreen({
     return dtA - dtB;
   };
 
-  // Trending events: selection stays popularity-based (top 5 by bookingsCount),
-  // display order is nearest-date-first, and the state filter now applies
-  // here too instead of only on the Explore grid.
+  // Trending events: selection is the real, server-computed trending score
+  // (get_event_trending_scores — recent booking velocity weighted well
+  // above lifetime sales/saves, migrations/20260801134748). Purely organic:
+  // no promotion purchase or admin action can place an event here, and a
+  // brand-new event scores 0 until it earns real engagement. Display order
+  // is nearest-date-first; state filter applies same as the Explore grid.
   const trendingEvents = [...upcomingDbEvents]
     .filter(matchesStateFilter)
-    .sort((a, b) => (b.bookingsCount || 0) - (a.bookingsCount || 0))
+    .filter((e) => (e.trendingScore || 0) > 0)
+    .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
     .slice(0, 5)
     .sort(byNearestDate);
 
