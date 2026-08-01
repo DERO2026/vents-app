@@ -33,12 +33,25 @@ export function NotificationsScreen({
   currentUser?: { id: string } | null;
   onRefreshUnread?: () => void;
 }) {
+  const PAGE_SIZE = 50;
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
   const swipeStartX = useRef<number | null>(null);
+
+  const mapRow = (n: any): Notification => ({
+    id: n.id,
+    type: n.type,
+    title: n.title,
+    body: n.body,
+    read: n.read,
+    icon: n.icon,
+    time: formatRelativeTime(n.created_at),
+  });
 
   const fetchNotifications = async () => {
     if (!currentUser?.id) return;
@@ -49,24 +62,41 @@ export function NotificationsScreen({
         .select('*')
         .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false })
-        .limit(50);
+        .limit(PAGE_SIZE);
 
       if (error) throw error;
       if (data) {
-        setItems(data.map((n: any) => ({
-          id: n.id,
-          type: n.type,
-          title: n.title,
-          body: n.body,
-          read: n.read,
-          icon: n.icon,
-          time: formatRelativeTime(n.created_at)
-        })));
+        setHasMore(data.length === PAGE_SIZE);
+        setItems(data.map(mapRow));
       }
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Was hard-capped at 50 with no way to see anything older.
+  const loadMore = async () => {
+    if (!currentUser?.id || loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const { data, error } = await insforge.database
+        .from('notifications')
+        .select('*')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .range(items.length, items.length + PAGE_SIZE - 1);
+
+      if (error) throw error;
+      if (data) {
+        setHasMore(data.length === PAGE_SIZE);
+        setItems((prev) => [...prev, ...data.map(mapRow)]);
+      }
+    } catch (err) {
+      console.error("Failed to load more notifications:", err);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -459,6 +489,20 @@ export function NotificationsScreen({
                 </div>
               );
             })}
+            {hasMore && (
+              <button
+                onClick={loadMore}
+                disabled={loadingMore}
+                style={{
+                  marginTop: '4px', padding: '12px', borderRadius: '14px',
+                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                  color: '#A78BFA', fontSize: '13px', fontWeight: 600,
+                  cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1,
+                }}
+              >
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            )}
           </div>
         )}
       </div>

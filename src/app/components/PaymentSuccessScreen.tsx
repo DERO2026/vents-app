@@ -94,9 +94,16 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         // user cancelled
       }
     } else {
-      await navigator.clipboard.writeText(text);
-      setShareToast(true);
-      setTimeout(() => setShareToast(false), 2500);
+      // Unguarded — rejects on insecure contexts (non-HTTPS) or without a
+      // user-activation gesture, which would have surfaced as an unhandled
+      // promise rejection with no feedback to the user.
+      try {
+        await navigator.clipboard.writeText(text);
+        setShareToast(true);
+        setTimeout(() => setShareToast(false), 2500);
+      } catch {
+        console.warn('Clipboard write failed');
+      }
     }
   };
 

@@ -15,6 +15,7 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { hasCapability } from '../../lib/permissions';
 import { LocationPicker } from './LocationPicker';
 import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
+import { REGION } from '../../lib/regionConfig';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -403,7 +404,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
 
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
-      const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
+      const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
 
       // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
       await getAuthToken();
@@ -558,7 +559,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
 
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
-      const eventTimestamp = new Date(`${date}T${startTime}:00`).toISOString();
+      const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
 
       await getAuthToken();
 
