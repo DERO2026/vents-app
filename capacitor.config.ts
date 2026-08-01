@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.getvents.app',
-  appName: 'Vents',
+  appName: 'VENTS',
   webDir: 'dist'
 };
 
