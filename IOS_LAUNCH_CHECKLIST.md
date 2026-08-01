@@ -62,12 +62,16 @@ In **Signing & Capabilities**, click **+ Capability** and add:
   Universal Links support already wired in `App.tsx`'s `appUrlOpen`
   listener — inert until this is added and the AASA file below is hosted)
 
-## 5. Push notifications (Firebase/APNs) — the biggest remaining setup step
+## 5. Push notifications (Firebase/APNs) — code done, Firebase console setup remains
 
-The app currently sends push via **FCM** (`api/push/send.ts`). On iOS,
-`@capacitor/push-notifications` registers with **APNs** directly — FCM
-cannot deliver to a raw APNs token unless Firebase bridges the two. Without
-this, iOS push notifications will silently never arrive.
+**Code-side, this is done.** `src/lib/pushNotifications.ts` now uses
+`@capacitor-firebase/messaging` instead of `@capacitor/push-notifications` —
+that plugin wraps the Firebase iOS SDK, which still registers with APNs
+internally (required by Apple) but bridges it to a real FCM token via
+Firebase's own servers, so `getToken()` returns an FCM token on both iOS and
+Android and the existing FCM-only send path (`api/push/send.ts`) works
+unchanged. What's left is entirely Firebase Console / Xcode setup — no more
+code changes needed for this:
 
 1. In the [Firebase Console](https://console.firebase.google.com), add an
    iOS app to the existing VENTS project with bundle ID `com.getvents.app`.
@@ -77,11 +81,13 @@ this, iOS push notifications will silently never arrive.
    Identifiers & Profiles → Keys, create an **APNs Auth Key** (.p8), and
    upload it to Firebase Console → Project Settings → Cloud Messaging →
    Apple app configuration.
-4. Install `@capacitor-firebase/messaging` (or the Firebase iOS SDK) so the
-   token `pushNotifications.ts` receives is an FCM token, not a raw APNs
-   token — this needs a small code change in `src/lib/pushNotifications.ts`
-   once the Firebase plugin is in place. Flag this back if you want help
-   wiring it once the Mac-side Firebase setup is done.
+4. Android needs the equivalent `google-services.json` from the same
+   Firebase project's Android app entry, placed at `android/app/`
+   (`android/app/build.gradle` already conditionally applies the
+   google-services Gradle plugin once that file exists — no Gradle changes
+   needed).
+5. Run `npm run ios:sync` (or `npx cap sync ios`) after adding the plist so
+   CocoaPods picks up the Firebase native dependency.
 
 ## 6. Universal Links (deep links) — required for the getvents.com links to open the app
 
@@ -164,7 +170,11 @@ entry" path otherwise, with no obvious error.
 
 **What's already done in code** (this session): absolute API paths for
 Capacitor, Paystack/PostHog keys present in the build, all external links
-route through an in-app browser, `100vh` → `100dvh` fixes, Capacitor
-toolchain aligned to 8.5.0 with `cap sync` verified clean, dead dependency
-removed, app name set to "VENTS" everywhere. None of that needs to be
-redone — this checklist is the native-only remainder.
+route through an in-app browser (`@capacitor/browser`), every `100vh`
+replaced with `100dvh`, push notifications switched to
+`@capacitor-firebase/messaging` so `getToken()` returns a real FCM token on
+iOS (was raw APNs — see §5), Capacitor toolchain aligned to 8.5.0 with
+`cap sync` verified clean, dead dependencies removed, app name set to
+"VENTS" everywhere. None of that needs to be redone — this checklist is the
+native-config-only remainder (Firebase console, Info.plist, Xcode
+signing/capabilities, Google Maps referrer restriction).
