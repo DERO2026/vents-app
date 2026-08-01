@@ -8,6 +8,7 @@ import {
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { AdminActionsTab } from './AdminActionsTab';
@@ -179,7 +180,7 @@ async function writeAuditLog(actor: { id: string; role?: string }, action: strin
 async function notifyByEmail(requestType: 'organizer' | 'cac' | 'payout', requestId: string, decision: 'approved' | 'rejected', reason?: string) {
   try {
     const token = await getAuthToken();
-    await fetch('/api/v1/notify/status-email', {
+    await fetch(apiUrl('/api/v1/notify/status-email'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ request_type: requestType, request_id: requestId, decision, reason }),
@@ -309,7 +310,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/admin-approve-payout', {
+      const res = await fetch(apiUrl('/api/v1/wallet/admin-approve-payout'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ request_id: id }),
@@ -341,7 +342,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/admin-payout-action', {
+      const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'reject', request_id: id, reason: reason.trim() }),
@@ -362,7 +363,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setReconciling(true);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/reconcile-payouts', {
+      const res = await fetch(apiUrl('/api/v1/wallet/reconcile-payouts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       });
@@ -384,7 +385,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/v1/wallet/admin-payout-action', {
+      const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ action: 'cancel', request_id: id, reason: reason.trim() }),

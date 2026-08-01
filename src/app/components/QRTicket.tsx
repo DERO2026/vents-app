@@ -7,6 +7,7 @@ import { useSignedTicketToken } from '../../lib/ticketToken';
 import { analytics } from '../../lib/analyticsEvents';
 import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
 import { ticketDisplayCode } from '../../lib/ticketCode';
+import { openExternalUrl } from '../../lib/externalLink';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -90,7 +91,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     if (navigator.share) {
       await navigator.share({ title: ticket.event.title, text }).catch(() => {});
     } else {
-      window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+      openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
     }
   };
 

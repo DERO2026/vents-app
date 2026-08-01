@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp, Mail, MessageCircle, Phone } from 'lucide-react';
+import { openExternalUrl } from '../../lib/externalLink';
 
 interface HelpSupportScreenProps {
   onBack: () => void;
@@ -98,8 +99,7 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
           </a>
           <a
             href="https://wa.me/2349030737368"
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={(e) => { e.preventDefault(); openExternalUrl('https://wa.me/2349030737368'); }}
             style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#22C55E', fontSize: '14px', fontWeight: 600, textDecoration: 'none' }}
           >
             <Phone size={16} color="#22C55E" />

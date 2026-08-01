@@ -1,4 +1,5 @@
 import { getAuthToken } from './insforge';
+import { apiUrl } from './apiBase';
 
 // Client for the serverless vision endpoint (api/vision/smart-crop). Downscales
 // the flyer to a small JPEG (cheap + fast tokens), asks Claude vision for the
@@ -43,7 +44,7 @@ export async function fetchVisionFocus(bitmap: Bitmap, timeoutMs = 13000): Promi
     const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
     // Folded into the existing AI endpoint (serverless-function limit) — the
     // image branch is keyed on the imageBase64 body field.
-    const res = await fetch('/api/extract-events', {
+    const res = await fetch(apiUrl('/api/extract-events'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ imageBase64: img.data, mimeType: img.mime }),

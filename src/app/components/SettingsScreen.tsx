@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { sanitize } from '../../lib/sanitize';
 import { REGION } from '../../lib/regionConfig';
@@ -1065,7 +1066,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
               <p style={{ color: '#C4C9E0', fontSize: '12px' }}>support@getvents.com</p>
             </div>
             <button
-              onClick={() => window.open('mailto:support@getvents.com', '_blank')}
+              onClick={() => openExternalUrl('mailto:support@getvents.com')}
               style={{ background: 'rgba(167,139,250,0.15)', border: 'none', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
             >
               <ExternalLink size={15} color="#A78BFA" />
@@ -1082,7 +1083,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
               <p style={{ color: '#C4C9E0', fontSize: '12px' }}>09030737368</p>
             </div>
             <button
-              onClick={() => window.open('https://wa.me/2349030737368', '_blank')}
+              onClick={() => openExternalUrl('https://wa.me/2349030737368')}
               style={{ background: 'rgba(16,185,129,0.15)', border: 'none', borderRadius: '10px', padding: '8px 12px', cursor: 'pointer' }}
             >
               <ExternalLink size={15} color="#10B981" />
@@ -1097,7 +1098,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
               {articles.filter((a) => a.category === cat).map((article, i, arr) => (
                 <div key={article.title}>
                   <button
-                    onClick={() => window.open('mailto:support@getvents.com', '_blank')}
+                    onClick={() => openExternalUrl('mailto:support@getvents.com')}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -1124,7 +1125,7 @@ function HelpCenterScreen({ onBack }: { onBack: () => void }) {
         <div style={{ textAlign: 'center', marginTop: '8px' }}>
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px' }}>Need more help?</p>
           <button
-            onClick={() => window.open('mailto:support@getvents.com', '_blank')}
+            onClick={() => openExternalUrl('mailto:support@getvents.com')}
             style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '12px', padding: '10px 20px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
           >
             <ExternalLink size={14} />
@@ -1561,23 +1562,23 @@ export function SettingsScreen({
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
         <Section title="SUPPORT & LEGAL">
-          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => window.open('https://getvents.com/privacy', '_blank')} />
+          <SettingRow icon={Shield} label="Privacy Policy" onPress={() => openExternalUrl('https://getvents.com/privacy')} />
           <Divider />
-          <SettingRow icon={Shield} label="Terms of Use" onPress={() => window.open('https://getvents.com/terms', '_blank')} />
+          <SettingRow icon={Shield} label="Terms of Use" onPress={() => openExternalUrl('https://getvents.com/terms')} />
           <Divider />
-          <SettingRow icon={Shield} label="Refund Policy" onPress={() => window.open('https://getvents.com/refunds', '_blank')} />
+          <SettingRow icon={Shield} label="Refund Policy" onPress={() => openExternalUrl('https://getvents.com/refunds')} />
           <Divider />
           <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
         </Section>
 
         <Section title="RESOURCES">
-          <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => window.open('mailto:support@getvents.com')} />
+          <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => openExternalUrl('mailto:support@getvents.com')} />
           <Divider />
-          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => window.open('https://instagram.com/TheVentsApp', '_blank')} />
+          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/TheVentsApp')} />
           <Divider />
-          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => window.open('https://twitter.com/TheVentsApp', '_blank')} />
+          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://twitter.com/TheVentsApp')} />
           <Divider />
-          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => window.open('https://www.tiktok.com/@theventsapp', '_blank')} />
+          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@theventsapp')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

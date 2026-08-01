@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
+import { apiUrl } from '../../lib/apiBase';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -55,7 +56,7 @@ function fmt(kobo: number) {
 
 async function authedFetch(path: string, body: any) {
   const token = await getAuthToken();
-  const res = await fetch(path, {
+  const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
     body: JSON.stringify(body),
@@ -237,7 +238,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     if (banks.length === 0) {
       setBanksLoading(true);
       try {
-        const res = await fetch('/api/v1/wallet/banks');
+        const res = await fetch(apiUrl('/api/v1/wallet/banks'));
         const json = await res.json();
         if (res.ok) setBanks(json.banks || []);
       } catch (e) {

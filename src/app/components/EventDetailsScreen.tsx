@@ -28,6 +28,7 @@ import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
+import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { ReportModal } from './ReportModal';
@@ -379,7 +380,7 @@ export function EventDetailsScreen({
         await navigator.share({ title: event.title, text, url: deepLink });
       } else {
         await navigator.clipboard.writeText(deepLink).catch(() => {
-          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+          openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
         });
       }
     } catch {
@@ -418,7 +419,7 @@ export function EventDetailsScreen({
     const url = provider === 'google'
       ? `https://www.google.com/maps/search/?api=1&query=${query}`
       : `https://maps.apple.com/?q=${query}`;
-    window.open(url, '_blank');
+    openExternalUrl(url);
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);

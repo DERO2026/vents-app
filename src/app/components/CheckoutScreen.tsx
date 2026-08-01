@@ -5,6 +5,7 @@ import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
 import { insforge } from '../../lib/insforge';
+import { openExternalUrl } from '../../lib/externalLink';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -682,9 +683,9 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </button>
         <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
           By purchasing you agree to our{' '}
-          <span onClick={() => window.open('https://getvents.com/refunds', '_blank')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>
           {' '}and{' '}
-          <span onClick={() => window.open('https://getvents.com/terms', '_blank')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
         </p>
       </div>
 

@@ -4,6 +4,7 @@ import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../../lib/insforge';
+import { openExternalUrl } from '../../lib/externalLink';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
@@ -1855,9 +1856,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   </div>
                   <span style={{ color: '#94A3B8', fontSize: '12px', lineHeight: 1.55 }}>
                     I agree to the{' '}
-                    <a href="https://getvents.com/terms" target="_blank" rel="noopener noreferrer" style={{ color: '#C084FC', textDecoration: 'underline' }}>Terms of Service</a>
+                    <a href="https://getvents.com/terms" onClick={(e) => { e.preventDefault(); openExternalUrl('https://getvents.com/terms'); }} style={{ color: '#C084FC', textDecoration: 'underline' }}>Terms of Service</a>
                     {' '}and{' '}
-                    <a href="https://getvents.com/privacy" target="_blank" rel="noopener noreferrer" style={{ color: '#C084FC', textDecoration: 'underline' }}>Privacy Policy</a>.
+                    <a href="https://getvents.com/privacy" onClick={(e) => { e.preventDefault(); openExternalUrl('https://getvents.com/privacy'); }} style={{ color: '#C084FC', textDecoration: 'underline' }}>Privacy Policy</a>.
                     {' '}You must be at least 13 years old to use Vents.
                   </span>
                 </label>

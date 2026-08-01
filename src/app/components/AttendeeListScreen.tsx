@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { apiUrl } from '../../lib/apiBase';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -163,7 +164,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
     setRefundError(null);
     try {
       const token = await getAuthToken();
-      const res = await fetch('/api/wallet/refund-ticket', {
+      const res = await fetch(apiUrl('/api/wallet/refund-ticket'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ ticket_id: attendee.ticketId, reason: refundReason.trim() }),

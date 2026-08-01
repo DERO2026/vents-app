@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { openExternalUrl } from '../../lib/externalLink';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
@@ -629,7 +630,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                             : isAndroid
                             ? `geo:${locationData!.lat},${locationData!.lng}?q=${locationData!.lat},${locationData!.lng}(${encodeURIComponent(locationData!.label)})`
                             : `https://maps.google.com/?q=${locationData!.lat},${locationData!.lng}`;
-                          window.open(url, '_blank');
+                          openExternalUrl(url);
                         }}
                         style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, textDecoration: 'none', background: 'rgba(167,139,250,0.15)', padding: '3px 8px', borderRadius: '6px', border: 'none', cursor: 'pointer' }}
                       >

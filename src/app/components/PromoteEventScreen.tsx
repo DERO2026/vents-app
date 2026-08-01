@@ -4,6 +4,7 @@ import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
+import { apiUrl } from '../../lib/apiBase';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -110,7 +111,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           // this reference with Paystack (status + exact amount) before
           // writing anything, rather than trusting this callback alone.
           const token = await getAuthToken();
-          const res = await fetch('/api/v1/promotions/activate', {
+          const res = await fetch(apiUrl('/api/v1/promotions/activate'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({

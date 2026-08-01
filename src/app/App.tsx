@@ -4,6 +4,7 @@ import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
+import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification } from '../lib/pendingVerification';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
@@ -1316,7 +1317,7 @@ export default function App() {
         try {
           const token = await getAuthToken();
           if (!token) return;
-          await fetch('/api/notify/status-email', {
+          await fetch(apiUrl('/api/notify/status-email'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ request_type: 'ticket', event_id: ticket.event.id }),
@@ -1619,7 +1620,7 @@ export default function App() {
     return (
       <div
         style={{
-          background: '#020005', width: '100%', height: '100vh', display: 'flex',
+          background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
         }}
@@ -1652,7 +1653,7 @@ export default function App() {
     return (
       <div
         style={{
-          background: '#020005', width: '100%', height: '100vh', display: 'flex',
+          background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
           padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
         }}
