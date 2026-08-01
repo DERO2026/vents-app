@@ -65,6 +65,40 @@ export default async function handler(req, res) {
         return res.status(200).json({ received: true });
       }
 
+      // Recovery path: if the client was killed/crashed/lost network between
+      // Paystack charging the card and its own finalize_pending_purchase
+      // call, confirm_ticket_payment below would find no ticket row at all
+      // (it only ever UPDATEs existing rows) and the buyer would be charged
+      // with no way to get a ticket. finalize_pending_purchase creates the
+      // ticket from the payment intent persisted by create_pending_purchase
+      // BEFORE the Paystack popup ever opened (CheckoutScreen.tsx) — it's
+      // idempotent (locks the pending_purchases row FOR UPDATE, no-ops if
+      // already completed), so calling it here is always safe whether or
+      // not the client already got to it. A reference that never went
+      // through create_pending_purchase (e.g. a free ticket, which never
+      // touches Paystack or this webhook, or some other legacy path) simply
+      // has no pending_purchases row — this throws "not found", which is
+      // expected and non-fatal; confirm_ticket_payment below still runs.
+      try {
+        const finalizeRes = await fetch(`${baseUrl}/api/database/rpc/finalize_pending_purchase`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${adminKey}`,
+            apikey: adminKey,
+          },
+          body: JSON.stringify({ p_payment_ref: reference }),
+        });
+        if (!finalizeRes.ok) {
+          const finalizeErr = await finalizeRes.json().catch(() => null);
+          console.warn('[Paystack webhook] finalize_pending_purchase no-op/failed for', reference, '-', finalizeErr?.message || finalizeRes.status);
+        } else {
+          console.log('[Paystack webhook] finalize_pending_purchase ran for reference', reference);
+        }
+      } catch (finalizeErr: any) {
+        console.error('[Paystack webhook] Error calling finalize_pending_purchase:', finalizeErr?.message || finalizeErr);
+      }
+
       // confirm_ticket_payment is SECURITY DEFINER and does the whole thing
       // atomically: look up the ticket by payment_ref, verify the webhook's
       // amount (kobo) exactly matches the ticket's stored amount, no-op if

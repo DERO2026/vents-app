@@ -232,7 +232,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     onSuccess(ticket);
   };
 
-  const handlePay = () => {
+  const handlePay = async () => {
     // Single-flight guard: a fast double-tap (or click-flood on a laggy
     // connection) used to be able to invoke this twice before the Paystack
     // iframe finished opening, spawning two concurrent payment handlers with
@@ -274,29 +274,48 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    const amountKobo = Math.round(total * 100);
-    if (amountKobo <= 0 || isNaN(amountKobo)) {
-      setPayError('Invalid payment amount. Please go back and try again.');
-      return;
-    }
-
     const PaystackPop = (window as any).PaystackPop;
     if (!PaystackPop) {
       setPayError('Payment system not loaded. Please refresh the page and try again.');
       return;
     }
 
-    const reference = `VENTS_${Date.now()}_${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
+    const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
+    const attendees = buildAttendees(purchaserName, payerEmail);
+
+    payingRef.current = true;
+    setPaymentLoading(true);
+
+    // Persist the purchase intent (event, ticket type, attendees, promo, and
+    // the exact amount to charge) server-side BEFORE ever opening Paystack —
+    // this is what lets the webhook finalize the purchase later even if this
+    // client never survives to see the callback. The server also computes
+    // the amount now (not the client), and returns the SAME reference on an
+    // immediate retry of an identical purchase instead of minting a new one,
+    // so a user who thinks their payment failed and taps Pay again can't be
+    // charged twice for the same intent.
+    let reference: string;
+    let amountKobo: number;
+    try {
+      const { data, error } = await insforge.database.rpc('create_pending_purchase', {
+        p_event_id: event.id,
+        p_ticket_type: ticketType.name,
+        p_attendees: attendees,
+        p_promo_code: promoApplied ? promoCode.trim() : null,
+      });
+      if (error) throw error;
+      reference = (data as any)?.payment_ref;
+      amountKobo = Number((data as any)?.amount_kobo);
+      if (!reference || !amountKobo || amountKobo <= 0) throw new Error('Could not prepare this purchase.');
+    } catch (err: any) {
+      payingRef.current = false;
+      setPaymentLoading(false);
+      setPayError(err?.message || 'Could not start checkout. Please try again.');
+      return;
+    }
 
     const rawPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
     const publicKey = rawPublicKey.replace(new RegExp('^\\uFEFF'), '').trim();
-
-    // Lock immediately, before opening the iframe — this is the actual fix:
-    // previously the button stayed enabled (and re-entrant) for the entire
-    // window between this click and the Paystack popup finishing its own
-    // async load.
-    payingRef.current = true;
-    setPaymentLoading(true);
 
     try {
       const handler = PaystackPop.setup({
@@ -319,7 +338,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           ],
         },
         callback: (response: { reference: string }) => {
-          const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
           const ticket: PurchasedTicket = {
             event,
             ticketType,
@@ -329,7 +347,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             totalAmount: total,
             holderName: purchaserName,
             holderEmail: payerEmail,
-            attendees: buildAttendees(purchaserName, payerEmail),
+            attendees,
             promoCode: promoApplied ? promoCode.trim() : undefined,
           };
           // Purchase completion tracked downstream (App.handleTicketPurchase).

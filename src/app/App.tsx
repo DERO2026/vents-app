@@ -1266,33 +1266,34 @@ export default function App() {
         ? ticket.attendees
         : [{ name: ticket.holderName || currentUser.full_name || 'Guest', email: currentUser.email }];
 
-      // No client-side "does the user already have a ticket" pre-check here
-      // — purchase_ticket itself is idempotent on the EXACT payment_ref
-      // (migrations/20260731060000_fix-purchase-ticket-idempotency-key.sql),
-      // so a genuine retry of the same payment safely re-returns the same
-      // ticket ids, while a NEW payment_ref (a real repeat purchase — a
-      // different tier, more seats, buying for a friend) always proceeds to
-      // a real purchase. A pre-check keyed on "any active ticket exists"
-      // would silently skip that second, already-charged purchase.
+      // Paid purchases: the payment intent (event, ticket type, attendees,
+      // promo, amount) was already persisted server-side by
+      // create_pending_purchase BEFORE the Paystack popup ever opened
+      // (CheckoutScreen.tsx), keyed on ticket.ticketId (the server-issued
+      // reference actually charged). finalize_pending_purchase is the same
+      // idempotent ticket-creation logic purchase_ticket used to run here
+      // directly, now reading from that persisted row instead of raw
+      // params — and it's ALSO the exact call the webhook makes if this
+      // client never gets here at all (app killed/crashed/offline right
+      // after Paystack's charge succeeds). Whichever of the two calls it
+      // first wins; the other is a no-op against the same locked row, so
+      // this can never create two ticket sets for one payment.
       //
-      // p_payment_status is no longer accepted from the client — the RPC
-      // derives paid/pending purely from the event's own server-side price,
-      // and only confirm_ticket_payment (webhook-verified) can ever flip a
-      // priced ticket to 'paid'. purchase_ticket also re-validates the promo
-      // code itself (expiry, usage limit, active flag, event eligibility)
-      // rather than trusting CheckoutScreen's earlier "Apply" check — if any
-      // of that has since gone stale, or the event sold out between the
-      // ticket-select screen and this call, the RPC throws and NO ticket is
-      // created. Paystack has already captured the money at this point, so
-      // that failure must never be swallowed into a fake success screen —
-      // see the catch block below.
-      const { data: tokenRows, error: insertError } = await insforge.database.rpc('purchase_ticket_with_tokens', {
-        p_event_id: ticket.event.id,
-        p_ticket_type: ticket.ticketType?.name ?? 'General',
-        p_attendees: attendees,
-        p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
-        p_promo_code: ticket.promoCode || null,
-      });
+      // Free tickets never touch Paystack or pending_purchases — they still
+      // go straight through purchase_ticket_with_tokens with a client-side
+      // reference, unchanged from before.
+      const isFree = (ticket.totalAmount ?? 0) === 0;
+      const { data: tokenRows, error: insertError } = isFree
+        ? await insforge.database.rpc('purchase_ticket_with_tokens', {
+            p_event_id: ticket.event.id,
+            p_ticket_type: ticket.ticketType?.name ?? 'General',
+            p_attendees: attendees,
+            p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+            p_promo_code: ticket.promoCode || null,
+          })
+        : await insforge.database.rpc('finalize_pending_purchase', {
+            p_payment_ref: ticket.ticketId,
+          });
       if (insertError) throw insertError;
 
       const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
