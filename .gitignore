@@ -40,10 +40,13 @@ dist-ssr
 
 .vercel
 
-# Firebase native config — device-registration secret for push
+# Firebase native config — device-registration secrets for push
 # notifications (see IOS_LAUNCH_CHECKLIST.md §5). Download from the
-# Firebase Console, place it locally; never commit it.
+# Firebase Console, place them locally; never commit them. The iOS one is
+# already covered by the blanket `ios/` rule below — listed explicitly too
+# so it stays protected even if that rule is ever narrowed.
 android/app/google-services.json
+ios/App/App/GoogleService-Info.plist
 
 # The whole ios/ project (generated locally via `npx cap add ios`) stays
 # untracked — unlike android/, which is committed because it carries
