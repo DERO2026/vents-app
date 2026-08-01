@@ -99,7 +99,7 @@ export function FlyerLightbox({ images, initialIndex = 0, alt, onClose }: FlyerL
         aria-label="Close"
         onClick={(e) => { e.stopPropagation(); handleClose(); }}
         style={{
-          position: 'absolute', top: '20px', right: '16px',
+          position: 'absolute', top: 'calc(20px + env(safe-area-inset-top))', right: '16px',
           width: '38px', height: '38px', borderRadius: '50%',
           background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer',

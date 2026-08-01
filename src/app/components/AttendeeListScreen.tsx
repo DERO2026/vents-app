@@ -141,19 +141,32 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
   });
 
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  // Replaces window.prompt (reason) + window.confirm + window.alert(error) —
+  // unreliable inside a Capacitor WebView, and jarring where they do work;
+  // every other confirm/error surface in this app uses in-app UI.
+  const [refundTarget, setRefundTarget] = useState<Attendee | null>(null);
+  const [refundReason, setRefundReason] = useState('');
+  const [refundError, setRefundError] = useState<string | null>(null);
 
-  const handleRefund = async (attendee: Attendee) => {
-    const reason = window.prompt(`Reason for refunding ${attendee.name}'s ${attendee.ticketType} ticket? (shown to the attendee)`);
-    if (!reason || !reason.trim()) return;
-    if (!window.confirm(`Refund ${attendee.name}'s ticket? This cancels the ticket and cannot be undone.`)) return;
+  const openRefundDialog = (attendee: Attendee) => {
+    setRefundTarget(attendee);
+    setRefundReason('');
+    setRefundError(null);
+  };
+
+  const confirmRefund = async () => {
+    const attendee = refundTarget;
+    if (!attendee) return;
+    if (!refundReason.trim()) { setRefundError('A reason is required — this is shown to the attendee.'); return; }
 
     setRefundingId(attendee.id);
+    setRefundError(null);
     try {
       const token = await getAuthToken();
       const res = await fetch('/api/wallet/refund-ticket', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ ticket_id: attendee.ticketId, reason: reason.trim() }),
+        body: JSON.stringify({ ticket_id: attendee.ticketId, reason: refundReason.trim() }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Refund failed');
@@ -165,8 +178,9 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
             : a
         )
       );
+      setRefundTarget(null);
     } catch (err: any) {
-      window.alert(err.message || 'Refund failed');
+      setRefundError(err.message || 'Refund failed');
     } finally {
       setRefundingId(null);
     }
@@ -281,7 +295,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                         <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
                           {attendee.paymentStatus === 'paid' && (
                             <button
-                              onClick={() => handleRefund(attendee)}
+                              onClick={() => openRefundDialog(attendee)}
                               disabled={refundingId === attendee.id}
                               title="Refund this ticket"
                               style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(239,68,68,0.1)', border: 'none', borderRadius: '8px', width: '30px', height: '30px', cursor: refundingId === attendee.id ? 'wait' : 'pointer' }}
@@ -303,6 +317,51 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
             )}
           </div>
         </>
+      )}
+
+      {refundTarget && (
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }}
+          onClick={() => { if (refundingId !== refundTarget.id) setRefundTarget(null); }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ background: '#0B0B14', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '20px', width: '100%', maxWidth: '360px' }}
+          >
+            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '6px' }}>
+              Refund {refundTarget.name}'s ticket?
+            </p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '14px' }}>
+              This cancels the {refundTarget.ticketType} ticket and cannot be undone.
+            </p>
+            <textarea
+              value={refundReason}
+              onChange={(e) => setRefundReason(e.target.value)}
+              placeholder="Reason for the refund (shown to the attendee)"
+              rows={3}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', resize: 'none', marginBottom: '8px', boxSizing: 'border-box' }}
+            />
+            {refundError && (
+              <p style={{ color: '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{refundError}</p>
+            )}
+            <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+              <button
+                onClick={() => setRefundTarget(null)}
+                disabled={refundingId === refundTarget.id}
+                style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmRefund}
+                disabled={refundingId === refundTarget.id}
+                style={{ flex: 1, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: '#EF4444', fontSize: '14px', fontWeight: 700, cursor: refundingId === refundTarget.id ? 'wait' : 'pointer' }}
+              >
+                {refundingId === refundTarget.id ? 'Refunding…' : 'Refund Ticket'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

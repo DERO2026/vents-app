@@ -3,18 +3,25 @@
 // preview: a large animated status glyph plus attendee/ticket/event detail on
 // success, or a clear reason on failure. Auto-dismissal is the caller's job.
 
-import { CheckCircle2, XCircle, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, XCircle, AlertTriangle, WifiOff } from 'lucide-react';
 import type { ScanOutcome } from './ticketValidation';
 
 const THEME = {
   valid: { color: '#10B981', glow: 'rgba(16,185,129,0.45)', ring: 'rgba(16,185,129,0.16)' },
   already_scanned: { color: '#F59E0B', glow: 'rgba(245,158,11,0.45)', ring: 'rgba(245,158,11,0.16)' },
   denied: { color: '#EF4444', glow: 'rgba(239,68,68,0.45)', ring: 'rgba(239,68,68,0.16)' },
+  // Deliberately amber, not the "denied" red — a network failure says
+  // nothing about whether the ticket is real, so it must never look
+  // identical to an actual denial at a glance.
+  offline: { color: '#F59E0B', glow: 'rgba(245,158,11,0.45)', ring: 'rgba(245,158,11,0.16)' },
 } as const;
 
 export function ScanResultCard({ outcome }: { outcome: ScanOutcome }) {
   const t = THEME[outcome.status];
-  const Icon = outcome.status === 'valid' ? CheckCircle2 : outcome.status === 'already_scanned' ? AlertTriangle : XCircle;
+  const Icon = outcome.status === 'valid' ? CheckCircle2
+    : outcome.status === 'already_scanned' ? AlertTriangle
+    : outcome.status === 'offline' ? WifiOff
+    : XCircle;
 
   return (
     <div

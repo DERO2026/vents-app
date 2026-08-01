@@ -51,7 +51,10 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
     // Was downloading a plain .txt receipt with no QR — replaced with a real
     // ticket image (title, date/venue, ticket type, and the actual scannable
     // QR) so what's saved is something the user can actually show at a gate.
-    if (saving) return;
+    // Same gap as QRTicket.tsx: without a signed token, ticketImage.ts
+    // falls back to a text placeholder instead of a real QR — the saved
+    // image looks like a ticket but has no scannable code.
+    if (saving || !signedToken) return;
     setSaving(true);
     try {
       const blob = await renderTicketImage({
@@ -344,7 +347,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !signedToken}
             style={{
               flex: 1,
               background: '#090514',
@@ -355,12 +358,12 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               alignItems: 'center',
               justifyContent: 'center',
               gap: '7px',
-              cursor: saving ? 'not-allowed' : 'pointer',
-              opacity: saving ? 0.6 : 1,
+              cursor: (saving || !signedToken) ? 'not-allowed' : 'pointer',
+              opacity: (saving || !signedToken) ? 0.6 : 1,
             }}
           >
             <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>{saving ? 'Saving…' : 'Save'}</span>
+            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save'}</span>
           </button>
           <button
             onClick={handleShare}

@@ -8,6 +8,7 @@ import {
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { AdminActionsTab } from './AdminActionsTab';
 import { extractEventsFromText, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
@@ -68,6 +69,15 @@ function ConfirmModal({
   // exact word (case-insensitive) — the "type CANCEL/REFUND to confirm"
   // guard for the payout split-action work (Block 17).
   typedConfirmationText,
+  // Was window.prompt() called separately BEFORE this modal, which is
+  // unreliable inside a Capacitor WebView. When set, renders a reason
+  // textarea inline and passes its value to onConfirm instead. `requireReason`
+  // additionally blocks confirm until non-empty; `optionalReason` shows the
+  // field but allows an empty reason through (matches the prior window.prompt
+  // behavior where cancelling/leaving it blank still proceeded with null).
+  requireReason,
+  optionalReason,
+  reasonPlaceholder = 'Reason (shown to the affected user)',
   onConfirm,
   onCancel,
 }: {
@@ -76,11 +86,17 @@ function ConfirmModal({
   confirmLabel?: string;
   danger?: boolean;
   typedConfirmationText?: string;
-  onConfirm: () => void;
+  requireReason?: boolean;
+  optionalReason?: boolean;
+  reasonPlaceholder?: string;
+  onConfirm: (reason?: string) => void;
   onCancel: () => void;
 }) {
   const [typedValue, setTypedValue] = useState('');
+  const [reasonValue, setReasonValue] = useState('');
+  const showReasonField = requireReason || optionalReason;
   const typedMatches = !typedConfirmationText || typedValue.trim().toUpperCase() === typedConfirmationText.toUpperCase();
+  const reasonOk = !requireReason || reasonValue.trim().length > 0;
 
   return (
     <div style={{
@@ -110,21 +126,33 @@ function ConfirmModal({
             />
           </div>
         )}
+        {showReasonField && (
+          <div style={{ marginBottom: '20px', textAlign: 'left' }}>
+            <textarea
+              autoFocus
+              value={reasonValue}
+              onChange={(e) => setReasonValue(e.target.value)}
+              placeholder={reasonPlaceholder}
+              rows={3}
+              style={{ width: '100%', background: '#060A12', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', resize: 'none' }}
+            />
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '10px' }}>
           <button onClick={onCancel} style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
             Cancel
           </button>
           <button
-            onClick={onConfirm}
-            disabled={!typedMatches}
+            onClick={() => onConfirm(showReasonField ? reasonValue.trim() : undefined)}
+            disabled={!typedMatches || !reasonOk}
             style={{
               flex: 1,
-              background: !typedMatches ? 'rgba(255,255,255,0.05)' : danger ? 'rgba(239,68,68,0.15)' : 'rgba(168,85,247,0.15)',
-              border: `1px solid ${!typedMatches ? 'rgba(255,255,255,0.1)' : danger ? 'rgba(239,68,68,0.4)' : 'rgba(168,85,247,0.4)'}`,
+              background: (!typedMatches || !reasonOk) ? 'rgba(255,255,255,0.05)' : danger ? 'rgba(239,68,68,0.15)' : 'rgba(168,85,247,0.15)',
+              border: `1px solid ${(!typedMatches || !reasonOk) ? 'rgba(255,255,255,0.1)' : danger ? 'rgba(239,68,68,0.4)' : 'rgba(168,85,247,0.4)'}`,
               borderRadius: '12px', padding: '12px',
-              color: !typedMatches ? '#555C7A' : danger ? '#EF4444' : '#A855F7',
+              color: (!typedMatches || !reasonOk) ? '#555C7A' : danger ? '#EF4444' : '#A855F7',
               fontSize: '14px', fontWeight: 700,
-              cursor: typedMatches ? 'pointer' : 'not-allowed',
+              cursor: (typedMatches && reasonOk) ? 'pointer' : 'not-allowed',
             }}
           >
             {confirmLabel}
@@ -308,9 +336,8 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     }
   };
 
-  const handleReject = async (id: string) => {
-    const reason = window.prompt('Reason for rejecting this payout? (shown to the organizer)');
-    if (!reason || !reason.trim()) return;
+  const handleReject = async (id: string, reason: string) => {
+    if (!reason.trim()) return;
     setActionLoading(id);
     try {
       const token = await getAuthToken();
@@ -351,10 +378,9 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     }
   };
 
-  const handleCancelConfirmed = async (id: string) => {
+  const handleCancelConfirmed = async (id: string, reason: string) => {
     setCancelConfirmId(null);
-    const reason = window.prompt('Reason for cancelling this payout? (required for the audit trail, shown to the organizer)');
-    if (!reason || !reason.trim()) return;
+    if (!reason.trim()) return;
     setActionLoading(id);
     try {
       const token = await getAuthToken();
@@ -544,7 +570,9 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           confirmLabel="Cancel request"
           danger={false}
           typedConfirmationText="CANCEL"
-          onConfirm={() => { const id = rejectConfirmId; setRejectConfirmId(null); handleReject(id); }}
+          requireReason
+          reasonPlaceholder="Reason for rejecting (shown to the organizer)"
+          onConfirm={(reason) => { const id = rejectConfirmId; setRejectConfirmId(null); handleReject(id, reason || ''); }}
           onCancel={() => setRejectConfirmId(null)}
         />
       )}
@@ -555,7 +583,9 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           confirmLabel="Refund funds"
           danger
           typedConfirmationText="REFUND"
-          onConfirm={() => { const id = cancelConfirmId; setCancelConfirmId(null); handleCancelConfirmed(id); }}
+          requireReason
+          reasonPlaceholder="Reason for cancelling (required for the audit trail, shown to the organizer)"
+          onConfirm={(reason) => { const id = cancelConfirmId; setCancelConfirmId(null); handleCancelConfirmed(id, reason || ''); }}
           onCancel={() => setCancelConfirmId(null)}
         />
       )}
@@ -955,7 +985,7 @@ export function AdminDashboardScreen({
     if (!q) return;
     setVcSearching(true);
     try {
-      const like = `%${q}%`;
+      const like = escapePostgrestOrValue(`%${q}%`);
       const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       // public_profiles has no email column, so the "email" half of the
       // placeholder's promise was silently a no-op — query users directly
@@ -1046,7 +1076,9 @@ export function AdminDashboardScreen({
   const [healthResult, setHealthResult] = useState<{ ok: boolean; latencyMs: number; detail: string } | null>(null);
 
   const [confirmModal, setConfirmModal] = useState<null | {
-    title: string; message: string; confirmLabel?: string; danger?: boolean; onConfirm: () => void;
+    title: string; message: string; confirmLabel?: string; danger?: boolean;
+    requireReason?: boolean; optionalReason?: boolean; reasonPlaceholder?: string;
+    onConfirm: (reason?: string) => void;
   }>(null);
 
   // ── Load users ───────────────────────────────────────────────────────────────
@@ -1061,7 +1093,7 @@ export function AdminDashboardScreen({
         .order('created_at', { ascending: false });
 
       if (searchQuery.trim()) {
-        const like = `%${searchQuery.trim().toLowerCase()}%`;
+        const like = escapePostgrestOrValue(`%${searchQuery.trim().toLowerCase()}%`);
         q = q.or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like}`);
       }
 
@@ -1392,20 +1424,21 @@ export function AdminDashboardScreen({
   };
 
   const handleSoftDelete = (u: UserRow) => {
-    const reason = window.prompt(`Reason for deleting @${u.username || u.email}? (kept on the account record for the audit trail)`);
-    if (reason === null) return; // cancelled
     setConfirmModal({
       title: 'Delete Account',
       message: `Soft-delete @${u.username || u.email}? They will be blocked from login. You can reinstate them later.`,
       confirmLabel: 'Delete',
       danger: true,
-      onConfirm: async () => {
+      optionalReason: true,
+      reasonPlaceholder: 'Reason (kept on the account record for the audit trail, optional)',
+      onConfirm: async (reason) => {
         setConfirmModal(null);
         setBusyId(u.id);
+        const reasonOrNull = reason?.trim() || null;
         await submitOrExecute('soft_delete_user',
-          { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { reason: reason.trim() || null }, previous: { status: u.status }, changes: { status: 'deleted', reason: reason.trim() || null } },
+          { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { reason: reasonOrNull }, previous: { status: u.status }, changes: { status: 'deleted', reason: reasonOrNull } },
           async () => {
-            const { error } = await insforge.database.rpc('admin_soft_delete_user', { p_user_id: u.id, p_reason: reason.trim() || null });
+            const { error } = await insforge.database.rpc('admin_soft_delete_user', { p_user_id: u.id, p_reason: reasonOrNull });
             if (error) throw error;
             // Deleted users move to the dedicated Deleted Users tab.
             setUsers(prev => prev.filter(x => x.id !== u.id));
@@ -1685,6 +1718,9 @@ export function AdminDashboardScreen({
           message={confirmModal.message}
           confirmLabel={confirmModal.confirmLabel}
           danger={confirmModal.danger}
+          requireReason={confirmModal.requireReason}
+          optionalReason={confirmModal.optionalReason}
+          reasonPlaceholder={confirmModal.reasonPlaceholder}
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal(null)}
         />

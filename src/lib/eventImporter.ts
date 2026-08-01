@@ -89,8 +89,14 @@ const PUBLISH_TIMEOUT_MS = 12000;
 // (matches CreateEventScreen's own required fields). Anything less publishes
 // as a draft instead of guessing — the admin completes it via the normal
 // Edit Event screen, the same surface a manual creation would use.
-function isImportComplete(event: ImportedEvent): boolean {
-  return !!(event.title?.trim() && event.venue?.trim() && event.date && isKnownState(event.state) && event.city?.trim());
+//
+// Takes the SANITIZED state/city (post isKnownState/isKnownCity), not the
+// raw AI-guessed event.state/event.city — checking the raw values meant an
+// event with a bogus, rejected city could still be marked "complete" and
+// publish straight to 'live' with an empty location field, since the row
+// actually written uses the sanitized (possibly blanked) city.
+function isImportComplete(event: ImportedEvent, sanitizedState: string, sanitizedCity: string): boolean {
+  return !!(event.title?.trim() && event.venue?.trim() && event.date && sanitizedState && sanitizedCity);
 }
 
 async function publishOne(event: ImportedEvent, organizerId: string, database: any): Promise<{ ok: true; draft: boolean } | { ok: false; error: string }> {
@@ -109,7 +115,13 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
   // field visibly prompts the admin to fill it in during review instead of
   // silently shipping a bad location.
   const state = isKnownState(event.state) ? event.state : '';
-  const city = isKnownCity(state, event.city) || (state && event.city?.trim()) ? event.city.trim() : '';
+  // Was `isKnownCity(...) || (state && event.city?.trim()) ? ... : ''` —
+  // operator precedence made the whole `A || B` the ternary condition, so
+  // ANY non-empty city was accepted as long as a state was set, defeating
+  // the isKnownCity check the comment above promises. Also threw if
+  // isKnownCity returned true for an undefined event.city. Only trust the
+  // city when isKnownCity itself confirms it.
+  const city = isKnownCity(state, event.city) ? (event.city || '').trim() : '';
   const venue = (event.venue || '').trim();
   const address = (event.address || '').trim();
 
@@ -129,7 +141,7 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
     description: '',
   }];
 
-  const complete = isImportComplete(event);
+  const complete = isImportComplete(event, state, city);
 
   const row = {
     title: event.title,
@@ -156,6 +168,25 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
   };
 
   for (let attempt = 0; attempt < 2; attempt++) {
+    // withTimeoutFallback only abandons the wait, not the request — a slow
+    // insert from a timed-out first attempt can still land server-side.
+    // Without this check, the retry below would insert this event a
+    // second time. There's no external reference to key an idempotency
+    // check on (unlike ticket purchases' payment_ref), so use the same
+    // organizer_id + title + event_date + location match the manual
+    // CreateEventScreen publish path uses for the identical race.
+    if (attempt > 0) {
+      const { data: recentDupe } = await database
+        .from('events')
+        .select('id')
+        .eq('organizer_id', organizerId)
+        .eq('title', row.title)
+        .eq('location', row.location)
+        .eq('event_date', row.event_date)
+        .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString())
+        .limit(1);
+      if (recentDupe && recentDupe[0]?.id) return { ok: true, draft: !complete };
+    }
     try {
       const { error } = await withTimeoutFallback(
         Promise.resolve(database.from('events').insert(row)),

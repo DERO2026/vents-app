@@ -8,6 +8,7 @@ import {
 import { Event } from './types';
 import { insforge } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
+import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
@@ -856,7 +857,7 @@ export function HomeScreen({
     setLoadingPeople(true);
     const t = setTimeout(async () => {
       try {
-        const like = `%${q.toLowerCase()}%`;
+        const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
         const { data } = await insforge.database
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
@@ -1024,15 +1025,6 @@ export function HomeScreen({
     .sort((a, b) => (b.bookingsCount || 0) - (a.bookingsCount || 0))
     .slice(0, 5)
     .sort(byNearestDate);
-
-  // Recently created events (sort by created_at DESC)
-  const recentlyCreatedEvents = [...dbEvents]
-    .sort((a, b) => {
-      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return timeB - timeA;
-    })
-    .slice(0, 5);
 
   // Featured events: selection stays isFeatured + upcoming, but display
   // order is now nearest-date-first (previously randomized), and the

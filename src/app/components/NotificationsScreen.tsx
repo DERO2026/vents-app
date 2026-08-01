@@ -74,6 +74,30 @@ export function NotificationsScreen({
     fetchNotifications();
   }, [currentUser]);
 
+  // The unread badge (App.tsx) updates live via this same channel/event;
+  // this screen only fetched once per mount, so a notification arriving
+  // while it was open never appeared until the user backed out and back in.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const channel = `user:${currentUser.id}`;
+    let subscribed = false;
+    let torn = false;
+    insforge.realtime.connect().then(() => {
+      insforge.realtime.subscribe(channel).then(() => {
+        if (torn) { insforge.realtime.unsubscribe(channel); return; }
+        subscribed = true;
+      });
+    }).catch(() => {});
+    const onNotif = () => fetchNotifications();
+    insforge.realtime.on('new_notification', onNotif);
+    return () => {
+      torn = true;
+      insforge.realtime.off?.('new_notification', onNotif);
+      if (subscribed) insforge.realtime.unsubscribe(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
   const unreadCount = items.filter((n) => !n.read).length;
 
   const markAllRead = async () => {

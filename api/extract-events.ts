@@ -48,6 +48,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const today = new Date().toISOString().split('T')[0];
 
   try {
+    // The vision branch (handleVisionCrop below) already has a timeout;
+    // this one didn't. Without it, a slow extraction ran past Vercel's
+    // function timeout, which returns an HTML error page — eventImporter.ts
+    // then threw a raw "Unexpected token '<'" trying to JSON.parse it,
+    // surfaced to the admin as an opaque parse error instead of a timeout.
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 25000);
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -55,6 +62,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
       },
+      signal: ctrl.signal,
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 4000,
@@ -87,6 +95,7 @@ ${text}`
         }]
       })
     });
+    clearTimeout(timer);
 
     if (!response.ok) {
       const error = await response.text();
@@ -117,6 +126,9 @@ ${text}`
 
     return res.status(200).json({ events: (events as any[]).filter((e: any) => e && e.title) });
   } catch (error: any) {
+    if (error?.name === 'AbortError') {
+      return res.status(504).json({ error: 'Extraction took too long. Try a shorter piece of text.' });
+    }
     return res.status(500).json({ error: error.message || 'Unknown error' });
   }
 }

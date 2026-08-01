@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "env": { "VITE_SENTRY_DSN": "https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744", "VITE_PAYSTACK_PUBLIC_KEY": "pk_live_25b53ec01a3a6c46b65690fc355c267d403f26f6", "VITE_POSTHOG_KEY": "phc_uVuzd3hGprUYf4QnQ76JsAUwd9aGHKF7U8MH3aC3J9c4" },
+  "env": { "VITE_SENTRY_DSN": "https://e3a6f5547429870f18a56c99ca40c942@o4511632583753728.ingest.us.sentry.io/4511632636575744", "VITE_PAYSTACK_PUBLIC_KEY": "pk_live_25b53ec01a3a6c46b65690fc355c267d403f26f6", "VITE_POSTHOG_KEY": "phc_uVuzd3hGprUYf4QnQ76JsAUwd9aGHKF7U8MH3aC3J9c4", "VITE_INSFORGE_URL": "https://8git8iib.us-east.insforge.app", "VITE_INSFORGE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3OC0xMjM0LTU2NzgtOTBhYi1jZGVmMTIzNDU2NzgiLCJlbWFpbCI6ImFub25AaW5zZm9yZ2UuY29tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA5NTM2NDJ9.pGL76BJ9poIPoKvXsZKA2GD-vjZSveWytiSQ4j9lcz0", "VITE_GOOGLE_PLACES_API_KEY": "AIzaSyA7JXjTVpg2f4DTm7VNwI9kNwNTNhhuNfk" },
   "rewrites": [
     { "source": "/api/v1/(.*)", "destination": "/api/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },

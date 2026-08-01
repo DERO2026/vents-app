@@ -802,6 +802,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           ? 'Network error. Check your connection and try again.'
           // Fall back to the real backend message instead of a dead-end
           // generic string — this is what made the last outage undiagnosable.
+          // But never show a raw DB-shaped error (constraint names, column
+          // names, SQL keywords) straight to the user — those are still
+          // fully captured above via console.error/Sentry for diagnosis;
+          // the user just needs an honest "something went wrong", not
+          // `duplicate key value violates unique constraint "users_username_key"`.
+          : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
+          ? 'Signup failed. Please check your details and try again.'
           : (msg.trim() || 'Signup failed. Please check your details and try again.');
         setErrorMessage(safe);
         return;

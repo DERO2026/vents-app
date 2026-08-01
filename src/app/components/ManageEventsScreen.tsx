@@ -67,6 +67,11 @@ export function ManageEventsScreen({
   const [deleting, setDeleting] = useState(false);
   const [toggling, setToggling] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ id: string; text: string; error?: boolean } | null>(null);
+  // Confirmation gate specifically for hiding a LIVE event that already has
+  // sold tickets — flipping it to draft pulls it from every public feed
+  // instantly, with no warning to the organizer and no notice to buyers who
+  // already hold a ticket for it.
+  const [hideWarningTarget, setHideWarningTarget] = useState<OrganizerEventOverview | null>(null);
 
   const filtered = useMemo(
     () => events.filter((e) => !query || e.title.toLowerCase().includes(query.toLowerCase())),
@@ -80,6 +85,14 @@ export function ManageEventsScreen({
   }
 
   async function toggleHide(event: OrganizerEventOverview) {
+    // Only warn on the live -> draft direction, and only when it actually
+    // has buyers — going draft -> live, or hiding an event nobody has
+    // bought into yet, needs no extra confirmation.
+    if (event.status !== 'draft' && (event.soldCount > 0 || event.soldQuantity > 0) && hideWarningTarget?.id !== event.id) {
+      setHideWarningTarget(event);
+      return;
+    }
+    setHideWarningTarget(null);
     setToggling(event.id);
     const newStatus = event.status === 'draft' ? 'live' : 'draft';
     try {
@@ -342,6 +355,25 @@ export function ManageEventsScreen({
                 <span style={{ color: item.color === C.red ? C.red : C.text, fontSize: '15px', fontWeight: 600 }}>{item.label}</span>
               </button>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Hide-as-draft warning (only when the event already has sold tickets) */}
+      {hideWarningTarget && (
+        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', animation: 'ventsFadeIn 0.15s ease-out' }}>
+          <div style={{ background: C.card, border: '1px solid rgba(245,158,11,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '340px' }}>
+            <EyeOff size={32} color="#F59E0B" style={{ marginBottom: '12px' }} />
+            <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Hide an event with sold tickets?</p>
+            <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+              "{hideWarningTarget.title}" has {hideWarningTarget.soldQuantity || hideWarningTarget.soldCount} ticket(s) already sold. Hiding it removes the event page from every public feed immediately — ticket holders will lose access to the event details and won't be notified.
+            </p>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => setHideWarningTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => toggleHide(hideWarningTarget)} style={{ flex: 1, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '12px', padding: '12px', color: '#F59E0B', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+                Hide Anyway
+              </button>
+            </div>
           </div>
         </div>
       )}

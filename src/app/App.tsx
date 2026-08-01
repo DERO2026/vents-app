@@ -175,6 +175,22 @@ export default function App() {
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
   const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
+  // A ?event=/?user= deep link fetch is async and can resolve after the
+  // splash routing effect below has already flipped away from 'splash' —
+  // that's harmless on its own (the deep link's setScreen call still wins,
+  // last write applies regardless of order), but the splash effect could
+  // otherwise route to home/welcome WHILE the fetch is still in flight, and
+  // if that fetch then fails or the event is missing/deleted, the user is
+  // left on home with the URL already cleaned and no way to retry or even
+  // know a link was intended. This ref blocks the splash effect from
+  // routing away until any in-flight deep link has resolved one way or the
+  // other, and appToastError surfaces a real message on failure instead of
+  // silence.
+  // Real state, not a ref — the splash routing effect below needs to
+  // re-evaluate once a pending deep link resolves, which a ref's mutation
+  // alone can't trigger.
+  const [deepLinkPending, setDeepLinkPending] = useState(false);
+  const [appToastError, setAppToastError] = useState<string | null>(null);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   // Kill switch flags (Block 17) — scoped feature disables, distinct from
@@ -369,15 +385,22 @@ export default function App() {
         if (eventDeepLink) {
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
-          // Fetch event from DB and navigate (mapDbEventToFrontend is statically imported)
-          insforge.database
-            .from('events')
-            .select('*')
-            .eq('id', eventDeepLink)
-            .maybeSingle()
-            .then(({ data: evtData, error: evtError }) => {
+          setDeepLinkPending(true);
+          // Fetch event from DB and navigate (mapDbEventToFrontend is
+          // statically imported). Wrapped in Promise.resolve — the
+          // PostgREST query builder is a thenable, not a real Promise, so
+          // it doesn't reliably support .finally().
+          Promise.resolve(
+            insforge.database
+              .from('events')
+              .select('*')
+              .eq('id', eventDeepLink)
+              .maybeSingle()
+          )
+            .then(({ data: evtData, error: evtError }: any) => {
               if (evtError) {
                 console.error('Failed to load event from deep link:', evtError);
+                setAppToastError('Could not open that event link. Please try again.');
                 return;
               }
               // A deleted event is still readable by its own organizer/admin
@@ -386,8 +409,14 @@ export default function App() {
               if (evtData && !evtData.deleted_at) {
                 setSelectedEvent(mapDbEventToFrontend(evtData));
                 setScreen('event-details');
+              } else {
+                setAppToastError('This event is no longer available.');
               }
-            }, (err) => console.error('Deep link event fetch failed:', err));
+            }, (err: any) => {
+              console.error('Deep link event fetch failed:', err);
+              setAppToastError('Could not open that event link. Please try again.');
+            })
+            .finally(() => { setDeepLinkPending(false); });
         }
 
         // Intercept profile deep links: ?user=<userId> — the format both
@@ -399,16 +428,26 @@ export default function App() {
         if (userDeepLink) {
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
-          insforge.database
-            .from('public_profiles')
-            .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
-            .eq('id', userDeepLink)
-            .maybeSingle()
-            .then(({ data: userData, error: userError }) => {
-              if (userError || !userData) return;
+          setDeepLinkPending(true);
+          Promise.resolve(
+            insforge.database
+              .from('public_profiles')
+              .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+              .eq('id', userDeepLink)
+              .maybeSingle()
+          )
+            .then(({ data: userData, error: userError }: any) => {
+              if (userError || !userData) {
+                setAppToastError('This profile is no longer available.');
+                return;
+              }
               setSelectedUser(mapDbUserToUserProfile(userData));
               setScreen('user-profile');
-            }, (err) => console.error('Deep link user fetch failed:', err));
+            }, (err: any) => {
+              console.error('Deep link user fetch failed:', err);
+              setAppToastError('Could not open that profile link. Please try again.');
+            })
+            .finally(() => { setDeepLinkPending(false); });
         }
 
         // 2. Fetch user session.
@@ -648,7 +687,10 @@ export default function App() {
 
   // Splash Routing Effect
   useEffect(() => {
-    if (screen === 'splash' && splashMinTimePassed && !authLoading) {
+    // Waits for any in-flight ?event=/?user= deep link fetch — otherwise
+    // this could route to home/welcome while the fetch is still running,
+    // and if it later fails, the URL is already cleaned with no way back.
+    if (screen === 'splash' && splashMinTimePassed && !authLoading && !deepLinkPending) {
       if (currentUser) {
         if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
           setUserRole('attendee');
@@ -674,7 +716,13 @@ export default function App() {
         }
       }
     }
-  }, [screen, splashMinTimePassed, authLoading, currentUser]);
+  }, [screen, splashMinTimePassed, authLoading, currentUser, deepLinkPending]);
+
+  useEffect(() => {
+    if (!appToastError) return;
+    const t = setTimeout(() => setAppToastError(null), 5000);
+    return () => clearTimeout(t);
+  }, [appToastError]);
 
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
@@ -1389,6 +1437,10 @@ export default function App() {
       setSavedEvents((prev) =>
         isSaved ? [...prev, eventId] : prev.filter((id) => id !== eventId)
       );
+      // Previously the heart just silently flicked back with no
+      // explanation — reusing the same lightweight banner ?event=/?user=
+      // deep-link failures use.
+      setAppToastError(isSaved ? "Couldn't remove from saved. Please try again." : "Couldn't save event. Please try again.");
     }
   }, [currentUser, savedEvents]);
 
@@ -1625,6 +1677,24 @@ export default function App() {
         fontFamily: 'Inter, sans-serif',
       }}
     >
+      {appToastError && (
+        <div
+          style={{
+            position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 10000, background: '#EF4444', borderRadius: '12px', padding: '10px 18px',
+            display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          }}
+        >
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{appToastError}</span>
+          <button
+            onClick={() => setAppToastError(null)}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, lineHeight: 1, padding: 0 }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
       <style>{`
         .light-theme { color-scheme: light; }
         .phone-frame {

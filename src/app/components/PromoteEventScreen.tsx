@@ -130,7 +130,13 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           if (onPromoted) onPromoted();
         } catch (err: any) {
           console.error('Failed to activate event promotion:', err);
-          setActivationError(err?.message || 'Payment succeeded but activation failed. Contact support@getvents.com with your reference: ' + response.reference);
+          // err?.message is set from the API's own error response above and
+          // is almost always truthy, so `err?.message || '...reference: X'`
+          // never actually reached the reference — the one thing the user
+          // needs to quote for support when a real payment has gone through
+          // with no promotion activated.
+          const base = err?.message || 'Payment succeeded but activation failed.';
+          setActivationError(`${base} Contact support@getvents.com with your reference: ${response.reference}`);
         } finally {
           setLoading(false);
         }

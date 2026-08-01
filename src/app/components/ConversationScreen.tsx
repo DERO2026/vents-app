@@ -176,18 +176,29 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     navigator.geolocation.getCurrentPosition(
       async pos => {
         const { latitude: lat, longitude: lng } = pos.coords;
-        await insforge.database.from('direct_messages').insert({
+        const { error } = await insforge.database.from('direct_messages').insert({
           sender_id: currentUser.id, recipient_id: otherUser.id,
           event_id: eventId || null,
           body: JSON.stringify({ lat, lng, label: 'Current Location' }),
           media_type: 'location',
         });
+        // Was unchecked — a failed insert looked identical to a successful
+        // send, since load() below always ran regardless.
+        if (error) {
+          console.error('Failed to send location:', error);
+          setVoiceToast("Couldn't send location. Please try again.");
+          setTimeout(() => setVoiceToast(null), 3000);
+          return;
+        }
         await load();
       },
-      () => {
-        setVoiceToast('Location permission denied');
+      (err) => {
+        // No timeout option previously — getCurrentPosition could hang
+        // indefinitely on Android with no feedback at all.
+        setVoiceToast(err.code === err.TIMEOUT ? 'Could not get your location. Try again.' : 'Location permission denied');
         setTimeout(() => setVoiceToast(null), 3000);
-      }
+      },
+      { timeout: 10000 }
     );
   }, [currentUser.id, otherUser.id, eventId, locationSharingEnabled]);
 

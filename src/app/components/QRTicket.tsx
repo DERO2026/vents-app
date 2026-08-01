@@ -103,7 +103,12 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     // so what downloads is what the user expects to be able to show at the
     // door. Deliberately does NOT include the raw ticket_id or signed token
     // as text anywhere; only the rendered QR image carries the credential.
-    if (saving) return;
+    // Was reachable before the signed token existed — ticketImage.ts falls
+    // back to a text placeholder instead of a real QR when there's no
+    // token, so the saved image looked identical to a real ticket but had
+    // no scannable code (usually masked by the offline cache being warm,
+    // which is why this went unnoticed).
+    if (saving || !signedToken) return;
     setSaving(true);
     setSaveError(false);
     let failed = false;
@@ -333,19 +338,19 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="flex gap-3">
           <button
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || !signedToken}
             className="flex-1 flex items-center justify-center gap-2"
             style={{
               height: '50px',
               background: '#090514',
               borderRadius: '14px',
               border: '1px solid rgba(255,255,255,0.08)',
-              opacity: saving ? 0.6 : 1,
-              cursor: saving ? 'not-allowed' : 'pointer',
+              opacity: (saving || !signedToken) ? 0.6 : 1,
+              cursor: (saving || !signedToken) ? 'not-allowed' : 'pointer',
             }}
           >
             <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{saving ? 'Saving…' : 'Save Ticket'}</span>
+            <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save Ticket'}</span>
           </button>
           <button
             onClick={onGoHome}

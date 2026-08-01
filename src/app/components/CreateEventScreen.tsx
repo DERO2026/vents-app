@@ -26,6 +26,7 @@ interface CreateEventScreenProps {
 }
 
 const MAX_GALLERY_FLIERS = 4;
+const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -337,6 +338,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       e.target.value = '';
     }
 
+    // Previously only checked file size — a HEIC (common on iPhone camera
+    // rolls) or PDF picked from Files would sail past this and only fail
+    // deep inside the crop pipeline as an opaque "Could not crop this
+    // image", with no indication of what was actually wrong with the file.
+    if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+      setErrorMessage('Please choose a JPG, PNG, or WEBP image.');
+      return;
+    }
+
     if (file.size > 15 * 1024 * 1024) {
       setErrorMessage('Image file must be under 15MB');
       return;
@@ -355,6 +365,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     const file = e.target.files?.[0];
     if (!file) return;
     if (e.target) e.target.value = '';
+    if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
+      setErrorMessage('Please choose a JPG, PNG, or WEBP image.');
+      return;
+    }
     if (file.size > 15 * 1024 * 1024) {
       setErrorMessage('Image file must be under 15MB');
       return;
@@ -393,6 +407,56 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
       await getAuthToken();
+
+      // withTimeoutFallback below only abandons the WAIT, not the underlying
+      // request — a genuinely slow insert can still land server-side after
+      // the client has already shown "taking too long, try again." If the
+      // user then retries (this same submitEvent call again), that used to
+      // insert a second copy of the event. There's no payment_ref-style
+      // idempotency key here (unlike ticket purchases), so instead check
+      // for an event this organizer just created with this exact
+      // title/date/venue in the last 2 minutes — if the earlier "failed"
+      // attempt actually went through, treat it as the successful publish
+      // rather than inserting again.
+      const { data: recentDupe } = await insforge.database
+        .from('events')
+        .select('id')
+        .eq('organizer_id', currentUser.id)
+        .eq('title', sanitize(title))
+        .eq('location', locationString)
+        .eq('event_date', eventTimestamp)
+        .gte('created_at', new Date(Date.now() - 2 * 60 * 1000).toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (recentDupe && recentDupe[0]?.id) {
+        const createdEvent: OrganizerEvent = {
+          id: recentDupe[0].id,
+          title: title.trim(),
+          category,
+          description: description.trim(),
+          date,
+          startTime,
+          venue: venue.trim(),
+          city: city.trim(),
+          capacity,
+          ticketName: ticketTypes[0]?.name || 'Regular',
+          ticketPrice: ticketTypes[0]?.price || '0',
+          ticketQty: ticketTypes[0]?.quantity || '500',
+          contactPhone: showPhone ? contactPhone : '',
+          showPhone,
+          status: eventStatus,
+          createdAt: Date.now(),
+        };
+        if (eventStatus === 'live') {
+          confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
+          publishedEventRef.current = createdEvent;
+          setPublished(true);
+        } else {
+          setTimeout(() => onCreated(createdEvent), 500);
+        }
+        return;
+      }
 
       // Failsafe: a hung insert (flaky connection) must never leave the
       // user stuck on the publish button forever.
@@ -582,6 +646,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setErrorMessage('Please select an event date.');
         return;
       }
+      // Nothing previously rejected a date in the past. Every public feed
+      // filters on event_date >= today, so a fat-fingered year silently
+      // published an event that was instantly invisible everywhere, with
+      // no error telling the organizer why.
+      if (date < new Date().toISOString().split('T')[0]) {
+        setErrorMessage('Event date can\'t be in the past.');
+        return;
+      }
       if (!startTime) {
         setErrorMessage('Please select a start time.');
         return;
@@ -621,6 +693,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       }
       setStep(4);
     } else if (step === 4) {
+      // A flyer wasn't required at all — a published event could carry no
+      // image_url and fall back to a generic stock photo on every card.
+      // Drafts are private and unpublished, so this only gates going live.
+      if (!imageUrl) {
+        setErrorMessage('Please add a flyer before publishing.');
+        return;
+      }
       if (editEventId) await saveEditedEvent();
       else await submitEvent('live');
     }

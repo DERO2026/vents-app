@@ -9,7 +9,7 @@
 
 import { insforge, getAuthToken } from '../../../lib/insforge';
 
-export type ScanStatus = 'valid' | 'already_scanned' | 'denied';
+export type ScanStatus = 'valid' | 'already_scanned' | 'denied' | 'offline';
 
 export interface ScanOutcome {
   status: ScanStatus;
@@ -123,10 +123,22 @@ export async function validateTicket(
   } catch (err: any) {
     const raw = String(err?.message || '');
     if (/verify_timeout/.test(raw)) {
-      return { status: 'denied', headline: 'CONNECTION SLOW', errorMsg: 'Network is slow — try again.' };
+      return { status: 'offline', headline: 'CONNECTION SLOW', errorMsg: 'Network is slow — try again.' };
     }
     if (raw.includes('rate_limited')) {
       return { status: 'denied', headline: 'SLOW DOWN', errorMsg: 'Scanning too fast — pause a moment and try again.' };
+    }
+    // A network-layer failure (dropped Wi-Fi, DNS hiccup, offline) throws a
+    // generic fetch/TypeError, not a structured server response describing
+    // a real denial reason. Rendering that identically to "ENTRY DENIED"
+    // makes a legitimate ticket and a forged one look the same at the
+    // door — the one thing a door staffer must never be told incorrectly.
+    // This also stops the raw error string (which could be a stack-trace-
+    // shaped message) from leaking onto the scan screen.
+    const isNetworkError = /failed to fetch|networkerror|network request failed|load failed|internet|err_network/i.test(raw)
+      || err?.name === 'TypeError';
+    if (isNetworkError) {
+      return { status: 'offline', headline: 'OFFLINE — RETRY', errorMsg: 'No connection. Check your network and scan again.' };
     }
     return { status: 'denied', headline: 'ENTRY DENIED', errorMsg: raw || 'Could not verify. Try again.' };
   }

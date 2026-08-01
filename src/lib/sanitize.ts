@@ -1,3 +1,14 @@
+// PostgREST's .or()/.and() filter DSL uses commas to separate conditions and
+// parentheses for grouping — a raw search value containing either (e.g. a
+// user typing "Dre, DJ") breaks the filter string, causing a 400 that gets
+// silently swallowed by the caller's try/catch and shows zero results with
+// no error. PostgREST supports double-quoting a value to escape reserved
+// characters inside embedded filters; use this wherever a search value is
+// interpolated into a `.or(...)` template string.
+export function escapePostgrestOrValue(value: string): string {
+  return `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+}
+
 /** Strip HTML tags and null bytes from user-supplied text. */
 export function sanitize(value: string): string {
   return value

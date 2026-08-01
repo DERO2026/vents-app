@@ -4,6 +4,7 @@ import { Search, X, CheckCircle, MessageCircle } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 import { SkeletonCard } from './SkeletonCard';
+import { escapePostgrestOrValue } from '../../lib/sanitize';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -123,7 +124,7 @@ export function ExploreScreen({
     setLoadingUsers(true);
     const t = setTimeout(async () => {
       try {
-        const like = `%${q.toLowerCase()}%`;
+        const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
         const { data } = await insforge.database
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
