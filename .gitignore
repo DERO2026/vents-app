@@ -40,30 +40,28 @@ dist-ssr
 
 .vercel
 
-# Firebase native config — device-registration secrets for push
-# notifications (see IOS_LAUNCH_CHECKLIST.md §5). Download these from the
-# Firebase Console per-platform and place them locally; never commit them.
+# Firebase native config — device-registration secret for push
+# notifications (see IOS_LAUNCH_CHECKLIST.md §5). Download from the
+# Firebase Console, place it locally; never commit it.
 android/app/google-services.json
-ios/App/App/GoogleService-Info.plist
 
-# Native build outputs — the android/ and (once `npx cap add ios` is run)
-# ios/ project sources ARE committed (they carry intentional native config:
-# AndroidManifest.xml intent-filters, Info.plist keys, entitlements, signing
-# settings), but generated build artifacts under them never should be.
-# android/ already has its own nested .gitignore covering build/, .gradle/,
-# etc. — these are kept here too for visibility and to cover ios/, which
-# has no such file yet.
+# The whole ios/ project (generated locally via `npx cap add ios`) stays
+# untracked — unlike android/, which is committed because it carries
+# intentional native config (AndroidManifest.xml intent-filters,
+# strings.xml). Any equivalent iOS-side config (Info.plist keys,
+# entitlements, signing) lives only on the machine that built it; redo
+# IOS_LAUNCH_CHECKLIST.md's steps if the project needs regenerating
+# elsewhere.
+ios/
+
+# Native build outputs — android/ is committed, but generated build
+# artifacts under it never should be. android/ already has its own nested
+# .gitignore covering build/, .gradle/, etc.; kept here too for visibility.
 android/build/
 android/app/build/
 android/.gradle/
 android/local.properties
 android/app/release/
-ios/App/Pods/
-ios/App/build/
-ios/App/DerivedData/
-ios/App/App/output/
-ios/**/*.xcuserstate
-ios/**/xcuserdata/
 *.ipa
 *.apk
 *.aab
