@@ -187,3 +187,60 @@ div[style*="rgba(6,10,18,0.3) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,1) 100%"] 
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
+
+/* ── Legal pages (/privacy, /terms, /refunds) ──────────────────────────────────
+   These are plain server-navigated pages (main.tsx renders them instead of the
+   app shell), not screens inside the app's own internal-scroll SPA. They must
+   behave like a normal web page — the html/body scroll lock and gesture
+   restrictions above exist for the app shell's own custom-scrolled screens and
+   actively fight native touch/mouse wheel scrolling here, so this class (set
+   on <html> before render, see main.tsx) unwinds them instead of patching
+   scroll behavior with a JS scrollbar/observer. */
+html.legal-scroll,
+html.legal-scroll body,
+html.legal-scroll #root {
+  position: static;
+  overflow: visible;
+  height: auto;
+  overscroll-behavior: auto;
+  touch-action: auto;
+}
+html.legal-scroll body {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.legal-grid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 48px;
+  align-items: start;
+}
+.legal-toc {
+  position: sticky;
+  top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.legal-toc a {
+  color: #8B8FA8;
+  font-size: 13px;
+  text-decoration: none;
+  padding: 6px 10px;
+  border-radius: 8px;
+  line-height: 1.4;
+}
+.legal-toc a:hover {
+  color: #F0F0FF;
+  background: rgba(168, 85, 247, 0.08);
+}
+@media (max-width: 860px) {
+  .legal-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+  .legal-toc {
+    display: none;
+  }
+}
