@@ -19,6 +19,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
@@ -572,6 +573,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [phone, setPhone] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [stateValue, setStateValue] = useState('');
+  const [showStateModal, setShowStateModal] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -968,16 +970,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Location</p>
-                <select
+                <PickerField
                   value={stateValue}
-                  onChange={(e) => setStateValue(e.target.value)}
-                  style={{ ...inputStyle, cursor: 'pointer', appearance: 'none' as const }}
-                >
-                  <option value="">Select your state</option>
-                  {NIGERIA_STATES.map((st) => (
-                    <option key={st.name} value={st.name}>{st.name}</option>
-                  ))}
-                </select>
+                  placeholder="Select your state"
+                  onOpen={() => setShowStateModal(true)}
+                />
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Bio</p>
@@ -1029,6 +1026,17 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
           aspect={16 / 9}
           cropShape="rect"
           title="Crop Cover Photo"
+        />
+      )}
+
+      {showStateModal && (
+        <PickerSheet
+          title="Select State"
+          searchPlaceholder="Search state..."
+          value={stateValue}
+          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          onSelect={(v) => { setStateValue(v); setShowStateModal(false); }}
+          onClose={() => setShowStateModal(false)}
         />
       )}
     </div>

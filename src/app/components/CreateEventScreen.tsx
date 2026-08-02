@@ -1,5 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, Search, X, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, X } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
@@ -16,6 +16,7 @@ import { hasCapability } from '../../lib/permissions';
 import { LocationPicker } from './LocationPicker';
 import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
 import { REGION } from '../../lib/regionConfig';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -73,7 +74,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
   const [showStateModal, setShowStateModal] = useState(false);
-  const [stateSearchQuery, setStateSearchQuery] = useState('');
+  const [showCityModal, setShowCityModal] = useState(false);
   const [capacity, setCapacity] = useState('');
   
   // Tickets states
@@ -119,6 +120,16 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const galleryFileInputRef = useRef<HTMLInputElement>(null);
+  const stepContentRef = useRef<HTMLDivElement>(null);
+
+  // The step-content scroll container is one persistent DOM node shared by
+  // all four steps (only its children swap) — without this, moving between
+  // a long step and a short one left the new step rendered mid-scroll or
+  // jumped as the browser clamped the stale scrollTop to the new (shorter)
+  // scrollHeight, reading as a jittery/unstable layout.
+  useEffect(() => {
+    stepContentRef.current?.scrollTo({ top: 0 });
+  }, [step]);
 
   // Load the organizer's linked payout accounts and preselect their default.
   useEffect(() => {
@@ -842,11 +853,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       {/* Form content */}
       <div
+        ref={stepContentRef}
         style={{
           flex: 1,
           overflowY: 'auto',
           padding: `4px 16px ${step === 4 ? '200px' : '120px'}`,
           scrollbarWidth: 'none',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          touchAction: 'pan-y',
         }}
       >
         {errorMessage && (
@@ -1154,16 +1169,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               <div style={{ flex: 1, position: 'relative' }}>
                 <Label>City *</Label>
                 {stateName && NIGERIA_CITIES[stateName] ? (
-                  <select
+                  <PickerField
                     value={city}
-                    onChange={(e) => setCity(e.target.value)}
-                    style={{ ...INPUT_STYLE, appearance: 'none', height: '45px', cursor: 'pointer' }}
-                  >
-                    <option value="">Select city</option>
-                    {NIGERIA_CITIES[stateName].map(c => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                    placeholder="Select city"
+                    onOpen={() => setShowCityModal(true)}
+                  />
                 ) : (
                   <input
                     placeholder={stateName ? 'Enter city' : 'Select state first'}
@@ -1175,22 +1185,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               </div>
               <div style={{ flex: 1 }}>
                 <Label>State *</Label>
-                <div
-                  onClick={() => setShowStateModal(true)}
-                  style={{
-                    ...INPUT_STYLE,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    height: '45px',
-                  }}
-                >
-                  <span style={{ color: stateName ? '#F0F0FF' : '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {stateName || 'Select State'}
-                  </span>
-                  <ChevronDown size={16} color="#8B8FA8" style={{ flexShrink: 0 }} />
-                </div>
+                <PickerField
+                  value={stateName}
+                  placeholder="Select State"
+                  onOpen={() => setShowStateModal(true)}
+                />
               </div>
             </div>
             <div>
@@ -1653,88 +1652,34 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       )}
 
       {showStateModal && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: '#020005',
-            zIndex: 1000,
-            display: 'flex',
-            flexDirection: 'column',
-            padding: 'calc(20px + env(safe-area-inset-top)) 24px 40px',
+        <PickerSheet
+          title="Select State"
+          searchPlaceholder="Search state..."
+          value={stateName}
+          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          onSelect={(v) => {
+            setStateName(v);
+            // A state change can invalidate a previously-picked city that
+            // doesn't belong to it.
+            if (!NIGERIA_CITIES[v]?.includes(city)) setCity('');
+            setShowStateModal(false);
           }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-              Select State
-            </h3>
-            <button
-              onClick={() => setShowStateModal(false)}
-              style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-            >
-              <X size={16} color="#C4C9E0" />
-            </button>
-          </div>
+          onClose={() => setShowStateModal(false)}
+        />
+      )}
 
-          {/* Search bar */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              gap: '12px',
-              marginBottom: '16px',
-            }}
-          >
-            <Search size={18} color="#8B8FA8" />
-            <input
-              type="text"
-              placeholder="Search state..."
-              value={stateSearchQuery}
-              onChange={(e) => setStateSearchQuery(e.target.value)}
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                outline: 'none',
-                color: '#F0F0FF',
-                fontSize: '14px',
-                fontFamily: 'Inter, sans-serif',
-              }}
-              autoFocus
-            />
-          </div>
-
-          {/* States list */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {NIGERIA_STATES.filter(s => s.name.toLowerCase().includes(stateSearchQuery.toLowerCase())).map((st) => (
-              <div
-                key={st.name}
-                onClick={() => {
-                  setStateName(st.name);
-                  setShowStateModal(false);
-                  setStateSearchQuery('');
-                }}
-                style={{
-                  background: stateName === st.name ? 'rgba(168,85,247,0.12)' : '#131629',
-                  border: stateName === st.name ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '12px',
-                  padding: '14px 16px',
-                  cursor: 'pointer',
-                  color: '#F0F0FF',
-                  fontSize: '14px',
-                  fontWeight: stateName === st.name ? 700 : 500,
-                }}
-              >
-                {st.name}
-              </div>
-            ))}
-          </div>
-        </div>
+      {showCityModal && stateName && NIGERIA_CITIES[stateName] && (
+        <PickerSheet
+          title="Select City"
+          searchPlaceholder="Search city..."
+          value={city}
+          options={NIGERIA_CITIES[stateName].map((c) => ({ value: c, label: c }))}
+          onSelect={(v) => {
+            setCity(v);
+            setShowCityModal(false);
+          }}
+          onClose={() => setShowCityModal(false)}
+        />
       )}
     </div>
   );

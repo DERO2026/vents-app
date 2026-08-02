@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, Search, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
@@ -7,6 +7,7 @@ import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../
 import { openExternalUrl } from '../../lib/externalLink';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
+import { PickerSheet } from './shared/PickerSheet';
 import { verifyTOTP } from '../../lib/totp';
 import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
@@ -188,7 +189,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     : null
   );
   const [showStateDropdown, setShowStateDropdown] = useState(false);
-  const [stateSearchQuery, setStateSearchQuery] = useState('');
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   // Raw national-number digits only — the country dial code is tracked
@@ -1890,98 +1890,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       </div>
       
       {showStateDropdown && (
-        <div
-          style={{
-            position: 'absolute',
-            inset: 0,
-            background: '#020005',
-            zIndex: 100,
-            display: 'flex',
-            flexDirection: 'column',
-            padding: 'calc(20px + env(safe-area-inset-top)) 24px 40px',
+        <PickerSheet
+          title="Select State"
+          searchPlaceholder="Search state..."
+          value={signupState}
+          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          onSelect={(v) => {
+            setSignupState(v);
+            setShowStateDropdown(false);
           }}
-        >
-          {/* Header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-            <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-              Select State
-            </h3>
-            <button
-              onClick={() => {
-                setShowStateDropdown(false);
-                setStateSearchQuery('');
-              }}
-              style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-            >
-              <X size={16} color="#C4C9E0" />
-            </button>
-          </div>
-
-          {/* Search bar */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              gap: '12px',
-              marginBottom: '16px',
-            }}
-          >
-            <Search size={18} color="#8B8FA8" />
-            <input
-              type="text"
-              placeholder="Search state..."
-              value={stateSearchQuery}
-              onChange={(e) => setStateSearchQuery(e.target.value)}
-              style={{
-                flex: 1,
-                background: 'none',
-                border: 'none',
-                outline: 'none',
-                color: '#F0F0FF',
-                fontSize: '14px',
-                fontFamily: 'Inter, sans-serif',
-              }}
-              autoFocus
-            />
-          </div>
-
-          {/* States list */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', scrollbarWidth: 'none' }}>
-            {NIGERIA_STATES.filter(s => s.name.toLowerCase().includes(stateSearchQuery.toLowerCase())).map((st) => {
-              const isSelected = signupState === st.name;
-              return (
-                <div
-                  key={st.name}
-                  onClick={() => {
-                    setSignupState(st.name);
-                    setShowStateDropdown(false);
-                    setStateSearchQuery('');
-                  }}
-                  style={{
-                    background: isSelected ? 'rgba(168,85,247,0.12)' : '#131629',
-                    border: isSelected ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '12px',
-                    padding: '14px 16px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    cursor: 'pointer',
-                    color: '#F0F0FF',
-                    fontSize: '14px',
-                    fontWeight: isSelected ? 700 : 500,
-                  }}
-                >
-                  <span>{st.name}</span>
-                  {isSelected && <Check size={16} color="#A855F7" />}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+          onClose={() => setShowStateDropdown(false)}
+        />
       )}
 
       {cropImageSrc && (

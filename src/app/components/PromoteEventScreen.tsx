@@ -5,6 +5,7 @@ import { insforge, getAuthToken } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -58,6 +59,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
   const [activationError, setActivationError] = useState<string | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string>(initialEventId || '');
+  const [showEventPicker, setShowEventPicker] = useState(false);
 
   const plan = PLANS.find((p) => p.id === selectedPlan)!;
   const price = plan.price[selectedDuration];
@@ -219,29 +221,24 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
               No events found. Please create an event first.
             </div>
           ) : (
-            <select
-              value={selectedEventId}
-              onChange={(e) => setSelectedEventId(e.target.value)}
-              style={{
-                width: '100%',
-                background: '#090514',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: '12px',
-                padding: '12px 14px',
-                color: '#F0F0FF',
-                fontSize: '14px',
-                outline: 'none',
-                fontFamily: 'Inter, sans-serif',
-              }}
-            >
-              {events.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title}
-                </option>
-              ))}
-            </select>
+            <PickerField
+              value={events.find((e) => e.id === selectedEventId)?.title || ''}
+              placeholder="Select an event"
+              onOpen={() => setShowEventPicker(true)}
+            />
           )}
         </div>
+
+        {showEventPicker && (
+          <PickerSheet
+            title="Select Event"
+            searchPlaceholder="Search your events..."
+            value={selectedEventId}
+            options={events.map((e) => ({ value: e.id, label: e.title }))}
+            onSelect={(v) => { setSelectedEventId(v); setShowEventPicker(false); }}
+            onClose={() => setShowEventPicker(false)}
+          />
+        )}
 
         {/* Plan selector */}
         <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>CHOOSE A PLAN</p>

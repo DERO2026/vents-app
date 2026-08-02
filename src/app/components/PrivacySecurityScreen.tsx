@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Shield, Eye, MessageCircle, Search, CheckCircle, AlertCircle } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface Props {
   currentUser: { id: string } | null;
@@ -30,6 +31,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [openPicker, setOpenPicker] = useState<'profile_visible' | 'can_message' | null>(null);
 
   useEffect(() => {
     if (!currentUser?.id) return;
@@ -97,14 +99,12 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
     </div>
   );
 
-  const dropdown = (val: string, onChange: (v: any) => void) => (
-    <select
-      value={val}
-      onChange={e => onChange(e.target.value)}
-      style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '8px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', cursor: 'pointer' }}
-    >
-      {VISIBILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
+  const dropdown = (val: string, field: 'profile_visible' | 'can_message') => (
+    <PickerField
+      value={VISIBILITY_OPTIONS.find(o => o.value === val)?.label || ''}
+      placeholder="Select"
+      onOpen={() => setOpenPicker(field)}
+    />
   );
 
   return (
@@ -126,11 +126,11 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
         <div style={{ flex: 1, padding: '8px 20px 40px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
 
           {row('Profile visibility', 'Who can see your profile and events', <Eye size={17} color="#A78BFA" />,
-            dropdown(settings.profile_visible, v => setSettings(s => ({ ...s, profile_visible: v })))
+            dropdown(settings.profile_visible, 'profile_visible')
           )}
 
           {row('Messages', 'Who can send you direct messages', <MessageCircle size={17} color="#A78BFA" />,
-            dropdown(settings.can_message, v => setSettings(s => ({ ...s, can_message: v })))
+            dropdown(settings.can_message, 'can_message')
           )}
 
           {row('Appear in search', 'Show your account in People search results', <Search size={17} color="#A78BFA" />,
@@ -168,6 +168,20 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
             </p>
           </div>
         </div>
+      )}
+
+      {openPicker && (
+        <PickerSheet
+          title={openPicker === 'profile_visible' ? 'Profile Visibility' : 'Who Can Message You'}
+          searchable={false}
+          value={settings[openPicker]}
+          options={VISIBILITY_OPTIONS}
+          onSelect={(v) => {
+            setSettings(s => ({ ...s, [openPicker]: v as Settings['profile_visible'] }));
+            setOpenPicker(null);
+          }}
+          onClose={() => setOpenPicker(null)}
+        />
       )}
     </div>
   );
