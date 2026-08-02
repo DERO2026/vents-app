@@ -25,7 +25,7 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
-import { formatPrice, formatPriceRange } from './data';
+import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { SecondaryButton } from './shared/Button';
@@ -431,9 +431,6 @@ export function EventDetailsScreen({
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
-  const lowestPrice = event.ticketTypes && event.ticketTypes.length > 0
-    ? Math.min(...event.ticketTypes.map((t) => t.price))
-    : event.price || 0;
 
   // "Add to Calendar" ICS content — memoized so it's computed once per
   // event, not on every render (this screen re-renders often).
@@ -1380,11 +1377,11 @@ export function EventDetailsScreen({
           gap: '12px',
         }}
       >
-        <div>
-          <div style={{ color: '#94A3B8', fontSize: '12px', textTransform: 'uppercase' }}>From</div>
-          <div style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
-            {formatPrice(lowestPrice)}
-          </div>
+        {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
+            "Buy from ₦X") instead of a bare "FROM / Free" label, which read
+            as a fully free event even when paid tiers also exist. */}
+        <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? '#06D6A0' : '#FFFFFF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
+          {formatCardCTA(event.ticketTypes)}
         </div>
         <button
           onClick={() => {

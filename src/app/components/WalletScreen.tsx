@@ -112,6 +112,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [resolveError, setResolveError] = useState('');
   const [savingBank, setSavingBank] = useState(false);
   const [bankSaveError, setBankSaveError] = useState('');
+  const [banksError, setBanksError] = useState('');
   const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = async () => {
@@ -236,16 +237,31 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setResolveError('');
     setShowAddBank(true);
     if (banks.length === 0) {
-      setBanksLoading(true);
-      try {
-        const res = await fetch(apiUrl('/api/v1/wallet/banks'));
-        const json = await res.json();
-        if (res.ok) setBanks(json.banks || []);
-      } catch (e) {
-        console.error('Failed to load bank list:', e);
-      } finally {
-        setBanksLoading(false);
-      }
+      await loadBanks();
+    }
+  };
+
+  // GET /api/v1/wallet/banks requires an authenticated session (it spends a
+  // Paystack API call) — the previous version fetched it with no
+  // Authorization header at all, so every request silently 401'd, the bank
+  // list stayed empty forever, and nothing told the user why. Also used as
+  // a manual retry from the "Couldn't load banks" state below.
+  const loadBanks = async () => {
+    setBanksLoading(true);
+    setBanksError('');
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(apiUrl('/api/v1/wallet/banks'), {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Failed to load bank list');
+      setBanks(json.banks || []);
+    } catch (e: any) {
+      console.error('Failed to load bank list:', e);
+      setBanksError(e?.message || 'Failed to load bank list. Check your connection and try again.');
+    } finally {
+      setBanksLoading(false);
     }
   };
 
@@ -511,12 +527,18 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
             {/* Bank picker */}
             <button
-              onClick={() => setShowBankPicker(true)}
+              onClick={() => { if (banksError) loadBanks(); else setShowBankPicker(true); }}
               style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : '#8B8FA8', fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
             >
-              <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : 'Select bank'}</span>
+              <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : banksError ? 'Couldn\'t load banks — tap to retry' : 'Select bank'}</span>
               <ChevronDown size={16} color="#8B8FA8" />
             </button>
+            {banksError && !selectedBank && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', marginTop: '-4px' }}>
+                <AlertCircle size={14} color="#EF4444" />
+                <span style={{ color: '#EF4444', fontSize: '12px' }}>{banksError}</span>
+              </div>
+            )}
 
             <input
               placeholder="10-digit account number"
@@ -579,15 +601,23 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             />
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {filteredBanks.map(bank => (
-              <button
-                key={bank.code}
-                onClick={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
-                style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '14px 4px', color: '#fff', fontSize: '15px', cursor: 'pointer' }}
-              >
-                {bank.name}
-              </button>
-            ))}
+            {banksLoading ? (
+              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>Loading banks…</p>
+            ) : filteredBanks.length === 0 ? (
+              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>
+                {banks.length === 0 ? 'No banks loaded.' : 'No banks match your search.'}
+              </p>
+            ) : (
+              filteredBanks.map(bank => (
+                <button
+                  key={bank.code}
+                  onClick={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
+                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '14px 4px', color: '#fff', fontSize: '15px', cursor: 'pointer' }}
+                >
+                  {bank.name}
+                </button>
+              ))
+            )}
           </div>
         </div>
       )}
