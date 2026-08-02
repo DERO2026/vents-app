@@ -369,6 +369,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        fontFamily: 'Inter, sans-serif',
       }}
     >
       {/* Header */}
@@ -386,18 +387,18 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
             background: '#090514',
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
-            width: '36px',
-            height: '36px',
+            width: '40px',
+            height: '40px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={18} color="#C4C9E0" />
         </button>
         <div>
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Sales Analytics</h1>
+          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>Sales Analytics</h1>
           <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
             {eventId ? (eventTitle || 'This event') : 'This week · All events'}
           </p>

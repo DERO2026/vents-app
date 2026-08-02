@@ -1294,9 +1294,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       style={{
                         background: 'rgba(16,185,129,0.1)',
                         color: '#10B981',
-                        fontSize: '10px',
-                        padding: '3px 8px',
-                        borderRadius: '5px',
+                        fontSize: '11px',
+                        padding: '4px 8px',
+                        borderRadius: '8px',
                         fontWeight: 600,
                       }}
                     >
@@ -1479,8 +1479,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Mark this event as adults only</p>
                   </div>
                 </div>
-                <div style={{ width: '44px', height: '24px', borderRadius: '12px', background: is18Plus ? '#EF4444' : '#2A2D3E', position: 'relative', transition: 'background 0.2s' }}>
-                  <div style={{ position: 'absolute', top: '3px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: is18Plus ? '23px' : '3px' }} />
+                <div style={{ width: '44px', height: '26px', borderRadius: '13px', background: is18Plus ? '#EF4444' : '#2A2D3E', position: 'relative', transition: 'background 0.2s' }}>
+                  <div style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: is18Plus ? '21px' : '3px' }} />
                 </div>
               </div>
               {is18Plus && (

@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { PrimaryButton, SecondaryButton } from './shared/Button';
 
 /**
  * In-app confirmation dialog — a replacement for window.confirm(), which on
@@ -64,38 +65,20 @@ export function ConfirmDialog({
           {message}
         </p>
         <div style={{ display: 'flex', gap: '10px' }}>
-          <button
+          <SecondaryButton
             onClick={onCancel}
-            style={{
-              flex: 1,
-              padding: '12px',
-              borderRadius: '12px',
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.12)',
-              color: '#C4C9E0',
-              fontSize: '14px',
-              fontWeight: 600,
-              cursor: 'pointer',
-            }}
+            size="sm"
+            style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#C4C9E0', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
           >
             {cancelLabel}
-          </button>
-          <button
+          </SecondaryButton>
+          <PrimaryButton
             onClick={onConfirm}
-            style={{
-              flex: 1,
-              padding: '12px',
-              borderRadius: '12px',
-              border: 'none',
-              background: danger ? '#DC2626' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-              color: '#fff',
-              fontSize: '14px',
-              fontWeight: 700,
-              cursor: 'pointer',
-            }}
+            size="sm"
+            style={danger ? { flex: 1, background: '#DC2626', boxShadow: 'none' } : { flex: 1 }}
           >
             {confirmLabel}
-          </button>
+          </PrimaryButton>
         </div>
       </div>
     </div>,

@@ -150,6 +150,8 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
                         onToggleSave(event.id);
                       }}
                       className="ml-2"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      aria-label="Remove from saved"
                     >
                       <Bookmark size={16} color="#A78BFA" fill="#A78BFA" />
                     </button>

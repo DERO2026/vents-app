@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { haptics } from '../../lib/haptics';
 
 interface Section { title: string; items: { q: string; a: string }[] }
 
@@ -48,7 +49,7 @@ function AccordionItem({ q, a }: { q: string; a: string }) {
   return (
     <div style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={() => { haptics.light(); setOpen(o => !o); }}
         style={{ width: '100%', background: 'none', border: 'none', padding: '16px 0', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', cursor: 'pointer', textAlign: 'left' }}
       >
         <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, lineHeight: 1.4, flex: 1 }}>{q}</span>

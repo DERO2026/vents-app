@@ -254,11 +254,11 @@ export function UserProfileScreen({
           }}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            padding: '10px 16px', borderRadius: '24px',
-            border: '1px solid #7B2FF7', background: 'transparent', cursor: 'pointer',
+            width: '38px', height: '38px', borderRadius: '50%',
+            border: '1px solid rgba(167,139,250,0.25)', background: 'rgba(167,139,250,0.1)', cursor: 'pointer',
           }}
         >
-          <Share2 size={16} color="#7B2FF7" />
+          <Share2 size={16} color="#A78BFA" />
         </button>
         {!isOwnProfile && onMessage && currentUserId && (
           <button

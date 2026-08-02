@@ -1521,7 +1521,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 color: '#FFFFFF',
                 fontSize: '24px',
                 fontWeight: 700,
-                fontFamily: 'Outfit, sans-serif',
+                fontFamily: 'Space Grotesk, sans-serif',
                 marginBottom: '6px',
               }}
             >

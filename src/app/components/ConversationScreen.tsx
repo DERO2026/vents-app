@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
+import { PrimaryButton, SecondaryButton } from './shared/Button';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, MapPin, Mic, Square, Play, Pause } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { openExternalUrl } from '../../lib/externalLink';
@@ -482,14 +483,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             <h3 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '10px', fontFamily: 'Space Grotesk, sans-serif' }}>Allow Location Access</h3>
             <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '24px' }}>Vents uses your location to show events near you. Your location is never stored or shared.</p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button
+              <PrimaryButton
+                size="lg"
                 onClick={() => { localStorage.setItem('vents_location_asked', 'true'); setLocationModalVisible(false); doGetLocation(); }}
-                style={{ background: '#7B2FF7', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
-              >Allow</button>
-              <button
+              >Allow</PrimaryButton>
+              <SecondaryButton
+                size="lg"
                 onClick={() => { localStorage.setItem('vents_location_asked', 'true'); setLocationModalVisible(false); }}
-                style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', color: '#8B8FA8', fontSize: '15px', fontWeight: 600, cursor: 'pointer' }}
-              >Not Now</button>
+              >Not Now</SecondaryButton>
             </div>
           </div>
         </div>

@@ -187,7 +187,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </div>
           <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0 }}>Camera Unavailable</p>
           <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.6, maxWidth: '300px' }}>{cam.error}</p>
-          <button onClick={cam.retry} style={{ marginTop: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 32px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
+          <button onClick={cam.retry} style={{ marginTop: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
             Try Again
           </button>
         </div>

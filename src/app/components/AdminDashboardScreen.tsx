@@ -2358,7 +2358,7 @@ export function AdminDashboardScreen({
                     onClick={() => { setVcSelectedUser(u); setVcTransfer(v => ({ ...v, userId: u.id })); setVcSearchResults([]); setVcSearch(''); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '10px 12px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', cursor: 'pointer', textAlign: 'left' }}
                   >
-                    <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
+                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, position: 'relative', overflow: 'hidden' }}>
                       <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700 }}>{(u.full_name || u.username || '?')[0].toUpperCase()}</span>
                       {u.avatar_url && (
                         <img src={u.avatar_url} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />

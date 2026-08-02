@@ -110,8 +110,8 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(18px + env(safe-area-inset-top)) 20px 16px', background: '#020005', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={18} color="#C4C9E0" />
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <div>
           <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Privacy & Security</h1>

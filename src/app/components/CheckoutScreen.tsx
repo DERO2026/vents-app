@@ -6,6 +6,7 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
 import { insforge } from '../../lib/insforge';
 import { openExternalUrl } from '../../lib/externalLink';
+import { haptics } from '../../lib/haptics';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -240,6 +241,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     // distinct references. This must be checked before anything else runs.
     if (payingRef.current) return;
 
+    haptics.medium();
     setPayError(null);
     setAttendeesTouched(true);
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });

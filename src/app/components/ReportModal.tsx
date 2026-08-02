@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
+import { PrimaryButton } from './shared/Button';
 
 const REASONS = ['Spam', 'Inappropriate content', 'Scam/Fraud', 'Fake event', 'Harassment', 'Other'];
 
@@ -94,13 +95,13 @@ export function ReportModal({ reporterId, targetType, targetId, targetName, onCl
 
             {error && <p style={{ color: '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{error}</p>}
 
-            <button
+            <PrimaryButton
               onClick={submit}
               disabled={!reason || submitting}
-              style={{ width: '100%', background: reason ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.2)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: reason ? 'pointer' : 'not-allowed', opacity: submitting ? 0.7 : 1 }}
+              style={{ opacity: submitting ? 0.7 : 1 }}
             >
               {submitting ? 'Submitting...' : 'Submit Report'}
-            </button>
+            </PrimaryButton>
           </>
         )}
       </div>

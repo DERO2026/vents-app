@@ -113,6 +113,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             color: '#FFFFFF',
             fontSize: '20px',
             fontWeight: 700,
+            fontFamily: 'Space Grotesk, sans-serif',
             position: 'absolute',
             left: 0,
             right: 0,

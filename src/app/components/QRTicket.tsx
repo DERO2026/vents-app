@@ -151,14 +151,14 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       >
         <button
           onClick={onBack}
-          className="w-11 h-11 rounded-full flex items-center justify-center"
+          className="w-9 h-9 rounded-full flex items-center justify-center"
           style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1 }}
         >
           <ArrowLeft size={18} color="#F0F0FF" />
         </button>
         <h1
           style={{
-            color: '#F0F0FF', fontSize: '18px', fontWeight: 700,
+            color: '#F0F0FF', fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif',
             position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
           }}
         >

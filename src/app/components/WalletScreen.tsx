@@ -321,8 +321,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <ArrowLeft size={22} color="#F0F0FF" />
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>My Wallet</span>
       </div>
@@ -361,7 +361,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
             <button
               onClick={() => setShowWithdraw(true)}
-              style={{ flex: 1, background: balance > 0 && emailVerified !== false ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '100px', padding: '14px', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              style={{ flex: 1, background: balance > 0 && emailVerified !== false ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '14px', padding: '14px', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
               disabled={balance === 0 || emailVerified === false}
               title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
             >

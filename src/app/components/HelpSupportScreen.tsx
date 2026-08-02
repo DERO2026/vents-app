@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronUp, Mail, MessageCircle, Phone } from 'lucide-react';
 import { openExternalUrl } from '../../lib/externalLink';
+import { haptics } from '../../lib/haptics';
 
 interface HelpSupportScreenProps {
   onBack: () => void;
@@ -69,8 +70,8 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
         borderBottom: '1px solid rgba(255,255,255,0.04)',
         flexShrink: 0,
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
-          <ArrowLeft size={24} color="#A78BFA" />
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+          <ArrowLeft size={16} color="#A78BFA" />
         </button>
         <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0 }}>Help & Support</h1>
       </div>
@@ -129,7 +130,7 @@ export function HelpSupportScreen({ onBack }: HelpSupportScreenProps) {
               }}
             >
               <button
-                onClick={() => setOpenIndex(openIndex === i ? null : i)}
+                onClick={() => { haptics.light(); setOpenIndex(openIndex === i ? null : i); }}
                 style={{
                   width: '100%',
                   display: 'flex',

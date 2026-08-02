@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
+import { haptics } from '../../lib/haptics';
 
 const MAX_REFERRALS = 5;
 const CENTS_PER_REFERRAL = 300;
@@ -147,6 +148,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   }
 
   function copyLink() {
+    haptics.light();
     navigator.clipboard.writeText(referralLink).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); });
   }
 

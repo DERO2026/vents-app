@@ -3,6 +3,7 @@ import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
 import { insforge } from '../../lib/insforge';
+import { haptics } from '../../lib/haptics';
 
 interface TicketSelectScreenProps {
   event: Event;
@@ -215,7 +216,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             return (
               <div
                 key={ticket.id}
-                onClick={() => !soldOut && setSelectedId(ticket.id)}
+                onClick={() => { if (!soldOut) { haptics.light(); setSelectedId(ticket.id); } }}
                 style={{
                   background: isSelected ? 'rgba(124,58,237,0.1)' : '#131629',
                   border: isSelected
@@ -299,6 +300,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          if (ticketQty > 0) haptics.light();
                           changeQty(ticket.id, -1);
                         }}
                         style={{
@@ -322,6 +324,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          haptics.light();
                           changeQty(ticket.id, 1);
                         }}
                         style={{
@@ -406,7 +409,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
         }}
       >
         <button
-          onClick={() => canContinue && onContinue(selected!, qty)}
+          onClick={() => { if (canContinue) { haptics.medium(); onContinue(selected!, qty); } }}
           disabled={!canContinue}
           style={{
             width: '100%',

@@ -89,7 +89,7 @@ export function SplashScreen({ onComplete }: { onComplete: () => void }) {
           opacity: 0,
           textTransform: 'uppercase',
           fontWeight: 500,
-          fontFamily: 'Outfit, sans-serif',
+          fontFamily: 'Inter, sans-serif',
         }}
       >
         Discover Nigeria's Best Events
