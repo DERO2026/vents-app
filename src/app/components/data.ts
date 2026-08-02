@@ -19,6 +19,19 @@ export function formatPriceRange(ticketTypes: Array<{ price: number }> | null | 
   return `${formatPrice(min)}–${formatPrice(max)}`;
 }
 
+// The action-oriented label shown on home/explore cards — a CTA, not a
+// price readout (formatPriceRange above is still used wherever a plain
+// price display is wanted, e.g. SavedScreen, related events). Always
+// derived from the event's actual ticket types, never a stale single price.
+export function formatCardCTA(ticketTypes: Array<{ price: number }> | null | undefined): string {
+  const prices = (ticketTypes || []).map((t) => Number(t.price) || 0);
+  if (prices.length === 0 || prices.every((p) => p === 0)) return 'Book Free';
+  const paidPrices = prices.filter((p) => p > 0);
+  const minPaid = Math.min(...paidPrices);
+  const maxPaid = Math.max(...paidPrices);
+  return minPaid === maxPaid ? 'Buy' : `Buy from ${formatPrice(minPaid)}`;
+}
+
 // A single date for a one-day event, or "Aug 9 – Aug 11, 2026" once
 // endDate is set and actually lands on a different calendar day than the
 // start (a same-day endDate — an event ending after midnight the way

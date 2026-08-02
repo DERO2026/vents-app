@@ -12,7 +12,7 @@ import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
-import { formatPriceRange, formatEventDateRange } from './data';
+import { formatEventDateRange, formatCardCTA } from './data';
 import { haptics } from '../../lib/haptics';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
@@ -329,24 +329,27 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           </div>
         </div>
 
-        {/* Price is the card's other primary fact (alongside the title) —
-            kept prominent and alone on the left; 18+ stays a small flag on
-            the right, never competing for visual weight.
-            Driven entirely by the actual ticket types, not the single
-            events.price column — that column is only ever the LOWEST
-            ticket price, so a free tier sitting alongside a paid one would
-            otherwise show a bare "FREE" badge on an event that still costs
-            money to attend. */}
+        {/* A CTA, not a price readout — "From Free" or a bare min price told
+            you a fact but not what to do with it. Driven entirely by the
+            actual ticket types, never the single events.price column (only
+            ever the LOWEST ticket price, so a free tier sitting alongside a
+            paid one would otherwise read as a fully free event). */}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          {formatPriceRange(event.ticketTypes) === 'Free' ? (
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#06D6A0', background: 'rgba(6,214,160,0.15)', border: '1px solid rgba(6,214,160,0.4)', borderRadius: '20px', padding: '2px 10px', letterSpacing: '0.02em', width: 'fit-content' }}>
-              FREE
-            </span>
-          ) : (
-            <span style={{ fontSize: '13px', color: '#FFB830', fontWeight: 800 }}>
-              {formatPriceRange(event.ticketTypes)}
-            </span>
-          )}
+          {(() => {
+            const cta = formatCardCTA(event.ticketTypes);
+            const isFree = cta === 'Book Free';
+            return (
+              <span style={{
+                fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
+                borderRadius: '20px', padding: '4px 12px',
+                color: isFree ? '#06D6A0' : '#fff',
+                background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
+              }}>
+                {cta}
+              </span>
+            );
+          })()}
           {event.is_18_plus && (
             <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
           )}
@@ -542,9 +545,21 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         </div>
 
         <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '13px', color: formatPriceRange(event.ticketTypes) === 'Free' ? '#06D6A0' : '#FFB830', fontWeight: 800, width: 'fit-content' }}>
-            {formatPriceRange(event.ticketTypes)}
-          </span>
+          {(() => {
+            const cta = formatCardCTA(event.ticketTypes);
+            const isFree = cta === 'Book Free';
+            return (
+              <span style={{
+                fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
+                borderRadius: '20px', padding: '4px 12px',
+                color: isFree ? '#06D6A0' : '#fff',
+                background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
+              }}>
+                {cta}
+              </span>
+            );
+          })()}
         </div>
       </div>
     </div>
@@ -706,7 +721,21 @@ function FeaturedCarousel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
-              <span style={{ background: formatPriceRange(event.ticketTypes) === 'Free' ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${formatPriceRange(event.ticketTypes) === 'Free' ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: formatPriceRange(event.ticketTypes) === 'Free' ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px', width: 'fit-content' }}>{formatPriceRange(event.ticketTypes)}</span>
+              {(() => {
+                const cta = formatCardCTA(event.ticketTypes);
+                const isFree = cta === 'Book Free';
+                return (
+                  <span style={{
+                    fontSize: '12px', fontWeight: 800, width: 'fit-content',
+                    borderRadius: '20px', padding: '4px 12px',
+                    color: isFree ? '#06D6A0' : '#fff',
+                    background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+                    border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
+                  }}>
+                    {cta}
+                  </span>
+                );
+              })()}
             </div>
           </div>
         </div>

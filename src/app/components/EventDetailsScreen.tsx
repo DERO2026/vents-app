@@ -277,7 +277,12 @@ export function EventDetailsScreen({
   }, [ticketTypes]);
   const selectedTicket = ticketTypes.find((t) => t.id === selectedTicketId);
   const selectedQty = ticketQtys[selectedTicketId] ?? 0;
-  const canBook = !isBooked && !!selectedTicket && selectedQty > 0;
+  // A prior purchase no longer locks the whole booking flow — an attendee
+  // who already has a ticket can still open the event, see every tier, and
+  // buy more (extra tickets for friends, a different tier, etc). isBooked
+  // now only drives the small "you already have a ticket" notice below,
+  // never whether buying is possible.
+  const canBook = !!selectedTicket && selectedQty > 0;
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -1093,12 +1098,22 @@ export function EventDetailsScreen({
           </button>
         </div>
 
-        {/* Ticket Options */}
-        {ticketTypes.length > 0 && !isBooked && (
+        {/* Ticket Options — stays available even after a prior purchase, so
+            an attendee who already has a ticket can still buy more (extra
+            tickets for friends, a different tier, etc). */}
+        {ticketTypes.length > 0 && (
           <div style={{ marginBottom: '24px' }}>
-            <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, display: 'block', marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
-              Select Tickets
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+              <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+                Select Tickets
+              </span>
+              {isBooked && (
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '20px', padding: '4px 10px', width: 'fit-content' }}>
+                  <CheckCircle size={12} color="#10B981" />
+                  <span style={{ color: '#10B981', fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
+                </span>
+              )}
+            </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {ticketTypes.map((t) => {
                 const isSelected = selectedTicketId === t.id;
@@ -1374,7 +1389,7 @@ export function EventDetailsScreen({
         <button
           onClick={() => {
             try {
-              if (!isBooked && canBook && !purchasesDisabled && selectedTicket) {
+              if (canBook && !purchasesDisabled && selectedTicket) {
                 haptics.medium();
                 onGetTickets(selectedTicket, selectedQty);
               }
@@ -1383,34 +1398,30 @@ export function EventDetailsScreen({
               alert('Booking error: ' + (err?.message || String(err)));
             }
           }}
-          disabled={isBooked || !canBook || purchasesDisabled}
+          disabled={!canBook || purchasesDisabled}
           style={{
             flex: 1,
-            background: isBooked
-              ? 'rgba(16,185,129,0.12)'
-              : purchasesDisabled
+            background: purchasesDisabled
               ? '#1A1D2E'
               : canBook
               ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
               : '#1A1D2E',
-            border: isBooked ? '1px solid rgba(16,185,129,0.3)' : 'none',
+            border: 'none',
             borderRadius: '16px',
             padding: '14px 28px',
-            color: isBooked ? '#10B981' : purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
+            color: purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
-            cursor: isBooked || !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !isBooked && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+            cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+            boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             gap: '8px',
           }}
         >
-          {isBooked
-            ? '✓ You are going'
-            : purchasesDisabled
+          {purchasesDisabled
             ? 'Purchases Temporarily Paused'
             : canBook
             ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
