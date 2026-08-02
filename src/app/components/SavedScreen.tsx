@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Bookmark, MapPin, Calendar, ArrowLeft } from 'lucide-react';
 import { Event } from './types';
-import { formatPrice } from './data';
+import { formatPriceRange } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 
@@ -169,8 +169,8 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
                       <MapPin size={10} color="#8B8FA8" />
                       <span style={{ color: '#8B8FA8', fontSize: '11px' }}>{event.city}</span>
                     </div>
-                    <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700 }}>
-                      {formatPrice(event.price)}
+                    <span style={{ color: event.price === 0 ? '#06D6A0' : '#FFB830', fontSize: '13px', fontWeight: 700, width: 'fit-content' }}>
+                      {formatPriceRange(event.ticketTypes)}
                     </span>
                   </div>
                 </div>

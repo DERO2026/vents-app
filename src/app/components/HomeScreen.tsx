@@ -12,7 +12,7 @@ import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
-import { formatPrice } from './data';
+import { formatPrice, formatPriceRange } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCarousel } from './ImageCarousel';
@@ -251,67 +251,83 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             </span>
           )}
         </div>
-        {/* Title and start time share one line — title truncates, time stays. */}
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '4px' }}>
-          <h4
-            style={{
-              flex: 1,
-              minWidth: 0,
-              color: '#F0F0FF',
-              fontSize: '12px',
-              fontWeight: 700,
-              lineHeight: 1.35,
-              whiteSpace: 'nowrap',
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-            }}
-          >
-            {event.title}
-          </h4>
-          {event.time && (
-            <span style={{ fontSize: '10px', color: '#94A3B8', fontWeight: 600, whiteSpace: 'nowrap', flexShrink: 0 }}>
-              {event.time}
-            </span>
-          )}
-        </div>
-        {event.organizer && event.organizer !== 'Verified Organizer' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '2px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
-            <BadgeChip tier={event.organizerVcBadge} />
+        {/* Title gets its own full-width line — no longer squeezed against
+            the start time, so the two-line clamp reads as the card's clear
+            primary heading. */}
+        <h4
+          style={{
+            color: '#F0F0FF',
+            fontSize: '13px',
+            fontWeight: 700,
+            lineHeight: 1.35,
+            marginBottom: '4px',
+            display: '-webkit-box',
+            WebkitLineClamp: 2,
+            WebkitBoxOrient: 'vertical' as const,
+            overflow: 'hidden',
+          }}
+        >
+          {event.title}
+        </h4>
+
+        {/* Organizer (who) on the left, countdown urgency (when-relative) on
+            the right — pairing primary and secondary facts on one row
+            instead of stacking every line keeps the card scannable. */}
+        {(event.organizer && event.organizer !== 'Verified Organizer') || countdown ? (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '4px', minHeight: '15px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+              {event.organizer && event.organizer !== 'Verified Organizer' && (
+                <>
+                  <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    @{event.organizer}
+                  </span>
+                  <BadgeChip tier={event.organizerVcBadge} />
+                </>
+              )}
+            </div>
+            {countdown && (
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px' }}>
+                <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                  {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
+                </span>
+              </div>
+            )}
           </div>
-        )}
-        {/* Date and city share one line to keep the card compact. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px', minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
-            <Calendar size={10} color="#94A3B8" />
-            <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
-          </div>
+        ) : null}
+
+        {/* When (left) / where (right) — the two facts read together as
+            "date · time" on one side and place on the other, instead of
+            competing for the same left-aligned line. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <MapPin size={10} color="#94A3B8" />
+            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {event.date}{event.time ? ` · ${event.time}` : ''}
+            </span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
+            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
             <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.city}
             </span>
           </div>
         </div>
-        {countdown && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginBottom: '4px' }}>
-            <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
-              {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
-            </span>
-          </div>
-        )}
-        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+
+        {/* Price is the card's other primary fact (alongside the title) —
+            kept prominent and alone on the left; 18+ stays a small flag on
+            the right, never competing for visual weight. */}
+        <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
           {!event.price ? (
-            <span style={{ fontSize: '11px', fontWeight: 800, color: '#06D6A0', background: 'rgba(6,214,160,0.15)', border: '1px solid rgba(6,214,160,0.4)', borderRadius: '20px', padding: '2px 10px', letterSpacing: '0.02em' }}>
+            <span style={{ fontSize: '11px', fontWeight: 800, color: '#06D6A0', background: 'rgba(6,214,160,0.15)', border: '1px solid rgba(6,214,160,0.4)', borderRadius: '20px', padding: '2px 10px', letterSpacing: '0.02em', width: 'fit-content' }}>
               FREE
             </span>
           ) : (
-            <span style={{ fontSize: '12px', color: '#FFB830', fontWeight: 700 }}>
-              {formatPrice(event.price)}
+            <span style={{ fontSize: '13px', color: '#FFB830', fontWeight: 800 }}>
+              {formatPriceRange(event.ticketTypes)}
             </span>
           )}
           {event.is_18_plus && (
-            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700 }}>18+</span>
+            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
           )}
         </div>
       </div>
@@ -470,32 +486,42 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         >
           {event.title}
         </h4>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-          <Calendar size={10} color="#94A3B8" />
-          <span style={{ fontSize: '10px', color: '#94A3B8' }}>{event.date}</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-          <MapPin size={10} color="#94A3B8" />
-          <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px' }}>
-            {event.city}
-          </span>
-        </div>
-        {event.organizer && event.organizer !== 'Verified Organizer' && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-            <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600 }}>@{event.organizer}</span>
-            <BadgeChip tier={event.organizerVcBadge} />
+        {/* Date (left) / countdown urgency (right) — paired instead of
+            stacked so the narrow rail card doesn't run out of vertical
+            room before it even reaches price. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '2px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.date}</span>
           </div>
-        )}
-        {countdown && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px', marginTop: '3px' }}>
-            <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700 }}>
-              {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
+          {countdown && (
+            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 5px' }}>
+              <span style={{ fontSize: '8px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
+              </span>
+            </div>
+          )}
+        </div>
+
+        {/* Location (left) / organizer (right) — same pairing logic. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {event.city}
             </span>
           </div>
-        )}
+          {event.organizer && event.organizer !== 'Verified Organizer' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, minWidth: 0 }}>
+              <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{event.organizer}</span>
+              <BadgeChip tier={event.organizerVcBadge} />
+            </div>
+          )}
+        </div>
+
         <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '13px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 800 }}>
-            {formatPrice(event.price)}
+          <span style={{ fontSize: '13px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 800, width: 'fit-content' }}>
+            {formatPriceRange(event.ticketTypes)}
           </span>
         </div>
       </div>
