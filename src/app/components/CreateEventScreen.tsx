@@ -5,6 +5,7 @@ import { insforge, getAuthToken } from '../../lib/insforge';
 import { sanitize } from '../../lib/sanitize';
 import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
+import { haptics } from '../../lib/haptics';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { EVENT_CARD_ASPECT } from '../../lib/eventCardAspect';
@@ -474,6 +475,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           createdAt: Date.now(),
         };
         if (eventStatus === 'live') {
+          haptics.success();
           confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
           publishedEventRef.current = createdEvent;
           setPublished(true);
@@ -549,6 +551,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         // Published events get a dedicated success state — no more silent
         // auto-redirect. The user explicitly chooses when to leave via the
         // "Return to Home Page" button (handleReturnHome).
+        haptics.success();
         confetti({ particleCount: 150, spread: 75, origin: { y: 0.6 } });
         publishedEventRef.current = createdEvent;
         setPublished(true);

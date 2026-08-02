@@ -28,6 +28,8 @@ import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
+import { SecondaryButton } from './shared/Button';
+import { haptics } from '../../lib/haptics';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -824,13 +826,13 @@ export function EventDetailsScreen({
         {/* Add to Calendar — icsUrl is memoized + explicitly revoked (see
             icsContent/icsUrl above), not recreated on every render. */}
         {icsUrl && (
-          <button
+          <SecondaryButton
             onClick={() => { const a = document.createElement('a'); a.href = icsUrl; a.download = `${event.title || 'event'}.ics`; a.click(); }}
-            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: '14px', padding: '12px', cursor: 'pointer', marginBottom: '16px' }}
+            icon={<CalendarPlus size={16} color="#10B981" />}
+            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10B981', marginBottom: '16px' }}
           >
-            <CalendarPlus size={16} color="#10B981" />
-            <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 600 }}>Add to Calendar</span>
-          </button>
+            Add to Calendar
+          </SecondaryButton>
         )}
 
         {/* Countdown — isolated into its own memoized component so the
@@ -1105,7 +1107,7 @@ export function EventDetailsScreen({
                 return (
                   <div
                     key={t.id}
-                    onClick={() => !soldOut && setSelectedTicketId(t.id)}
+                    onClick={() => { if (!soldOut) { haptics.light(); setSelectedTicketId(t.id); } }}
                     style={{
                       background: isSelected ? 'rgba(124,58,237,0.08)' : '#131629',
                       border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
@@ -1131,11 +1133,11 @@ export function EventDetailsScreen({
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
                         <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Quantity</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <button onClick={(e) => { e.stopPropagation(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
+                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
                             <Minus size={14} color="#C4C9E0" />
                           </button>
-                          <span style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center' }}>{qty}</span>
-                          <button onClick={(e) => { e.stopPropagation(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <span key={qty} style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
+                          <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <Plus size={14} color="#fff" />
                           </button>
                         </div>
@@ -1373,6 +1375,7 @@ export function EventDetailsScreen({
           onClick={() => {
             try {
               if (!isBooked && canBook && !purchasesDisabled && selectedTicket) {
+                haptics.medium();
                 onGetTickets(selectedTicket, selectedQty);
               }
             } catch (err: any) {

@@ -50,14 +50,18 @@ input, textarea, [contenteditable="true"] {
   -webkit-overflow-scrolling: touch;
 }
 
-/* Physical press feedback on interactive elements */
+/* Physical press feedback on interactive elements — press is fast/linear
+   (matches how quickly a real finger lands), release is a soft spring
+   overshoot (matches how iOS/Android native controls settle back), instead
+   of the same flat ease in both directions. */
 button, [role="button"], a {
   -webkit-tap-highlight-color: transparent;
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s ease;
 }
 button:active, [role="button"]:active {
-  opacity: 0.75;
-  transform: scale(0.97);
-  transition: opacity 0.1s ease, transform 0.1s ease;
+  opacity: 0.72;
+  transform: scale(0.96);
+  transition: transform 0.08s ease-out, opacity 0.08s ease-out;
 }
 
 /* Force full mobile viewport coverage */
@@ -173,6 +177,23 @@ div[style*="rgba(6,10,18,0.3) 0%, rgba(6,10,18,0.0) 40%, rgba(6,10,18,1) 100%"] 
 @keyframes shimmer {
   0%   { background-position: -400px 0; }
   100% { background-position: 400px 0; }
+}
+
+/* A number/value that just changed (ticket qty, VC balance, etc.) pops
+   instead of silently swapping — the same overshoot spring as button
+   press/release, just on scale instead of on tap. */
+@keyframes ticketQtyPop {
+  0%   { transform: scale(1.3); opacity: 0.5; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Bookmark/save toggle — a quick squash-and-stretch pop on state change,
+   the same visual language as a native iOS "like" heart bounce. */
+@keyframes bookmarkPop {
+  0%   { transform: scale(1); }
+  35%  { transform: scale(1.35); }
+  60%  { transform: scale(0.9); }
+  100% { transform: scale(1); }
 }
 
 @keyframes heroFadeIn {

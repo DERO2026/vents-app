@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
 import { loadGoogleMaps } from '../../lib/googleMaps';
+import { SecondaryButton } from './shared/Button';
 
 interface EventMapProps {
   latitude: number | null | undefined;
@@ -155,17 +156,9 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
         )}
         <style>{`@keyframes eventMapSpin { to { transform: rotate(360deg); } }`}</style>
       </div>
-      <button
-        onClick={onGetDirections}
-        style={{
-          marginTop: '10px', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-          background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '12px',
-          padding: '11px', color: '#A78BFA', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-        }}
-      >
-        <Navigation size={15} />
+      <SecondaryButton onClick={onGetDirections} icon={<Navigation size={15} />} style={{ marginTop: '10px' }}>
         Get Directions
-      </button>
+      </SecondaryButton>
     </div>
   );
 }

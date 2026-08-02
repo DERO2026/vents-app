@@ -13,6 +13,7 @@ import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatPriceRange, formatEventDateRange } from './data';
+import { haptics } from '../../lib/haptics';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCarousel } from './ImageCarousel';
@@ -222,12 +223,13 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         <button
           onClick={(e) => {
             e.stopPropagation();
+            haptics.light();
             onToggleSave(event.id);
           }}
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -446,12 +448,13 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         <button
           onClick={(e) => {
             e.stopPropagation();
+            haptics.light();
             onToggleSave(event.id);
           }}
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -686,7 +689,7 @@ function FeaturedCarousel({
           </div>
           {/* Save button */}
           <button
-            onClick={(ev) => { ev.stopPropagation(); onToggleSave(event.id); }}
+            onClick={(ev) => { ev.stopPropagation(); haptics.light(); onToggleSave(event.id); }}
             style={{ position: 'absolute', top: '14px', right: '14px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
             <span style={{ fontSize: '14px' }}>{isSaved.includes(event.id) ? '🔖' : '🔖'}</span>
