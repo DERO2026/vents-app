@@ -48,6 +48,9 @@ export interface Event {
   organizer_id?: string;
   created_at?: string;
   event_date?: string;
+  // Full end date+time, only set for a multi-day event (NULL/undefined
+  // means the event ends the same calendar day it starts).
+  endDate?: string | null;
   is_18_plus?: boolean;
   // Geocoded venue coordinates (events.latitude/longitude) and the Google
   // Places ID captured at creation (events.place_id, may be null for

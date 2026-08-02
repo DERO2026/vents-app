@@ -25,7 +25,7 @@ import {
   LayoutDashboard,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
-import { formatPrice } from './data';
+import { formatPrice, formatPriceRange } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { openExternalUrl } from '../../lib/externalLink';
@@ -1242,8 +1242,8 @@ export function EventDetailsScreen({
                         {evt.title}
                       </p>
                       <p style={{ color: '#8B8FA8', fontSize: '10px' }}>{evt.date}</p>
-                      <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 700, marginTop: '2px' }}>
-                        {formatPrice(evt.price)}
+                      <p style={{ color: formatPriceRange(evt.ticketTypes) === 'Free' ? '#06D6A0' : '#FFB830', fontSize: '11px', fontWeight: 700, marginTop: '2px' }}>
+                        {formatPriceRange(evt.ticketTypes)}
                       </p>
                     </div>
                   </div>
@@ -1405,7 +1405,13 @@ export function EventDetailsScreen({
             gap: '8px',
           }}
         >
-          {isBooked ? '✓ You are going' : purchasesDisabled ? 'Purchases Temporarily Paused' : canBook ? `Book · ${formatPrice(selectedTicket!.price * selectedQty)}` : 'Select tickets above'}
+          {isBooked
+            ? '✓ You are going'
+            : purchasesDisabled
+            ? 'Purchases Temporarily Paused'
+            : canBook
+            ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+            : 'Select tickets above'}
         </button>
       </div>
 

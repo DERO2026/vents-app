@@ -12,7 +12,7 @@ import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
-import { formatPrice, formatPriceRange } from './data';
+import { formatPriceRange, formatEventDateRange } from './data';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCarousel } from './ImageCarousel';
@@ -87,9 +87,22 @@ function useCardCountdown(eventDate?: string): string | null {
 
 const CATEGORIES = [{ id: 'all', label: 'All', icon: '' }, ...CATEGORY_LIST];
 
+// end_time is stored as a raw 24h "HH:MM" (straight from <input type="time">)
+// — reformatted to match event.time's 12h "h:mm AM/PM" so the two never
+// display side-by-side in mismatched formats (e.g. EventDetailsScreen's
+// "7:00 PM – 19:00").
+function formatTimeOfDay(hhmm: string | null | undefined): string {
+  if (!hhmm) return '';
+  const [h, m] = hhmm.split(':').map(Number);
+  if (isNaN(h) || isNaN(m)) return '';
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+}
+
 export function mapDbEventToFrontend(dbEvent: any): Event {
   const dt = dbEvent.event_date ? new Date(dbEvent.event_date) : null;
-  const dateStr = dt ? dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+  const dateStr = dbEvent.event_date ? formatEventDateRange(dbEvent.event_date, dbEvent.end_date) : '';
   const timeStr = dt ? dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
   
   const parts = (dbEvent.location || '').split(',');
@@ -116,7 +129,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     categoryIcon: categoryIconMap[dbEvent.category] || '🎵',
     date: dateStr,
     time: timeStr,
-    endTime: '',
+    endTime: formatTimeOfDay(dbEvent.end_time),
     venue: venue,
     area: venue,
     city: city,
@@ -159,6 +172,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     organizer_id: dbEvent.organizer_id,
     created_at: dbEvent.created_at,
     event_date: dbEvent.event_date,
+    endDate: dbEvent.end_date || null,
     is_18_plus: dbEvent.is_18_plus === true,
     latitude: dbEvent.latitude != null ? Number(dbEvent.latitude) : null,
     longitude: dbEvent.longitude != null ? Number(dbEvent.longitude) : null,
@@ -315,9 +329,14 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
 
         {/* Price is the card's other primary fact (alongside the title) —
             kept prominent and alone on the left; 18+ stays a small flag on
-            the right, never competing for visual weight. */}
+            the right, never competing for visual weight.
+            Driven entirely by the actual ticket types, not the single
+            events.price column — that column is only ever the LOWEST
+            ticket price, so a free tier sitting alongside a paid one would
+            otherwise show a bare "FREE" badge on an event that still costs
+            money to attend. */}
         <div style={{ marginTop: 'auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
-          {!event.price ? (
+          {formatPriceRange(event.ticketTypes) === 'Free' ? (
             <span style={{ fontSize: '11px', fontWeight: 800, color: '#06D6A0', background: 'rgba(6,214,160,0.15)', border: '1px solid rgba(6,214,160,0.4)', borderRadius: '20px', padding: '2px 10px', letterSpacing: '0.02em', width: 'fit-content' }}>
               FREE
             </span>
@@ -520,7 +539,7 @@ const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, 
         </div>
 
         <div style={{ marginTop: 'auto', paddingTop: '6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span style={{ fontSize: '13px', color: event.price === 0 ? '#06D6A0' : '#FFB830', fontWeight: 800, width: 'fit-content' }}>
+          <span style={{ fontSize: '13px', color: formatPriceRange(event.ticketTypes) === 'Free' ? '#06D6A0' : '#FFB830', fontWeight: 800, width: 'fit-content' }}>
             {formatPriceRange(event.ticketTypes)}
           </span>
         </div>
@@ -684,7 +703,7 @@ function FeaturedCarousel({
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
-              <span style={{ background: !event.price ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${!event.price ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: !event.price ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px' }}>{formatPrice(event.price)}</span>
+              <span style={{ background: formatPriceRange(event.ticketTypes) === 'Free' ? 'rgba(6,214,160,0.15)' : 'rgba(167,139,250,0.2)', border: `1px solid ${formatPriceRange(event.ticketTypes) === 'Free' ? 'rgba(6,214,160,0.4)' : 'rgba(167,139,250,0.4)'}`, color: formatPriceRange(event.ticketTypes) === 'Free' ? '#06D6A0' : '#A78BFA', fontSize: '13px', fontWeight: 800, padding: '2px 10px', borderRadius: '20px', width: 'fit-content' }}>{formatPriceRange(event.ticketTypes)}</span>
             </div>
           </div>
         </div>
@@ -1013,11 +1032,17 @@ export function HomeScreen({
       stateFilter === 'all' ||
       event.state?.toLowerCase() === stateFilter.toLowerCase();
 
-    // Price filter (free vs paid)
+    // Price filter (free vs paid). "Paid" means at least one ticket tier
+    // costs money — event.price alone is only ever the LOWEST tier, so an
+    // event with a free tier alongside a paid one would otherwise never
+    // show up under "Paid" even though attending some tiers costs money.
+    const maxTicketPrice = event.ticketTypes && event.ticketTypes.length > 0
+      ? Math.max(...event.ticketTypes.map(t => Number(t.price) || 0))
+      : event.price;
     const matchPrice =
       priceFilter === 'all' ||
       (priceFilter === 'free' && !event.price) ||
-      (priceFilter === 'paid' && event.price > 0);
+      (priceFilter === 'paid' && maxTicketPrice > 0);
 
     // Upcoming events only validation (event_date >= now)
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);

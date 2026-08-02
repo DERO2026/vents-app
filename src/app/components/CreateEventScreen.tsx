@@ -64,6 +64,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   
   // Venue / Date states
   const [date, setDate] = useState('');
+  // Optional — only set for events that span into a later calendar day.
+  // A same-day closing time is still just endTime; endDate stays empty for
+  // the common single-day case.
+  const [endDate, setEndDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [venue, setVenue] = useState('');
@@ -182,6 +186,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setImageUrl(row.image_url || '');
         setGalleryUrls(Array.isArray(row.gallery_urls) ? row.gallery_urls : []);
         if (row.event_date) setDate(String(row.event_date).split('T')[0]);
+        if (row.end_date) setEndDate(String(row.end_date).split('T')[0]);
         setStartTime(row.start_time || '');
         setEndTime(row.end_time || '');
         // location was assembled as "venue, state, city[, address]" on create —
@@ -418,6 +423,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
+      // Optional — only present for a multi-day event. Falls back to the
+      // end time on the same calendar day as the start when no end date
+      // was set, so a same-day closing time never needs one.
+      const endTimestamp = endDate
+        ? new Date(`${endDate}T${endTime || startTime}:00${REGION.timezoneOffset}`).toISOString()
+        : null;
 
       // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
       await getAuthToken();
@@ -488,6 +499,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               longitude,
               place_id: placeId,
               event_date: eventTimestamp,
+              end_date: endTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
               price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
@@ -574,6 +586,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
+      // Optional — only present for a multi-day event. Falls back to the
+      // end time on the same calendar day as the start when no end date
+      // was set, so a same-day closing time never needs one.
+      const endTimestamp = endDate
+        ? new Date(`${endDate}T${endTime || startTime}:00${REGION.timezoneOffset}`).toISOString()
+        : null;
 
       await getAuthToken();
 
@@ -593,6 +611,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               longitude,
               place_id: placeId,
               event_date: eventTimestamp,
+              end_date: endTimestamp,
               start_time: startTime || null,
               end_time: endTime || null,
               price: Math.min(...ticketTypes.map(t => Number(t.price || 0))),
@@ -668,6 +687,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       // no error telling the organizer why.
       if (date < new Date().toISOString().split('T')[0]) {
         setErrorMessage('Event date can\'t be in the past.');
+        return;
+      }
+      if (endDate && endDate < date) {
+        setErrorMessage('End date can\'t be before the start date.');
         return;
       }
       if (!startTime) {
@@ -1105,17 +1128,34 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
         {!loadingEdit && step === 2 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <div>
-              <Label>Event Date *</Label>
-              <input
-                type="date"
-                value={date}
-                onChange={(e) => setDate(e.target.value)}
-                style={INPUT_STYLE}
-              />
-            </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Label>Start Date *</Label>
+                <input
+                  type="date"
+                  value={date}
+                  onChange={(e) => setDate(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Label>End Date</Label>
+                <input
+                  type="date"
+                  value={endDate}
+                  min={date || undefined}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  style={INPUT_STYLE}
+                />
+              </div>
+            </div>
+            {endDate && endDate !== date && (
+              <p style={{ fontSize: '11px', color: '#8B8FA8', marginTop: '-8px' }}>
+                This is a multi-day event — it'll show as running from {date} to {endDate}.
+              </p>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Label>Start Time *</Label>
                 <input
                   type="time"
@@ -1124,7 +1164,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   style={INPUT_STYLE}
                 />
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <Label>End Time</Label>
                 <input
                   type="time"
@@ -1487,8 +1527,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             {[
               { label: 'Title', value: title || '(not set)' },
               { label: 'Category', value: category || '(not set)' },
-              { label: 'Date', value: date || '(not set)' },
-              { label: 'Time', value: startTime || '(not set)' },
+              { label: 'Date', value: date ? (endDate && endDate !== date ? `${date} – ${endDate}` : date) : '(not set)' },
+              { label: 'Time', value: startTime ? `${startTime}${endTime ? ` – ${endTime}` : ''}` : '(not set)' },
               { label: 'Venue', value: venue || '(not set)' },
               { label: 'City', value: city || '(not set)' },
               { label: 'Capacity', value: capacity ? `${capacity} attendees` : '(not set)' },
