@@ -206,6 +206,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           padding: '0 16px calc(90px + env(safe-area-inset-bottom))',
           scrollbarWidth: 'none',
           WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
         }}
       >
         {loading ? (

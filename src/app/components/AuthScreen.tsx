@@ -1907,7 +1907,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         <ImageCropperModal
           imageSrc={cropImageSrc}
           onCropComplete={handleCropComplete}
-          onClose={() => setCropImageSrc(null)}
+          onClose={() => setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return null; })}
         />
       )}
       </div>{/* end inner scroll wrapper */}

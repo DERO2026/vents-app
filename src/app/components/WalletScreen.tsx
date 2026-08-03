@@ -348,7 +348,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <span style={{ color: '#8B8FA8' }}>Loading…</span>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
               <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />

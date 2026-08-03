@@ -245,7 +245,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px 16px' }}>Loading…</p>
         ) : tab === 'requests' ? (

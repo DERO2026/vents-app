@@ -296,6 +296,8 @@ export function EventDetailsScreen({
 
   // 1. Static metadata (organizer profile and related events) - fetch once per event
   useEffect(() => {
+    let cancelled = false;
+
     const fetchOrganizerProfile = async () => {
       if (!event.organizer_id) return;
       try {
@@ -304,9 +306,9 @@ export function EventDetailsScreen({
           .select('id, full_name, username, avatar_url, is_verified, state, vc_badge')
           .eq('id', event.organizer_id)
           .maybeSingle();
-        
+
         if (error) throw error;
-        if (data) {
+        if (data && !cancelled) {
           setOrganizerProfile(data);
         }
       } catch (err) {
@@ -340,19 +342,20 @@ export function EventDetailsScreen({
         const { data, error } = await relatedQuery.limit(4);
 
         if (error) throw error;
-        if (data) {
+        if (data && !cancelled) {
           const mapped = data.map(mapDbEventToFrontend);
           setRelatedEvents(mapped);
         }
       } catch (err) {
         console.error('Failed to fetch related events:', err);
       } finally {
-        setLoadingRelated(false);
+        if (!cancelled) setLoadingRelated(false);
       }
     };
 
     fetchOrganizerProfile();
     fetchRelatedEvents();
+    return () => { cancelled = true; };
   }, [event.id, event.category, event.organizer_id]);
 
   // 2. Dynamic attendee count - re-fetch when event changes or booking state updates.
@@ -361,17 +364,19 @@ export function EventDetailsScreen({
   // of payment_status, which could show a different number here than on
   // SalesAnalyticsScreen/OrganizerDashboard for the same event.
   useEffect(() => {
+    let cancelled = false;
     const fetchAttendeeCount = async () => {
       try {
         const { data, error } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
         if (error) throw error;
-        setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
+        if (!cancelled) setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {
         console.error('Failed to fetch attendee count:', err);
       }
     };
 
     fetchAttendeeCount();
+    return () => { cancelled = true; };
   }, [event.id, isBooked]);
 
   const handleShare = async () => {

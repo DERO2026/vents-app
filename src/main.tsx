@@ -19,7 +19,7 @@ initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
 // Deciding which component to render here, before React even sees `<App/>`,
 // removes the conditional-hooks pattern entirely instead of just reordering it.
 const pathname = window.location.pathname;
-const legalPaths = new Set(['/privacy', '/terms', '/refunds']);
+const legalPaths = new Set(['/privacy', '/terms', '/refunds', '/help']);
 if (legalPaths.has(pathname)) {
   // Unwind the app shell's scroll lock (see index.css) before first paint so
   // these pages scroll like a normal web page instead of fighting it.

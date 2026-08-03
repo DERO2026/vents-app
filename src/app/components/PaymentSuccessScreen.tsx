@@ -40,6 +40,11 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   const [saveToast, setSaveToast] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [shareToast, setShareToast] = useState(false);
+  // Guards the toast setTimeouts below — "View My Tickets"/"Back to Home" can
+  // navigate away immediately after a save/share action, and without this the
+  // timeouts would call setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   // The gate scanner accepts ONLY a signed v2 pass token — a raw id/JSON blob
   // is rejected as "missing cryptographic signature". Mint the same signed
   // token QRTicket uses so this post-purchase QR is scannable too.
@@ -68,19 +73,22 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       });
       if (!blob) throw new Error('Failed to render ticket image');
       const saved = await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+      if (!mountedRef.current) return;
       if (saved) {
         setSaveToast(true);
-        setTimeout(() => setSaveToast(false), 2500);
+        setTimeout(() => { if (mountedRef.current) setSaveToast(false); }, 2500);
       } else {
         setSaveError(true);
-        setTimeout(() => setSaveError(false), 3000);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
       }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
-      setSaveError(true);
-      setTimeout(() => setSaveError(false), 3000);
+      if (mountedRef.current) {
+        setSaveError(true);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
+      }
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -99,8 +107,10 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       // promise rejection with no feedback to the user.
       try {
         await navigator.clipboard.writeText(text);
-        setShareToast(true);
-        setTimeout(() => setShareToast(false), 2500);
+        if (mountedRef.current) {
+          setShareToast(true);
+          setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
+        }
       } catch {
         console.warn('Clipboard write failed');
       }

@@ -78,6 +78,12 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
+  // Guards the saveError setTimeout below — Back to Home/Back navigates away
+  // immediately after a failed save, and without this the timeout would call
+  // setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   // Track when a holder opens their ticket QR (fires once per open).
   useEffect(() => {
     if (ticket.event?.id) analytics.ticketQrViewed(ticket.event.id);
@@ -129,10 +135,10 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       console.error('Failed to save ticket image:', err);
       failed = true;
     } finally {
-      setSaving(false);
-      if (failed) {
+      if (mountedRef.current) setSaving(false);
+      if (failed && mountedRef.current) {
         setSaveError(true);
-        setTimeout(() => setSaveError(false), 3000);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
       }
     }
   };

@@ -100,10 +100,24 @@ export function LocationPicker({
   const [searching, setSearching] = useState(false);
   const valueRef = useRef(value);
   valueRef.current = value;
+  // Guards fetchSuggestions/reverseGeocode/handleSelect's setState calls
+  // against firing after this component has unmounted (e.g. user picks a
+  // suggestion or a debounced search resolves just as the form navigates
+  // away).
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   useEffect(() => {
     setText(value.address);
   }, [value.address]);
+
+  // The pending debounced search must not fire after unmount — otherwise a
+  // stale fetchSuggestions call runs against a component that's gone.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // A genuinely offline device gets a distinct message from "unavailable"
   // (misconfigured key, blocked request, etc.) — same symptom (no search),
@@ -208,6 +222,7 @@ export function LocationPicker({
       return;
     }
     geocoderRef.current.geocode({ location: { lat, lng } }, (results: any[], geoStatus: string) => {
+      if (!isMountedRef.current) return;
       const result = geoStatus === 'OK' ? results?.[0] : null;
       const address = result ? result.formatted_address : valueRef.current.address;
       const { city, state, country } = parseAddressComponents(result?.address_components);
@@ -286,14 +301,17 @@ export function LocationPicker({
           return { key: p.placeId || String(i), mainText: main, secondaryText: secondary, prediction: p };
         });
       console.log('[LocationPicker] ⑤ mapped', mapped.length, 'suggestion(s) into state; opening dropdown:', mapped.length > 0);
+      if (!isMountedRef.current) return;
       setSuggestions(mapped);
       setDropdownOpen(mapped.length > 0);
     } catch (err: any) {
       console.log('[LocationPicker] ✗ EXCEPTION THROWN:', err?.message || err, err);
-      setSuggestions([]);
-      setDropdownOpen(false);
+      if (isMountedRef.current) {
+        setSuggestions([]);
+        setDropdownOpen(false);
+      }
     } finally {
-      setSearching(false);
+      if (isMountedRef.current) setSearching(false);
     }
   }
 

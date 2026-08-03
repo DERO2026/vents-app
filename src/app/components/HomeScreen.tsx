@@ -928,7 +928,7 @@ export function HomeScreen({
       .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
       .eq('is_verified', true)
       .limit(5)
-      .then(({ data }) => setSuggestedPeople(data || []));
+      .then(({ data }) => setSuggestedPeople(data || []), () => { /* ignore */ });
   }, []);
 
   useEffect(() => {

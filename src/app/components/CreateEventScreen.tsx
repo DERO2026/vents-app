@@ -314,6 +314,19 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     });
   }, []);
 
+  // Object URLs created in handleImageChange/handleGalleryFileChange are
+  // normally revoked by closeCropper once the crop finishes/cancels — but if
+  // the screen unmounts while the cropper is still open (e.g. the user
+  // navigates away via onBack from underneath it), that revoke never runs
+  // and the blob stays pinned in memory for the life of the page. Tracked
+  // via a ref (rather than depending on cropSrc directly) so this only
+  // revokes once, on unmount, using whatever URL was current at the time.
+  const cropSrcRef = useRef<string | null>(null);
+  cropSrcRef.current = cropSrc;
+  useEffect(() => {
+    return () => { if (cropSrcRef.current) URL.revokeObjectURL(cropSrcRef.current); };
+  }, []);
+
   const uploadFlierBlob = useCallback(async (croppedBlob: Blob): Promise<{ url: string; key: string | null }> => {
     // Production media pipeline: compresses the flier, generates a responsive
     // thumbnail, uploads BOTH directly to the S3-compatible `events` bucket
@@ -1617,7 +1630,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           background: 'rgba(6,10,18,0.95)',
           backdropFilter: 'blur(20px)',
           borderTop: '1px solid rgba(255,255,255,0.08)',
-          padding: '14px 16px 28px',
+          padding: '14px 16px calc(28px + env(safe-area-inset-bottom))',
         }}
       >
         <button
