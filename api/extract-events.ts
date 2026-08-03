@@ -68,13 +68,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         max_tokens: 4000,
         messages: [{
           role: 'user',
-          content: `Today is ${today}. Extract all events from this text into the VENTS event schema. May contain one or multiple events.
+          content: `Today is ${today}. Extract all events from this text into the VENTS event schema. The text was copied from a real event page or flyer and may be messy — inconsistent line breaks, mixed-in navigation/ad text, emoji, multiple languages, or run-together sentences. Never fail or refuse because of messy formatting: always return your best-effort extraction for every event you can identify, even from partial or oddly-formatted input. May contain one or multiple events.
 
 For each event return exactly these fields:
 - title: event name
-- description: 2-3 sentence description. Write one if not provided, based on the event name
-- date: YYYY-MM-DD. Assume 2026 if year missing. Use 2-4 weeks from today if no date given at all
-- time: HH:MM 24hr. Default 10:00 if missing
+- description: 2-3 sentence description. Write one if not provided, based on the event name and any other context found
+- organizer_name: the organizing person, brand, or company name if stated (e.g. "DJ Dave", "Eko Events Ltd"). Empty string "" if not mentioned — never guess
+- date: YYYY-MM-DD, the event's start date. Assume 2026 if year missing. Use 2-4 weeks from today if no date given at all
+- end_date: YYYY-MM-DD, ONLY if the text explicitly states the event runs across multiple days (e.g. "Aug 9-11", "runs through Sunday"). Empty string "" for a single-day event — do not invent one
+- time: HH:MM 24hr, start time. Default 10:00 if missing
+- end_time: HH:MM 24hr, ONLY if an explicit end/closing time is stated. Empty string "" if not stated
 - venue: the venue/building/business name ONLY (e.g. "Eko Hotel & Suites", "Baze University") — never a full address, never a city or state
 - address: street-level address detail if explicitly given (street name, area/district). Empty string "" if not stated — do NOT guess or reuse the venue name here
 - city: the city or LGA name, ONLY if explicitly stated or unambiguous from a well-known venue (e.g. "Eko Hotel" -> "Lagos Island" is NOT safe to guess — leave empty unless genuinely confident). Empty string "" if uncertain
@@ -84,11 +87,13 @@ For each event return exactly these fields:
 - is_free: true if the event is free or no price is stated
 - price: ticket price in NGN as a number. 0 if free/unstated
 - capacity: total ticket capacity/quantity as a number if stated, else 0 (means "not specified" — never invent a number)
-- image_url: "" (never fabricate a URL)
+- image_url: a literal, complete image URL (http/https, ending in a common image extension or from an obvious image-hosting path) ONLY if one is actually present verbatim in the text. Empty string "" otherwise — never fabricate or guess a URL
+- contact_phone: a phone number explicitly given for enquiries/booking, digits and leading + only. Empty string "" if none
+- social_instagram: an Instagram handle if stated, without the @ symbol. Empty string "" if none
 
 Leave any field empty ("" or 0) rather than guessing — an admin will fill in anything left blank before publishing. Never place a venue, building, or organization name into the state or city field.
 
-Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ].
+Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ]. If genuinely no event can be identified in the text at all, return an empty array [] rather than an error.
 
 Text:
 ${text}`

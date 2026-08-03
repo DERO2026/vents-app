@@ -12,7 +12,7 @@ import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { AdminActionsTab } from './AdminActionsTab';
-import { extractEventsFromText, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
+import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
@@ -2779,9 +2779,12 @@ export function AdminDashboardScreen({
               setPublishMsg(null);
               try {
                 const results = await extractEventsFromText(importText.trim());
-                setImportResults(results);
-                if (results.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
-                else setSelectedImports(new Set(results.map((_, i) => i)));
+                // Best-effort — never blocks or fails the import if Places
+                // is unavailable, just leaves those events unverified.
+                const verified = await resolveEventLocations(results);
+                setImportResults(verified);
+                if (verified.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
+                else setSelectedImports(new Set(verified.map((_, i) => i)));
               } catch (err: any) {
                 setImportError(friendlyPublishError(err) || 'Failed to format events. Check your API key and try again.');
               } finally {
@@ -2811,7 +2814,7 @@ export function AdminDashboardScreen({
           {importResults.length > 0 && (
             <>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{importResults.length} free event{importResults.length !== 1 ? 's' : ''} found</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{importResults.length} event{importResults.length !== 1 ? 's' : ''} found</p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button onClick={() => setSelectedImports(new Set(importResults.map((_, i) => i)))} style={{ background: 'none', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#A78BFA', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>All</button>
                   <button onClick={() => setSelectedImports(new Set())} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '4px 10px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>None</button>
@@ -2849,14 +2852,26 @@ export function AdminDashboardScreen({
 
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
-                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>{event.date} {event.time && `· ${event.time}`} · {event.venue || 'No venue'}</p>
+                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>
+                            {event.date}{event.end_date && event.end_date !== event.date ? ` – ${event.end_date}` : ''} {event.time && `· ${event.time}${event.end_time ? `–${event.end_time}` : ''}`} · {event.venue || 'No venue'}
+                          </p>
+                          {(event.organizer_name || event.contact_phone || event.social_instagram) && (
+                            <p style={{ color: '#6B7280', fontSize: '10.5px', margin: '0 0 4px' }}>
+                              {[event.organizer_name, event.contact_phone, event.social_instagram && `@${event.social_instagram}`].filter(Boolean).join(' · ')}
+                            </p>
+                          )}
                           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                             <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>
                               {event.is_free ? 'FREE' : `₦${Number(event.price || 0).toLocaleString()}`}
                             </span>
                             {event.categories?.[0] && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.categories[0]}</span>}
                             {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.city ? `${event.city}, ` : ''}{event.state}</span>}
-                            {!(event.venue && event.state && event.city) && (
+                            {event.location_verified && (
+                              <span style={{ background: 'rgba(6,214,160,0.1)', border: '1px solid rgba(6,214,160,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#06D6A0', fontSize: '10px', fontWeight: 600 }}>
+                                📍 Location verified
+                              </span>
+                            )}
+                            {!(event.venue && event.state && event.city) && !(event.location_verified && event.latitude != null) && (
                               <span style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#F59E0B', fontSize: '10px', fontWeight: 600 }}>
                                 Needs review — will save as draft
                               </span>
