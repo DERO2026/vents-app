@@ -63,8 +63,11 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
       <div style={{ position: 'absolute', width: '350px', height: '350px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%)', top: '-120px', right: '-120px', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%)', bottom: '100px', left: '-80px', pointerEvents: 'none' }} />
 
-      {/* Hero slideshow */}
-      <div style={{ position: 'relative', height: 'calc(310px + env(safe-area-inset-top))', flexShrink: 0 }}>
+      {/* Hero slideshow — clamped so it can never crowd out the CTAs below
+          it on a short device (older iPhone SE, small Android phones):
+          scales down toward 30vh instead of staying a fixed 310px+ on
+          every screen size. */}
+      <div style={{ position: 'relative', height: 'clamp(200px, 34vh, calc(310px + env(safe-area-inset-top)))', flexShrink: 0 }}>
         {/* Slide images — cross-fade */}
         {SLIDES.map((src, idx) => (
           <img
@@ -105,8 +108,24 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ flex: 1, padding: '20px 24px 28px', display: 'flex', flexDirection: 'column', position: 'relative', zIndex: 1 }}>
+      {/* Content — scrolls as a fallback (never clips the guest CTA/footer
+          off the bottom of a short/zoomed screen) and always reserves the
+          real home-indicator/gesture-bar safe area, not just a flat 28px
+          that happened to be enough on the devices this was tested on. */}
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          WebkitOverflowScrolling: 'touch',
+          overscrollBehavior: 'contain',
+          padding: '20px 24px calc(20px + env(safe-area-inset-bottom))',
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
           Discover Nigeria's
           <br />
@@ -191,18 +210,33 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
           <span style={{ color: '#A855F7', fontWeight: 600 }}>Sign in</span>
         </button>
 
-        {/* Browse as guest */}
+        {/* Browse as guest — a real tappable row (not a bare underlined
+            text line easy to mistake for decoration/miss entirely), so it
+            reads as a genuine third option alongside Get Started/Sign in. */}
         {onBrowseGuest && (
           <button
             onClick={onBrowseGuest}
-            style={{ background: 'none', border: 'none', color: '#94A3B8', fontSize: 13, textDecoration: 'underline', marginTop: 16, cursor: 'pointer', textAlign: 'center' }}
+            style={{
+              width: '100%',
+              background: 'rgba(255,255,255,0.04)',
+              border: 'none',
+              borderRadius: '100px',
+              padding: '12px 32px',
+              color: '#94A3B8',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginTop: '4px',
+              flexShrink: 0,
+            }}
           >
             Browse as guest
           </button>
         )}
 
         {/* Footer */}
-        <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px' }}>
+        <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px', marginBottom: 0, flexShrink: 0 }}>
           VENTS v1.1.0 | © VENTS LTD
         </p>
       </div>

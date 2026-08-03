@@ -133,6 +133,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
   const [phone, setPhone] = useState('');
+  const [phoneTouched, setPhoneTouched] = useState(false);
   const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
   const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [promoCode, setPromoCode] = useState('');
@@ -171,6 +172,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     ? 'Enter a valid email (e.g. name@gmail.com)'
     : undefined;
 
+  // A phone number is required so organizers can actually reach the buyer
+  // about their booking — previously only validated (and required) for
+  // *additional* attendees on a group purchase, leaving the far more common
+  // single-ticket purchase with no phone requirement at all.
+  const phoneDigits = phone.replace(/\D/g, '');
+  const phoneError = phoneTouched && phoneDigits.length < 7
+    ? 'Enter a valid phone number'
+    : undefined;
+
   const additionalAttendeesValid = additionalAttendees.every(
     (a) => a.name.trim().length > 0 && isValidEmail(a.email) && (a.phone ?? '').replace(/\D/g, '').length >= 7
   );
@@ -181,7 +191,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const promoPending = promoCode.trim().length > 0 && !promoApplied;
 
   const buildAttendees = (purchaserName: string, purchaserEmail: string): TicketAttendee[] => [
-    { name: purchaserName, email: purchaserEmail, phone: phone.replace(/\D/g, '') ? `${selectedCountry.code}${phone.replace(/\D/g, '')}` : undefined },
+    { name: purchaserName, email: purchaserEmail, phone: phoneDigits ? `${selectedCountry.code}${phoneDigits}` : undefined },
     ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim(), phone: (a.phone ?? '').trim() || undefined })),
   ];
 
@@ -244,11 +254,17 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     haptics.medium();
     setPayError(null);
     setAttendeesTouched(true);
+    setPhoneTouched(true);
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
 
     const payerEmail = currentUser?.email || email.trim();
     if (!payerEmail || !isValidEmail(payerEmail)) {
       setPayError('A valid email address is required to pay.');
+      return;
+    }
+
+    if (phoneDigits.length < 7) {
+      setPayError('A valid phone number is required so the organizer can reach you about your booking.');
       return;
     }
 
@@ -454,7 +470,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
             {/* Phone with country code */}
             <div>
-              <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number</p>
+              <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={() => setShowCountryPicker(true)}
@@ -482,7 +498,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     display: 'flex',
                     alignItems: 'center',
                     background: '#090514',
-                    border: '1px solid rgba(255,255,255,0.1)',
+                    border: `1px solid ${phoneError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
                     borderRadius: '16px',
                     height: '52px',
                     padding: '0 14px',
@@ -494,10 +510,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     placeholder={selectedCountry.format}
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
+                    onBlur={() => setPhoneTouched(true)}
                     style={INPUT_STYLE}
                   />
                 </div>
               </div>
+              {phoneError && (
+                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
+              )}
             </div>
           </div>
         </div>

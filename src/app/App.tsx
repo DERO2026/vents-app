@@ -6,6 +6,7 @@ import { registerPushNotifications, unregisterPushNotifications, setPushActionHa
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification } from '../lib/pendingVerification';
+import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
@@ -1663,7 +1664,7 @@ export default function App() {
           A new version of Vents is available with important fixes. Please refresh to continue.
         </p>
         <button
-          onClick={() => window.location.href = 'https://getvents.com'}
+          onClick={() => openExternalUrl('https://getvents.com')}
           style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
         >
           Reload Vents

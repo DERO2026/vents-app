@@ -23,6 +23,7 @@ import {
   Shield,
   ScanLine,
   LayoutDashboard,
+  AlertCircle,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
@@ -30,6 +31,8 @@ import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
+import { downloadBlob } from '../../lib/ticketImage';
+import { Capacitor } from '@capacitor/core';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -292,6 +295,7 @@ export function EventDetailsScreen({
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [shared, setShared] = useState(false);
+  const [calendarError, setCalendarError] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
   // 1. Static metadata (organizer profile and related events) - fetch once per event
@@ -428,11 +432,40 @@ export function EventDetailsScreen({
   }
 
   const openMap = (provider: 'google' | 'apple') => {
-    const query = encodeURIComponent(`${event.venue}, ${event.area}, ${event.city}, Nigeria`);
-    const url = provider === 'google'
-      ? `https://www.google.com/maps/search/?api=1&query=${query}`
-      : `https://maps.apple.com/?q=${query}`;
-    openExternalUrl(url);
+    const label = `${event.venue}, ${event.area}, ${event.city}, Nigeria`;
+    const query = encodeURIComponent(label);
+    const hasCoords = event.latitude != null && event.longitude != null;
+    const coords = hasCoords ? `${event.latitude},${event.longitude}` : '';
+    const webUrl = provider === 'google'
+      ? `https://www.google.com/maps/search/?api=1&query=${hasCoords ? coords : query}`
+      : `https://maps.apple.com/?q=${query}${hasCoords ? `&ll=${coords}` : ''}`;
+
+    // Both providers' https:// URLs get routed through openExternalUrl's
+    // in-app browser tab on native (see externalLink.ts) — indistinguishable
+    // from a website, not "opening in Maps". A native URI scheme instead
+    // hands off straight to the installed app; there's no reliable "scheme
+    // unsupported" event, so fall back to the web URL only if the app
+    // never actually backgrounds this WebView within the timeout (the
+    // standard custom-URL-scheme-with-fallback pattern).
+    if (Capacitor.isNativePlatform()) {
+      const platform = Capacitor.getPlatform();
+      const nativeUrl = provider === 'google'
+        ? (platform === 'ios'
+            ? (hasCoords ? `comgooglemaps://?q=${coords}&center=${coords}` : `comgooglemaps://?q=${query}`)
+            : (hasCoords ? `geo:${coords}?q=${coords}(${query})` : `geo:0,0?q=${query}`))
+        : `maps://?q=${query}${hasCoords ? `&ll=${coords}` : ''}`;
+
+      let backgrounded = false;
+      const onVisibility = () => { if (document.hidden) backgrounded = true; };
+      document.addEventListener('visibilitychange', onVisibility);
+      window.location.href = nativeUrl;
+      setTimeout(() => {
+        document.removeEventListener('visibilitychange', onVisibility);
+        if (!backgrounded) openExternalUrl(webUrl);
+      }, 1200);
+    } else {
+      openExternalUrl(webUrl);
+    }
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
@@ -459,24 +492,27 @@ export function EventDetailsScreen({
       `DTSTART:${fmt(dtStart)}`,
       `DTEND:${fmt(dtEnd)}`,
       `SUMMARY:${(event.title || '').replace(/,/g, '\\,')}`,
-      `LOCATION:${(event.venue || '').replace(/,/g, '\\,')}`,
+      `LOCATION:${[event.venue, event.area, event.city, event.state].filter(Boolean).join(', ').replace(/,/g, '\\,')}`,
       `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n').replace(/,/g, '\\,')}`,
       'END:VEVENT', 'END:VCALENDAR',
     ].join('\r\n');
-  }, [(event as any).event_date, event.date, (event as any).end_time, event.title, event.venue, event.description]);
+  }, [(event as any).event_date, event.date, (event as any).end_time, event.title, event.venue, event.area, event.city, event.state, event.description]);
 
-  // Object URL is created once per icsContent change and explicitly
-  // revoked on the next change/unmount — previously this was recreated on
-  // every single render with no revocation at all, leaking a blob URL
-  // per render for as long as the page stayed open.
-  const [icsUrl, setIcsUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!icsContent) { setIcsUrl(null); return; }
-    const blob = new Blob([icsContent], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    setIcsUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [icsContent]);
+  const [addingToCalendar, setAddingToCalendar] = useState(false);
+  const handleAddToCalendar = async () => {
+    if (!icsContent || addingToCalendar) return;
+    setAddingToCalendar(true);
+    try {
+      const blob = new Blob([icsContent], { type: 'text/calendar' });
+      const ok = await downloadBlob(blob, `${event.title || 'event'}.ics`);
+      if (!ok) {
+        setCalendarError(true);
+        setTimeout(() => setCalendarError(false), 2500);
+      }
+    } finally {
+      setAddingToCalendar(false);
+    }
+  };
 
   return (
     <div
@@ -830,15 +866,21 @@ export function EventDetailsScreen({
           />
         </div>
 
-        {/* Add to Calendar — icsUrl is memoized + explicitly revoked (see
-            icsContent/icsUrl above), not recreated on every render. */}
-        {icsUrl && (
+        {/* Add to Calendar — <a download> is a browser-only mechanism that
+            silently no-ops inside a Capacitor WebView release build (no
+            download manager to hand it to). downloadBlob() (ticketImage.ts)
+            already solves exactly this: native writes to cache + opens the
+            OS share sheet (which offers "Add to Calendar"/opens the
+            Calendar app directly for a .ics), web keeps the plain
+            blob-download anchor. */}
+        {icsContent && (
           <SecondaryButton
-            onClick={() => { const a = document.createElement('a'); a.href = icsUrl; a.download = `${event.title || 'event'}.ics`; a.click(); }}
+            onClick={handleAddToCalendar}
+            disabled={addingToCalendar}
             icon={<CalendarPlus size={16} color="#10B981" />}
             style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10B981', marginBottom: '16px' }}
           >
-            Add to Calendar
+            {addingToCalendar ? 'Opening…' : 'Add to Calendar'}
           </SecondaryButton>
         )}
 
@@ -994,8 +1036,8 @@ export function EventDetailsScreen({
                 >
                   <Phone size={16} color="#A855F7" />
                 </a>
-                <a
-                  href={`https://wa.me/${event.contactPhone.replace(/\D/g, '')}`}
+                <button
+                  onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1005,11 +1047,11 @@ export function EventDetailsScreen({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    textDecoration: 'none',
+                    cursor: 'pointer',
                   }}
                 >
                   <MessageCircle size={16} color="#25D366" />
-                </a>
+                </button>
               </div>
             </div>
           </div>
@@ -1453,6 +1495,19 @@ export function EventDetailsScreen({
         }}>
           <CheckCircle size={14} color="#fff" />
           Link copied to clipboard!
+        </div>
+      )}
+
+      {calendarError && (
+        <div style={{
+          position: 'absolute', top: '30px', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(239,68,68,0.95)', backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px 16px',
+          zIndex: 100, color: '#fff', fontSize: '13px', fontWeight: 600,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '6px',
+        }}>
+          <AlertCircle size={14} color="#fff" />
+          Couldn't open calendar. Please try again.
         </div>
       )}
       {showReport && currentUserId && (

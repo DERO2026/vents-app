@@ -10,6 +10,26 @@
 // `google.maps.places.PlaceAutocompleteElement` instead.
 let loadPromise: Promise<void> | null = null;
 
+// Google calls window.gm_authFailure when the API key's request is
+// rejected server-side (most commonly an HTTP referrer restriction that
+// doesn't cover the caller's origin — e.g. a key allowlisted for
+// getvents.com but not for the native app's WebView origin, https://localhost
+// on Android / capacitor://localhost on iOS). Critically, this happens
+// AFTER the script tag itself loads successfully and after
+// google.maps.importLibrary() has already resolved — so without this hook
+// every caller sees a false "ready" state and Google paints its own
+// authentication-error UI directly into whatever div holds the map,
+// indistinguishable from "the app is broken" to a user. Registered
+// unconditionally at module load (not per-call) since Google looks up this
+// global by name whenever the failure occurs, however many times
+// loadGoogleMaps() has been called.
+let rejectOnAuthFailure: ((err: Error) => void) | null = null;
+const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = reject; });
+(window as any).gm_authFailure = () => {
+  console.error('Google Maps: authentication failed — check the API key\'s HTTP referrer restrictions cover this app\'s actual origin.');
+  rejectOnAuthFailure?.(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
+};
+
 export function loadGoogleMaps(): Promise<void> {
   if (loadPromise) return loadPromise;
 
@@ -52,15 +72,18 @@ export function loadGoogleMaps(): Promise<void> {
     })({ key: apiKey, v: 'weekly' }));
   }
 
-  loadPromise = (async () => {
-    const google = w.google;
-    await Promise.all([
-      google.maps.importLibrary('places'),
-      google.maps.importLibrary('geocoding'),
-      google.maps.importLibrary('maps'),
-      google.maps.importLibrary('marker'),
-    ]);
-  })();
+  loadPromise = Promise.race([
+    (async () => {
+      const google = w.google;
+      await Promise.all([
+        google.maps.importLibrary('places'),
+        google.maps.importLibrary('geocoding'),
+        google.maps.importLibrary('maps'),
+        google.maps.importLibrary('marker'),
+      ]);
+    })(),
+    authFailure,
+  ]);
 
   // A failure (flaky network, ad-blocker, transient CORS hiccup) must not
   // be cached forever — the next caller (e.g. the user retrying) should get
