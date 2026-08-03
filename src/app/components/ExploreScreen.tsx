@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, MessageCircle } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
 import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
+import { haptics } from '../../lib/haptics';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -71,40 +72,70 @@ export function ExploreScreen({
   // ── Conversations ────────────────────────────────────────────────────────────
   const [conversations, setConversations] = useState<any[]>([]);
   const [loadingChats, setLoadingChats] = useState(false);
+  const [requests, setRequests] = useState<any[]>([]);
+  const [showRequests, setShowRequests] = useState(false);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadConversations = useCallback(() => {
     if (!currentUserId) return;
     setLoadingChats(true);
-    insforge.database
-      .from('direct_messages')
-      .select('id, sender_id, recipient_id, body, created_at, read_at')
-      .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
-      .order('created_at', { ascending: false })
-      .limit(200)
-      .then(async ({ data, error }) => {
+    Promise.all([
+      insforge.database
+        .from('direct_messages')
+        .select('id, sender_id, recipient_id, body, created_at, read_at')
+        .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
+        .order('created_at', { ascending: false })
+        .limit(200),
+      insforge.database
+        .from('conversation_requests')
+        .select('requester_id, recipient_id, status, created_at')
+        .or(`requester_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`),
+    ])
+      .then(async ([{ data, error }, { data: reqData }]) => {
         if (error || !data) { setLoadingChats(false); return; }
         try {
+          const reqRows = reqData || [];
+          // Only 'accepted' (or no row at all — legacy threads from before
+          // this feature shipped) belong in the main list; pending/declined
+          // stay out of the way in Message Requests.
+          const gatedPartnerIds = new Set(
+            reqRows.filter((r: any) => r.status !== 'accepted')
+              .map((r: any) => r.requester_id === currentUserId ? r.recipient_id : r.requester_id)
+          );
+          const pendingIncoming = reqRows.filter((r: any) => r.status === 'pending' && r.recipient_id === currentUserId);
+
           const seen = new Map<string, any>();
           const unreadCounts = new Map<string, number>();
           for (const msg of data) {
             const partnerId = msg.sender_id === currentUserId ? msg.recipient_id : msg.sender_id;
+            if (gatedPartnerIds.has(partnerId)) continue;
             if (!seen.has(partnerId)) seen.set(partnerId, msg);
             if (msg.sender_id !== currentUserId && !msg.read_at) {
               unreadCounts.set(partnerId, (unreadCounts.get(partnerId) || 0) + 1);
             }
           }
-          const partnerIds = [...seen.keys()];
-          if (partnerIds.length === 0) { setConversations([]); return; }
+          const partnerIds = [...new Set([...seen.keys(), ...pendingIncoming.map((r: any) => r.requester_id)])];
+          if (partnerIds.length === 0) { setConversations([]); setRequests([]); return; }
           const { data: profiles } = await insforge.database
             .from('public_profiles')
-            .select('id, full_name, username, avatar_url, vc_badge')
+            .select('id, full_name, username, avatar_url, vc_badge, last_active_at')
             .in('id', partnerIds);
           const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
-          setConversations(partnerIds.map(pid => ({
+          const isOnline = (id: string) => {
+            const t = profileMap.get(id)?.last_active_at;
+            return !!t && Date.now() - new Date(t).getTime() < 60_000;
+          };
+          setConversations([...seen.keys()].map(pid => ({
             partnerId: pid,
             lastMsg: seen.get(pid),
             profile: profileMap.get(pid) || null,
             unreadCount: unreadCounts.get(pid) || 0,
+            online: isOnline(pid),
+          })));
+          setRequests(pendingIncoming.map((r: any) => ({
+            requesterId: r.requester_id,
+            profile: profileMap.get(r.requester_id) || null,
+            createdAt: r.created_at,
           })));
         } catch (err) {
           console.error('Failed to build conversation list:', err);
@@ -112,7 +143,24 @@ export function ExploreScreen({
           setLoadingChats(false);
         }
       }, (err) => { console.error('Direct messages fetch error:', err); setLoadingChats(false); });
-  }, [currentUserId, chatRefreshKey, localRefreshKey]);
+  }, [currentUserId]);
+
+  useEffect(() => { loadConversations(); }, [loadConversations, chatRefreshKey, localRefreshKey]);
+
+  async function respondToRequest(requesterId: string, action: 'accept' | 'decline') {
+    setRespondingId(requesterId);
+    haptics.light();
+    try {
+      const { error } = await insforge.database.rpc('respond_to_message_request', { p_requester_id: requesterId, p_action: action });
+      if (error) throw error;
+      setRequests(prev => prev.filter(r => r.requesterId !== requesterId));
+      if (action === 'accept') loadConversations();
+    } catch (err) {
+      console.error('Failed to respond to message request:', err);
+    } finally {
+      setRespondingId(null);
+    }
+  }
 
   // ── People search ────────────────────────────────────────────────────────────
   const [searchedUsers, setSearchedUsers] = useState<UserProfile[]>([]);
@@ -250,6 +298,23 @@ export function ExploreScreen({
               </div>
             )}
 
+            {/* ── Message Requests ── */}
+            {!isSearching && requests.length > 0 && (
+              <div style={{ padding: '0 16px 12px' }}>
+                <button
+                  onClick={() => { haptics.light(); setShowRequests(true); }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px', padding: '12px 14px', cursor: 'pointer' }}
+                >
+                  <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <MessageCircle size={15} color="#A78BFA" />
+                  </div>
+                  <span style={{ flex: 1, textAlign: 'left', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>Message Requests</span>
+                  <span style={{ background: '#A78BFA', color: '#fff', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
+                  <ChevronRight size={16} color="#8B8FA8" />
+                </button>
+              </div>
+            )}
+
             {/* ── Conversations ── */}
             <div style={{ padding: '0 16px' }}>
               {!isSearching && (
@@ -275,7 +340,7 @@ export function ExploreScreen({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount }: any) => {
+                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount, online }: any) => {
                     const name = profile?.full_name || profile?.username || 'User';
                     const avatarUrl = profile?.avatar_url;
                     const initial = name[0]?.toUpperCase() || 'U';
@@ -288,8 +353,9 @@ export function ExploreScreen({
                         role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '0', cursor: 'pointer', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
                       >
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box', position: 'relative' }}>
                           {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
+                          {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #020005' }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
@@ -317,6 +383,51 @@ export function ExploreScreen({
           </>
         )}
       </div>
+
+      {/* ── Message Requests overlay ── */}
+      {showRequests && (
+        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px 16px' }}>
+            <button onClick={() => setShowRequests(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+              <X size={22} color="#A78BFA" />
+            </button>
+            <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Message Requests</h2>
+          </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {requests.length === 0 ? (
+              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '13px' }}>No pending requests.</p>
+            ) : requests.map((r) => {
+              const name = r.profile?.full_name || r.profile?.username || 'User';
+              const avatarUrl = r.profile?.avatar_url;
+              return (
+                <div key={r.requesterId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px' }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                    {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>{name}</p>
+                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>wants to message you</p>
+                  </div>
+                  <button
+                    onClick={() => respondToRequest(r.requesterId, 'decline')}
+                    disabled={respondingId === r.requesterId}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <X size={15} color="#8B8FA8" />
+                  </button>
+                  <button
+                    onClick={() => respondToRequest(r.requesterId, 'accept')}
+                    disabled={respondingId === r.requesterId}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <Check size={15} color="#fff" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X, Check } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
+import { haptics } from '../../lib/haptics';
 
 interface InboxScreenProps {
   currentUser: { id: string };
@@ -15,20 +16,31 @@ interface Thread {
   lastBody: string;
   lastAt: string;
   unread: number;
+  online: boolean;
+}
+
+interface RequestRow {
+  requesterId: string;
+  name: string;
+  avatarUrl?: string;
+  createdAt: string;
 }
 
 export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxScreenProps) {
+  const [tab, setTab] = useState<'messages' | 'requests'>('messages');
   const [threads, setThreads] = useState<Thread[]>([]);
+  const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [menuThread, setMenuThread] = useState<Thread | null>(null);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'delete' | 'block' | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
+  const [respondingId, setRespondingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  async function load() {
+  const load = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      const [{ data: msgs }, { data: clears }] = await Promise.all([
+      const [{ data: msgs }, { data: clears }, { data: pendingReqs }] = await Promise.all([
         insforge.database
           .from('direct_messages')
           .select('id, sender_id, recipient_id, body, created_at, read_at')
@@ -39,34 +51,45 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
           .from('conversation_clears')
           .select('other_user_id, cleared_at')
           .eq('user_id', currentUser.id),
-      ]);
-
-      if (!msgs || msgs.length === 0) { setThreads([]); setLoading(false); return; }
-
-      // Per-user "Clear Chat"/"Delete Chat" cutoff — messages at or before
-      // this timestamp are hidden from this user's own inbox/conversation
-      // view only (see migrations/20260713170000_conversation-clear-and-delete.sql).
-      const clearedAtMap: Record<string, number> = {};
-      (clears || []).forEach((c: any) => { clearedAtMap[c.other_user_id] = new Date(c.cleared_at).getTime(); });
-
-      const otherIds = [...new Set(msgs.map((m: any) =>
-        m.sender_id === currentUser.id ? m.recipient_id : m.sender_id
-      ))];
-
-      // Fetch profiles in parallel (not sequentially after msgs)
-      const [{ data: profiles }] = await Promise.all([
         insforge.database
-          .from('public_profiles')
-          .select('id, full_name, username, avatar_url')
-          .in('id', otherIds as string[]),
+          .from('conversation_requests')
+          .select('requester_id, recipient_id, status, created_at')
+          .or(`requester_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`),
       ]);
+
+      const reqRows = (pendingReqs as any[]) || [];
+      // A thread only belongs in "Messages" once the request is accepted OR
+      // there was never a request at all (legacy conversations from before
+      // this feature shipped) — never for 'pending'/'declined'.
+      const gatedOtherIds = new Set(
+        reqRows.filter(r => r.status !== 'accepted').map(r => r.requester_id === currentUser.id ? r.recipient_id : r.requester_id)
+      );
+      const pendingIncoming = reqRows.filter(r => r.status === 'pending' && r.recipient_id === currentUser.id);
+
+      const clearedAtMap: Record<string, number> = {};
+      ((clears as any[]) || []).forEach((c) => { clearedAtMap[c.other_user_id] = new Date(c.cleared_at).getTime(); });
+
+      const allMsgs = (msgs as any[]) || [];
+      const otherIds = [...new Set([
+        ...allMsgs.map((m) => m.sender_id === currentUser.id ? m.recipient_id : m.sender_id),
+        ...pendingIncoming.map((r) => r.requester_id),
+      ])];
+
+      const { data: profiles } = otherIds.length
+        ? await insforge.database.from('public_profiles').select('id, full_name, username, avatar_url, last_active_at').in('id', otherIds as string[])
+        : { data: [] as any[] };
 
       const profileMap: Record<string, any> = {};
       (profiles || []).forEach((p: any) => { profileMap[p.id] = p; });
+      const isOnline = (id: string) => {
+        const t = profileMap[id]?.last_active_at;
+        return !!t && Date.now() - new Date(t).getTime() < 60_000;
+      };
 
       const threadMap: Record<string, Thread> = {};
-      msgs.forEach((m: any) => {
+      allMsgs.forEach((m: any) => {
         const otherId = m.sender_id === currentUser.id ? m.recipient_id : m.sender_id;
+        if (gatedOtherIds.has(otherId)) return; // still pending/declined — belongs in Requests, not Messages
         const cutoff = clearedAtMap[otherId];
         if (cutoff && new Date(m.created_at).getTime() <= cutoff) return;
         if (!threadMap[otherId]) {
@@ -78,24 +101,30 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
             lastBody: m.body,
             lastAt: m.created_at,
             unread: 0,
+            online: isOnline(otherId),
           };
         }
-        if (m.recipient_id === currentUser.id && !m.read_at) {
-          threadMap[otherId].unread++;
-        }
+        if (m.recipient_id === currentUser.id && !m.read_at) threadMap[otherId].unread++;
       });
 
-      setThreads(Object.values(threadMap).sort(
-        (a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()
-      ));
+      setThreads(Object.values(threadMap).sort((a, b) => new Date(b.lastAt).getTime() - new Date(a.lastAt).getTime()));
+
+      setRequests(
+        pendingIncoming
+          .map((r) => {
+            const p = profileMap[r.requester_id];
+            return { requesterId: r.requester_id, name: p?.full_name || p?.username || 'Unknown', avatarUrl: p?.avatar_url, createdAt: r.created_at };
+          })
+          .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      );
     } catch (e) {
       console.error('InboxScreen load error', e);
     } finally {
       setLoading(false);
     }
-  }
+  }, [currentUser?.id]);
 
-  useEffect(() => { load(); }, [currentUser?.id]);
+  useEffect(() => { load(); }, [load]);
 
   function timeAgo(iso: string) {
     const diff = Date.now() - new Date(iso).getTime();
@@ -110,6 +139,26 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   function flash(msg: string) {
     setToast(msg);
     setTimeout(() => setToast(null), 2500);
+  }
+
+  async function respondToRequest(req: RequestRow, action: 'accept' | 'decline') {
+    setRespondingId(req.requesterId);
+    haptics.light();
+    try {
+      const { error } = await insforge.database.rpc('respond_to_message_request', { p_requester_id: req.requesterId, p_action: action });
+      if (error) throw error;
+      setRequests((prev) => prev.filter((r) => r.requesterId !== req.requesterId));
+      if (action === 'accept') {
+        flash(`You can now message ${req.name}.`);
+        await load();
+      } else {
+        flash(`Declined ${req.name}'s request.`);
+      }
+    } catch (e: any) {
+      flash(e?.message || 'Action failed. Please try again.');
+    } finally {
+      setRespondingId(null);
+    }
   }
 
   async function runConfirmedAction() {
@@ -140,12 +189,8 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     const deepLink = `${window.location.origin}/?user=${thread.otherUserId}`;
     const text = `Check out ${thread.otherUserName} on Vents 👇\n${deepLink}`;
     try {
-      if (navigator.share) {
-        await navigator.share({ title: thread.otherUserName, text, url: deepLink });
-      } else {
-        await navigator.clipboard.writeText(deepLink);
-        flash('Profile link copied.');
-      }
+      if (navigator.share) await navigator.share({ title: thread.otherUserName, text, url: deepLink });
+      else { await navigator.clipboard.writeText(deepLink); flash('Profile link copied.'); }
     } catch {
       // user cancelled share sheet
     }
@@ -154,24 +199,42 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <style>{`@keyframes rowIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
         borderBottom: '1px solid rgba(255,255,255,0.05)',
-        flexShrink: 0,
-        position: 'relative',
+        flexShrink: 0, position: 'relative',
       }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1 }}>
           <ArrowLeft size={24} color="#A78BFA" />
         </button>
-        <h1
-          style={{
-            color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0,
-            position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
-          }}
-        >
+        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Space Grotesk, sans-serif' }}>
           Messages
         </h1>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: 'flex', gap: '8px', padding: '12px 16px 0', flexShrink: 0 }}>
+        {(['messages', 'requests'] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => { haptics.light(); setTab(t); }}
+            style={{
+              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              background: tab === t ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(255,255,255,0.05)',
+              border: 'none', borderRadius: '12px', padding: '10px', cursor: 'pointer',
+              color: tab === t ? '#fff' : '#8B8FA8', fontSize: '13px', fontWeight: 700,
+            }}
+          >
+            {t === 'messages' ? 'Messages' : 'Requests'}
+            {t === 'requests' && requests.length > 0 && (
+              <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : '#A78BFA', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
+                {requests.length}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {toast && (
@@ -185,6 +248,42 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px 16px' }}>Loading…</p>
+        ) : tab === 'requests' ? (
+          requests.length === 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <MessageCircle size={28} color="#A78BFA" />
+              </div>
+              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>No message requests</p>
+              <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>
+                New conversations from people you haven't talked to yet show up here first.
+              </p>
+            </div>
+          ) : requests.map((r, i) => (
+            <div key={r.requesterId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: r.avatarUrl ? 'transparent' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                {r.avatarUrl ? <img src={r.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#A78BFA', fontSize: '18px', fontWeight: 700 }}>{r.name[0]?.toUpperCase()}</span>}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>{r.name}</p>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>wants to message you · {timeAgo(r.createdAt)}</p>
+              </div>
+              <button
+                onClick={() => respondToRequest(r, 'decline')}
+                disabled={respondingId === r.requesterId}
+                style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <X size={15} color="#8B8FA8" />
+              </button>
+              <button
+                onClick={() => respondToRequest(r, 'accept')}
+                disabled={respondingId === r.requesterId}
+                style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+              >
+                <Check size={15} color="#fff" />
+              </button>
+            </div>
+          ))
         ) : threads.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -195,56 +294,35 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               Message an organiser from an event page or their profile.
             </p>
           </div>
-        ) : threads.map((t) => (
-          <div
-            key={t.otherUserId}
-            style={{
-              width: '100%',
-              borderBottom: '1px solid rgba(255,255,255,0.04)',
-              display: 'flex', alignItems: 'center', gap: '8px',
-            }}
-          >
+        ) : threads.map((t, i) => (
+          <div key={t.otherUserId} style={{ width: '100%', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', gap: '8px', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
             <button
               onClick={() => onOpenConversation({ id: t.otherUserId, name: t.otherUserName, avatarUrl: t.otherUserAvatar })}
-              style={{
-                flex: 1, background: 'none', border: 'none',
-                padding: '14px 4px 14px 16px', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', minWidth: 0,
-              }}
+              style={{ flex: 1, background: 'none', border: 'none', padding: '14px 4px 14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', minWidth: 0 }}
             >
-              <div style={{
-                width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0,
-                background: t.otherUserAvatar ? 'transparent' : 'rgba(167,139,250,0.2)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
-              }}>
+              <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: t.otherUserAvatar ? 'transparent' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
                 {t.otherUserAvatar
                   ? <img src={t.otherUserAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                   : <span style={{ color: '#A78BFA', fontSize: '18px', fontWeight: 700 }}>{t.otherUserName[0]?.toUpperCase()}</span>
                 }
+                {t.online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #020005' }} />}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
                   <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{t.otherUserName}</span>
                   <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0 }}>{timeAgo(t.lastAt)}</span>
                 </div>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <p style={{ color: t.unread > 0 ? '#F0F0FF' : '#8B8FA8', fontSize: '12px', fontWeight: t.unread > 0 ? 600 : 400, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {t.lastBody}
                 </p>
               </div>
               {t.unread > 0 && (
-                <div style={{
-                  background: '#A78BFA', color: '#fff', fontSize: '11px', fontWeight: 700,
-                  width: '20px', height: '20px', borderRadius: '50%',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-                }}>
+                <div style={{ background: '#A78BFA', color: '#fff', fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {t.unread > 9 ? '9+' : t.unread}
                 </div>
               )}
             </button>
-            <button
-              onClick={() => setMenuThread(t)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 16px 8px 4px', flexShrink: 0 }}
-            >
+            <button onClick={() => setMenuThread(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 16px 8px 4px', flexShrink: 0 }}>
               <MoreVertical size={18} color="#8B8FA8" />
             </button>
           </div>
@@ -253,10 +331,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
       {/* 3-dot action menu */}
       {menuThread && !confirmAction && (
-        <div
-          onClick={() => setMenuThread(null)}
-          style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}
-        >
+        <div onClick={() => setMenuThread(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 60, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#090514', borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '16px 0 calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.12)', borderRadius: '2px', margin: '0 auto 16px' }} />
             <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, padding: '0 20px 12px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>{menuThread.otherUserName}</p>
@@ -266,11 +341,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               { icon: <Ban size={18} />, label: 'Block User', color: '#EF4444', action: () => setConfirmAction('block') },
               { icon: <Share2 size={18} />, label: 'Share User', color: '#3B82F6', action: () => handleShare(menuThread) },
             ].map((item) => (
-              <button
-                key={item.label}
-                onClick={item.action}
-                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}
-              >
+              <button key={item.label} onClick={item.action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                 <span style={{ color: item.color, display: 'flex' }}>{item.icon}</span>
                 <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>{item.label}</span>
               </button>
@@ -299,18 +370,10 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                 : 'They won\'t be able to message you, and this conversation will disappear from your inbox.'}
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => setConfirmAction(null)}
-                disabled={actionBusy}
-                style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '11px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
-              >
+              <button onClick={() => setConfirmAction(null)} disabled={actionBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '11px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button
-                onClick={runConfirmedAction}
-                disabled={actionBusy}
-                style={{ flex: 1, background: '#EF4444', border: 'none', borderRadius: '12px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}
-              >
+              <button onClick={runConfirmedAction} disabled={actionBusy} style={{ flex: 1, background: '#EF4444', border: 'none', borderRadius: '12px', padding: '11px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: actionBusy ? 'not-allowed' : 'pointer', opacity: actionBusy ? 0.6 : 1 }}>
                 {actionBusy ? 'Working…' : 'Confirm'}
               </button>
             </div>

@@ -641,6 +641,19 @@ export default function App() {
 
   useEffect(() => { hydrateAuth(); }, [hydrateAuth]);
 
+  // Lightweight presence for messaging's "online" indicator — bumps
+  // users.last_active_at every 30s while a signed-in user has the app
+  // foregrounded. "Online" is then just "seen in the last 60s", computed
+  // client-side wherever it's shown (ConversationScreen/InboxScreen) —
+  // not a real presence channel, an honest approximation.
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const beat = () => { insforge.database.rpc('heartbeat_presence', {}).then(() => {}, () => {}); };
+    beat();
+    const interval = setInterval(beat, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
   // Re-validate the session whenever the page is restored from the
   // back/forward cache (bfcache) — e.g. a mobile browser backgrounded and
   // resumed. Without this, the user could briefly (or indefinitely, until
