@@ -29,7 +29,7 @@ export const NIGERIA_CITIES: Record<string, string[]> = {
   'Edo': ['Benin City', 'Auchi', 'Ekpoma', 'Uromi', 'Igarra', 'Ubiaja'],
   'Ekiti': ['Ado Ekiti', 'Ikere Ekiti', 'Ilawe Ekiti', 'Oye Ekiti', 'Ise Ekiti', 'Efon Alaaye'],
   'Enugu': ['Enugu', 'Nsukka', 'Agbani', 'Oji River', 'Udi', 'Awgu'],
-  'Federal Capital Territory (Abuja)': ['Garki', 'Maitama', 'Wuse', 'Asokoro', 'Gwagwalada', 'Kubwa', 'Bwari', 'Kuje', 'Abaji'],
+  'Federal Capital Territory (Abuja)': ['Garki', 'Maitama', 'Wuse', 'Wuse 2', 'Asokoro', 'Gwarinpa', 'Jabi', 'Utako', 'Life Camp', 'Katampe', 'Central Area', 'Guzape', 'Gwagwalada', 'Kubwa', 'Bwari', 'Kuje', 'Abaji', 'Lugbe', 'Apo', 'Lokogoma', 'Dawaki', 'Karu', 'Nyanya', 'Gudu'],
   'Gombe': ['Gombe', 'Kaltungo', 'Billiri', 'Dukku', 'Kumo', 'Deba'],
   'Imo': ['Owerri', 'Orlu', 'Okigwe', 'Mbaise', 'Oguta', 'Nkwerre'],
   'Jigawa': ['Dutse', 'Hadejia', 'Gumel', 'Ringim', 'Birnin Kudu', 'Kazaure'],

@@ -68,6 +68,12 @@ export function PickerSheet({
   onClose,
   searchPlaceholder = 'Search...',
   searchable = true,
+  // For lists that can never be exhaustive (e.g. every neighbourhood in
+  // Nigeria) — when the typed query matches nothing, offers "Use '<query>'"
+  // so the list is a set of suggestions, not a hard allowlist that blocks
+  // anyone whose city isn't already in it.
+  allowCustom = false,
+  customLabel = (q: string) => `Use "${q}"`,
 }: {
   title: string;
   options: PickerOption[];
@@ -76,11 +82,16 @@ export function PickerSheet({
   onClose: () => void;
   searchPlaceholder?: string;
   searchable?: boolean;
+  allowCustom?: boolean;
+  customLabel?: (query: string) => string;
 }) {
   const [query, setQuery] = useState('');
   const filtered = searchable
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
+  const trimmedQuery = query.trim();
+  const exactMatchExists = filtered.some((o) => o.label.toLowerCase() === trimmedQuery.toLowerCase());
+  const showCustomOption = allowCustom && trimmedQuery.length > 0 && !exactMatchExists;
 
   return (
     <div
@@ -192,10 +203,28 @@ export function PickerSheet({
             overscrollBehavior: 'contain',
           }}
         >
-          {filtered.length === 0 && (
+          {filtered.length === 0 && !showCustomOption && (
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
               No results found.
             </p>
+          )}
+          {showCustomOption && (
+            <div
+              onClick={() => onSelect(trimmedQuery)}
+              style={{
+                background: 'rgba(168,85,247,0.1)',
+                border: '1.5px dashed rgba(168,85,247,0.4)',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                cursor: 'pointer',
+                color: '#A78BFA',
+                fontSize: '14px',
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              {customLabel(trimmedQuery)}
+            </div>
           )}
           {filtered.map((o) => {
             const isSelected = value === o.value;

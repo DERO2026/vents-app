@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
-import { mapDbEventToFrontend } from './HomeScreen';
+import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
@@ -37,7 +37,6 @@ import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
-import { LazyImage } from './LazyImage';
 import { FlyerLightbox } from './FlyerLightbox';
 import { EventMap } from './EventMap';
 
@@ -1262,36 +1261,13 @@ export function EventDetailsScreen({
             ) : (
               <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {relatedEvents.map((evt) => (
-                  <div
+                  <HorizontalEventCard
                     key={evt.id}
-                    onClick={() => onEventPress && onEventPress(evt)}
-                    style={{
-                      width: '150px',
-                      background: '#090514',
-                      border: '1px solid rgba(255,255,255,0.05)',
-                      borderRadius: '16px',
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <LazyImage
-                      src={evt.image}
-                      thumbnailUrl={(evt as any).thumbnail_url ?? null}
-                      alt=""
-                      objectFit="cover"
-                      style={{ width: '100%', height: '80px' }}
-                    />
-                    <div style={{ padding: '8px' }}>
-                      <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '32px', lineHeight: 1.3, marginBottom: '4px' }}>
-                        {evt.title}
-                      </p>
-                      <p style={{ color: '#8B8FA8', fontSize: '10px' }}>{evt.date}</p>
-                      <p style={{ color: formatPriceRange(evt.ticketTypes) === 'Free' ? '#06D6A0' : '#FFB830', fontSize: '11px', fontWeight: 700, marginTop: '2px' }}>
-                        {formatPriceRange(evt.ticketTypes)}
-                      </p>
-                    </div>
-                  </div>
+                    event={evt}
+                    onPress={() => onEventPress && onEventPress(evt)}
+                    isSaved={false}
+                    onToggleSave={() => {}}
+                  />
                 ))}
               </div>
             )}

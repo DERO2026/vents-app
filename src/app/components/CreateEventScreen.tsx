@@ -1729,9 +1729,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       {showCityModal && stateName && NIGERIA_CITIES[stateName] && (
         <PickerSheet
           title="Select City"
-          searchPlaceholder="Search city..."
+          searchPlaceholder="Search or type a city/area..."
           value={city}
           options={NIGERIA_CITIES[stateName].map((c) => ({ value: c, label: c }))}
+          allowCustom
           onSelect={(v) => {
             setCity(v);
             setShowCityModal(false);

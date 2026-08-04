@@ -385,7 +385,7 @@ function CardSkeleton() {
   );
 }
 
-const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
+export const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
   event: Event;
   onPress: (e: Event) => void;
   isSaved: boolean;
