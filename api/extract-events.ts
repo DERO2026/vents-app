@@ -65,7 +65,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       signal: ctrl.signal,
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 4000,
+        // A full-page copy/paste (nav, footer, cookie banners, multiple
+        // listed events) can genuinely need more than 4000 output tokens
+        // once several events are each extracted to the full schema below —
+        // a response that hits the token cap mid-array silently produces
+        // truncated, unparseable JSON, which the fallback below then had no
+        // choice but to give up on and report as "no events found".
+        max_tokens: 8000,
         messages: [{
           role: 'user',
           content: `Today is ${today}. Extract all events from this text into the VENTS event schema. The text was copied from a real event page or flyer and may be messy — inconsistent line breaks, mixed-in navigation/ad text, emoji, multiple languages, or run-together sentences. Never fail or refuse because of messy formatting: always return your best-effort extraction for every event you can identify, even from partial or oddly-formatted input. May contain one or multiple events.
@@ -108,7 +114,12 @@ ${text}`
     }
 
     const data = await response.json();
-    const content = data.content?.[0]?.text || '[]';
+    let content: string = data.content?.[0]?.text || '[]';
+    // Despite the prompt explicitly saying "no markdown, no backticks",
+    // Claude occasionally still wraps the array in a ```json fence anyway —
+    // strip it before attempting to parse rather than relying solely on the
+    // regex fallback below to happen to still work around it.
+    content = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
 
     // Claude is asked for a JSON array but nothing enforces that shape — if
     // it ever returns an object instead (e.g. {"events": [...]}), a single
@@ -117,19 +128,50 @@ ${text}`
     // try/catch, and surfaced as an opaque 500 "Unknown error" with no clue
     // what actually happened.
     let events: any = [];
+    let parseFailed = false;
     try {
       events = JSON.parse(content);
     } catch {
       const match = content.match(/\[[\s\S]*\]/);
       if (match) {
-        try { events = JSON.parse(match[0]); } catch { events = []; }
+        try { events = JSON.parse(match[0]); } catch { parseFailed = true; }
+      } else {
+        parseFailed = true;
       }
     }
+
+    // A response that hit max_tokens mid-array is valid up to the last
+    // complete object but has no closing `]` (or `}` on the last object) —
+    // rather than discarding everything already extracted, salvage every
+    // complete `{...}` object found and treat that as the result. Genuinely
+    // better than silently reporting "no events found" when Claude did in
+    // fact find and format several, just ran out of room for the last one.
+    if (parseFailed) {
+      const objectMatches = content.match(/\{[^{}]*\}/g);
+      if (objectMatches) {
+        events = objectMatches
+          .map((s: string) => { try { return JSON.parse(s); } catch { return null; } })
+          .filter(Boolean);
+      }
+    }
+
     if (!Array.isArray(events)) {
       events = Array.isArray(events?.events) ? events.events : [];
     }
 
-    return res.status(200).json({ events: (events as any[]).filter((e: any) => e && e.title) });
+    const finalEvents = (events as any[]).filter((e: any) => e && e.title);
+
+    // Diagnostic logging — visible via `vercel logs` / the dashboard.
+    // Previously this endpoint returned 200 with an empty array on ANY
+    // parse failure with zero trace of what Claude actually said, making a
+    // report of "it found nothing" undiagnosable after the fact.
+    console.log(
+      `[extract-events] input=${text.length}chars stop_reason=${data.stop_reason} ` +
+      `parsedEvents=${finalEvents.length} parseFailed=${parseFailed} ` +
+      `rawContentPreview=${JSON.stringify(content.slice(0, 300))}`
+    );
+
+    return res.status(200).json({ events: finalEvents });
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       return res.status(504).json({ error: 'Extraction took too long. Try a shorter piece of text.' });
