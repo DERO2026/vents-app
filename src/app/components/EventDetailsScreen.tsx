@@ -32,7 +32,6 @@ import { insforge } from '../../lib/insforge';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { downloadBlob } from '../../lib/ticketImage';
-import { Capacitor } from '@capacitor/core';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -440,32 +439,17 @@ export function EventDetailsScreen({
       ? `https://www.google.com/maps/search/?api=1&query=${hasCoords ? coords : query}`
       : `https://maps.apple.com/?q=${query}${hasCoords ? `&ll=${coords}` : ''}`;
 
-    // Both providers' https:// URLs get routed through openExternalUrl's
-    // in-app browser tab on native (see externalLink.ts) — indistinguishable
-    // from a website, not "opening in Maps". A native URI scheme instead
-    // hands off straight to the installed app; there's no reliable "scheme
-    // unsupported" event, so fall back to the web URL only if the app
-    // never actually backgrounds this WebView within the timeout (the
-    // standard custom-URL-scheme-with-fallback pattern).
-    if (Capacitor.isNativePlatform()) {
-      const platform = Capacitor.getPlatform();
-      const nativeUrl = provider === 'google'
-        ? (platform === 'ios'
-            ? (hasCoords ? `comgooglemaps://?q=${coords}&center=${coords}` : `comgooglemaps://?q=${query}`)
-            : (hasCoords ? `geo:${coords}?q=${coords}(${query})` : `geo:0,0?q=${query}`))
-        : `maps://?q=${query}${hasCoords ? `&ll=${coords}` : ''}`;
-
-      let backgrounded = false;
-      const onVisibility = () => { if (document.hidden) backgrounded = true; };
-      document.addEventListener('visibilitychange', onVisibility);
-      window.location.href = nativeUrl;
-      setTimeout(() => {
-        document.removeEventListener('visibilitychange', onVisibility);
-        if (!backgrounded) openExternalUrl(webUrl);
-      }, 1200);
-    } else {
-      openExternalUrl(webUrl);
-    }
+    // Previously attempted a raw geo:/comgooglemaps:// URI scheme first (to
+    // open the actual installed Maps app instead of an in-app browser tab),
+    // with a visibilitychange-based fallback to this same web URL. Reverted:
+    // an unhandled or malformed custom-scheme URI just silently does nothing
+    // in an Android WebView — no error, no navigation, nothing to catch —
+    // and that's exactly what got reported ("nothing happens when I tap
+    // Google Maps"). openExternalUrl + Browser.open() is the same mechanism
+    // already used everywhere else in this app (WhatsApp, Terms, Privacy
+    // links) and has never been reported broken — reliability over the
+    // marginal benefit of skipping the in-app browser tab.
+    openExternalUrl(webUrl);
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
