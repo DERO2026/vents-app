@@ -470,6 +470,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 <div
                   style={{
                     flex: 1,
+                    minWidth: 0,
                     display: 'flex',
                     alignItems: 'center',
                     background: '#090514',
@@ -486,7 +487,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     onBlur={() => setPhoneTouched(true)}
-                    style={INPUT_STYLE}
+                    style={{ ...INPUT_STYLE, minWidth: 0 }}
                   />
                 </div>
               </div>
