@@ -247,9 +247,9 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
 
           {/* Search */}
           <div style={{ padding: '0 16px 10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '10px 14px' }}>
-              <Search size={16} color="#8B8FA8" />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email or ticket ID..." style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '10px 14px', minWidth: 0 }}>
+              <Search size={16} color="#8B8FA8" style={{ flexShrink: 0 }} />
+              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email or ticket ID..." style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }} />
             </div>
           </div>
 

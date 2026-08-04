@@ -369,27 +369,37 @@ export function NotificationsScreen({
               const offsetX = swipe?.id === notif.id ? swipe.offsetX : 0;
               return (
                 <div key={notif.id} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden' }}>
-                  {/* Delete-reveal background */}
-                  <div style={{
-                    position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
-                  }}>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '50%',
-                        background: 'rgba(239,68,68,0.2)',
-                        border: '1px solid rgba(239,68,68,0.35)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Trash2 size={15} color="#EF4444" />
+                  {/* Delete-reveal background — only exists in the DOM for
+                      the row actually mid-swipe, rather than being rendered
+                      for every row and relying solely on the parent's
+                      overflow:hidden to clip it. A translated sibling can
+                      get promoted to its own compositing layer in some
+                      WebView versions, which has been known to ignore the
+                      ancestor's overflow:hidden clip and show through —
+                      not rendering it at all when idle removes that failure
+                      mode entirely instead of depending on clipping. */}
+                  {offsetX !== 0 && (
+                    <div style={{
+                      position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
+                    }}>
+                      <div
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          background: 'rgba(239,68,68,0.2)',
+                          border: '1px solid rgba(239,68,68,0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div
                     onClick={() => { if (offsetX === 0) markRead(notif.id); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (offsetX === 0) markRead(notif.id); } }}

@@ -1505,10 +1505,10 @@ export function SettingsScreen({
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>{displayName}</p>
+              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</p>
               <BadgeChip tier={(currentUser as any)?.vc_badge} />
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '2px' }}>{displayEmail}</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayEmail}</p>
           </div>
           <button
             onClick={() => setSubScreen('profile')}

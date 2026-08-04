@@ -1249,9 +1249,9 @@ export function EventDetailsScreen({
               Related Events
             </p>
             {loadingRelated ? (
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6 }} />
+                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
                 ))}
               </div>
             ) : relatedEvents.length === 0 ? (
@@ -1260,7 +1260,7 @@ export function EventDetailsScreen({
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {relatedEvents.map((evt) => (
                   <div
                     key={evt.id}

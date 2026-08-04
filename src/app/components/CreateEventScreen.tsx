@@ -1569,7 +1569,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   border: '1px solid rgba(255,255,255,0.05)',
                 }}
               >
-                <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{label}</span>
+                <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{label}</span>
                 <span
                   style={{
                     color: value.includes('not set') ? '#8B8FA8' : '#F0F0FF',
@@ -1577,6 +1577,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     fontWeight: 600,
                     textAlign: 'right',
                     maxWidth: '180px',
+                    display: 'inline-block',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {value}
