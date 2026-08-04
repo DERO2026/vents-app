@@ -26,7 +26,21 @@ let loadPromise: Promise<void> | null = null;
 let rejectOnAuthFailure: ((err: Error) => void) | null = null;
 const authFailure = new Promise<never>((_, reject) => { rejectOnAuthFailure = reject; });
 (window as any).gm_authFailure = () => {
-  console.error('Google Maps: authentication failed — check the API key\'s HTTP referrer restrictions cover this app\'s actual origin.');
+  // This is the one piece of diagnostic infrastructure that actually
+  // matters here: this failure only reproduces on a real device we don't
+  // have physical/DevTools access to. Reporting it to Sentry (already
+  // wired into this app) is the only way to see it happen remotely instead
+  // of guessing at Google Cloud Console settings blind. The origin/href are
+  // exactly what determines whether the API key's referrer allowlist
+  // matches, so they're the first thing to check in the captured event.
+  const context = { origin: window.location.origin, href: window.location.href, userAgent: navigator.userAgent };
+  console.error('Google Maps: authentication failed — check the API key\'s HTTP referrer restrictions cover this app\'s actual origin.', context);
+  import('./sentry').then(({ Sentry }) => {
+    Sentry.captureMessage('Google Maps gm_authFailure — API key rejected this origin', {
+      level: 'error',
+      extra: context,
+    });
+  }).catch(() => {});
   rejectOnAuthFailure?.(new Error('Google Maps authentication failed — this app\'s origin is not allowed by the API key\'s referrer restrictions.'));
 };
 
