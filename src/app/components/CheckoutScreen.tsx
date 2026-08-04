@@ -49,29 +49,6 @@ const COUNTRY_CODES = [
   { flag: '🇪🇹', code: '+251', name: 'Ethiopia', format: '091 000 0000' },
 ];
 
-function ReadOnlyField({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={{ width: '100%', minWidth: 0 }}>
-      <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          background: '#090514',
-          border: '1px solid rgba(255,255,255,0.05)',
-          borderRadius: '16px',
-          height: '52px',
-          padding: '0 14px',
-          width: '100%',
-          boxSizing: 'border-box',
-        }}
-      >
-        <span style={{ color: '#FFFFFF', fontSize: '14px' }}>{value}</span>
-      </div>
-    </div>
-  );
-}
-
 function Field({
   label,
   placeholder,
@@ -224,7 +201,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   const handleFreeTicket = () => {
     const purchaserName = name.trim() || 'Guest';
-    const purchaserEmail = currentUser?.email || email.trim();
+    const purchaserEmail = email.trim() || currentUser?.email || '';
     const ticket: PurchasedTicket = {
       event,
       ticketType,
@@ -257,7 +234,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     setPhoneTouched(true);
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
 
-    const payerEmail = currentUser?.email || email.trim();
+    const payerEmail = email.trim() || currentUser?.email || '';
     if (!payerEmail || !isValidEmail(payerEmail)) {
       setPayError('A valid email address is required to pay.');
       return;
@@ -449,14 +426,13 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {currentUser?.full_name ? (
-              <ReadOnlyField label="Full Name" value={currentUser.full_name} />
-            ) : (
-              <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
-            )}
-            {currentUser?.email ? (
-              <ReadOnlyField label="Email Address" value={currentUser.email} />
-            ) : (
+            {/* Pre-filled from the account when logged in, but never
+                locked — every logged-in user has an email (required at
+                signup), so a ReadOnlyField here made these two fields
+                permanently non-interactive for virtually everyone, reading
+                as a frozen/broken screen. Editable also legitimately
+                matters: buying a ticket for someone else with their name. */}
+            <Field label="Full Name" placeholder="Your full name" value={name} onChange={setName} />
             <Field
               label="Email Address"
               placeholder="name@gmail.com"
@@ -466,7 +442,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               error={emailError}
               onBlur={() => setEmailTouched(true)}
             />
-            )}
 
             {/* Phone with country code */}
             <div>
