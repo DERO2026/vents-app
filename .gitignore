@@ -48,6 +48,12 @@ dist-ssr
 android/app/google-services.json
 ios/App/App/GoogleService-Info.plist
 
+# Android release signing keystore — never commit. Generated locally,
+# used only by Android Studio's Generate Signed Bundle/APK wizard.
+android/app/*.jks
+android/app/*.keystore
+android/keystore.properties
+
 # The whole ios/ project (generated locally via `npx cap add ios`) stays
 # untracked — unlike android/, which is committed because it carries
 # intentional native config (AndroidManifest.xml intent-filters,
