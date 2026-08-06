@@ -12,6 +12,7 @@ import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
+import { useSwipeBack } from '../lib/useSwipeBack';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -266,6 +267,11 @@ export default function App() {
   useEffect(() => { screenRef.current = screen; }, [screen]);
   useEffect(() => { screenStackRef.current = screenStack; }, [screenStack]);
   useEffect(() => { goBackRef.current = goBack; }, [goBack]);
+
+  // iOS-style edge-swipe-to-go-back — same "can we actually go back" check
+  // as the hardware back-button listener above, so both paths agree on when
+  // a swipe/press should pop the stack vs. do nothing.
+  const swipeBack = useSwipeBack(screenStack.length > 0 || screen === 'event-details', goBack);
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
@@ -1834,7 +1840,7 @@ export default function App() {
               </button>
             </div>
           )}
-          <div className="absolute inset-0">
+          <div className="absolute inset-0" style={swipeBack.style} {...swipeBack.handlers}>
             {/* ── AUTH FLOW ── */}
             {authLoading ? (
               <SplashScreen onComplete={handleSplashComplete} />
