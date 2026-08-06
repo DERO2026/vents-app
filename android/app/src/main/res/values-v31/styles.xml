@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Android 12+ (API 31) introduced a real native SplashScreen API with
+         its own dedicated background attribute — android:windowBackground
+         (set in the base values/styles.xml) controls the Activity's window,
+         but the OS-drawn splash layer itself on 31+ reads
+         android:windowSplashScreenBackground specifically, ignoring
+         windowBackground for that layer. Without this override, that layer
+         falls back to the system default (white on stock AOSP/most OEM
+         skins), producing the exact white-flash symptom this fixes, but
+         only on Android 12+ devices — which is why it wasn't already
+         caught by testing on any pre-12 emulator/device. -->
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <item name="android:windowBackground">@drawable/splash</item>
+        <item name="android:windowSplashScreenBackground">@color/splashBackground</item>
+    </style>
+
+</resources>

@@ -17,6 +17,15 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
-        <item name="android:background">@drawable/splash</item>
+        <!-- `android:background` is not a real window-theming attribute —
+             it silently did nothing, so the Activity's window fell back to
+             its default (white) background for the gap between the OS
+             drawing the window and the WebView's first frame, showing as a
+             white flash. `android:windowBackground` is the attribute that
+             actually controls this. MainActivity never switches away from
+             this theme (see MainActivity.java — no setTheme() call), so it
+             stays in effect for the app's entire visible lifetime, not just
+             the launch moment. -->
+        <item name="android:windowBackground">@drawable/splash</item>
     </style>
 </resources>
