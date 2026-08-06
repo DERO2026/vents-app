@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <color name="colorPrimary">#7B2FBE</color>
+    <color name="colorPrimaryDark">#020005</color>
+    <color name="colorAccent">#A855F7</color>
+    <!-- Matches SplashScreen.tsx's own background and the launch drawable
+         (splash.png, generated over this exact color by @capacitor/assets)
+         — used by the SplashScreen/StatusBar plugin config below so the
+         native splash and status bar never flash a mismatched color. -->
+    <color name="splashBackground">#020005</color>
+</resources>

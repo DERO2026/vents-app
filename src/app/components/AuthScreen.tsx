@@ -6,6 +6,7 @@ import { VentsLogo } from './VentsLogo';
 import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../../lib/insforge';
 import { openExternalUrl } from '../../lib/externalLink';
 import { NIGERIA_STATES } from './StateSelectScreen';
+import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
 import { PickerSheet } from './shared/PickerSheet';
 import { verifyTOTP } from '../../lib/totp';
@@ -290,12 +291,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     };
   }, []);
 
-  const handleUploadSignupAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    // Reset the input so picking the same file twice still fires onChange
-    // (otherwise a rejected file can't be re-selected after fixing nothing).
-    e.target.value = '';
-    if (!file) return;
+  const processSignupAvatarFile = (file: File) => {
     setErrorMessage(null);
 
     // accept="image/*" is only a picker hint — the user can switch the dialog
@@ -312,6 +308,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
     setAvatarError(null);
     setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return URL.createObjectURL(file); });
+  };
+  const handleUploadSignupAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset the input so picking the same file twice still fires onChange
+    // (otherwise a rejected file can't be re-selected after fixing nothing).
+    e.target.value = '';
+    if (file) processSignupAvatarFile(file);
+  };
+  const openSignupAvatarPicker = async () => {
+    const native = await pickImage();
+    if (native) { processSignupAvatarFile(native); return; }
+    signupFileInputRef.current?.click();
   };
 
   const handleCropComplete = (croppedBlob: Blob) => {
@@ -1605,7 +1613,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     />
                     <button
                       type="button"
-                      onClick={() => signupFileInputRef.current?.click()}
+                      onClick={openSignupAvatarPicker}
                       disabled={avatarUploading}
                       style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '6px 12px', color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
                     >

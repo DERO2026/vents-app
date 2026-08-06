@@ -5,6 +5,7 @@ import { insforge, getAuthToken } from '../../lib/insforge';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
+import { pickImage } from '../../lib/pickImage';
 
 interface ConversationScreenProps {
   currentUser: { id: string };
@@ -663,7 +664,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         transform: 'translateZ(0)', position: 'relative', zIndex: 10,
       }}>
         {imageSharingEnabled && (
-          <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+          <button onClick={async () => { const native = await pickImage(); if (native) { sendImageMessage(native); return; } imgInputRef.current?.click(); }} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
             <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
           </button>
         )}

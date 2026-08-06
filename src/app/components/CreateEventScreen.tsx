@@ -18,6 +18,7 @@ import { LocationPicker } from './LocationPicker';
 import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
 import { REGION } from '../../lib/regionConfig';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { pickImage } from '../../lib/pickImage';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -362,14 +363,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     }
   }, [closeCropper, cropTarget, uploadFlierBlob]);
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const processCoverImageFile = (file: File) => {
     if (uploadingImage) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (e.target) {
-      e.target.value = '';
-    }
 
     // Previously only checked file size — a HEIC (common on iPhone camera
     // rolls) or PDF picked from Files would sail past this and only fail
@@ -392,12 +387,20 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     setCropTarget('cover');
     setCropSrc(URL.createObjectURL(file));
   };
-
-  const handleGalleryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (uploadingGallery || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
     if (e.target) e.target.value = '';
+    if (file) processCoverImageFile(file);
+  };
+  const openCoverImagePicker = async () => {
+    if (uploadingImage || submitting) return;
+    const native = await pickImage();
+    if (native) { processCoverImageFile(native); return; }
+    fileInputRef.current?.click();
+  };
+
+  const processGalleryImageFile = (file: File) => {
+    if (uploadingGallery || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
       setErrorMessage('Please choose a JPG, PNG, or WEBP image.');
       return;
@@ -408,6 +411,17 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     }
     setCropTarget('gallery');
     setCropSrc(URL.createObjectURL(file));
+  };
+  const handleGalleryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (file) processGalleryImageFile(file);
+  };
+  const openGalleryImagePicker = async () => {
+    if (uploadingGallery || submitting || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
+    const native = await pickImage();
+    if (native) { processGalleryImageFile(native); return; }
+    galleryFileInputRef.current?.click();
   };
 
   const removeGalleryImage = (index: number) => {
@@ -943,7 +957,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               />
             )}
             <div
-              onClick={() => { if (!uploadingImage && !submitting) fileInputRef.current?.click(); }}
+              onClick={openCoverImagePicker}
               style={{
                 height: '260px',
                 background: '#090514',
@@ -1051,7 +1065,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 {galleryUrls.length < MAX_GALLERY_FLIERS && (
                   <button
                     type="button"
-                    onClick={() => { if (!uploadingGallery && !submitting) galleryFileInputRef.current?.click(); }}
+                    onClick={openGalleryImagePicker}
                     disabled={uploadingGallery || submitting}
                     style={{
                       width: '72px',

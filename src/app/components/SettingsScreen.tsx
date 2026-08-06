@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { sanitize } from '../../lib/sanitize';
@@ -676,11 +677,19 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     });
   }, []);
 
-  const handleUploadPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !currentUser?.id) return;
+  const processAvatarFile = (file: File) => {
+    if (!currentUser?.id) return;
     setErrorMessage(null);
     setCropImageSrc(URL.createObjectURL(file));
+  };
+  const handleUploadPhoto = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processAvatarFile(file);
+  };
+  const openAvatarPicker = async () => {
+    const native = await pickImage();
+    if (native) { processAvatarFile(native); return; }
+    fileInputRef.current?.click();
   };
 
   const handleCropComplete = async (croppedBlob: Blob) => {
@@ -729,12 +738,19 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     }
   };
 
-  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const processCoverFile = (file: File) => {
     if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
     setCoverCropSrc(URL.createObjectURL(file));
     if (coverInputRef.current) coverInputRef.current.value = '';
+  };
+  const handleCoverUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) processCoverFile(file);
+  };
+  const openCoverPicker = async () => {
+    const native = await pickImage();
+    if (native) { processCoverFile(native); return; }
+    coverInputRef.current?.click();
   };
 
   const handleCoverCropComplete = async (croppedBlob: Blob) => {
@@ -865,7 +881,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
             <div style={{ marginBottom: '20px' }}>
               <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>Cover Photo</label>
               <div
-                onClick={() => coverInputRef.current?.click()}
+                onClick={openCoverPicker}
                 style={{ width: '100%', height: '100px', borderRadius: '14px', background: coverUrl ? 'none' : '#131629', border: coverUrl ? 'none' : '2px dashed rgba(255,255,255,0.12)', overflow: 'hidden', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
               >
                 {coverUrl ? (
@@ -901,7 +917,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 accept="image/*"
               />
               <button
-                onClick={() => fileInputRef.current?.click()}
+                onClick={openAvatarPicker}
                 disabled={saving}
                 style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
               >

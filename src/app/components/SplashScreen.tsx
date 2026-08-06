@@ -1,11 +1,21 @@
 import { useEffect } from 'react';
 import { VentsLogo } from './VentsLogo';
+import { hideNativeSplash, applyNativeStatusBar } from '../../lib/native';
 
 export function SplashScreen({ onComplete }: { onComplete: () => void }) {
   useEffect(() => {
     const t = setTimeout(onComplete, 2600);
     return () => clearTimeout(t);
   }, [onComplete]);
+
+  // Runs on this component's own first paint — its background/logo match
+  // the native launch splash pixel-for-pixel, so hiding the native one here
+  // (rather than waiting for the JS bundle to fully settle) hands off
+  // between the two with nothing visible in between.
+  useEffect(() => {
+    hideNativeSplash();
+    applyNativeStatusBar(true);
+  }, []);
 
   return (
     <div
