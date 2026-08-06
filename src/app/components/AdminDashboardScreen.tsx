@@ -312,10 +312,10 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setActionLoading(id);
     try {
       const token = await getAuthToken();
-      const res = await fetch(apiUrl('/api/v1/wallet/admin-approve-payout'), {
+      const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ request_id: id }),
+        body: JSON.stringify({ action: 'approve', request_id: id }),
       });
       const json = await res.json().catch(() => ({}));
       // Paystack rejections (insufficient transfer balance, invalid
