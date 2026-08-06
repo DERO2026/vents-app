@@ -11,6 +11,7 @@ import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
+import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -1758,6 +1759,7 @@ export default function App() {
           </button>
         </div>
       )}
+      <PermissionSheetHost />
       <style>{`
         .light-theme { color-scheme: light; }
         .phone-frame {
