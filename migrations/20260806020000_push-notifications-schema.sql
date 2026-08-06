@@ -22,10 +22,15 @@ CREATE INDEX IF NOT EXISTS idx_notifications_push_pending
 -- into 'social'/'booking' would make NotificationsScreen's type-based
 -- icon/grouping logic misleading. ALTER TABLE ... DROP/ADD CONSTRAINT is the
 -- only way to widen a CHECK short of recreating the column.
+-- 'broadcast' is already live in production (admin broadcast feature) but
+-- wasn't in any CHECK constraint definition found in migration history —
+-- confirmed via `db query "SELECT DISTINCT type FROM notifications"`
+-- against the actual database before writing this, not assumed from the
+-- migration files alone.
 ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
 ALTER TABLE public.notifications
   ADD CONSTRAINT notifications_type_check
-  CHECK (type IN ('reminder', 'booking', 'promo', 'social', 'message', 'sale', 'event_update'));
+  CHECK (type IN ('reminder', 'booking', 'promo', 'social', 'broadcast', 'message', 'sale', 'event_update'));
 
 -- notify_user gains an optional push_data payload so callers can attach a
 -- deep-link target (eventId/userId/screen — the same shape App.tsx's
