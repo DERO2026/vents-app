@@ -67,12 +67,12 @@ against this codebase.*
 - [ ] Content rating questionnaire — account for the 18+ event content gating already built in (`is_18_plus` flag on events)
 - [ ] Data Safety form — VENTS collects: account info (email, name, phone), photos (uploads); payment info is handled entirely by Paystack, never collected/stored directly. **No location data is collected at all** (confirmed — see §1's permission audit)
 
-## 5. Closed Testing Track
+## 5. Release Track: Production / Direct Submission
 
-- [ ] **Confirm whether this applies to your Play Console account**: mandatory for personal accounts created after November 2023 — requires a Closed Testing phase with **at least 12 opted-in testers for 14 consecutive days** before Production access is granted. Check your account creation date in Play Console → Account details.
-- [ ] If required: create a Closed Testing track, generate the opt-in link, and recruit 12+ testers (the `testerboy` reviewer account counts as one, but 11+ more real testers are needed)
-- [ ] Send the opt-in link to testers and confirm they actually install + open the app (an opted-in tester who never installs doesn't count toward the 14-day window in some interpretations — confirm current Play Console requirements, these have changed before)
-- [ ] Monitor the 14-day window — track start date, don't request Production access before it elapses
+- [x] **12-tester / 14-day Closed Testing requirement does not apply** — that requirement is specific to *personal* Play Console developer accounts created after November 2023. This project's Play Console account is an **Organization account**, which is exempt. Confirmed by the account owner directly (Organization accounts don't carry the new-personal-account testing gate).
+- [ ] Submit directly to a **Production** release track — no Closed/Internal Testing track is required first for this account type
+- [ ] Still worth doing even though it's not mandatory: a quick Internal Testing release (a handful of teammates, no 12-tester/14-day requirements attached) before Production, purely to catch install/crash issues on real devices before the public sees them
+- [ ] Complete the standard pre-Production requirements that DO still apply regardless of account type: content rating questionnaire, Data Safety form, App Access reviewer credentials (§2), Store Listing assets (§4) — none of these are testing-track-specific
 
 ## 6. Apple Developer / App Store Connect
 
