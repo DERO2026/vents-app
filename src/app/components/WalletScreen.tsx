@@ -123,7 +123,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       const [wRes, tRes, bRes, vRes] = await Promise.all([
         insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
         insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
-        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
+        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         insforge.database.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
@@ -403,9 +403,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             </button>
             <button
               onClick={openAddBank}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: emailVerified === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: emailVerified === false ? 0.5 : 1 }}
-              disabled={emailVerified === false}
-              title={emailVerified === false ? 'Verify your email to add a payout bank account' : undefined}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+              disabled={emailVerified === false || bankAccounts.length >= 3}
+              title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
             >
               <Plus size={18} color="#8B8FA8" />
               <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
