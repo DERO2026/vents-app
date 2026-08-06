@@ -129,6 +129,87 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    // @capacitor-community/media's savePhoto wants the full data: URL
+    // (unlike Filesystem.writeFile above, which wants the base64 payload
+    // with the prefix stripped) — kept as a separate helper rather than
+    // re-deriving one from the other.
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Android's savePhoto requires an albumIdentifier (iOS doesn't) — resolved
+// once per app session and cached, rather than a getAlbums()+createAlbum()
+// round trip on every save.
+let ventsAlbumId: string | null | undefined;
+async function getVentsAlbumId(): Promise<string | null> {
+  if (ventsAlbumId !== undefined) return ventsAlbumId;
+  if (Capacitor.getPlatform() !== 'android') {
+    ventsAlbumId = null;
+    return ventsAlbumId;
+  }
+  const { Media } = await import('@capacitor-community/media');
+  const { albums } = await Media.getAlbums();
+  const existing = albums.find((a) => a.name === 'VENTS');
+  if (existing) {
+    ventsAlbumId = existing.identifier;
+  } else {
+    await Media.createAlbum({ name: 'VENTS' });
+    const { albums: after } = await Media.getAlbums();
+    ventsAlbumId = after.find((a) => a.name === 'VENTS')?.identifier ?? null;
+  }
+  return ventsAlbumId;
+}
+
+export type SaveTicketResult = 'saved' | 'permission_denied' | 'failed';
+
+// Silently saves the ticket image straight to the device's Photos/Gallery —
+// no share sheet, no browser download bar. This is the "Save Ticket"
+// button's action; downloadBlob() below (cache write + native share sheet)
+// remains the "Share Ticket" action for when the user actually wants to
+// send the image somewhere. @capacitor-community/media's savePhoto handles
+// the platform permission prompt itself (throws error.code='accessDenied'
+// on refusal) — no separate requestPermissions() call needed. Falls back to
+// the browser save-as flow on web, same as downloadBlob().
+export async function saveTicketToGallery(blob: Blob, filename: string): Promise<SaveTicketResult> {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const { Media } = await import('@capacitor-community/media');
+      const dataUrl = await blobToDataUrl(blob);
+      const albumIdentifier = await getVentsAlbumId();
+      await Media.savePhoto({
+        path: dataUrl,
+        albumIdentifier: albumIdentifier ?? undefined,
+        fileName: filename.replace(/\.png$/i, ''),
+      });
+      return 'saved';
+    } catch (err: any) {
+      if (err?.code === 'accessDenied') return 'permission_denied';
+      console.error('Native gallery save failed:', err);
+      return 'failed';
+    }
+  }
+
+  try {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    return 'saved';
+  } catch (err) {
+    console.error('Ticket download failed:', err);
+    return 'failed';
+  }
+}
+
 // `<a download>` is a browser-only mechanism — inside a Capacitor WebView
 // (iOS/Android) it silently does nothing, so a native user would see a
 // "Saved!" confirmation for a file that never actually saved anywhere.

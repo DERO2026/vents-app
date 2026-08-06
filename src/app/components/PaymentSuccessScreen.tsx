@@ -6,7 +6,8 @@ import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
 import { useSignedTicketToken } from '../../lib/ticketToken';
-import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
+import { renderTicketImage, saveTicketToGallery } from '../../lib/ticketImage';
+import { Capacitor } from '@capacitor/core';
 import { shareLink } from '../../lib/shareLink';
 
 interface PaymentSuccessScreenProps {
@@ -73,9 +74,9 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
-      const saved = await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+      const result = await saveTicketToGallery(blob, `vents-ticket-${ticket.ticketId}.png`);
       if (!mountedRef.current) return;
-      if (saved) {
+      if (result === 'saved') {
         setSaveToast(true);
         setTimeout(() => { if (mountedRef.current) setSaveToast(false); }, 2500);
       } else {
@@ -331,7 +332,9 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       {/* Toast notifications */}
       {saveToast && (
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#10B981', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Ticket saved</span>
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
+            ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
+          </span>
         </div>
       )}
       {saveError && (
