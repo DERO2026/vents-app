@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { analytics } from '../../lib/analyticsEvents';
@@ -143,15 +144,23 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   // Detect a real platform authenticator (Face ID / Touch ID / Android
   // biometric) so the "Use biometrics" button is only offered when it can
-  // actually run — we never pretend it exists.
+  // actually run — we never pretend it exists. Native previously just
+  // assumed availability from Capacitor.isNativePlatform() alone (the
+  // WebAuthn check below it only runs on web, where PublicKeyCredential
+  // exists) — "biometrics" on native was never actually checked, and
+  // confirmWithBiometrics() below silently fell through to the cached
+  // password with no real biometric prompt at all.
   useEffect(() => {
     let alive = true;
-    const anyWin = window as any;
-    const w: any = anyWin.PublicKeyCredential;
+    if (Capacitor.isNativePlatform()) {
+      import('@capgo/capacitor-native-biometric').then(({ NativeBiometric }) =>
+        NativeBiometric.isAvailable().then((r) => { if (alive) setBiometricAvailable(r.isAvailable); }).catch(() => {})
+      );
+      return () => { alive = false; };
+    }
+    const w: any = (window as any).PublicKeyCredential;
     if (w?.isUserVerifyingPlatformAuthenticatorAvailable) {
       w.isUserVerifyingPlatformAuthenticatorAvailable().then((ok: boolean) => { if (alive) setBiometricAvailable(!!ok); }).catch(() => {});
-    } else if (anyWin.Capacitor?.isNativePlatform?.()) {
-      setBiometricAvailable(true); // native shell exposes biometric APIs
     }
     return () => { alive = false; };
   }, []);
@@ -187,12 +196,20 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const confirmWithBiometrics = async () => {
     setConfirmError('');
     try {
-      const anyWin = window as any;
-      if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
-        const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
-        await navigator.credentials.get({
-          publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
-        } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+      if (Capacitor.isNativePlatform()) {
+        const { NativeBiometric } = await import('@capgo/capacitor-native-biometric');
+        await NativeBiometric.verifyIdentity({
+          reason: 'Confirm this wallet action',
+          title: 'Biometric Confirmation',
+        }).catch(() => { throw new Error('Biometric check was cancelled.'); });
+      } else {
+        const anyWin = window as any;
+        if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
+          const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+          await navigator.credentials.get({
+            publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
+          } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+        }
       }
       if (!cachedPassword.current) {
         setConfirmError('Enter your password once to enable biometric confirmation.');
