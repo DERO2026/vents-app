@@ -75,6 +75,5 @@ WHERE e.deleted_at IS NULL
 -- FROM public.events
 -- WHERE deleted_at IS NULL
 --   AND image_url IS NULL
---   AND cover_url IS NULL
 --   AND (ticket_types IS NULL OR ticket_types::text = '[]')
 --   AND (description IS NULL OR trim(description) = '');

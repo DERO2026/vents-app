@@ -22,17 +22,17 @@ DECLARE
   v_organizer_id uuid;
 BEGIN
   SELECT id INTO v_organizer_id
-  FROM auth.users
-  WHERE email = 'playstore-reviewer@getvents.com';
+  FROM public.users
+  WHERE username = 'testerboy';
 
   IF v_organizer_id IS NULL THEN
-    RAISE EXCEPTION 'No user found for playstore-reviewer@getvents.com. Sign up with this email in the app first (see scripts/03-reviewer-test-account.sql), or replace v_organizer_id below with any real organizer''s id.';
+    RAISE EXCEPTION 'No user found with username ''testerboy''. Run scripts/03-reviewer-test-account.sql first, or replace v_organizer_id below with any real organizer''s id.';
   END IF;
 
   INSERT INTO public.events (
     organizer_id, title, description, category, location, event_date,
     start_time, end_time, price, ticket_types, ticket_goal, status,
-    is_featured, image_url, cover_url, is_18_plus
+    is_featured, image_url, is_18_plus
   ) VALUES
   (
     v_organizer_id,
@@ -49,7 +49,6 @@ BEGIN
     ]'::jsonb,
     500, 'live', true,
     'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1200&q=80',
-    'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=1600&q=80',
     false
   ),
   (
@@ -67,7 +66,6 @@ BEGIN
     ]'::jsonb,
     500, 'live', true,
     'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1200&q=80',
-    'https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=1600&q=80',
     false
   ),
   (
@@ -84,7 +82,6 @@ BEGIN
     ]'::jsonb,
     2000, 'live', true,
     'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1200&q=80',
-    'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=1600&q=80',
     false
   ),
   (
@@ -102,7 +99,6 @@ BEGIN
     ]'::jsonb,
     250, 'live', false,
     'https://images.unsplash.com/photo-1541224468614-9ae2e5a29ae6?w=1200&q=80',
-    'https://images.unsplash.com/photo-1541224468614-9ae2e5a29ae6?w=1600&q=80',
     true
   ),
   (
@@ -119,7 +115,6 @@ BEGIN
     ]'::jsonb,
     150, 'live', false,
     'https://images.unsplash.com/photo-1531913764164-f85c52e6e654?w=1200&q=80',
-    'https://images.unsplash.com/photo-1531913764164-f85c52e6e654?w=1600&q=80',
     false
   ),
   (
@@ -137,7 +132,6 @@ BEGIN
     ]'::jsonb,
     800, 'live', false,
     'https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=1200&q=80',
-    'https://images.unsplash.com/photo-1489944440615-453fc2b6a9a9?w=1600&q=80',
     false
   ),
   (
@@ -154,7 +148,6 @@ BEGIN
     ]'::jsonb,
     180, 'live', false,
     'https://images.unsplash.com/photo-1560439514-4e9645039924?w=1200&q=80',
-    'https://images.unsplash.com/photo-1560439514-4e9645039924?w=1600&q=80',
     false
   ),
   (
@@ -173,7 +166,6 @@ BEGIN
     ]'::jsonb,
     515, 'live', true,
     'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&q=80',
-    'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1600&q=80',
     true
   );
 END $$;

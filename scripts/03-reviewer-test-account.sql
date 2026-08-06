@@ -4,20 +4,26 @@
 -- 01-cleanup-junk-events.sql).
 -- ─────────────────────────────────────────────────────────────────────────
 --
--- PREREQUISITE — do this first, outside SQL:
--- Sign up for a real VENTS account through the app itself, normally, using
--- the email below (or your own choice — just update it here to match).
--- This is not optional: auth.users is InsForge's own auth table with
--- proper password hashing and email verification. There's no safe way to
--- fabricate a working login via raw SQL — any script that tried would
--- either produce a login that doesn't actually work, or require storing a
--- real password insecurely. Sign up through the app, verify the email,
--- then run this script to turn that ordinary account into a fully-stocked
--- organizer profile for review purposes.
+-- This targets an EXISTING account (username 'testerboy', already in the
+-- database) rather than creating a new one — confirmed with the account
+-- owner before running. auth.users is InsForge's own auth table with real
+-- password hashing; there's no safe way to fabricate a working login via
+-- raw SQL, so this script only ever promotes/seeds an account that already
+-- exists and already has a real, working login. It never touches the
+-- password column.
 --
--- Suggested email: playstore-reviewer@getvents.com
--- (Google's own guidance: use an email/account you control long-term —
--- reviewers may return to re-test after the initial submission.)
+-- If the Play Console App Access password needs to change, do that through
+-- the app's own password-reset flow (real email OTP) — not by editing
+-- auth.users.password directly here.
+--
+-- RUN VIA THE INSFORGE SQL CONSOLE, not `npx @insforge/cli db query "..."`
+-- — the CLI's db query has two limitations that both bite on this file:
+-- it can't reliably parse dollar-quoted DO $$ ... $$ blocks (same class of
+-- issue as its documented CREATE FUNCTION limitation), and a script this
+-- size exceeds the Windows command-line length limit when passed inline.
+-- If you don't have console access, run each statement inside the DO block
+-- individually via the CLI instead, substituting the real v_user_id/
+-- v_event_id/v_ticket_id values by hand between steps.
 
 DO $$
 DECLARE
@@ -25,23 +31,25 @@ DECLARE
   v_event_id uuid;
   v_ticket_id uuid;
 BEGIN
-  SELECT id INTO v_user_id FROM auth.users WHERE email = 'playstore-reviewer@getvents.com';
+  SELECT id INTO v_user_id FROM public.users WHERE username = 'testerboy';
   IF v_user_id IS NULL THEN
-    RAISE EXCEPTION 'No signed-up user found for playstore-reviewer@getvents.com — sign up through the app first, THEN run this script.';
+    RAISE EXCEPTION 'No user found with username ''testerboy''. Confirm the account exists (SELECT id, email, username FROM users WHERE username = ''testerboy'') before running this.';
   END IF;
+
+  -- ── Confirm email is verified so login never gets blocked on that gate ──
+  UPDATE auth.users SET email_verified = true WHERE id = v_user_id AND email_verified IS DISTINCT FROM true;
 
   -- ── Promote to organizer + verified badge ────────────────────────────
   -- is_verified is the CAC/business-document "verified organizer" badge —
   -- setting it directly here for the reviewer account skips the real
   -- document-upload flow, which is correct: this account represents what
   -- an already-approved organizer's experience looks like, not a test of
-  -- the approval flow itself.
+  -- the approval flow itself. username is left untouched — it's already
+  -- 'testerboy', which is the whole point.
   UPDATE public.users
   SET role = 'organizer',
-      full_name = 'VENTS Reviewer',
-      username = 'vents_reviewer',
       is_verified = true,
-      bio = 'Official Play Store review account.'
+      bio = COALESCE(NULLIF(bio, ''), 'Official Play Store review account.')
   WHERE id = v_user_id;
 
   -- ── Give it a wallet with a real-looking balance ─────────────────────
@@ -57,7 +65,7 @@ BEGIN
   INSERT INTO public.events (
     organizer_id, title, description, category, location, event_date,
     start_time, end_time, price, ticket_types, ticket_goal, status,
-    is_featured, image_url, cover_url
+    is_featured, image_url
   ) VALUES (
     v_user_id,
     'VENTS Reviewer Demo Event',
@@ -75,8 +83,7 @@ BEGIN
       {"id":"free","name":"Reviewer Access","price":0,"description":"Complimentary access for testing/review","available":50}
     ]'::jsonb,
     100, 'live', false,
-    'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=1200&q=80',
-    'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=1600&q=80'
+    'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?w=1200&q=80'
   )
   RETURNING id INTO v_event_id;
 
@@ -86,11 +93,10 @@ BEGIN
   INSERT INTO public.tickets (
     event_id, user_id, quantity, status, payment_status, amount,
     ticket_type, payment_ref, holder_name, holder_email, created_at
-  ) VALUES (
-    v_event_id, v_user_id, 1, 'active', 'paid', 2000,
-    'Standard', 'DEMO-REVIEWER-0001', 'VENTS Reviewer',
-    'playstore-reviewer@getvents.com', now() - interval '3 days'
   )
+  SELECT v_event_id, v_user_id, 1, 'active', 'paid', 2000,
+         'Standard', 'DEMO-REVIEWER-0001', full_name, email, now() - interval '3 days'
+  FROM public.users WHERE id = v_user_id
   RETURNING id INTO v_ticket_id;
 
   INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, ticket_sale_id)
@@ -136,4 +142,3 @@ END $$;
 -- login credentials (Play Console → App content → App access), give them
 -- this account's email/password directly — that's the intended mechanism,
 -- not a payment bypass.
-
