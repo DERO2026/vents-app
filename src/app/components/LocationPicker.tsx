@@ -264,38 +264,16 @@ export function LocationPicker({
   // The actual Autocomplete service call. Debounced 300ms from onChange
   // below (step 1 of the requested fix: confirm this is really firing).
   async function fetchSuggestions(query: string) {
-    // TEMP DEBUG (requested): every branch below logs via console.log
-    // (never console.error) specifically so nothing gets lost to a
-    // console filtered to "Info"/"Log" level, or missed as a red line
-    // sitting next to what looks like the important output. The whole
-    // body is one big try/catch so a genuinely unexpected exception still
-    // prints instead of vanishing silently.
-    console.log('[LocationPicker] ① fetchSuggestions called with query:', JSON.stringify(query), '| status:', status);
-
     try {
-      if (status !== 'ready') {
-        console.log('[LocationPicker] ✗ STOPPED — status is', JSON.stringify(status), '(the SDK is not ready yet, so no request was made)');
-        return;
-      }
+      if (status !== 'ready') return;
 
       const google = (window as any).google;
-      const chain = {
-        'window.google': typeof google,
-        'google.maps': typeof google?.maps,
-        'google.maps.places': typeof google?.maps?.places,
-        'google.maps.places.AutocompleteSuggestion': typeof google?.maps?.places?.AutocompleteSuggestion,
-        'google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions': typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions,
-      };
-      console.log('[LocationPicker] ② API surface check:', chain);
-
       if (typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions !== 'function') {
-        console.log(`[LocationPicker] STOPPED - fetchAutocompleteSuggestions is not a function (see the API surface check above for which link in the chain is missing). This usually means the "Places API (New)" product itself is not enabled on this API key's Google Cloud project - separate from HTTP-referrer restrictions - or the loaded library version is stale.`);
         return;
       }
 
       const mySeq = ++requestSeqRef.current;
       setSearching(true);
-      console.log('[LocationPicker] ③ calling fetchAutocompleteSuggestions...');
 
       const response = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: query,
@@ -303,12 +281,8 @@ export function LocationPicker({
         sessionToken: sessionTokenRef.current,
       });
       const raw = response?.suggestions;
-      console.log('[LocationPicker] ④ fetchAutocompleteSuggestions resolved. Raw response:', response, '| suggestions array length:', raw?.length ?? 'undefined (response.suggestions itself is missing!)');
 
-      if (mySeq !== requestSeqRef.current) {
-        console.log('[LocationPicker] ⑤ discarded — a newer keystroke already superseded this request');
-        return;
-      }
+      if (mySeq !== requestSeqRef.current) return;
 
       const mapped: Suggestion[] = (raw || [])
         .filter((s: any) => s.placePrediction)
@@ -318,12 +292,11 @@ export function LocationPicker({
           const secondary = p.secondaryText?.text ?? '';
           return { key: p.placeId || String(i), mainText: main, secondaryText: secondary, prediction: p };
         });
-      console.log('[LocationPicker] ⑤ mapped', mapped.length, 'suggestion(s) into state; opening dropdown:', mapped.length > 0);
       if (!isMountedRef.current) return;
       setSuggestions(mapped);
       setDropdownOpen(mapped.length > 0);
-    } catch (err: any) {
-      console.log('[LocationPicker] ✗ EXCEPTION THROWN:', err?.message || err, err);
+    } catch (err) {
+      console.error('[LocationPicker] fetchSuggestions failed:', err);
       if (isMountedRef.current) {
         setSuggestions([]);
         setDropdownOpen(false);

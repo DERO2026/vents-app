@@ -1646,8 +1646,10 @@ export default function App() {
           const parsed = new URL(url);
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
-          if (eventId) pushActionRef.current({ eventId });
-          else if (userId) pushActionRef.current({ userId });
+          const screen = parsed.searchParams.get('screen');
+          if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
+          else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
+          else if (screen) pushActionRef.current({ screen });
         } catch (err) {
           console.warn('[deep-link] failed to parse appUrlOpen url:', err);
         }
