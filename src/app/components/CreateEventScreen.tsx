@@ -137,7 +137,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     stepContentRef.current?.scrollTo({ top: 0 });
   }, [step]);
 
-  // Load the organizer's linked payout accounts and preselect their default.
+  // The event's own payout_account_id as loaded from the DB — kept separate
+  // from `payoutAccountId` (the actual selection) because it needs to be
+  // reconciled against the organizer's currently-active accounts, which can
+  // load in either order relative to the event fetch below.
+  const [loadedEventPayoutAccountId, setLoadedEventPayoutAccountId] = useState<string | null>(null);
+
+  // Load the organizer's linked, ACTIVE payout accounts. Re-runs on every
+  // mount of this screen (i.e. every time Edit Event is opened), so a
+  // newly-added or newly-deactivated account is never stale.
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
@@ -147,15 +155,29 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           .from('organizer_bank_accounts')
           .select('id, bank_name, account_number, is_default')
           .eq('organizer_id', currentUser.id)
+          .eq('is_active', true)
           .order('is_default', { ascending: false });
         if (cancelled) return;
-        const accts = (data as any[]) || [];
-        setPayoutAccounts(accts);
-        setPayoutAccountId(prev => prev && accts.some(a => a.id === prev) ? prev : (accts.find(a => a.is_default)?.id ?? accts[0]?.id ?? null));
+        setPayoutAccounts((data as any[]) || []);
       } catch { /* non-blocking — the DB trigger still auto-fills the default */ }
     })();
     return () => { cancelled = true; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, editEventId]);
+
+  // Reconcile the selected payout account whenever either the active-accounts
+  // list or the loaded event's stored payout_account_id changes, regardless
+  // of which resolves first. Prefers the event's own account if it's still
+  // active; falls back to the organizer's default active account if it was
+  // soft-deleted/deactivated (or no event is loaded, i.e. create mode).
+  useEffect(() => {
+    if (payoutAccounts.length === 0) return;
+    setPayoutAccountId(prev => {
+      const preferred = loadedEventPayoutAccountId || prev;
+      return preferred && payoutAccounts.some(a => a.id === preferred)
+        ? preferred
+        : (payoutAccounts.find(a => a.is_default)?.id ?? payoutAccounts[0].id);
+    });
+  }, [payoutAccounts, loadedEventPayoutAccountId]);
 
   useEffect(() => {
     if (!editEventId) return;
@@ -179,7 +201,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         if (cancelled || !data) return;
         const row = data as any;
         setTitle(row.title || '');
-        if (row.payout_account_id) setPayoutAccountId(row.payout_account_id);
+        // Don't set payoutAccountId directly here — the event's stored
+        // payout_account_id may point at a since-soft-deleted/deactivated
+        // bank account. The reconciliation effect above validates it against
+        // the organizer's current active accounts and falls back to the
+        // default if it's no longer valid.
+        setLoadedEventPayoutAccountId(row.payout_account_id || null);
         const cats: string[] = Array.isArray(row.categories) && row.categories.length
           ? row.categories
           : (row.category ? [row.category] : []);
