@@ -59,11 +59,46 @@ against this codebase.*
 
 ## 4. Store Listing Assets
 
-- [ ] App title, short description (80 chars), full description finalized
-- [ ] High-res phone screenshots (minimum 2, Play Store requires at least 2 per supported form factor)
-- [ ] Tablet screenshots, only if explicitly supporting tablets
-- [ ] Feature graphic — 1024×500, required for the Play Store listing header
-- [ ] App icon — 512×512 high-res version for the store listing itself (separate from the in-app launcher icon sizes)
+- [x] **App title / short description / full description — drafted below.** Paste directly into Play Console → Store presence → Main store listing. Not yet entered in Console (that's a manual paste step), but the copy itself is final unless you want changes.
+
+  **App title** (30 char max): `VENTS — Events & Tickets`
+
+  **Short description** (80 char max, shown under the title in search results):
+  > Discover events, buy tickets, and get paid out — all in one app.
+  (66 chars)
+
+  **Full description** (4000 char max):
+  > **VENTS is the easiest way to discover events and sell tickets in Nigeria.**
+  >
+  > Whether you're looking for your next night out or running the show, VENTS puts everything in one place — no more juggling WhatsApp groups, screenshots of bank details, or handwritten guest lists.
+  >
+  > **For event-goers:**
+  > 🎟️ Browse concerts, comedy shows, tech meetups, food festivals, and more — all around you
+  > 💳 Buy tickets securely in seconds with card or bank transfer (powered by Paystack)
+  > 📱 Your ticket lives in the app as a scannable QR code — no printing, no lost emails
+  > 💬 Message organizers directly with questions before you buy
+  > 🔔 Get reminders before the event so you never miss it
+  >
+  > **For organizers:**
+  > 📅 Create and publish an event in minutes — set your price, ticket types, and capacity
+  > 💰 Track sales in real time and get paid straight to your bank account
+  > 🚪 Scan tickets at the door with the built-in QR check-in tool — no extra hardware
+  > 📊 See exactly who bought what, and message your attendees directly
+  > ✅ Get verified as a trusted organizer to build attendee confidence
+  >
+  > Whether it's a 50-person comedy night or a 2,000-person festival, VENTS handles ticketing so you can focus on putting on a great event.
+  >
+  > Download VENTS and find what's happening near you — or start selling tickets to your own event today.
+
+  *(Copy above is a first draft, not yet reviewed for trademark/wording risk. Read it over before it goes live — swap "Nigeria"/city references if you want it framed more generally, and confirm "Paystack" mention is fine to publish.)*
+
+- [ ] **Screenshots — not yet produced.** Nothing in this repo qualifies (the `screenshot-*.cjs` files at the repo root are dev/debug capture scripts from earlier feature work, not store-ready assets — captured at arbitrary viewport sizes, showing test data, no device frame). Play Store requires real captures from an actual build:
+  - [ ] Minimum 2, ideally 4-6, phone screenshots (portrait, 16:9 or 9:16, JPEG/24-bit PNG, no alpha) — Google's recommended size is 1080×1920 or larger
+  - [ ] Suggested shot list: (1) event discovery/feed, (2) event details page, (3) checkout/ticket purchase, (4) QR ticket view, (5) organizer dashboard/sales, (6) door check-in scanner
+  - [ ] Capture from a real device or emulator running the actual release build with the seeded showcase events (§2) so they look populated, not empty-state
+  - [ ] Tablet screenshots only if explicitly supporting tablets (skip if phone-only for launch)
+- [ ] Feature graphic — 1024×500, required for the Play Store listing header. Not yet designed.
+- [ ] App icon — 512×512 high-res version for the store listing itself (the in-app launcher icon exists at `android/app/src/main/res/mipmap-*/ic_launcher*` — confirm a matching 512×512 master exists, or export one from the same source art)
 - [ ] Content rating questionnaire — account for the 18+ event content gating already built in (`is_18_plus` flag on events)
 - [ ] Data Safety form — VENTS collects: account info (email, name, phone), photos (uploads); payment info is handled entirely by Paystack, never collected/stored directly. **No location data is collected at all** (confirmed — see §1's permission audit)
 
