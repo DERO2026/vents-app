@@ -338,7 +338,22 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // Remove a linked account — gated.
   const handleRemoveBank = (acct: BankAccount) => {
     requestConfirm(`Remove ${acct.bank_name} · ${acct.account_number}`, async (password) => {
-      await authedFetch('/api/v1/wallet/save-bank', { action: 'remove', account_id: acct.id, password });
+      try {
+        await authedFetch('/api/v1/wallet/save-bank', { action: 'remove', account_id: acct.id, password });
+      } catch (err: any) {
+        // "Bank account not found" means the server already doesn't have an
+        // active row for this id — most likely a stale local list (an
+        // earlier remove succeeded but this screen's state never refreshed,
+        // or another tab/device removed it). The outcome the user wanted —
+        // this account gone — is already true, so refresh and stop rather
+        // than surfacing a scary error and leaving a ghost row the user can
+        // never successfully "remove" again.
+        if (/not found/i.test(err?.message || '')) {
+          await load();
+          return;
+        }
+        throw err;
+      }
       await load();
     });
   };
