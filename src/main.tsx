@@ -5,6 +5,7 @@ import { PrivacyScreen } from './app/components/PrivacyScreen';
 import { TermsScreen } from './app/components/TermsScreen';
 import { RefundPolicyScreen } from './app/components/RefundPolicyScreen';
 import { HelpPage } from './app/components/HelpPage';
+import { DeleteAccountScreen } from './app/components/DeleteAccountScreen';
 import './styles/index.css';
 import { initSentry } from './lib/sentry';
 import { initAnalytics } from './lib/analytics';
@@ -19,7 +20,7 @@ initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
 // Deciding which component to render here, before React even sees `<App/>`,
 // removes the conditional-hooks pattern entirely instead of just reordering it.
 const pathname = window.location.pathname;
-const legalPaths = new Set(['/privacy', '/terms', '/refunds', '/help']);
+const legalPaths = new Set(['/privacy', '/terms', '/refunds', '/help', '/delete-account']);
 if (legalPaths.has(pathname)) {
   // Unwind the app shell's scroll lock (see index.css) before first paint so
   // these pages scroll like a normal web page instead of fighting it.
@@ -30,6 +31,7 @@ const RootScreen =
   pathname === '/terms' ? <TermsScreen /> :
   pathname === '/refunds' ? <RefundPolicyScreen /> :
   pathname === '/help' ? <HelpPage /> :
+  pathname === '/delete-account' ? <DeleteAccountScreen /> :
   <App />;
 
 createRoot(document.getElementById('root')!).render(
