@@ -1542,6 +1542,47 @@ export default function App() {
   // with the app backgrounded).
   const pushActionRef = useRef<(data: Record<string, any>) => void>(() => {});
   pushActionRef.current = (data: Record<string, any>) => {
+    // Checked before the generic data.eventId/data.userId branches below —
+    // a "sale" push carries both eventId and screen:'sales-analytics', and a
+    // "message" push carries userId + screen:'chat'; without this ordering
+    // they'd fall into the generic event-details/user-profile routes instead.
+    if (data.screen === 'sales-analytics' && data.eventId) {
+      insforge.database
+        .from('events')
+        .select('id, title')
+        .eq('id', data.eventId)
+        .maybeSingle()
+        .then(({ data: evtData, error: evtError }) => {
+          if (evtError || !evtData) return;
+          setAnalyticsEventId(evtData.id);
+          setAnalyticsEventTitle(evtData.title);
+          setScreenStack([]);
+          setScreen('sales-analytics');
+        });
+      return;
+    }
+    if (data.screen === 'chat' && data.userId) {
+      insforge.database
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url, vc_badge')
+        .eq('id', data.userId)
+        .maybeSingle()
+        .then(({ data: userData, error: userError }) => {
+          if (userError || !userData) return;
+          setConversationUser({
+            id: userData.id,
+            name: userData.full_name || userData.username || 'User',
+            avatarUrl: userData.avatar_url || undefined,
+            vc_badge: userData.vc_badge || undefined,
+          });
+          // Clear any stale event-context banner left over from whatever
+          // conversation was open before this push was tapped.
+          setConversationEventId(undefined);
+          setScreenStack([]);
+          setScreen('conversation');
+        });
+      return;
+    }
     if (data.eventId) {
       insforge.database
         .from('events')

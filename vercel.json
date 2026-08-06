@@ -7,6 +7,10 @@
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
+  "crons": [
+    { "path": "/api/cron/send-pending-pushes", "schedule": "*/5 * * * *" },
+    { "path": "/api/cron/event-reminders", "schedule": "*/15 * * * *" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
