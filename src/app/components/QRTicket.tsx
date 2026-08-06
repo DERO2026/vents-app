@@ -7,7 +7,7 @@ import { useSignedTicketToken } from '../../lib/ticketToken';
 import { analytics } from '../../lib/analyticsEvents';
 import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
 import { ticketDisplayCode } from '../../lib/ticketCode';
-import { openExternalUrl } from '../../lib/externalLink';
+import { shareLink } from '../../lib/shareLink';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -94,11 +94,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     // valid entry credential, and it isn't meant to be typed/forwarded as
     // text anyway. Share plain event details instead.
     const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nSee you there!`;
-    if (navigator.share) {
-      await navigator.share({ title: ticket.event.title, text }).catch(() => {});
-    } else {
-      openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
-    }
+    await shareLink({ title: ticket.event.title, text });
   };
 
   const [saving, setSaving] = useState(false);

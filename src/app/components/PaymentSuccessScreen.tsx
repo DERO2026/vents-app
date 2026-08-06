@@ -7,6 +7,7 @@ import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
 import { useSignedTicketToken } from '../../lib/ticketToken';
 import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
+import { shareLink } from '../../lib/shareLink';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -95,25 +96,10 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   const handleShare = async () => {
     const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
     const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nTicket Reference: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'My VENTS Ticket', text, url: eventUrl });
-      } catch {
-        // user cancelled
-      }
-    } else {
-      // Unguarded — rejects on insecure contexts (non-HTTPS) or without a
-      // user-activation gesture, which would have surfaced as an unhandled
-      // promise rejection with no feedback to the user.
-      try {
-        await navigator.clipboard.writeText(text);
-        if (mountedRef.current) {
-          setShareToast(true);
-          setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
-        }
-      } catch {
-        console.warn('Clipboard write failed');
-      }
+    const result = await shareLink({ title: 'My VENTS Ticket', text, url: eventUrl });
+    if (result === 'copied' && mountedRef.current) {
+      setShareToast(true);
+      setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
     }
   };
 

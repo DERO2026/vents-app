@@ -32,6 +32,7 @@ import { insforge } from '../../lib/insforge';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { downloadBlob } from '../../lib/ticketImage';
+import { shareLink } from '../../lib/shareLink';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -254,6 +255,7 @@ export function EventDetailsScreen({
   const canManageDoor = isEventOwner || isSubAdmin || isRootAdmin || isPlatformAdmin;
 
   const [expanded, setExpanded] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [flyerFullScreen, setFlyerFullScreen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -390,17 +392,7 @@ export function EventDetailsScreen({
       `📍 ${event.venue}, ${event.city}\n` +
       `\nGet tickets on Vents 👇\n${deepLink}`;
 
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: event.title, text, url: deepLink });
-      } else {
-        await navigator.clipboard.writeText(deepLink).catch(() => {
-          openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
-        });
-      }
-    } catch {
-      // User cancelled share
-    }
+    await shareLink({ title: event.title, text, url: deepLink });
     // Always copy to clipboard silently so users can paste the link
     navigator.clipboard.writeText(deepLink).catch(() => {});
     setShared(true);
@@ -1368,6 +1360,14 @@ export function EventDetailsScreen({
         </div>
       )}
 
+      {bookingError && (
+        <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '88px', zIndex: 20 }}>
+          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: '#FCA5A5', fontSize: '13px', fontWeight: 600 }}>
+            {bookingError}
+          </div>
+        </div>
+      )}
+
       {/* Sticky bottom bar */}
       <div
         style={{
@@ -1399,7 +1399,8 @@ export function EventDetailsScreen({
               }
             } catch (err: any) {
               console.error('BOOK BUTTON CRASH:', err);
-              alert('Booking error: ' + (err?.message || String(err)));
+              setBookingError(err?.message || String(err));
+              setTimeout(() => setBookingError(null), 3500);
             }
           }}
           disabled={!canBook || purchasesDisabled}

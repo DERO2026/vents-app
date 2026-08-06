@@ -172,6 +172,11 @@ export default function App() {
   // update), so without this, Back had nothing to actually restore — the
   // view got stuck on whichever related event was tapped last.
   const [eventHistoryStack, setEventHistoryStack] = useState<Event[]>([]);
+  // Kept in sync below so the backButton listener (registered once on mount)
+  // always sees current values without re-subscribing on every navigation.
+  const screenRef = useRef(screen);
+  const screenStackRef = useRef(screenStack);
+  const goBackRef = useRef<() => void>(() => {});
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -256,6 +261,10 @@ export default function App() {
       setActiveTab('home');
     }
   }, [screenStack, screen, userRole, eventHistoryStack]);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+  useEffect(() => { screenStackRef.current = screenStack; }, [screenStack]);
+  useEffect(() => { goBackRef.current = goBack; }, [goBack]);
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
@@ -1593,6 +1602,29 @@ export default function App() {
           else if (userId) pushActionRef.current({ userId });
         } catch (err) {
           console.warn('[deep-link] failed to parse appUrlOpen url:', err);
+        }
+      });
+      removeListener = () => sub.remove();
+    })();
+    return () => removeListener?.();
+  }, []);
+
+  // Android hardware back button — navigation here is in-memory (screenStack),
+  // not a web router, so nothing was intercepting it before: it fell through to
+  // Capacitor's default behavior, which exits the app from any screen instead of
+  // popping the internal stack. Reuse the same goBack() the on-screen back arrows
+  // call; only let the OS handle it (minimize/exit) once we're already at the
+  // root of the stack.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let removeListener: (() => void) | undefined;
+    (async () => {
+      const { App: CapacitorApp } = await import('@capacitor/app');
+      const sub = await CapacitorApp.addListener('backButton', () => {
+        if (screenStackRef.current.length > 0 || screenRef.current === 'event-details') {
+          goBackRef.current();
+        } else {
+          CapacitorApp.minimizeApp();
         }
       });
       removeListener = () => sub.remove();

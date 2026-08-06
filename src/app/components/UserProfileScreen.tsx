@@ -4,6 +4,7 @@ import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Ban } from 
 import { UserProfile } from './types';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { ReportModal } from './ReportModal';
+import { shareLink } from '../../lib/shareLink';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -47,6 +48,7 @@ export function UserProfileScreen({
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [blockLoading, setBlockLoading] = useState(false);
+  const [copiedToast, setCopiedToast] = useState(false);
   const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
 
   useEffect(() => {
@@ -150,6 +152,14 @@ export function UserProfileScreen({
         position: 'relative',
       }}
     >
+      {copiedToast && (
+        <div style={{ position: 'fixed', left: '16px', right: '16px', bottom: 'calc(24px + env(safe-area-inset-bottom))', zIndex: 50, display: 'flex', justifyContent: 'center' }}>
+          <div style={{ background: 'rgba(167,139,250,0.15)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: '12px', padding: '10px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>
+            Profile link copied!
+          </div>
+        </div>
+      )}
+
       {/* Cover + back button */}
       <div style={{ position: 'relative', height: 'calc(140px + env(safe-area-inset-top))', flexShrink: 0 }}>
         {user.cover_url && !coverLoadFailed ? (
@@ -242,15 +252,11 @@ export function UserProfileScreen({
             // matching route and dead-ends at home. App.tsx already parses
             // ?event=/?user= off window.location.search on load.
             const shareUrl = `${window.location.origin}/?user=${user.id}`;
-            const shareData = { title: `${user.username || user.name} on Vents`, url: shareUrl };
-            try {
-              if (navigator.share) {
-                await navigator.share(shareData);
-              } else {
-                await navigator.clipboard.writeText(shareUrl);
-                alert('Profile link copied!');
-              }
-            } catch { /* user cancelled */ }
+            const result = await shareLink({ title: `${user.username || user.name} on Vents`, url: shareUrl });
+            if (result === 'copied') {
+              setCopiedToast(true);
+              setTimeout(() => setCopiedToast(false), 2000);
+            }
           }}
           style={{
             display: 'flex', alignItems: 'center', justifyContent: 'center',

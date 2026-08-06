@@ -6,6 +6,7 @@ import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
 import { pickImage } from '../../lib/pickImage';
+import { isOnline as isDeviceOnline } from '../../lib/isOnline';
 
 interface ConversationScreenProps {
   currentUser: { id: string };
@@ -285,7 +286,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [messages]);
 
   async function attemptSend(localId: string, text: string, replyToId: string | null, attempt: number) {
-    if (!navigator.onLine) {
+    if (!(await isDeviceOnline())) {
       if (isMountedRef.current) setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
       return;
     }

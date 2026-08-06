@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader, WifiOff } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
+import { isOnline } from '../../lib/isOnline';
 
 export interface LocationValue {
   address: string;
@@ -90,9 +92,7 @@ export function LocationPicker({
   // is ever applied.
   const requestSeqRef = useRef(0);
 
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>(
-    typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'loading'
-  );
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>('loading');
   const [retryKey, setRetryKey] = useState(0);
   const [text, setText] = useState(value.address);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -129,9 +129,24 @@ export function LocationPicker({
       setStatus((s) => (s === 'offline' ? 'loading' : s));
       setRetryKey((k) => k + 1);
     };
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
+    // navigator.onLine / the window online/offline events are unreliable in a
+    // WebView (can report connected with no real internet access) — prefer
+    // @capacitor/network's OS-level status on native, same window events on web.
+    let removeNetListener: (() => void) | undefined;
+    if (Capacitor.isNativePlatform()) {
+      (async () => {
+        const { Network } = await import('@capacitor/network');
+        const sub = await Network.addListener('networkStatusChange', (s) => {
+          if (s.connected) goOnline(); else goOffline();
+        });
+        removeNetListener = () => sub.remove();
+      })();
+    } else {
+      window.addEventListener('offline', goOffline);
+      window.addEventListener('online', goOnline);
+    }
     return () => {
+      removeNetListener?.();
       window.removeEventListener('offline', goOffline);
       window.removeEventListener('online', goOnline);
     };
@@ -141,21 +156,24 @@ export function LocationPicker({
   // googleMaps.ts). Only flips `status`; the map effect below waits for
   // 'ready' before touching the DOM.
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) { setStatus('offline'); return; }
     let cancelled = false;
-    loadGoogleMaps()
-      .then(() => {
-        if (cancelled) return;
-        const google = (window as any).google;
-        geocoderRef.current = new google.maps.Geocoder();
-        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
-        setStatus('ready');
-      })
-      .catch((e) => {
-        console.error('Location search unavailable:', e);
-        if (cancelled) return;
-        setStatus(navigator.onLine === false ? 'offline' : 'unavailable');
-      });
+    isOnline().then((online) => {
+      if (cancelled) return;
+      if (!online) { setStatus('offline'); return; }
+      loadGoogleMaps()
+        .then(() => {
+          if (cancelled) return;
+          const google = (window as any).google;
+          geocoderRef.current = new google.maps.Geocoder();
+          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+          setStatus('ready');
+        })
+        .catch(async (e) => {
+          console.error('Location search unavailable:', e);
+          if (cancelled) return;
+          setStatus((await isOnline()) ? 'unavailable' : 'offline');
+        });
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);

@@ -42,6 +42,8 @@ export function NotificationsScreen({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartY = useRef<number | null>(null);
 
   const mapRow = (n: any): Notification => ({
     id: n.id,
@@ -224,8 +226,24 @@ export function NotificationsScreen({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
+      }}
+      onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
+      onTouchEnd={(e) => {
+        if (pullStartY.current === null) return;
+        const dy = e.changedTouches[0].clientY - pullStartY.current;
+        pullStartY.current = null;
+        if (dy > 400 && !pullRefreshing) {
+          setPullRefreshing(true);
+          fetchNotifications().finally(() => setPullRefreshing(false));
+        }
       }}
     >
+      {pullRefreshing && (
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200 }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid rgba(123,47,247,0.2)', borderTop: '3px solid #7B2FF7', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      )}
       {/* Header */}
       <div
         style={{
