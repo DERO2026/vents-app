@@ -86,21 +86,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Not authorized' });
   }
 
-  // TEMPORARY: one-off Paystack transaction verification, reusing this
-  // already-deployed/admin-authenticated endpoint instead of adding a new
-  // function (Hobby's 12-function cap) or pulling PAYSTACK_SECRET_KEY to a
-  // local machine to hit Paystack's API directly. Remove after use.
-  if (req.query.verify) {
-    const secret = process.env.PAYSTACK_SECRET_KEY;
-    if (!secret) return res.status(500).json({ error: 'PAYSTACK_SECRET_KEY not set' });
-    const ref = String(req.query.verify);
-    const vRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(ref)}`, {
-      headers: { Authorization: `Bearer ${secret}` },
-    });
-    const vJson = await vRes.json();
-    return res.status(200).json(vJson);
-  }
-
   const baseUrl = process.env.VITE_INSFORGE_URL;
   const adminKey = process.env.INSFORGE_API_KEY;
   if (!baseUrl || !adminKey) return res.status(500).json({ error: 'Backend not configured' });
