@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Search, X, Check, ChevronDown } from 'lucide-react';
 
 export interface PickerOption {
@@ -86,6 +86,30 @@ export function PickerSheet({
   customLabel?: (query: string) => string;
 }) {
   const [query, setQuery] = useState('');
+  // Drag-to-dismiss — only the grab handle + header area is a drag surface
+  // (not the scrollable option list, so a downward scroll there never gets
+  // mistaken for a dismiss gesture).
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragStartY = useRef<number | null>(null);
+  const handleDragStart = (e: React.TouchEvent) => {
+    dragStartY.current = e.touches[0].clientY;
+    setDragging(true);
+  };
+  const handleDragMove = (e: React.TouchEvent) => {
+    if (dragStartY.current === null) return;
+    const dy = e.touches[0].clientY - dragStartY.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const handleDragEnd = () => {
+    dragStartY.current = null;
+    setDragging(false);
+    if (dragY > 100) {
+      onClose();
+    } else {
+      setDragY(0);
+    }
+  };
   const filtered = searchable
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
@@ -127,15 +151,19 @@ export function PickerSheet({
           boxShadow: '0 -20px 50px rgba(0,0,0,0.45)',
           padding: '12px 20px calc(20px + env(safe-area-inset-bottom))',
           animation: 'pickerSheetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Grab handle — the standard bottom-sheet affordance signalling
-            this can be swiped/tapped away, distinct from a full page. */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-        </div>
+        {/* Grab handle + header — the drag surface for swipe-to-dismiss;
+            deliberately excludes the scrollable option list below so a
+            downward scroll there is never mistaken for a dismiss gesture. */}
+        <div onTouchStart={handleDragStart} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+            <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
+          </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
             {title}
           </h3>
@@ -156,6 +184,7 @@ export function PickerSheet({
           >
             <X size={15} color="#C4C9E0" />
           </button>
+          </div>
         </div>
 
         {searchable && (
