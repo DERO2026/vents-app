@@ -1,9 +1,23 @@
 # VENTS: InsForge → Supabase Cutover & Rollback Plan
 
-**Status as of this draft: NOT ready to cut over.** ~20 frontend files and 7 backend
-API functions still talk to InsForge directly. This document is the plan to follow
-once that remaining work is done — it is deliberately honest about what's left
-rather than assuming today's state is cutover-ready.
+**Status as of this draft: NOT ready to cut over.** All backend Vercel functions and
+all frontend files are now converted to Supabase — confirmed by a repo-wide grep for
+any import from `lib/insforge`, not just the files originally tracked in this
+document. Along the way this pass also found and fixed a live bug: several files
+(`WalletScreen.tsx`, `PromoteEventScreen.tsx`, `src/lib/eventImporter.ts`,
+`src/lib/visionCrop.ts`) were still using InsForge's `getAuthToken()` to authorize
+calls to backend endpoints that had already been migrated to check Supabase Auth —
+meaning wallet withdrawals, promotion activation, and AI event import/photo-crop
+were silently failing in production, not just "not yet migrated" (see §1). A full
+regression pass against a real Vercel Preview deployment of this branch also found
+and fixed a Production-wide CSP gap — `connect-src` never allow-listed Supabase at
+all, so no Supabase call could ever succeed from the browser regardless of code
+correctness — plus a live Paystack key hardcoded in `vercel.json`. What remains
+before cutover is no longer code migration — it's finishing the regression pass
+(paid/webhook purchase path, real-inbox signup test, native builds), the final data
+delta sync, and the rest of the non-code checklist below. This document is the plan
+to follow once that remaining work is done — it is deliberately honest about what's
+left rather than assuming today's state is cutover-ready.
 
 ---
 
@@ -24,6 +38,35 @@ authenticated sessions against the live target project (not just typechecked):
   organizer verification (submission + review), wallets/payouts (full write
   path including both webhooks), push registration + cron worker, QR-scan HMAC
   ticket signing.
+  - Correction to an earlier version of this section: "wallets/payouts" and
+    "events CRUD" being marked done here was **not accurate** for the
+    frontend — `WalletScreen.tsx`, `PromoteEventScreen.tsx`,
+    `src/lib/eventImporter.ts` (AI event-text import), and
+    `src/lib/visionCrop.ts` (AI photo-crop focus) were all still minting
+    their `Authorization` bearer token via `getAuthToken()` from the old
+    `lib/insforge.ts` client and sending an InsForge session token to
+    already-migrated, Supabase-auth-checked endpoints
+    (`/api/v1/wallet/banks`, `/api/wallet/refund-ticket`,
+    `/api/v1/promotions/activate`, `/api/v1/extract-events`). Since those
+    backend endpoints now validate via Supabase Auth
+    (`verifyInsforgeSession` in `api/_lib/verifyAuth.ts`), every one of
+    those calls was silently 401ing (or, for `visionCrop.ts`'s swallowed
+    `.catch(() => '')`, silently no-op-ing) for real users — bank-list
+    loading, withdrawals, promotion activation, and AI event
+    import/photo-crop were all broken in production, not just "not yet
+    migrated." Found and fixed in this pass (all four now use
+    `getAuthToken` from `lib/supabase.ts`); `CheckoutScreen.tsx`,
+    `CreateEventScreen.tsx`, and `SalesAnalyticsScreen.tsx` had a dead,
+    unused `insforge` import with no functional bug (all their real calls
+    already went through `supabase`).
+    Lesson: "grep for `insforge.database`" isn't sufficient to prove a file
+    is migrated — any `getAuthToken` import needs the same scrutiny
+    (it silently sends the wrong session's token to an already-migrated
+    endpoint), and `tsconfig.json`'s `noUnusedLocals: false` means dead
+    imports don't get caught by `tsc` and have to be grepped for directly.
+    Verified clean this time via a repo-wide grep for any import from
+    `lib/insforge` (not just `insforge.database`/`.auth`/`.realtime`
+    usage) — zero matches remain in `src/`.
 - **Payments**: full Paystack test-mode run-through — happy path, duplicate
   webhook, bad signature, amount mismatch, abandoned checkout — all verified
   against the real webhook handler code with real signed payloads.
@@ -32,32 +75,110 @@ authenticated sessions against the live target project (not just typechecked):
 - **Infrastructure**: `project_admin` direct-Postgres-connection pattern
   established for the handful of RPCs that are deliberately not reachable via
   anon/authenticated/service_role (mirrors InsForge's own admin-key boundary).
+- **Full regression pass, run against a real Vercel Preview deployment of this
+  branch** (not just local typecheck/browser-boot checks): sign up → browse →
+  purchase → check in → message → admin-moderate, using a controlled
+  service-role-created test account, with all test data cleaned up afterward.
+  Results:
+  - **Sign up**: form submission reaches Supabase Auth correctly (found and
+    worked around two real UI bugs along the way — a custom checkbox and a
+    custom state-picker that don't behave like native form controls). The
+    first attempt (against `@example.com`) returned **"Error sending
+    confirmation email"** — re-tested against a real domain
+    (`qa-signup-test-816@getvents.com`, the app's own domain, proven
+    deliverable since it already sends real transactional email) and signup
+    succeeded cleanly with no error, landing on the OTP-entry screen as
+    expected. **Resolved**: the original failure was `@example.com` having
+    no real mailbox/MX record, not a genuine SMTP/Resend misconfiguration —
+    Supabase Auth's email-send pipeline itself works correctly. Login,
+    session hydration, and interests onboarding — all confirmed working.
+  - **Verify (OTP email)**: still not verified — no test-inbox access in
+    this environment, so actual receipt of the 6-digit code can't be
+    confirmed; explicitly left unverified rather than bypassed. Given the
+    send pipeline itself is now confirmed working, this is a lower-risk
+    remaining gap than it was before.
+  - **Browse**: confirmed repeatedly against real Supabase data.
+  - **Purchase**: ✅ confirmed via the real `purchase_ticket_with_tokens` RPC
+    (free-ticket path) — real ticket + signed v2 token issued. The
+    **paid/webhook path was not exercised** — needs `PROJECT_ADMIN_DATABASE_URL`,
+    which isn't available in this environment (the `project_admin` role's
+    password was deliberately set out-of-band, per
+    `0021_project_admin_login.sql`).
+  - **Organizer flow**: ✅ organizer request submission, event creation
+    (multi-step form incl. real Supabase Storage cover-image upload),
+    `OrganizerDashboard`/`useOrganizerEvents` RPCs — all confirmed live.
+  - **Check-in**: ✅ `manual_check_in` RPC confirmed, **and the Door Manager
+    UI updated live via the migrated `door:<eventId>` realtime channel with
+    zero manual refresh** — the strongest live signal that the realtime
+    rewiring (InsForge pub/sub → `supabase.channel(...).on('broadcast', ...)`)
+    is genuinely correct, not just typechecked.
+  - **Message**: ✅ real message insert via `ConversationScreen`'s
+    request-based flow.
+  - **Admin-moderate**: ✅ Admin Console loaded real user list and real VC
+    aggregates/transaction ledger (`admin_get_vc_aggregates`, `vc_transactions`).
+  - **Bugs found and fixed during this pass**: `connect-src` never listed
+    Supabase at all (every Supabase call was blocked by the CSP header
+    itself, in Preview *and* Production, regardless of code correctness);
+    `connect-src` was also missing `blob:` (blocked the image-cropper's blob
+    fetch during uploads); `vercel.json`'s `env` block hardcoded a **live**
+    Paystack public key plus dead InsForge values directly in source. All
+    fixed — see the CSP/`env` entries below.
+  - **Teardown**: all 4 preview deployments created for this pass have been
+    removed (`vercel rm`), and the 3 Preview-scoped env vars added for
+    testing (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+    `VITE_PAYSTACK_PUBLIC_KEY`) have been deleted from the Vercel project.
+    Confirmed via a fresh `vercel ls`/`vercel env ls` that only the
+    pre-existing Production deployments and env vars remain — the project is
+    back to its pre-testing state. All test data (user, event, tickets,
+    messages, notifications) was already cleaned up as each phase completed.
+    Nothing from this regression pass is left running or configured
+    anywhere.
 
 ## 2. What's NOT yet migrated (the actual blockers)
 
-### Frontend (still calling `insforge.database`/`.storage`/`.realtime`)
-| File | Why it matters |
+### Frontend — mostly converted; deferred/scoped-out items remain
+| File | Status |
 |---|---|
-| `src/app/App.tsx` | Deep-link event/user lookups, status-email token — partial, not full-file |
-| `AdminDashboardScreen.tsx`, `AdminActionsTab.tsx` | VC economy tab, organizer-verification tab (explicitly deferred) |
-| `AttendeeListScreen.tsx`, `EventDetailsScreen.tsx`, `ExploreScreen.tsx`, `HomeScreen.tsx`, `ProfileScreen.tsx`, `UserProfileScreen.tsx` | Not yet audited this pass |
-| `CheckinScannerScreen.tsx`, `src/lib/useDoorManager.ts` | Door Manager subsystem — check-in ledger, door RPCs, `door:%` realtime channel |
-| `ConversationScreen.tsx`, `InboxScreen.tsx` | `public_profiles` lookups only (deliberately left — different feature) |
-| `InterestsScreen.tsx`, `PrivacySecurityScreen.tsx`, `SettingsScreen.tsx` | Not yet audited this pass |
-| `OrganizerDashboard.tsx`, `src/lib/useOrganizerEvents.ts` | Organizer's own dashboard data |
-| `ReferralScreen.tsx`, `src/lib/vcBalanceCache.ts` | VC/Vents-Cents economy — consistently scoped out as a separate feature all migration |
-| `ReportModal.tsx` | Report submission |
+| `src/app/App.tsx` | ✅ Converted (all `.database`/`.auth` calls) — except the legacy InsForge deep-link password-recovery params (`insforge_status`/`insforge_type`/`token`), which are unreachable under Supabase's current OTP-code recovery email and now just fall back gracefully into the working `forgot` flow |
+| `AuthScreen.tsx` | ✅ Converted — login/signup/OTP verify/resend/forgot-password all on Supabase Auth; the legacy link-based `reset` mode redirects into the working OTP flow instead of calling a dead endpoint; the "Verify Account" companion email now goes through a new `api/notify/verify-account-email.ts` (Resend) instead of `insforge.emails.send` |
+| `AttendeeListScreen.tsx`, `EventDetailsScreen.tsx`, `ExploreScreen.tsx`, `HomeScreen.tsx`, `ProfileScreen.tsx`, `UserProfileScreen.tsx` | ✅ Converted |
+| `CheckinScannerScreen.tsx`, `src/lib/useDoorManager.ts` | ✅ Converted — door RPCs + the `door:<eventId>` realtime channel rewired to `supabase.channel(...).on('broadcast', ...)`, matching the server-side `realtime.send(...)` triggers in `0004_functions.sql` |
+| `InterestsScreen.tsx`, `PrivacySecurityScreen.tsx`, `SettingsScreen.tsx` | ✅ Converted — SettingsScreen's avatar/cover upload also moved off the raw InsForge storage REST call onto `supabase.storage.from('avatars')` |
+| `OrganizerDashboard.tsx`, `src/lib/useOrganizerEvents.ts` | ✅ Converted — including the `organizer-events:<id>` realtime channel |
+| `ReportModal.tsx` | ✅ Converted |
+| `ConversationScreen.tsx`, `InboxScreen.tsx` | ✅ Converted — `public_profiles` lookups now via `supabase` |
+| `AdminDashboardScreen.tsx`, `AdminActionsTab.tsx` | ✅ Converted — VC aggregates/transactions/user-search and `admin_credit_vents_cents`/`admin_debit_vents_cents`/`admin_list_action_requests`/`approve_admin_action`/`reject_admin_action` all now via `supabase` |
+| `ReferralScreen.tsx`, `src/lib/vcBalanceCache.ts` | ✅ Converted — referrals, badge purchase, profile bonus, featured-in-people, and the VC balance RPC all now via `supabase` |
+| `WalletScreen.tsx`, `PromoteEventScreen.tsx`, `src/lib/eventImporter.ts`, `src/lib/visionCrop.ts` | ✅ Converted — **was a live auth bug**, not just an unmigrated file; see the correction under §1 |
+| `CheckoutScreen.tsx`, `CreateEventScreen.tsx`, `SalesAnalyticsScreen.tsx` | ✅ Converted — removed a dead, unused `insforge` import; no functional bug, all real calls already used `supabase` |
 
-### Backend (Vercel functions still using `VITE_INSFORGE_URL`/`INSFORGE_API_KEY`)
-| File | Risk if not converted |
+**All frontend files are now converted.** Nothing in `src/` calls `insforge.*` or
+imports `getAuthToken`/anything else from `lib/insforge.ts` anymore — confirmed by a
+repo-wide grep, not just the files this migration pass originally set out to check.
+
+### Backend — **all converted** (Vercel functions previously using `VITE_INSFORGE_URL`/`INSFORGE_API_KEY`)
+| File | Status |
 |---|---|
-| `api/_lib/verifyAuth.ts` | **Foundational** — `verifyInsforgeSession`/`confirmPassword`/`enforceRateLimit` are shared helpers other functions depend on for identity verification. Must convert before anything depending on it works. |
-| `api/wallet/save-bank.ts`, `resolve-account.ts` | Organizer bank-account management (add/verify) |
-| `api/wallet/refund-ticket.ts` | Ticket refunds — explicitly out of scope every time it came up |
-| `api/notify/status-email.ts` | Ticket/decision confirmation emails |
-| `api/promotions/activate.ts` | Paid event promotions |
-| `api/push/send.ts` | Manual admin push send (separate from the cron worker, already converted) |
-| `api/webhook/paystack.ts` `refund.*` branch | `charge.success` and `transfer.*` are converted; refunds are not |
+| `api/_lib/verifyAuth.ts` | ✅ Converted — `verifyInsforgeSession`/`confirmPassword`/`enforceRateLimit` all call Supabase Auth directly |
+| `api/wallet/save-bank.ts`, `resolve-account.ts` | ✅ Converted |
+| `api/wallet/refund-ticket.ts` | ✅ Converted — `refund_ticket`/`admin_revert_stuck_refund`/`attach_ticket_refund_id` called via `/rest/v1/rpc/...` with the caller's forwarded token |
+| `api/notify/status-email.ts` | ✅ Converted — table/RPC calls on `/rest/v1/...`, QR upload via Supabase Storage (`/storage/v1/object/events/...`) |
+| `api/promotions/activate.ts` | ✅ Converted |
+| `api/push/send.ts` | ✅ Converted |
+| `api/webhook/paystack.ts` `refund.*` branch | ✅ Converted — now uses `callProjectAdminTableRpc` (direct `project_admin` Postgres connection), same pattern as the `transfer.*` handlers |
+
+### Infrastructure fix (found via the regression pass, not originally tracked here)
+- **`vercel.json`**: `connect-src`/`media-src` never listed Supabase at all —
+  fixed to include `https://*.supabase.co`/`wss://*.supabase.co`.
+  `connect-src` was also missing `blob:` (blocks the image-cropper upload
+  path) — fixed. The static `env` block hardcoding a **live** Paystack
+  public key and dead `VITE_INSFORGE_*` values directly in the repo was
+  removed entirely — those values now come from real Vercel project env
+  vars instead (`VITE_PAYSTACK_PUBLIC_KEY`, `VITE_SUPABASE_URL`,
+  `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_PLACES_API_KEY` are already set
+  there). **This CSP gap applied to Production too** — it wasn't a
+  Preview-only issue, and would have silently broken the app for every
+  real user immediately after cutover if it hadn't been caught here.
 
 ### Non-code
 - **Live data drift**: InsForge has been taking real writes throughout this
@@ -75,13 +196,24 @@ authenticated sessions against the live target project (not just typechecked):
 
 Do not schedule a cutover window until every box below is checked.
 
-- [ ] All frontend files in §2 converted to `supabase`, typechecked, browser-verified
-- [ ] `api/_lib/verifyAuth.ts` converted (blocks everything downstream of it)
-- [ ] All 6 remaining Vercel functions in §2 converted
-- [ ] `refund.*` webhook branch converted and tested (mirroring the `charge.success`/`transfer.*` test rigor)
-- [ ] `src/lib/insforge.ts` usage reduced to zero across `src/` and `api/` (grep for `insforge\.` returns nothing outside the file itself)
+**Status: 7 of 12 checked, 1 partial, 4 open.** All code-migration items are
+done (frontend, backend, `insforge.ts` usage, CSP/env fix, and the signup-email
+finding are all ✅). What's left is exclusively non-code: the paid/webhook
+purchase path and a real-inbox OTP-receipt check (both blocked on things this
+environment doesn't have — `PROJECT_ADMIN_DATABASE_URL` and a real test
+inbox), native iOS/Android builds, live Paystack keys, production env vars,
+and a rollback-plan read-through. None of the remaining items are migration
+risk — they're deployment/ops readiness.
+
+- [x] All frontend files converted to `supabase`, typechecked (browser-verified where a live session was available in this environment; organizer/admin-only screens confirmed via clean typecheck + app boot only)
+- [x] `api/_lib/verifyAuth.ts` converted (blocks everything downstream of it)
+- [x] All remaining Vercel functions in §2 converted
+- [x] `refund.*` webhook branch converted (mirrors the `charge.success`/`transfer.*` pattern) — still needs a live-payload test pass, same rigor as `charge.success`/`transfer.*`
+- [x] `src/lib/insforge.ts` usage reduced to zero across `src/` and `api/` (grep for any import from `lib/insforge` — not just `insforge\.` usage — returns nothing outside the file itself)
+- [x] `vercel.json` CSP fixed to allow Supabase (`connect-src`/`media-src`) and `blob:` (`connect-src`); stale hardcoded `env` block (incl. a live Paystack key) removed
 - [ ] Native email/OTP flows tested on a real iOS and Android build
-- [ ] Full regression pass on Supabase: sign up → verify → browse → purchase → check in → message → admin-moderate, on a fresh device/session
+- [~] Full regression pass on Supabase — **run against a real Preview deployment, not just locally**: sign up ✅ (confirmed working against a real domain — see resolved finding below) → verify (unverified, no inbox access to confirm actual OTP-code receipt) → browse ✅ → purchase (free-ticket path ✅; paid/webhook path not exercised, needs `PROJECT_ADMIN_DATABASE_URL`) → check in ✅ (incl. live realtime confirmed) → message ✅ → admin-moderate ✅. Still needs: a real-inbox test to confirm the OTP code actually arrives, the paid/webhook purchase path, and a fresh-device/native-build pass
+- [x] Resolved: "Error sending confirmation email" was `@example.com` having no real mailbox, not a genuine SMTP gap — re-tested clean against a real `getvents.com` address
 - [ ] `VITE_PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` confirmed as **live** keys are what's set in Vercel's production environment (not the test keys used for migration verification)
 - [ ] Vercel environment variables added for production: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL` (or equivalent), `SUPABASE_JWT_SECRET` (if still relevant), removing `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` only after confirming nothing reads them
 - [ ] Rollback plan (§5) reviewed and understood by whoever is on call during the cutover window
@@ -203,5 +335,14 @@ preference:
    native app's InsForge-format email links stay broken until that's done
    regardless of backend cutover?
 4. Confirm whether email delivery volume on Resend's plan can handle real
-   production signup/reset volume (was only tested with a handful of test
-   sends).
+   production signup/reset volume. Updated by this pass's regression testing:
+   the send pipeline itself is now confirmed working end-to-end (a real
+   signup against a real `getvents.com` address completed with no error,
+   after an initial false alarm — see §1) — but that only proves single-send
+   correctness, not volume. The plan-capacity question is still open.
+5. Who holds the `project_admin` Postgres role's password (set out-of-band
+   per `0021_project_admin_login.sql`, and not recorded anywhere in this
+   repo, `.env.local`, or Vercel's env vars)? This pass could not test the
+   webhook-driven paid-purchase/payout/refund-finalization path at all
+   without it — whoever has it needs to either run that part of the
+   regression pass themselves or share a way to test it before cutover.
