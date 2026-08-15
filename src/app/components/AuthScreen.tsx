@@ -3,7 +3,8 @@ import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, Chevr
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
-import { insforge, saveRefreshToken, clearRefreshToken, getAuthToken } from '../../lib/insforge';
+import { insforge, clearRefreshToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -23,7 +24,13 @@ import { savePendingVerification, getPendingVerification, clearPendingVerificati
 // per-IP) inside check_auth_rate_limit(); throws a friendly message rather
 // than letting the raw 'rate_limited' RPC error reach the user.
 async function checkAuthRateLimit(action: 'login' | 'signup' | 'password_reset', identifier: string) {
-  const { error } = await insforge.database.rpc('check_auth_rate_limit', { p_action: action, p_identifier: identifier });
+  // Uses the Supabase client regardless of which backend the calling flow
+  // authenticates against — check_auth_rate_limit() is a pure anti-abuse
+  // counter keyed by action+identifier, not tied to session state, so
+  // login (still InsForge-authenticated for now) and signup/reset (now
+  // Supabase-authenticated) can safely share one rate-limit bucket on
+  // Supabase without affecting how either flow actually signs a user in.
+  const { error } = await supabase.rpc('check_auth_rate_limit', { p_action: action, p_identifier: identifier });
   if (error) {
     if (String((error as any)?.message || error).includes('rate_limited')) {
       throw new Error('Too many attempts. Please wait a few minutes and try again.');
@@ -325,12 +332,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     if (!signupAvatarFile) return signupAvatarUrl;
     setAvatarUploading(true);
     try {
-      const { data, error } = await insforge.storage.from('avatars').uploadAuto(signupAvatarFile);
+      // Supabase's storage client has no InsForge-style uploadAuto() that
+      // generates its own key — the object path/key must be supplied
+      // explicitly. signupAvatarFile is always a freshly cropped JPEG (see
+      // handleCropComplete), so a random key with a fixed extension is
+      // sufficient; there's no pre-existing naming convention to match
+      // since this was the only avatars-bucket upload call in the codebase.
+      const key = `${crypto.randomUUID()}.jpg`;
+      const { error } = await supabase.storage.from('avatars').upload(key, signupAvatarFile, {
+        contentType: 'image/jpeg',
+        upsert: false,
+      });
       if (error) throw error;
-      if (data?.url) {
-        setSignupAvatarUrl(data.url);
-        setSignupAvatarKey(data.key);
-        return data.url;
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
+      if (urlData?.publicUrl) {
+        setSignupAvatarUrl(urlData.publicUrl);
+        setSignupAvatarKey(key);
+        return urlData.publicUrl;
       }
     } catch (err: any) {
       console.error("Failed to upload avatar:", err);
@@ -403,7 +421,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
   const fetchProfileAndSucceed = async (userId: string, userEmail: string, avatarUrl?: string) => {
     for (let i = 0; i < 20; i++) {
-      const { data: profile } = await insforge.database
+      const { data: profile } = await supabase
         .from('users')
         .select('*')
         .eq('id', userId)
@@ -417,7 +435,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // `role` from an authenticated-role caller. Awaited and checked so
         // a rejected role change is visible instead of silently reverting
         // to the trigger-assigned default on next login.
-        const { error: roleError } = await insforge.database.rpc('set_signup_role' as any, { p_role: strictRole });
+        const { error: roleError } = await supabase.rpc('set_signup_role' as any, { p_role: strictRole });
         if (roleError) console.error('Signup Failure Trace — role set:', roleError);
 
         const payload: Record<string, any> = {
@@ -429,9 +447,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         };
         if (dob) payload.date_of_birth = dob;
 
-        await insforge.database.from('users').update(payload).eq('id', userId);
+        await supabase.from('users').update(payload).eq('id', userId);
 
-        const { data: verifiedProfile } = await insforge.database
+        const { data: verifiedProfile } = await supabase
           .from('users')
           .select('*')
           .eq('id', userId)
@@ -450,7 +468,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const pendingRef = sessionStorage.getItem('vents_ref_code');
         if (pendingRef) {
           try {
-            const { error: refError } = await insforge.database.rpc('complete_referral' as any, { p_referrer_code: pendingRef });
+            const { error: refError } = await supabase.rpc('complete_referral' as any, { p_referrer_code: pendingRef });
             if (refError) console.error('Referral completion failed:', refError);
             else sessionStorage.removeItem('vents_ref_code');
           } catch (e) {
@@ -505,9 +523,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (mode === 'forgot') {
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
         await checkAuthRateLimit('password_reset', email.trim().toLowerCase());
-        const { error } = await insforge.auth.sendResetPasswordEmail({
-          email: email.trim().toLowerCase(),
-        });
+        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
         if (error) throw error;
         analytics.passwordResetRequested();
         setForgotSent(true);
@@ -572,7 +588,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (!signupCheck.success) throw new Error(firstValidationError(signupCheck));
 
         // Block re-signup with a previously deleted email
-        const { data: deletedRow } = await insforge.database
+        const { data: deletedRow } = await supabase
           .from('deleted_emails')
           .select('email')
           .eq('email', email.trim().toLowerCase())
@@ -583,7 +599,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
         // Block re-signup with a previously deleted phone number
         if (normalizedPhone) {
-          const { data: deletedPhoneRow } = await insforge.database
+          const { data: deletedPhoneRow } = await supabase
             .from('deleted_phones')
             .select('phone')
             .eq('phone', normalizedPhone)
@@ -606,7 +622,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const normalizedEmail = email.trim().toLowerCase();
         const normalizedUsername = username.trim().toLowerCase();
 
-        const { data: existsResult, error: lookupError } = await insforge.database.rpc('check_user_exists', {
+        const { data: existsResult, error: lookupError } = await supabase.rpc('check_user_exists', {
           p_email: normalizedEmail,
           p_phone: normalizedPhone,
           p_username: normalizedUsername,
@@ -623,7 +639,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // any such stale, unconfirmed row first so this signup can proceed.
         // No-op if nothing matches; never touches a verified account.
         try {
-          await insforge.database.rpc('reclaim_unverified_signup', {
+          await supabase.rpc('reclaim_unverified_signup', {
             p_email: normalizedEmail,
             p_phone: normalizedPhone,
             p_username: normalizedUsername,
@@ -633,27 +649,27 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         await checkAuthRateLimit('signup', normalizedEmail);
         // Server-side re-check, not just the client-side signupsDisabled
         // gate above — catches any caller hitting this RPC layer directly.
-        const { error: flagError } = await insforge.database.rpc('check_signups_enabled');
+        const { error: flagError } = await supabase.rpc('check_signups_enabled');
         if (flagError && String((flagError as any)?.message || flagError).includes('signups_disabled')) {
           throw new Error('New sign-ups are temporarily paused. Please check back shortly.');
         }
-        const { data, error } = await insforge.auth.signUp({ email: normalizedEmail, password });
+        const { data, error } = await supabase.auth.signUp({ email: normalizedEmail, password });
         if (error) throw error;
 
-        // Rehydrate hc.userToken immediately — the SDK doesn't always
-        // reliably populate it right after signUp, and the profile upsert
-        // below is an authenticated write gated by auth.uid() = id. Without
-        // a valid token this silently fails under RLS instead of throwing.
-        try { await getAuthToken(); } catch { /* fall through — signUp's own token may still work */ }
+        // No manual token rehydration needed here (unlike the old InsForge
+        // path) — supabase.auth.signUp() sets the client's session
+        // internally, and every supabase.from()/rpc() call below
+        // automatically carries that session's JWT, so the profile upsert
+        // (gated by auth.uid() = id under RLS) just works.
 
-        // InsForge does not support raw_user_meta_data in signUp options.
-        // Write profile fields directly to the users table after auth record is created.
-        // `role` is deliberately NOT included here — check_user_role_update()
-        // rejects any direct role write from an authenticated caller; the
-        // actual role change happens via the set_signup_role() RPC in
-        // fetchProfileAndSucceed below, which runs as SECURITY DEFINER.
+        // Write profile fields directly to the users table after the auth
+        // record is created. `role` is deliberately NOT included here —
+        // check_user_role_update() rejects any direct role write from an
+        // authenticated caller; the actual role change happens via the
+        // set_signup_role() RPC in fetchProfileAndSucceed below, which runs
+        // as SECURITY DEFINER.
         if (data?.user?.id) {
-          await insforge.database.from('users').upsert({
+          await supabase.from('users').upsert({
             id: data.user.id,
             email: normalizedEmail,
             full_name: userMetaPayload.full_name,
@@ -665,24 +681,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           }, { onConflict: 'id' }).then(() => {}, (e: any) => console.error('Signup Failure Trace — profile upsert:', e));
         }
 
-        // Persist refresh token immediately after signup so session survives reload.
-        // The SDK sets hc.refreshToken internally — also check data for it.
-        {
-          const signupRt = (data as any)?.refreshToken || (data as any)?.refresh_token;
-          const hcNow = (insforge as any).getHttpClient?.();
-          const rtToSave = signupRt || hcNow?.refreshToken;
-          if (rtToSave) saveRefreshToken(rtToSave);
-        }
+        // Session persistence across reloads is handled automatically by
+        // the Supabase client's storage adapter (see src/lib/supabase.ts) —
+        // no manual refresh-token save needed here (unlike the old InsForge
+        // path, which had to persist it by hand).
 
-        if (data?.requireEmailVerification) {
+        // Supabase's signUp() returns session === null when email
+        // confirmation is required (mailer_autoconfirm is off on this
+        // project) — the direct equivalent of InsForge's
+        // requireEmailVerification flag. A non-null session means
+        // confirmation isn't required and the user is already signed in.
+        if (data?.user && !data.session) {
           analytics.signedUp(strictRole);
           setIsVerifying(true);
           savePendingVerification(normalizedEmail);
           sendVerifyAccountEmail(normalizedEmail);
-        } else if (data?.accessToken && data?.user) {
+        } else if (data?.session && data?.user) {
           analytics.signedUp(strictRole);
           const avatarUrl = await uploadAvatarIfPending();
-          await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
+          await fetchProfileAndSucceed(data.user.id, data.user.email!, avatarUrl);
         }
 
       } else if (mode === 'login') {
@@ -695,46 +712,32 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
         let loginEmail = email.trim();
         if (!isValidEmail(loginEmail)) {
-          // Clear any stale token so anon key is used for this unauthenticated lookup
-          (insforge as any).getHttpClient().userToken = null;
-          const { data: resolvedEmail, error: resolveError } = await insforge.database.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
+          // No manual token-clearing needed here (unlike the old InsForge
+          // path) — this RPC runs before signInWithPassword below, so the
+          // Supabase client is already unauthenticated (anon) at this point;
+          // it only carries a session once one has actually been
+          // established.
+          const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
           if (resolveError) throw resolveError;
           if (!resolvedEmail) throw new Error('No account found with this username.');
           loginEmail = resolvedEmail;
         }
 
-        // Use mobile client_type to get refresh token in response body (works cross-origin on localhost).
-        const baseUrl = (insforge as any).getHttpClient?.().baseUrl || import.meta.env.VITE_INSFORGE_URL;
-        const loginRes = await fetch(`${baseUrl}/api/auth/sessions?client_type=mobile`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: loginEmail, password }),
-        });
-        const loginJson = await loginRes.json();
-        if (!loginRes.ok || loginJson.error) {
-          throw new Error(loginJson.message || loginJson.error || 'Invalid email or password.');
-        }
-        // Save refresh token for session persistence across reloads.
-        // API may return camelCase OR snake_case — check both.
-        const rt = loginJson.refreshToken || loginJson.refresh_token;
-        const hc = (insforge as any).getHttpClient?.();
-        if (rt) {
-          if (hc) hc.refreshToken = rt;
-          saveRefreshToken(rt);
-        }
-        if (loginJson.accessToken || loginJson.access_token) {
-          const at = loginJson.accessToken || loginJson.access_token;
-          if (hc) hc.userToken = at;
-        }
-        const data = loginJson;
-        const error = null;
+        // supabase.auth.signInWithPassword() replaces the old raw fetch to
+        // InsForge's /api/auth/sessions?client_type=mobile endpoint (that
+        // manual call existed only to get a refresh token back in the
+        // response body for cross-origin localhost use — Supabase's client
+        // persists its own session via the storage adapter in
+        // src/lib/supabase.ts, so none of that manual plumbing is needed).
+        const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
+        if (error) throw error;
 
         if (data?.user) {
-          const { data: profile } = await insforge.database.from('users').select('*').eq('id', data.user.id).maybeSingle();
+          const { data: profile } = await supabase.from('users').select('*').eq('id', data.user.id).maybeSingle();
 
           // 3.5: Block banned / deleted accounts immediately after auth
           if (profile?.status === 'suspended' || profile?.status === 'deleted') {
-            await insforge.auth.signOut().catch(() => {});
+            await supabase.auth.signOut().catch(() => {});
             await clearRefreshToken();
             setBanInfo({ status: profile.status, until: profile.banned_until ?? null });
             setLoading(false);
@@ -748,8 +751,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           const dbRole = profile?.role || 'attendee';
           const profilePayload = {
             id: data.user.id,
-            email: data.user.email,
-            full_name: profile?.full_name || data.user.user_metadata?.full_name || data.user.email.split('@')[0],
+            email: data.user.email || '',
+            full_name: profile?.full_name || data.user.user_metadata?.full_name || (data.user.email || '').split('@')[0],
             role: dbRole,
             username: profile?.username || data.user.user_metadata?.username,
             phone_number: profile?.phone_number || data.user.user_metadata?.phone_number,
@@ -822,11 +825,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           let checkEmail = email.trim();
           if (!isValidEmail(checkEmail)) {
             // Try to resolve username to email for the status check
-            const { data: resolved } = await insforge.database.rpc('resolve_username_to_email', { p_username: checkEmail.toLowerCase() });
+            const { data: resolved } = await supabase.rpc('resolve_username_to_email', { p_username: checkEmail.toLowerCase() });
             if (resolved) checkEmail = resolved;
           }
           if (checkEmail && isValidEmail(checkEmail)) {
-            const { data: statusRows } = await insforge.database.rpc('get_account_status', { p_email: checkEmail });
+            const { data: statusRows } = await supabase.rpc('get_account_status', { p_email: checkEmail });
             const row = Array.isArray(statusRows) ? statusRows[0] : statusRows;
             if (row?.status === 'suspended' || row?.status === 'deleted') {
               setBanInfo({ status: row.status, until: row.banned_until ?? null });
@@ -857,16 +860,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setLoading(true);
     setErrorMessage(null);
     try {
-      const { data, error } = await insforge.auth.verifyEmail({
+      const { data, error } = await supabase.auth.verifyOtp({
         email: email.trim().toLowerCase(),
-        otp: verificationCode
+        token: verificationCode,
+        type: 'signup',
       });
       if (error) throw error;
 
       if (data?.user) {
         clearPendingVerification();
         const avatarUrl = await uploadAvatarIfPending();
-        await fetchProfileAndSucceed(data.user.id, data.user.email, avatarUrl);
+        await fetchProfileAndSucceed(data.user.id, data.user.email!, avatarUrl);
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Verification failed. Please check the code and try again.');
@@ -881,10 +885,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setErrorMessage(null);
     setSuccessMessage(null);
     try {
-      await insforge.auth.resendVerificationEmail({
+      const { error: resendError } = await supabase.auth.resend({
+        type: 'signup',
         email: email.trim().toLowerCase(),
-        redirectTo: `${window.location.origin}/`,
+        options: { emailRedirectTo: `${window.location.origin}/` },
       });
+      if (resendError) throw resendError;
       sendVerifyAccountEmail(email.trim().toLowerCase());
       setSuccessMessage('A new code is on its way — check your inbox.');
       setResendCooldown(30);
@@ -1174,16 +1180,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 setForgotVerifying(true);
                 setErrorMessage(null);
                 try {
-                  // Validate the code against the backend and exchange it for a
-                  // reset token — this is the ONLY thing Step 1 does.
-                  const { data: tokenData, error: exchangeErr } = await insforge.auth.exchangeResetPasswordToken({
+                  // Validate the code against the backend — this is the ONLY
+                  // thing Step 1 does. Unlike InsForge's separate "exchange
+                  // code for a reset token" call, Supabase's verifyOtp() IS
+                  // the verification step: on success it establishes a
+                  // short-lived recovery session on the client directly, and
+                  // Step 2's updateUser() call below uses that session
+                  // rather than needing an explicit token argument.
+                  const { data: verifyData, error: exchangeErr } = await supabase.auth.verifyOtp({
                     email: email.trim().toLowerCase(),
-                    code: forgotOtpCode,
+                    token: forgotOtpCode,
+                    type: 'recovery',
                   });
                   if (exchangeErr) throw exchangeErr;
-                  const resetOtp = tokenData?.token;
-                  if (!resetOtp) throw new Error('Incorrect or expired code. Please try again.');
-                  setForgotExchangedToken(resetOtp);
+                  if (!verifyData?.session) throw new Error('Incorrect or expired code. Please try again.');
+                  setForgotExchangedToken('verified');
                   setForgotPasswordStep(true);
                 } catch (err: any) {
                   setErrorMessage(err.message || 'Incorrect or expired code. Please try again.');
@@ -1268,8 +1279,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 setLoading(true);
                 setErrorMessage(null);
                 try {
-                  const { error } = await insforge.auth.resetPassword({ newPassword: forgotNewPassword, otp: forgotExchangedToken });
+                  // Uses the recovery session verifyOtp() established in Step
+                  // 1 — no explicit token needed, unlike InsForge's
+                  // token-carrying resetPassword() call.
+                  const { error } = await supabase.auth.updateUser({ password: forgotNewPassword });
                   if (error) throw error;
+                  // The recovery session must not linger as a "signed in"
+                  // state after a password reset — the user is about to be
+                  // sent to the normal login screen and should authenticate
+                  // there like anyone else, not be silently left signed in
+                  // under the temporary recovery session.
+                  await supabase.auth.signOut().catch(() => {});
                   setSuccessMessage('Password reset successfully! Please sign in.');
                   setMode('login');
                   resetForgotFlow();

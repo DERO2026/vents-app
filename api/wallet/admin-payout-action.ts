@@ -31,13 +31,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: `A ${action === 'reject' ? 'rejection' : 'cancellation'} reason is required` });
   }
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!baseUrl || !anonKey) {
     return res.status(500).json({ error: 'Payout system not configured' });
   }
 
-  const insforgeHeaders = {
+  // admin_reject_organizer_payout/admin_cancel_processing_payout are both
+  // EXECUTE-granted to `authenticated` (is_admin() checked internally) —
+  // forwarding the caller's own Supabase session token.
+  const supabaseHeaders = {
     'Content-Type': 'application/json',
     Authorization: authHeader,
     apikey: anonKey,
@@ -48,9 +51,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // is_admin() + funds rollback (pending_kobo -> balance_kobo) both
       // happen atomically inside this RPC. Reject is for a still-pending
       // request; the client fires its own decision email separately.
-      const rpcRes = await fetch(`${baseUrl}/api/database/rpc/admin_reject_organizer_payout`, {
+      const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_reject_organizer_payout`, {
         method: 'POST',
-        headers: insforgeHeaders,
+        headers: supabaseHeaders,
         body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
       });
       if (!rpcRes.ok) {
@@ -69,9 +72,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // is_admin() check, the 'processing'-only guard, the status flip, the
     // wallet refund, and the organizer_transactions audit row all happen
     // atomically inside this single RPC call.
-    const rpcRes = await fetch(`${baseUrl}/api/database/rpc/admin_cancel_processing_payout`, {
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_cancel_processing_payout`, {
       method: 'POST',
-      headers: insforgeHeaders,
+      headers: supabaseHeaders,
       body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
     });
     if (!rpcRes.ok) {

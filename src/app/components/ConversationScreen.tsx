@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
@@ -61,6 +62,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypingSentRef = useRef(0);
+  // Dedicated send-only channel targeting the OTHER user's own topic
+  // (user:<otherUser.id>) — kept separate from the receive channel below
+  // (which subscribes to MY OWN topic, user:<currentUser.id>) since
+  // Supabase requires a subscribed channel instance to call .send() on,
+  // and "send typing to them" / "receive on my own topic" are two
+  // different topics, not the same channel used both ways.
+  const typingSendChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   function flash(msg: string) {
@@ -71,7 +79,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   // Immediately mark all unread incoming messages as read on mount — fire and forget.
   useEffect(() => {
     if (!currentUser?.id || !otherUser?.id) return;
-    insforge.database
+    supabase
       .from('direct_messages')
       .update({ read_at: new Date().toISOString() })
       .eq('recipient_id', currentUser.id)
@@ -81,7 +89,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [currentUser?.id, otherUser?.id]);
 
   useEffect(() => {
-    insforge.database
+    supabase
       .from('app_config')
       .select('image_sharing_enabled')
       .maybeSingle()
@@ -97,7 +105,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   // having loaded first.
   const loadRequestStatus = useCallback(async () => {
     if (!currentUser?.id || !otherUser?.id) return;
-    const { data } = await insforge.database
+    const { data } = await supabase
       .from('conversation_requests')
       .select('requester_id, recipient_id, status')
       .or(`and(requester_id.eq.${currentUser.id},recipient_id.eq.${otherUser.id}),and(requester_id.eq.${otherUser.id},recipient_id.eq.${currentUser.id})`)
@@ -128,7 +136,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   async function loadReactions(messageIds: string[]) {
     if (messageIds.length === 0) return;
-    const { data } = await insforge.database
+    const { data } = await supabase
       .from('message_reactions')
       .select('message_id, emoji, user_id')
       .in('message_id', messageIds);
@@ -141,14 +149,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   async function load() {
     try {
-      const { data: clearRow } = await insforge.database
+      const { data: clearRow } = await supabase
         .from('conversation_clears')
         .select('cleared_at')
         .eq('user_id', currentUser.id)
         .eq('other_user_id', otherUser.id)
         .maybeSingle();
 
-      let query = insforge.database
+      let query = supabase
         .from('direct_messages')
         .select('id, sender_id, recipient_id, body, image_url, media_type, reply_to_id, deleted_by_sender, created_at, read_at')
         .or(
@@ -163,7 +171,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
       const unread = rows.filter((m) => m.recipient_id === currentUser.id && !m.read_at);
       if (unread.length > 0) {
-        await insforge.database
+        await supabase
           .from('direct_messages')
           .update({ read_at: new Date().toISOString() })
           .in('id', unread.map((m) => m.id));
@@ -179,39 +187,41 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     if (!currentUser?.id || !otherUser?.id) return;
     load();
 
-    const channel = `user:${currentUser.id}`;
-    let subscribed = false;
-    let torn = false;
-    insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe(channel).then(() => {
-        if (torn) { insforge.realtime.unsubscribe(channel); return; }
-        subscribed = true;
-      });
-    }).catch(() => {});
+    // My own topic — the server-side notify_new_direct_message() trigger
+    // broadcasts new_message here (realtime.send(..., 'new_message',
+    // 'user:'||recipient_id, false)), and sendTyping (below) targets this
+    // same topic-naming convention on the OTHER user's side, so typing
+    // events addressed to ME land here too.
+    const receiveChannel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
 
-    const onNewMessage = (payload: any) => {
+    receiveChannel.on('broadcast', { event: 'new_message' }, (msg) => {
+      const payload = msg.payload as any;
       if (payload?.sender_id === otherUser.id || payload?.recipient_id === otherUser.id) {
         load();
         loadRequestStatus();
       }
-    };
-    const onTyping = (payload: any) => {
+    });
+    receiveChannel.on('broadcast', { event: 'typing' }, (msg) => {
+      const payload = msg.payload as any;
       if (payload?.from !== otherUser.id) return;
       setOtherTyping(true);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
       typingTimeoutRef.current = setTimeout(() => setOtherTyping(false), 3000);
-    };
-    insforge.realtime.on('new_message', onNewMessage);
-    insforge.realtime.on('typing', onTyping);
+    });
+    receiveChannel.subscribe();
+
+    // Send-only channel to the OTHER user's topic, for sendTyping below.
+    const sendChannel = supabase.channel(`user:${otherUser.id}`);
+    sendChannel.subscribe();
+    typingSendChannelRef.current = sendChannel;
 
     const interval = setInterval(load, 8000);
     return () => {
-      torn = true;
       clearInterval(interval);
       if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
-      insforge.realtime.off?.('new_message', onNewMessage);
-      insforge.realtime.off?.('typing', onTyping);
-      if (subscribed) insforge.realtime.unsubscribe(channel);
+      supabase.removeChannel(receiveChannel);
+      supabase.removeChannel(sendChannel);
+      typingSendChannelRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id, otherUser?.id]);
@@ -220,29 +230,24 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     const now = Date.now();
     if (now - lastTypingSentRef.current < 2000) return; // throttle
     lastTypingSentRef.current = now;
-    insforge.realtime.publish(`user:${otherUser.id}`, 'typing', { from: currentUser.id }).catch(() => {});
+    typingSendChannelRef.current?.send({ type: 'broadcast', event: 'typing', payload: { from: currentUser.id } }).catch(() => {});
   }, [currentUser.id, otherUser.id]);
 
   const sendImageMessage = useCallback(async (file: File) => {
     if (!imageSharingEnabled) { flash('Image sharing is temporarily unavailable.'); return; }
     setUploadingImg(true);
     try {
-      const token = await getAuthToken();
       const { blob: compressedBlob, mimeType, extension } = await compressImage(file);
-      const formData = new FormData();
-      formData.append('file', new File([compressedBlob], `dm-${Date.now()}.${extension}`, { type: mimeType }));
-      const res = await withTimeoutFallback(
-        fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-        ),
+      const key = `dm-${Date.now()}-${crypto.randomUUID()}.${extension}`;
+      const uploadRes = await withTimeoutFallback(
+        supabase.storage.from('direct_messages').upload(key, compressedBlob, { contentType: mimeType, upsert: false }),
         { timeoutMs: 8000, timeoutMessage: 'Image upload is taking too long.' }
       );
-      if (!res.ok) throw new Error('Upload failed');
-      const data = await res.json();
-      const url = data?.url ?? (data?.key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/direct_messages/objects/${encodeURIComponent(data.key)}` : null);
+      if (uploadRes.error) throw new Error('Upload failed');
+      const { data: urlData } = supabase.storage.from('direct_messages').getPublicUrl(key);
+      const url = urlData?.publicUrl;
       if (!url) throw new Error('No URL');
-      const { error } = await insforge.database.rpc('send_direct_message', {
+      const { error } = await supabase.rpc('send_direct_message', {
         p_recipient_id: otherUser.id, p_body: '', p_event_id: eventId || null,
         p_image_url: url, p_media_type: 'image', p_reply_to_id: null,
       });
@@ -256,7 +261,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [currentUser.id, otherUser.id, eventId, imageSharingEnabled]);
 
   const deleteMessage = useCallback(async (id: string) => {
-    await insforge.database.from('direct_messages').update({ deleted_by_sender: true }).eq('id', id).eq('sender_id', currentUser.id);
+    await supabase.from('direct_messages').update({ deleted_by_sender: true }).eq('id', id).eq('sender_id', currentUser.id);
     setMessages(prev => prev.map(m => m.id === id ? { ...m, deleted_by_sender: true, body: '' } : m));
     setActionMsg(null);
   }, [currentUser.id]);
@@ -273,7 +278,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         : [...list, { emoji, user_id: currentUser.id }];
       return { ...prev, [messageId]: next };
     });
-    const { error } = await insforge.database.rpc('toggle_message_reaction', { p_message_id: messageId, p_emoji: emoji });
+    const { error } = await supabase.rpc('toggle_message_reaction', { p_message_id: messageId, p_emoji: emoji });
     if (error) { loadReactions(messages.map(m => m.id)); flash('Could not update reaction'); }
   }, [currentUser.id, messages]);
 
@@ -288,7 +293,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     }
     setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'sending' } : m));
     try {
-      const { error } = await insforge.database.rpc('send_direct_message', {
+      const { error } = await supabase.rpc('send_direct_message', {
         p_recipient_id: otherUser.id, p_body: text, p_event_id: eventId || null,
         p_image_url: null, p_media_type: null, p_reply_to_id: replyToId,
       });
@@ -339,7 +344,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   async function respondToRequest(action: 'accept' | 'decline') {
     setRespondingRequest(true);
     try {
-      const { error } = await insforge.database.rpc('respond_to_message_request', { p_requester_id: otherUser.id, p_action: action });
+      const { error } = await supabase.rpc('respond_to_message_request', { p_requester_id: otherUser.id, p_action: action });
       if (error) throw error;
       if (action === 'accept') { setRequestStatus('accepted'); flash('Messaging enabled — say hello!'); }
       else { setRequestStatus('declined'); flash(`Declined ${otherUser.name}'s request.`); }
@@ -355,7 +360,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     if (!q.trim()) { setSearchResults([]); return; }
     setSearching(true);
     try {
-      const { data } = await insforge.database.rpc('search_direct_messages', { p_query: q.trim(), p_other_user_id: otherUser.id });
+      const { data } = await supabase.rpc('search_direct_messages', { p_query: q.trim(), p_other_user_id: otherUser.id });
       setSearchResults((data as DM[]) || []);
     } finally {
       setSearching(false);

@@ -13,6 +13,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Camera, Shield, ScanLine, CalendarX, Flashlight, FlashlightOff, SwitchCamera, FlaskConical } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { Event } from './types';
 import { useCamera } from './scanner/useCamera';
 import { useQrScanner } from './scanner/useQrScanner';
@@ -99,7 +100,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     lastStatsAtRef.current = now;
     try {
       const { count: checked } = await insforge.database.from('checkins').select('id', { count: 'exact', head: true }).eq('event_id', id);
-      const { count: total } = await insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', id).eq('status', 'active');
+      const { count: total } = await supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('event_id', id).eq('status', 'active');
       if (mountedRef.current) setStats({ checkedIn: checked || 0, total: total || 0 });
     } catch { /* ignore */ }
   }, [selectedEvent?.id]);

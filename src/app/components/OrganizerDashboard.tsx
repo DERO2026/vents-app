@@ -11,6 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
 import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
 
 interface OrganizerDashboardProps {
@@ -51,7 +52,7 @@ export function OrganizerDashboard({
         //    Bounded: an organizer with more events than this is unrealistic today,
         //    but an unbounded .select('*') here silently degrades (and silently
         //    under-reports revenue below) once one isn't.
-        const { data: eventsData, error: eventsError } = await insforge.database
+        const { data: eventsData, error: eventsError } = await supabase
           .from('events')
           .select('*')
           .eq('organizer_id', currentUser.id)
@@ -663,7 +664,7 @@ export function OrganizerDashboard({
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
-                              await insforge.database
+                              await supabase
                                 .from('events')
                                 .update({ status: 'live' })
                                 .eq('id', event.id);

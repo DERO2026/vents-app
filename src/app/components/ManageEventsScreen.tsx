@@ -7,7 +7,7 @@ import {
 import { formatPrice } from './data';
 import { OrganizerEventOverview, OrganizerEventDisplayStatus } from './types';
 import { useOrganizerEvents, OrganizerEventSort } from '../../lib/useOrganizerEvents';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 
 interface ManageEventsScreenProps {
   onBack: () => void;
@@ -96,7 +96,7 @@ export function ManageEventsScreen({
     setToggling(event.id);
     const newStatus = event.status === 'draft' ? 'live' : 'draft';
     try {
-      const { error: err } = await insforge.database.from('events').update({ status: newStatus }).eq('id', event.id);
+      const { error: err } = await supabase.from('events').update({ status: newStatus }).eq('id', event.id);
       if (err) throw err;
       setActionMsg({ id: event.id, text: newStatus === 'live' ? 'Event is now live' : 'Event hidden as a draft' });
       refresh(true);
@@ -116,7 +116,7 @@ export function ManageEventsScreen({
       // Soft delete only — public.tickets.event_id is ON DELETE RESTRICT, so
       // a real DELETE would be rejected once any ticket exists anyway. This
       // preserves ticket/payment history and can be restored by an admin.
-      const { error: err } = await insforge.database.rpc('soft_delete_event', { p_event_id: deleteTarget.id });
+      const { error: err } = await supabase.rpc('soft_delete_event', { p_event_id: deleteTarget.id });
       if (err) throw err;
       onEventDeleted?.(deleteTarget.id);
       setDeleteTarget(null);

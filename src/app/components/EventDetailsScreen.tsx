@@ -28,6 +28,7 @@ import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { openExternalUrl } from '../../lib/externalLink';
@@ -317,7 +318,7 @@ export function EventDetailsScreen({
     const fetchRelatedEvents = async () => {
       setLoadingRelated(true);
       try {
-        let relatedQuery = insforge.database
+        let relatedQuery = supabase
           .from('events')
           .select('*')
           .eq('category', event.category)
@@ -363,7 +364,7 @@ export function EventDetailsScreen({
   useEffect(() => {
     const fetchAttendeeCount = async () => {
       try {
-        const { data, error } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
+        const { data, error } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
         if (error) throw error;
         setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {

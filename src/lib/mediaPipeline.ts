@@ -1,4 +1,4 @@
-import { insforge, getAuthToken } from './insforge';
+import { supabase } from './supabase';
 import { compressImage, CompressedImage } from './compressImage';
 import { withTimeoutFallback } from './withTimeoutFallback';
 
@@ -53,28 +53,29 @@ function imageDimensions(blob: Blob): Promise<{ width: number; height: number }>
   return withTimeoutFallback(imageDimensionsInner(blob), { timeoutMs: 4000, fallback: () => ({ width: 0, height: 0 }) });
 }
 
-// Signed, direct-to-object-storage upload (the request is authorized by the
-// user's JWT; InsForge writes the object to the S3-compatible bucket). Wrapped
-// in the failsafe so a stalled mobile connection can never hang the caller.
+// Signed, direct-to-object-storage upload (the Supabase client attaches the
+// caller's session automatically; storage.objects RLS on the target bucket
+// - see supabase/migrations/0017-0019 - authorizes the write by owner_id).
+// Wrapped in the failsafe so a stalled mobile connection can never hang the
+// caller. Unlike InsForge's uploadAuto()-style endpoint, Supabase requires
+// an explicit object key up front — the filename passed in by callers
+// (already unique per file: "<base>-<timestamp>[-thumb|-poster].<ext>") is
+// used directly as that key.
 async function uploadBlob(bucket: string, blob: Blob, filename: string, mimeType: string): Promise<{ url: string; key: string | null }> {
-  const token = await getAuthToken();
-  const fd = new FormData();
-  fd.append('file', new File([blob], filename, { type: mimeType }));
   const res = await withTimeoutFallback(
-    fetch(`${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/${bucket}/objects`, {
-      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: fd,
-    }),
+    supabase.storage.from(bucket).upload(filename, blob, { contentType: mimeType, upsert: false }),
     { timeoutMs: 12000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
   );
-  if (!res.ok) {
-    if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and back in.');
-    throw new Error(`Upload failed (${res.status}). Please try again.`);
+  if (res.error) {
+    const msg = res.error.message || '';
+    if (/jwt|session|auth/i.test(msg)) throw new Error('Session expired. Please sign out and back in.');
+    throw new Error(`Upload failed. Please try again.`);
   }
-  const data = await res.json();
-  const key: string | null = data?.key ?? null;
-  const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/${bucket}/objects/${encodeURIComponent(key)}` : null);
-  if (!url) throw new Error('Upload succeeded but no URL was returned. Please try again.');
-  return { url, key };
+  const key = res.data?.path ?? null;
+  if (!key) throw new Error('Upload succeeded but no key was returned. Please try again.');
+  const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(key);
+  if (!urlData?.publicUrl) throw new Error('Upload succeeded but no URL was returned. Please try again.');
+  return { url: urlData.publicUrl, key };
 }
 
 // Metadata write is best-effort: the media is already durably uploaded and
@@ -86,7 +87,7 @@ async function recordMetadata(a: MediaAsset, userId?: string | null, eventId?: s
     // a genuine Promise to race against.
     const { data } = await withTimeoutFallback(
       Promise.resolve(
-        insforge.database.from('media_assets').insert([{
+        supabase.from('media_assets').insert([{
           url: a.url,
           storage_key: a.storageKey,
           thumbnail_url: a.thumbnailUrl,

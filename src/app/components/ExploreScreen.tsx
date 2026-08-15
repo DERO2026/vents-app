@@ -3,6 +3,7 @@ import BadgeChip from './BadgeChip';
 import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
 import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { haptics } from '../../lib/haptics';
@@ -80,13 +81,13 @@ export function ExploreScreen({
     if (!currentUserId) return;
     setLoadingChats(true);
     Promise.all([
-      insforge.database
+      supabase
         .from('direct_messages')
         .select('id, sender_id, recipient_id, body, created_at, read_at')
         .or(`sender_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`)
         .order('created_at', { ascending: false })
         .limit(200),
-      insforge.database
+      supabase
         .from('conversation_requests')
         .select('requester_id, recipient_id, status, created_at')
         .or(`requester_id.eq.${currentUserId},recipient_id.eq.${currentUserId}`),
@@ -151,7 +152,7 @@ export function ExploreScreen({
     setRespondingId(requesterId);
     haptics.light();
     try {
-      const { error } = await insforge.database.rpc('respond_to_message_request', { p_requester_id: requesterId, p_action: action });
+      const { error } = await supabase.rpc('respond_to_message_request', { p_requester_id: requesterId, p_action: action });
       if (error) throw error;
       setRequests(prev => prev.filter(r => r.requesterId !== requesterId));
       if (action === 'accept') loadConversations();

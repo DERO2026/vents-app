@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
-import { insforge, clearRefreshToken, getAuthToken, readRefreshToken, saveRefreshToken } from '../lib/insforge';
+import { insforge, clearRefreshToken, getAuthToken } from '../lib/insforge';
+import { supabase } from '../lib/supabase';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
@@ -267,7 +268,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     const checkAppConfig = () => {
-      insforge.database
+      supabase
         .from('app_config')
         .select('min_client_version, maintenance_mode, disable_purchases, disable_scanning, disable_signups, disable_payouts')
         .maybeSingle()
@@ -392,7 +393,7 @@ export default function App() {
           // PostgREST query builder is a thenable, not a real Promise, so
           // it doesn't reliably support .finally().
           Promise.resolve(
-            insforge.database
+            supabase
               .from('events')
               .select('*')
               .eq('id', eventDeepLink)
@@ -452,113 +453,38 @@ export default function App() {
         }
 
         // 2. Fetch user session.
-        // On localhost, the httpOnly refresh cookie is blocked cross-origin, so we
-        // fall back to a refresh token stored in secure storage (set at login) —
-        // see src/lib/insforge.ts for the native Keychain/Keystore vs
-        // sessionStorage split.
+        // Supabase's client (src/lib/supabase.ts) persists and refreshes the
+        // session internally (autoRefreshToken + persistSession) — no manual
+        // cookie/refresh-token plumbing needed here. The InsForge version of
+        // this block did that by hand because its httpOnly refresh cookie
+        // doesn't work cross-origin on localhost; Supabase's client reads
+        // from its own storage adapter instead, so that whole workaround is
+        // gone. getSession() resolves from cache/storage and only hits the
+        // network if the cached token is actually expired, so there's no
+        // separate "transient network failure vs definitely logged out"
+        // ambiguity to retry around the way InsForge's getCurrentUser() had.
         let sessionUserId: string | null = null;
         let sessionUserEmail: string | null = null;
 
-        const storedRt = await readRefreshToken();
-        const hc = (insforge as any).getHttpClient?.();
-        if (storedRt && hc && !hc.userToken) {
-          try {
-            const baseUrl = hc.baseUrl || import.meta.env.VITE_INSFORGE_URL;
-            const refreshAbort = new AbortController();
-            const refreshAbortTimer = setTimeout(() => refreshAbort.abort(), 12000);
-            const refreshRes = await fetch(`${baseUrl}/api/auth/refresh?client_type=mobile`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ refreshToken: storedRt, refresh_token: storedRt }),
-              signal: refreshAbort.signal,
-            });
-            clearTimeout(refreshAbortTimer);
-            if (refreshRes.ok) {
-              const refreshJson = await refreshRes.json();
-              const at = refreshJson.accessToken || refreshJson.access_token;
-              if (at) {
-                hc.userToken = at;
-                // Try user info from refresh response first, then via direct API call
-                sessionUserId = refreshJson.user?.id || null;
-                sessionUserEmail = refreshJson.user?.email || null;
-                if (!sessionUserId) {
-                  try {
-                    const userRes = await fetch(`${baseUrl}/api/auth/user`, {
-                      headers: { Authorization: `Bearer ${at}` },
-                    });
-                    if (userRes.ok) {
-                      const ud = await userRes.json();
-                      sessionUserId = ud.user?.id || ud.id || null;
-                      sessionUserEmail = ud.user?.email || ud.email || null;
-                    }
-                  } catch { /* ignore */ }
-                }
-              }
-              const newRt = refreshJson.refreshToken || refreshJson.refresh_token;
-              if (newRt) {
-                hc.refreshToken = newRt;
-                await saveRefreshToken(newRt);
-              }
-            } else {
-              await clearRefreshToken();
-            }
-          } catch (refreshErr: any) {
-            console.warn('Auth refresh token exchange failed:', refreshErr?.name === 'AbortError' ? 'timed out after 12s' : refreshErr?.message || refreshErr);
-          }
+        const { data: sessionData, error: sessionError } = await supabase.auth.getSession();
+        if (sessionError) {
+          // A thrown/returned error here is a genuine client-side failure
+          // (e.g. corrupted storage), not proof of "logged out" — preserve
+          // whatever session state was already known rather than bouncing a
+          // signed-in user back to Welcome on a transient hiccup (same
+          // intent as the old 401-vs-transient distinction).
+          console.warn('getSession failed during hydration — preserving cached user:', sessionError.message);
+          setCurrentUser(prev => prev);
+          setAuthLoading(false);
+          return;
         }
-
-        // If we got the user from the manual refresh, skip SDK call
-        if (!sessionUserId) {
-          // A thrown error or non-401 statusCode here is a transient
-          // network/cold-start failure, not proof the session is invalid —
-          // treating it as "logged out" on the first try is what caused
-          // users to be intermittently dropped back to the Welcome screen
-          // on refresh. Only a genuine 401/403 means "not authenticated";
-          // anything else gets one retry before giving up.
-          let getCurrentUserData: any = null;
-          let getCurrentUserError: any = null;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const result = await insforge.auth.getCurrentUser();
-              getCurrentUserData = result.data;
-              getCurrentUserError = result.error;
-            } catch (err: any) {
-              getCurrentUserError = err;
-            }
-            const statusCode = getCurrentUserError?.statusCode;
-            const isDefinitelyUnauthenticated = statusCode === 401 || statusCode === 403;
-            if (!getCurrentUserError || isDefinitelyUnauthenticated) break;
-            if (attempt === 0) {
-              console.warn('GetCurrentUser failed, retrying once:', getCurrentUserError?.message || getCurrentUserError);
-              await new Promise((r) => setTimeout(r, 800));
-            }
-          }
-          if (getCurrentUserError) {
-            console.warn("GetCurrentUser failed after retry:", getCurrentUserError?.statusCode || getCurrentUserError?.message);
-            const statusCode = getCurrentUserError?.statusCode;
-            if (statusCode === 401 || statusCode === 403) {
-              // Definitely unauthenticated — a real logout.
-              setCurrentUser(null);
-            } else {
-              // TRANSIENT failure (network blip / backend hiccup — common on
-              // mobile bfcache resume). Do NOT null an existing signed-in user:
-              // that used to flash "Access Denied" at verified organizers on
-              // role-gated screens. Keep the known-good session; the next
-              // hydration or role-sync tick re-validates it.
-              setCurrentUser(prev => prev);
-            }
-            setAuthLoading(false);
-            return;
-          }
-          const data = getCurrentUserData;
-          if (!data?.user) {
-            setCurrentUser(null);
-            setAuthLoading(false);
-            return;
-          }
-          sessionUserId = data.user.id;
-          sessionUserEmail = data.user.email;
+        if (!sessionData.session) {
+          setCurrentUser(null);
+          setAuthLoading(false);
+          return;
         }
+        sessionUserId = sessionData.session.user.id;
+        sessionUserEmail = sessionData.session.user.email ?? null;
 
         if (!sessionUserId) {
           setCurrentUser(null);
@@ -574,7 +500,7 @@ export default function App() {
         let profile: any = null;
         let profileError: any = null;
         for (let attempt = 0; attempt < 2; attempt++) {
-          const { data, error } = await insforge.database
+          const { data, error } = await supabase
             .from('users')
             .select('*')
             .eq('id', sessionUserId)
@@ -601,7 +527,7 @@ export default function App() {
 
         // Item 20: reject suspended users immediately on session restore
         if (profile?.status === 'suspended') {
-          await insforge.auth.signOut().catch(() => {});
+          await supabase.auth.signOut().catch(() => {});
           await clearRefreshToken();
           // Same as the normal sign-out path below — without this the
           // suspended user's device keeps its push token registered (and
@@ -836,12 +762,12 @@ export default function App() {
   const fetchUserTickets = useCallback(async (userId: string) => {
     setTicketsLoading(true);
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('tickets')
         .select('*, events(*)')
         .eq('user_id', userId)
         .eq('status', 'active');
-      
+
       if (error) throw error;
 
       if (data) {
@@ -852,7 +778,7 @@ export default function App() {
         const ticketEventIds = [...new Set(data.filter((t: any) => t.events).map((t: any) => t.events.id))];
         let statsByEventId: Record<string, number> = {};
         if (ticketEventIds.length > 0) {
-          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: ticketEventIds });
+          const { data: statsRes } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: ticketEventIds });
           (statsRes || []).forEach((s: any) => { statsByEventId[s.event_id] = s.sold_count || 0; });
         }
         const mappedTickets: PurchasedTicket[] = data
@@ -965,7 +891,7 @@ export default function App() {
         ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : 99;
 
-      let eventsQuery = insforge.database
+      let eventsQuery = supabase
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
         .eq('hidden_by_admin', false)
@@ -1011,7 +937,7 @@ export default function App() {
 
         if (eventIds.length > 0) {
           const nowStr = new Date().toISOString();
-          const { data: promoRes } = await insforge.database
+          const { data: promoRes } = await supabase
             .from('event_promotions')
             .select('*')
             .eq('status', 'active')
@@ -1026,11 +952,11 @@ export default function App() {
           // status='active' row regardless of payment_status, which could
           // disagree with SalesAnalyticsScreen/OrganizerDashboard's
           // payment_status='paid'-only counts for the same event.
-          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
+          const { data: statsRes } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
           if (statsRes) ticketsData = statsRes;
 
           // Fetch saves count per event for popularity score
-          const { data: savesRes } = await insforge.database
+          const { data: savesRes } = await supabase
             .from('saved_events')
             .select('event_id')
             .in('event_id', eventIds);
@@ -1041,7 +967,7 @@ export default function App() {
           // be gamed by anything client-side and stays accurate as sales
           // happen. Used only by HomeScreen's dedicated Trending section;
           // does not affect the Explore feed's own promoted-first sort below.
-          const { data: trendingRes } = await insforge.database.rpc('get_event_trending_scores', { p_event_ids: eventIds });
+          const { data: trendingRes } = await supabase.rpc('get_event_trending_scores', { p_event_ids: eventIds });
           if (trendingRes) trendingScoreData = trendingRes;
         }
 
@@ -1151,7 +1077,7 @@ export default function App() {
       return;
     }
     try {
-      const { count, error } = await insforge.database
+      const { count, error } = await supabase
         .from('notifications')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', currentUser.id)
@@ -1171,24 +1097,11 @@ export default function App() {
   // Realtime: subscribe to user channel for badge updates
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = `user:${currentUser.id}`;
-    let subscribed = false;
-    let torn = false;
-    insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe(channel).then(() => {
-        // If cleanup already ran before this resolved, the effect's own
-        // unsubscribe below never saw `subscribed = true` in time and would
-        // otherwise leak this channel forever — unsubscribe immediately instead.
-        if (torn) { insforge.realtime.unsubscribe(channel); return; }
-        subscribed = true;
-      });
-    }).catch(() => {});
-    const onNotif = () => fetchUnreadCount();
-    insforge.realtime.on('new_notification', onNotif);
+    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'new_notification' }, () => fetchUnreadCount());
+    channel.subscribe();
     return () => {
-      torn = true;
-      insforge.realtime.off?.('new_notification', onNotif);
-      if (subscribed) insforge.realtime.unsubscribe(channel);
+      supabase.removeChannel(channel);
     };
   }, [currentUser?.id, fetchUnreadCount]);
 
@@ -1312,15 +1225,27 @@ export default function App() {
       // go straight through purchase_ticket_with_tokens with a client-side
       // reference, unchanged from before.
       const isFree = (ticket.totalAmount ?? 0) === 0;
+      // Both RPCs now on Supabase, as one unit with CheckoutScreen.tsx's
+      // create_pending_purchase and api/webhook/paystack.ts's charge.success
+      // handler — finalize_pending_purchase reads a pending_purchases row
+      // written by create_pending_purchase, and the webhook calls it too as
+      // a fallback finalizer if this client dies after Paystack charges the
+      // card but before this call runs; all three had to move together so
+      // the webhook looks for the row in the same database it was written
+      // to. The webhook now calls Supabase directly via a project_admin
+      // Postgres connection (api/_lib/projectAdminDb.ts) — see
+      // supabase/migrations/0021_project_admin_login.sql for why (this
+      // project's asymmetric JWT signing keys rule out the usual
+      // PostgREST-role-switching approach).
       const { data: tokenRows, error: insertError } = isFree
-        ? await insforge.database.rpc('purchase_ticket_with_tokens', {
+        ? await supabase.rpc('purchase_ticket_with_tokens', {
             p_event_id: ticket.event.id,
             p_ticket_type: ticket.ticketType?.name ?? 'General',
             p_attendees: attendees,
             p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
             p_promo_code: ticket.promoCode || null,
           })
-        : await insforge.database.rpc('finalize_pending_purchase', {
+        : await supabase.rpc('finalize_pending_purchase', {
             p_payment_ref: ticket.ticketId,
           });
       if (insertError) throw insertError;
@@ -1365,7 +1290,7 @@ export default function App() {
       });
 
       // 3.6: Ticket confirmation notification
-      insforge.database.from('notifications').insert([{
+      supabase.from('notifications').insert([{
         user_id: currentUser.id,
         type: 'booking',
         title: 'Ticket confirmed! 🎉',
@@ -1526,7 +1451,7 @@ export default function App() {
   const pushActionRef = useRef<(data: Record<string, any>) => void>(() => {});
   pushActionRef.current = (data: Record<string, any>) => {
     if (data.eventId) {
-      insforge.database
+      supabase
         .from('events')
         .select('*')
         .eq('id', data.eventId)

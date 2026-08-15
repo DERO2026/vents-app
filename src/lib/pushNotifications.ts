@@ -23,7 +23,7 @@
 // On the web this module is a no-op: there is no in-browser transport
 // wired up, and the product's push target is the native app.
 import { Capacitor } from '@capacitor/core';
-import { insforge } from './insforge';
+import { supabase } from './supabase';
 import { trackEvent } from './analytics';
 
 const isNative = Capacitor.isNativePlatform();
@@ -43,7 +43,7 @@ export function trackPushEvent(eventName: string, properties?: Record<string, st
 
 async function persistToken(userId: string, token: string) {
   try {
-    const { error } = await insforge.database.rpc('register_push_token' as any, {
+    const { error } = await supabase.rpc('register_push_token' as any, {
       p_user_id: userId,
       p_token: token,
       p_platform: Capacitor.getPlatform(), // 'android' | 'ios'
@@ -131,6 +131,6 @@ export async function unregisterPushNotifications(userId: string): Promise<void>
     registered = false;
     currentUserId = null;
     // Best-effort server cleanup; the token itself is device-scoped.
-    try { await insforge.database.rpc('remove_push_tokens_for_user' as any, { p_user_id: userId }); } catch { /* ignore */ }
+    try { await supabase.rpc('remove_push_tokens_for_user' as any, { p_user_id: userId }); } catch { /* ignore */ }
   } catch { /* ignore */ }
 }

@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
+import { callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -30,26 +31,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
-  // complete_organizer_payout/fail_organizer_payout have no auth check of
-  // their own — calling them with the anon key meant any signed-in user
-  // could invoke the same RPC directly and finalize/reverse their own
-  // payout early. Requires the admin-only API_KEY secret now that EXECUTE
-  // has been revoked from anon/authenticated (see
-  // migrations/20260731070000_lockdown-payout-completion-rpcs.sql).
-  const adminApiKey = process.env.INSFORGE_API_KEY;
-  if (!secret || !baseUrl || !anonKey || !adminApiKey) {
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!secret || !baseUrl || !anonKey) {
     return res.status(500).json({ error: 'Payout system not configured' });
   }
 
+  // admin_list_processing_payouts is EXECUTE-granted to `authenticated`
+  // (is_admin() checked internally) — forwards the caller's own session
+  // token. complete_organizer_payout/fail_organizer_payout are
+  // project_admin-only (no anon/authenticated/service_role grant, by
+  // design — mirrors InsForge's admin-key boundary) and go through the
+  // direct project_admin Postgres connection instead (see
+  // api/_lib/projectAdminDb.ts and
+  // supabase/migrations/0021_project_admin_login.sql for why a plain
+  // service API key/JWT isn't an option on this project).
   const adminHeaders = { 'Content-Type': 'application/json', Authorization: authHeader, apikey: anonKey };
-  const systemHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${adminApiKey}`, apikey: adminApiKey };
 
   try {
     // is_admin() is enforced inside this RPC — a non-admin caller gets a
     // clean rejection here, before we ever touch Paystack.
-    const listRes = await fetch(`${baseUrl}/api/database/rpc/admin_list_processing_payouts`, {
+    const listRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_list_processing_payouts`, {
       method: 'POST',
       headers: adminHeaders,
       body: JSON.stringify({}),
@@ -81,17 +83,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           continue;
         }
 
-        const rpcName = pstStatus === 'success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
-        const rpcBody = pstStatus === 'success'
-          ? { p_request_id: row.transfer_code }
-          : { p_request_id: row.transfer_code, p_reason: `Reconciled from Paystack status: ${pstStatus}` };
-        const rpcRes = await fetch(`${baseUrl}/api/database/rpc/${rpcName}`, {
-          method: 'POST',
-          headers: systemHeaders,
-          body: JSON.stringify(rpcBody),
-        });
-        const rpcRows = await rpcRes.json().catch(() => null);
-        const rpcRow = Array.isArray(rpcRows) ? rpcRows[0] : rpcRows;
+        const rpcRows = pstStatus === 'success'
+          ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [row.transfer_code])
+          : await callProjectAdminTableRpc<any>('fail_organizer_payout', [row.transfer_code, `Reconciled from Paystack status: ${pstStatus}`]);
+        const rpcRow = rpcRows[0];
 
         if (rpcRow?.organizer_email && (rpcRow.status === 'completed' || rpcRow.status === 'failed')) {
           sendPayoutDecisionEmail({

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Minus, Plus, CheckCircle, Maximize2 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 
 interface TicketSelectScreenProps {
@@ -26,7 +26,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .rpc('get_event_ticket_type_availability', { p_event_id: event.id });
         if (cancelled || error || !Array.isArray(data)) return;
         const map: Record<string, number> = {};

@@ -1,0 +1,3 @@
+# Local Supabase CLI link/session state — machine-specific, not for git.
+.temp/
+.branches/

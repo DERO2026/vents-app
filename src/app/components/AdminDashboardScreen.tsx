@@ -8,6 +8,7 @@ import {
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
@@ -171,7 +172,7 @@ function ConfirmModal({
 // authorization level (Admin / Sub-Admin / Root) alongside the raw admin_id.
 async function writeAuditLog(actor: { id: string; role?: string }, action: string, targetUserId: string | null, details: Record<string, any>) {
   const actorRole = actor.id === ROOT_UID ? 'root' : actor.role || 'unknown';
-  await insforge.database
+  await supabase
     .from('admin_logs')
     .insert([{ admin_id: actor.id, action, target_user_id: targetUserId, details, actor_role: actorRole }]);
 }
@@ -215,7 +216,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   // admin sees why the buttons are greyed out instead of hitting an error.
   const [payoutsDisabled, setPayoutsDisabled] = useState(false);
   useEffect(() => {
-    insforge.database.from('app_config').select('disable_payouts').maybeSingle()
+    supabase.from('app_config').select('disable_payouts').maybeSingle()
       .then(({ data }) => setPayoutsDisabled(!!data?.disable_payouts), () => {});
   }, []);
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
@@ -234,23 +235,18 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setLoading(true);
     setLoadError(null);
     try {
-      // InsForge's SDK doesn't always keep hc.userToken reliably populated —
-      // without this, admin_list_pending_payouts (is_admin()-gated) can fail
-      // silently under RLS and render as an empty state with no error shown.
-      try { await getAuthToken(); } catch { /* fall through — surfaced below if the queries also fail */ }
-
       const [reqRes, walRes] = await Promise.all([
         // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
         // it joins organizer + bank metadata server-side in one call, so the
         // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
         statusFilter === 'pending'
-          ? insforge.database.rpc('admin_list_pending_payouts' as any)
-          : insforge.database
+          ? supabase.rpc('admin_list_pending_payouts' as any)
+          : supabase
               .from('organizer_withdrawal_requests')
               .select('id, organizer_id, amount_kobo, status, created_at, updated_at, admin_note, organizer_bank_accounts(bank_name, account_number, account_name, recipient_code), users!organizer_withdrawal_requests_organizer_id_public_users_fkey(username, full_name, email, phone_number)')
               .order('created_at', { ascending: false })
               .limit(50),
-        insforge.database
+        supabase
           .from('organizer_wallets')
           .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
           .order('balance_kobo', { ascending: false })
@@ -267,7 +263,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
       let wals = walsRaw || [];
       if (wals.length > 0) {
         const ids = wals.map((w: any) => w.organizer_id);
-        const { data: userRows } = await insforge.database
+        const { data: userRows } = await supabase
           .from('users')
           .select('id, username, full_name')
           .in('id', ids);
@@ -311,7 +307,8 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const handleApprove = async (id: string) => {
     setActionLoading(id);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch(apiUrl('/api/v1/wallet/admin-approve-payout'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -343,7 +340,8 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     if (!reason.trim()) return;
     setActionLoading(id);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -364,7 +362,8 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const handleReconcile = async () => {
     setReconciling(true);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch(apiUrl('/api/v1/wallet/reconcile-payouts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -386,7 +385,8 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     if (!reason.trim()) return;
     setActionLoading(id);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -618,7 +618,7 @@ export function AdminDashboardScreen({
   useEffect(() => {
     (async () => {
       try {
-        const { data, error } = await insforge.database.rpc('whoami_admin' as any, {});
+        const { data, error } = await supabase.rpc('whoami_admin' as any, {});
         // eslint-disable-next-line no-console
         console.info('[VENTS admin-auth] resolved permissions', { client: { id: currentUser?.id, role: currentUser?.role }, server: data, error });
       } catch (e) {
@@ -634,7 +634,7 @@ export function AdminDashboardScreen({
   const refreshPendingCount = useCallback(async () => {
     if (!isSuperAdmin) { setPendingActionCount(0); return; }
     try {
-      const { data } = await insforge.database.rpc('admin_pending_request_count' as any, {});
+      const { data } = await supabase.rpc('admin_pending_request_count' as any, {});
       setPendingActionCount(Number(data) || 0);
     } catch { /* ignore */ }
   }, [isSuperAdmin]);
@@ -789,18 +789,18 @@ export function AdminDashboardScreen({
   const loadStats = useCallback(() => {
     setStatsLoading(true);
     Promise.all([
-      insforge.database.from('users').select('id', { count: 'exact', head: true }),
-      insforge.database.from('events').select('id', { count: 'exact', head: true }).is('deleted_at', null),
-      insforge.database.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
+      supabase.from('users').select('id', { count: 'exact', head: true }),
+      supabase.from('events').select('id', { count: 'exact', head: true }).is('deleted_at', null),
+      supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
       // vc_transactions.type is 'earn'/'spend'/'refund'/'referral' — there is
       // no 'credit' value, so this used to always compute vcTotal as 0.
       insforge.database.from('vc_transactions').select('amount').eq('type', 'earn').eq('status', 'active'),
-      insforge.database.from('tickets').select('amount').eq('payment_status', 'paid'),
+      supabase.from('tickets').select('amount').eq('payment_status', 'paid'),
       // Signup-completion state (auth.users.email_verified), not the
       // organizer trust badge (users.is_verified) — see
       // admin_get_new_user_stats() in
       // migrations/20260713100000_admin-stats-and-payout-cleanup.sql.
-      insforge.database.rpc('admin_get_new_user_stats'),
+      supabase.rpc('admin_get_new_user_stats'),
     ]).then(([uRes, eRes, tRes, vcRes, revRes, newUserRes]) => {
       const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
       // tickets.amount is already stored in naira, not kobo — no /100 here.
@@ -832,33 +832,24 @@ export function AdminDashboardScreen({
   useEffect(() => { tabRef.current = tab; }, [tab]);
 
   useEffect(() => {
-    let subscribed = false;
-    let torn = false;
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
-    insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe('admin:stats').then(() => {
-        if (torn) { insforge.realtime.unsubscribe('admin:stats'); return; }
-        subscribed = true;
-      });
-    }).catch(() => {});
-    const onStatsChanged = () => {
+    const channel = supabase.channel('admin:stats', { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'admin_stats_changed' }, () => {
       if (tabRef.current !== 'stats') return;
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(loadStats, 300);
-    };
-    insforge.realtime.on('admin_stats_changed', onStatsChanged);
+    });
+    channel.subscribe();
     return () => {
-      torn = true;
       if (debounceTimer) clearTimeout(debounceTimer);
-      insforge.realtime.off?.('admin_stats_changed', onStatsChanged);
-      if (subscribed) insforge.realtime.unsubscribe('admin:stats');
+      supabase.removeChannel(channel);
     };
   }, [loadStats]);
 
   useEffect(() => {
     if (tab !== 'verify') return;
     setPendingOrgsLoading(true);
-    insforge.database
+    supabase
       .from('users')
       .select('id, full_name, username, email, state, created_at, is_verified')
       .eq('role', 'organizer')
@@ -874,7 +865,7 @@ export function AdminDashboardScreen({
   const loadCacRequests = useCallback(async () => {
     setCacRequestsLoading(true);
     try {
-      const { data, error } = await insforge.database.rpc('admin_list_organizer_verifications' as any, {
+      const { data, error } = await supabase.rpc('admin_list_organizer_verifications' as any, {
         p_status: cacStatusFilter,
         p_search: cacSearch || null,
         p_limit: 50,
@@ -903,7 +894,7 @@ export function AdminDashboardScreen({
   const loadVerifyStats = useCallback(async () => {
     setVerifyStatsLoading(true);
     try {
-      const { data, error } = await insforge.database.rpc('admin_get_verification_stats' as any);
+      const { data, error } = await supabase.rpc('admin_get_verification_stats' as any);
       if (error) throw error;
       const row = (data || [])[0] || {};
       setVerifyStats({
@@ -931,7 +922,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('organizer_verification_approve',
       { target_type: 'verification', target_id: requestId, target_label: 'Organizer verification', payload: { request_id: requestId } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_approve_organizer_verification' as any, { p_request_id: requestId });
+        const { error } = await supabase.rpc('admin_approve_organizer_verification' as any, { p_request_id: requestId });
         if (error) throw new Error(error.message);
         flash(true, 'Brand verified ✓');
         await loadCacRequests();
@@ -949,7 +940,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('organizer_verification_reject',
       { target_type: 'verification', target_id: requestId, target_label: 'Organizer verification', payload: { request_id: requestId, reason } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason });
+        const { error } = await supabase.rpc('admin_reject_organizer_verification' as any, { p_request_id: requestId, p_reason: reason });
         if (error) throw new Error(error.message);
         flash(false, 'Verification rejected');
         await loadCacRequests();
@@ -963,19 +954,19 @@ export function AdminDashboardScreen({
   };
 
   // The verification-docs bucket is private (RLS-gated to the uploader or an
-  // admin) — a plain <a href> would 401 since it carries no Authorization
-  // header. Fetch the object as an authenticated blob instead, then hand the
-  // browser a local blob: URL, which opens correctly for both images and PDFs.
+  // admin — see supabase/migrations/0019_verification_docs_storage_policies.sql).
+  // document_url stores a bucket-relative key ("verification-docs/<key>"),
+  // not a fetchable URL, so a signed URL is generated on demand here — the
+  // RLS check happens at signing time (storage_objects_verification_docs_select:
+  // owner OR is_admin()), and the resulting URL is usable directly without
+  // further auth for a short window.
   const handlePreviewCacDocument = async (requestId: string, documentUrl: string) => {
     setCacPreviewLoadingId(requestId);
     try {
-      const token = await getAuthToken();
-      const res = await fetch(documentUrl, { headers: { Authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`Could not load document (${res.status})`);
-      const blob = await res.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      window.open(blobUrl, '_blank', 'noopener,noreferrer');
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      const key = documentUrl.replace(/^verification-docs\//, '');
+      const { data, error } = await supabase.storage.from('verification-docs').createSignedUrl(key, 60);
+      if (error || !data?.signedUrl) throw new Error(error?.message || 'Could not load document');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
     } catch (e: any) {
       flash(false, e.message || 'Could not open document');
     } finally {
@@ -1089,7 +1080,7 @@ export function AdminDashboardScreen({
     setLoading(true);
     setErrorMessage(null);
     try {
-      let q = insforge.database
+      let q = supabase
         .from('users')
         .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
         .neq('status', 'deleted')
@@ -1114,7 +1105,7 @@ export function AdminDashboardScreen({
   const loadDeletedUsers = useCallback(async () => {
     setDeletedUsersLoading(true);
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('users')
         .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
         .not('deleted_at', 'is', null)
@@ -1137,7 +1128,7 @@ export function AdminDashboardScreen({
   const loadLogs = useCallback(async () => {
     setLogsLoading(true);
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('admin_logs')
         .select('id, action, details, created_at, admin_id, target_user_id, actor_role')
         .order('created_at', { ascending: false })
@@ -1151,7 +1142,7 @@ export function AdminDashboardScreen({
   // ── Load app_config for maintenance mode + media feature toggles ────────────
   const loadConfig = useCallback(async () => {
     try {
-      const { data } = await insforge.database.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').single();
+      const { data } = await supabase.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').single();
       if (data) {
         setMaintenanceMode(data.maintenance_mode);
         setVoiceNotesEnabled(data.voice_notes_enabled);
@@ -1182,7 +1173,7 @@ export function AdminDashboardScreen({
     setOrgRequestsLoading(true);
     (async () => {
       try {
-        const { data: reqs, error } = await insforge.database
+        const { data: reqs, error } = await supabase
           .from('organizer_requests')
           .select('id, user_id, reason, status, admin_note, created_at')
           .order('created_at', { ascending: false })
@@ -1192,7 +1183,7 @@ export function AdminDashboardScreen({
         const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
         let usersMap: Record<string, any> = {};
         if (userIds.length > 0) {
-          const { data: users } = await insforge.database
+          const { data: users } = await supabase
             .from('users')
             .select('id, username, full_name, email, phone_number, state')
             .in('id', userIds);
@@ -1210,7 +1201,7 @@ export function AdminDashboardScreen({
 
 
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
-    const { error } = await insforge.database
+    const { error } = await supabase
       .from('organizer_requests')
       .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
       .eq('id', id);
@@ -1220,7 +1211,7 @@ export function AdminDashboardScreen({
       // If approved, update user role to organizer
       if (status === 'approved') {
         if (req?.user_id) {
-          await insforge.database.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
+          await supabase.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
         }
       }
       // Decision SMS is now sent server-side by notifyByEmail's endpoint
@@ -1233,7 +1224,7 @@ export function AdminDashboardScreen({
   const loadEvents = useCallback(async (filter: 'active' | 'deleted') => {
     setEventsLoading(true);
     try {
-      let q = insforge.database
+      let q = supabase
         .from('events')
         .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, status, image_url, event_date, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .order('created_at', { ascending: false })
@@ -1257,7 +1248,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('restore_event',
       { target_type: 'event', target_id: eventId, target_label: label, previous: { deleted: true }, changes: { deleted: false } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_restore_deleted_event', { p_event_id: eventId });
+        const { error } = await supabase.rpc('admin_restore_deleted_event', { p_event_id: eventId });
         if (error) throw error;
         setEvents(prev => prev.filter(e => e.id !== eventId));
         flash(true, 'Event restored — it is live again.');
@@ -1269,7 +1260,7 @@ export function AdminDashboardScreen({
     setReportsLoading(true);
     (async () => {
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('reports')
           .select('*')
           .order('created_at', { ascending: false })
@@ -1284,14 +1275,14 @@ export function AdminDashboardScreen({
         const eventIds = [...new Set(reportsData.filter(r => r.target_type === 'event').map(r => r.target_id))];
 
         if (userIds.length > 0) {
-          const { data: usersData } = await insforge.database
+          const { data: usersData } = await supabase
             .from('users')
             .select('id, username, full_name, email, avatar_url, is_verified, role, status')
             .in('id', userIds);
           setReportedUsers(Object.fromEntries((usersData || []).map((u: any) => [u.id, u])));
         }
         if (eventIds.length > 0) {
-          const { data: eventsData } = await insforge.database
+          const { data: eventsData } = await supabase
             .from('events')
             .select('id, title, image_url, hidden_by_admin')
             .in('id', eventIds);
@@ -1306,7 +1297,7 @@ export function AdminDashboardScreen({
   }, [tab, isAdminOrSubAdmin]);
 
   const handleUpdateReport = async (id: string, status: string) => {
-    const { error } = await insforge.database.from('reports').update({ status }).eq('id', id);
+    const { error } = await supabase.from('reports').update({ status }).eq('id', id);
     if (!error) setReports(prev => prev.map(r => r.id === id ? { ...r, status } : r));
   };
 
@@ -1315,7 +1306,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('hide_event',
       { target_type: 'event', target_id: eventId, target_label: label, previous: { hidden_by_admin: false }, changes: { hidden_by_admin: true } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_hide_event', { p_event_id: eventId });
+        const { error } = await supabase.rpc('admin_hide_event', { p_event_id: eventId });
         if (error) throw error;
         setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: true, hidden_at: new Date().toISOString() } : e));
         flash(true, 'Event hidden from public feeds.');
@@ -1327,7 +1318,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('reinstate_event',
       { target_type: 'event', target_id: eventId, target_label: label, previous: { hidden_by_admin: true }, changes: { hidden_by_admin: false } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_reinstate_event', { p_event_id: eventId });
+        const { error } = await supabase.rpc('admin_reinstate_event', { p_event_id: eventId });
         if (error) throw error;
         setEvents(prev => prev.map(e => e.id === eventId ? { ...e, hidden_by_admin: false, hidden_at: null } : e));
         flash(true, 'Event reinstated.');
@@ -1345,7 +1336,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('toggle_event_featured',
       { target_type: 'event', target_id: eventId, target_label: label, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_set_event_featured', {
+        const { error } = await supabase.rpc('admin_set_event_featured', {
           p_event_id: eventId,
           p_featured: nextFeatured,
           p_duration_days: nextFeatured ? 14 : null,
@@ -1379,7 +1370,7 @@ export function AdminDashboardScreen({
       return;
     }
     try {
-      const { error } = await insforge.database.rpc('request_admin_action' as any, {
+      const { error } = await supabase.rpc('request_admin_action' as any, {
         p_action_type: actionType,
         p_target_type: meta.target_type,
         p_target_id: meta.target_id ?? null,
@@ -1410,7 +1401,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('set_user_role',
       { target_type: 'user', target_id: userId, target_label: target?.username || target?.email || userId, payload: { new_role: newRole }, previous: { role: target?.role }, changes: { role: newRole } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
+        const { error } = await supabase.rpc('admin_set_user_role', { p_user_id: userId, p_new_role: newRole });
         if (error) throw error;
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
         flash(true, 'Role updated.');
@@ -1427,7 +1418,7 @@ export function AdminDashboardScreen({
       await submitOrExecute('unsuspend_user',
         { target_type: 'user', target_id: u.id, target_label: label, previous: { status: 'suspended' }, changes: { status: 'active' } },
         async () => {
-          const { error } = await insforge.database.rpc('admin_unsuspend_user', { p_user_id: u.id });
+          const { error } = await supabase.rpc('admin_unsuspend_user', { p_user_id: u.id });
           if (error) throw error;
           setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null } : x));
           flash(true, 'User reactivated.');
@@ -1441,7 +1432,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('suspend_user',
       { target_type: 'user', target_id: u.id, target_label: label, payload: { banned_until: bannedUntil, ban_days: banDays ?? 'permanent' }, previous: { status: u.status }, changes: { status: 'suspended', banned_until: bannedUntil } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_suspend_user', { p_user_id: u.id, p_banned_until: bannedUntil, p_reason: null });
+        const { error } = await supabase.rpc('admin_suspend_user', { p_user_id: u.id, p_banned_until: bannedUntil, p_reason: null });
         if (error) throw error;
         setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'suspended', banned_until: bannedUntil } : x));
         flash(true, banDays ? `Banned for ${banDays} day(s).` : 'Permanently banned.');
@@ -1464,7 +1455,7 @@ export function AdminDashboardScreen({
         await submitOrExecute('soft_delete_user',
           { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { reason: reasonOrNull }, previous: { status: u.status }, changes: { status: 'deleted', reason: reasonOrNull } },
           async () => {
-            const { error } = await insforge.database.rpc('admin_soft_delete_user', { p_user_id: u.id, p_reason: reasonOrNull });
+            const { error } = await supabase.rpc('admin_soft_delete_user', { p_user_id: u.id, p_reason: reasonOrNull });
             if (error) throw error;
             // Deleted users move to the dedicated Deleted Users tab.
             setUsers(prev => prev.filter(x => x.id !== u.id));
@@ -1480,7 +1471,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('reinstate_user',
       { target_type: 'user', target_id: u.id, target_label: u.username || u.email, previous: { status: u.status }, changes: { status: 'active' } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_reinstate_user', { p_user_id: u.id });
+        const { error } = await supabase.rpc('admin_reinstate_user', { p_user_id: u.id });
         if (error) throw error;
         setUsers(prev => prev.map(x => x.id === u.id ? { ...x, status: 'active', banned_until: null, deleted_at: null } : x));
         setDeletedUsers(prev => prev.filter(x => x.id !== u.id));
@@ -1495,7 +1486,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('toggle_user_verified',
       { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { verified: newVerified }, previous: { is_verified: u.is_verified }, changes: { is_verified: newVerified } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_toggle_user_verified', { p_user_id: u.id, p_verified: newVerified, p_reason: null });
+        const { error } = await supabase.rpc('admin_toggle_user_verified', { p_user_id: u.id, p_verified: newVerified, p_reason: null });
         if (error) throw error;
         setUsers(prev => prev.map(x => x.id === u.id ? { ...x, is_verified: newVerified } : x));
         flash(true, `User ${newVerified ? 'verified ✓' : 'unverified'}.`);
@@ -1516,7 +1507,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await insforge.database.from('app_config').update({ maintenance_mode: next, updated_by: currentUser.id }).eq('id', true);
+          await supabase.from('app_config').update({ maintenance_mode: next, updated_by: currentUser.id }).eq('id', true);
           await writeAuditLog(currentUser,next ? 'ROOT_maintenance_on' : 'ROOT_maintenance_off', null, {});
           setMaintenanceMode(next);
           flash(true, `Maintenance mode ${next ? 'enabled' : 'disabled'}.`);
@@ -1537,7 +1528,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await insforge.database.from('app_config').update({ voice_notes_enabled: next, updated_by: currentUser.id }).eq('id', true);
+          await supabase.from('app_config').update({ voice_notes_enabled: next, updated_by: currentUser.id }).eq('id', true);
           await writeAuditLog(currentUser,next ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off', null, {});
           setVoiceNotesEnabled(next);
           flash(true, `Voice notes ${next ? 'enabled' : 'disabled'}.`);
@@ -1558,7 +1549,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await insforge.database.from('app_config').update({ image_sharing_enabled: next, updated_by: currentUser.id }).eq('id', true);
+          await supabase.from('app_config').update({ image_sharing_enabled: next, updated_by: currentUser.id }).eq('id', true);
           await writeAuditLog(currentUser,next ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off', null, {});
           setImageSharingEnabled(next);
           flash(true, `Image sharing ${next ? 'enabled' : 'disabled'}.`);
@@ -1590,7 +1581,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await insforge.database.from('app_config').update({ [column]: next, updated_by: currentUser.id }).eq('id', true);
+          await supabase.from('app_config').update({ [column]: next, updated_by: currentUser.id }).eq('id', true);
           await writeAuditLog(currentUser, next ? `ROOT_${column}_on` : `ROOT_${column}_off`, null, {});
           meta.setter(next);
           flash(true, `${meta.label} ${next ? 'disabled' : 're-enabled'}.`);
@@ -1610,7 +1601,7 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         setIsSending(true);
         try {
-          const { data: recipientCount, error: broadcastErr } = await insforge.database
+          const { data: recipientCount, error: broadcastErr } = await supabase
             .rpc('admin_broadcast', { p_title: 'Announcement from VENTS', p_body: broadcastMsg, p_type: 'promo' });
           if (broadcastErr) throw broadcastErr;
           const allUsers = { length: recipientCount ?? 0 };
@@ -1633,7 +1624,7 @@ export function AdminDashboardScreen({
         setConfirmModal(null);
         setIsCleaning(true);
         try {
-          const { data, error } = await insforge.database.rpc('cleanup_orphaned_records' as any);
+          const { data, error } = await supabase.rpc('cleanup_orphaned_records' as any);
           if (error) throw error;
           const result = data as any;
           flash(true, `Cleaned up ${result?.tickets_cancelled ?? 0} orphaned ticket(s) and ${result?.saves_removed ?? 0} orphaned save(s).`);
@@ -1653,7 +1644,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          const { error } = await insforge.database.from('users')
+          const { error } = await supabase.from('users')
             .update({ status: 'suspended' })
             .eq('is_verified', false)
             .eq('status', 'active')
@@ -1672,7 +1663,7 @@ export function AdminDashboardScreen({
     setHealthResult(null);
     const started = performance.now();
     try {
-      const { data, error } = await insforge.database.rpc('admin_health_ping' as any);
+      const { data, error } = await supabase.rpc('admin_health_ping' as any);
       if (error) throw error;
       const latencyMs = Math.round(performance.now() - started);
       const result = data as any;
@@ -2670,7 +2661,7 @@ export function AdminDashboardScreen({
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={async () => {
-                    const { error } = await insforge.database.from('users').update({ is_verified: true }).eq('id', u.id);
+                    const { error } = await supabase.from('users').update({ is_verified: true }).eq('id', u.id);
                     if (!error) {
                       await writeAuditLog(currentUser,'verify_organizer', u.id, { username: u.username, email: u.email });
                       setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
@@ -2683,7 +2674,7 @@ export function AdminDashboardScreen({
                 </button>
                 <button
                   onClick={async () => {
-                    const { error } = await insforge.database.from('users').update({ role: 'attendee' }).eq('id', u.id);
+                    const { error } = await supabase.from('users').update({ role: 'attendee' }).eq('id', u.id);
                     if (!error) {
                       await writeAuditLog(currentUser,'reject_organizer', u.id, { username: u.username });
                       setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
@@ -2917,7 +2908,7 @@ export function AdminDashboardScreen({
                       }
                     }));
                     setFlyerUploading(null);
-                    const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', insforge.database);
+                    const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', supabase);
                     if (result.success > 0) {
                       const liveCount = result.success - result.drafted;
                       const parts = [

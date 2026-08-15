@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
@@ -72,7 +73,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
   const fetchOrganizerEvents = async () => {
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('events')
         .select('*')
         .eq('organizer_id', currentUser.id)

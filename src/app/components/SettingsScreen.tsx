@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { sanitize } from '../../lib/sanitize';
@@ -190,30 +191,36 @@ function validateCacFile(file: File): string | null {
 }
 
 // Real byte-level upload progress via XHR (fetch has no upload progress
-// event). Uploads straight to the verification-docs bucket's storage
-// endpoint; the RLS policy on storage.objects (bucket='verification-docs')
-// is what actually authorizes this write for the signed-in user.
+// event). Uploads straight to Supabase Storage's REST endpoint for the
+// verification-docs bucket; the storage.objects RLS policy (see
+// supabase/migrations/0019_verification_docs_storage_policies.sql) is what
+// actually authorizes this write for the signed-in user. Resolves with the
+// bucket-relative object key (not a full URL) — matching the format
+// document_url already stores for previously-migrated rows, since this
+// private bucket is read back via a signed URL generated from that key
+// (see handlePreviewCacDocument in AdminDashboardScreen.tsx), not a
+// directly-fetchable public URL.
 function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
+    const key = `${crypto.randomUUID()}-${file.name}`;
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/verification-docs/objects`);
+    xhr.open('POST', `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/verification-docs/${encodeURIComponent(key)}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('apikey', import.meta.env.VITE_SUPABASE_ANON_KEY);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onload = () => {
-      let data: any = null;
-      try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
-      if (xhr.status >= 200 && xhr.status < 300 && data?.url) {
-        resolve(data.url as string);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(`verification-docs/${key}`);
       } else {
+        let data: any = null;
+        try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
         reject(new Error(`verification_upload_failed:${xhr.status}:${data?.error || data?.message || 'unknown'}`));
       }
     };
     xhr.onerror = () => reject(new Error('verification_upload_failed:network'));
-    const fd = new FormData();
-    fd.append('file', file);
-    xhr.send(fd);
+    xhr.send(file);
   });
 }
 
@@ -335,8 +342,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const loadLatest = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      await getAuthToken();
-      const { data } = await insforge.database.rpc('my_latest_organizer_verification' as any);
+      const { data } = await supabase.rpc('my_latest_organizer_verification' as any);
       const row = Array.isArray(data) ? data[0] : data;
       if (row?.status === 'pending' || row?.status === 'rejected') {
         setVerification(row as VerificationRow);
@@ -366,10 +372,12 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
     setSubmitting(true);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Session expired. Please sign out and back in.');
 
       // 2. Upload the certificate (real progress shown throughout) → get
-      // back its secure storage URL. Upload failures are never shown raw.
+      // back its secure storage key. Upload failures are never shown raw.
       setUploading(true);
       setUploadProgress(0);
       let documentUrl: string;
@@ -389,7 +397,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
       // 3. Save that URL directly into the organizer's verification record
       // (status defaults to 'pending'; the RPC also blocks duplicate
       // pending submissions server-side).
-      const { error: rpcError } = await insforge.database.rpc('submit_organizer_verification' as any, {
+      const { error: rpcError } = await supabase.rpc('submit_organizer_verification' as any, {
         p_company_name: companyName.trim(),
         p_cac_number: cacNumber.trim(),
         p_business_address: businessAddress.trim(),
@@ -1242,10 +1250,10 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
     setLoading(true);
     try {
       // Verify old password via a real sign-in call — never compare against anything cached
-      const { error: verifyErr } = await insforge.auth.signInWithPassword({ email: currentUser.email, password: oldPassword });
+      const { error: verifyErr } = await supabase.auth.signInWithPassword({ email: currentUser.email, password: oldPassword });
       if (verifyErr) { setError('Current password is incorrect.'); return; }
       // Send OTP to user's email for the reset step
-      const { error: sendErr } = await insforge.auth.sendResetPasswordEmail({ email: currentUser.email });
+      const { error: sendErr } = await supabase.auth.resetPasswordForEmail(currentUser.email);
       if (sendErr) throw sendErr;
       setStep('otp');
     } catch (err: any) {
@@ -1261,7 +1269,20 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
     if (!otp.trim()) { setError('Please enter the OTP from your email.'); return; }
     setLoading(true);
     try {
-      const { error: updateErr } = await insforge.auth.resetPassword({ newPassword, otp: otp.trim() });
+      // verifyOtp establishes a fresh session for this same user (there's no
+      // separate "exchange code for reset token" step like InsForge had —
+      // see AuthScreen.tsx's forgot-password rewrite for the same pattern),
+      // then updateUser sets the new password on that session. The user
+      // stays signed in as themselves throughout — no explicit sign-out
+      // needed, unlike the AuthScreen recovery flow where the user wasn't
+      // signed in to begin with.
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: currentUser?.email || '',
+        token: otp.trim(),
+        type: 'recovery',
+      });
+      if (verifyErr) throw verifyErr;
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
       if (updateErr) throw updateErr;
       setSuccess(true);
     } catch (err: any) {
@@ -1429,8 +1450,7 @@ export function SettingsScreen({
     setShowClearNotifsConfirm(false);
     setClearingNotifs(true);
     try {
-      await getAuthToken();
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('notifications')
         .delete()
         .eq('user_id', currentUser.id);
