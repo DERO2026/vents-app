@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { insforge, getAuthToken } from '../../lib/insforge';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
@@ -611,7 +610,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setUsernameChecking(true);
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('users')
           .select('id')
           .eq('username', cleanUsername)
@@ -637,7 +636,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     async function loadProfile() {
       if (!currentUser?.id) return;
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('id', currentUser.id)
@@ -706,29 +705,21 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const token = await getAuthToken();
+      await getAuthToken();
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
-      const formData = new FormData();
-      formData.append('file', croppedFile);
+      const key = `${crypto.randomUUID()}.${extension}`;
       // Failsafe: a hung upload must never leave the profile photo picker stuck.
-      const res = await withTimeoutFallback(
-        fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-        ),
+      const { error: uploadError } = await withTimeoutFallback(
+        supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
         { timeoutMs: 8000, timeoutMessage: 'Photo upload is taking too long. Please check your connection and try again.' }
       );
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
-        throw new Error(`Upload failed (${res.status}). Please try again.`);
-      }
-      const data = await res.json();
-      const key: string | null = data?.key ?? null;
-      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
+      const url: string | null = urlData?.publicUrl ?? null;
       if (url) {
         setAvatarUrl(url);
-        const { error: updateError } = await insforge.database
+        const { error: updateError } = await supabase
           .from('users')
           .update({ avatar_url: url })
           .eq('id', currentUser.id);
@@ -767,29 +758,21 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const token = await getAuthToken();
+      await getAuthToken();
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
-      const formData = new FormData();
-      formData.append('file', croppedFile);
+      const key = `${crypto.randomUUID()}.${extension}`;
       // Failsafe: a hung upload must never leave the cover photo picker stuck.
-      const res = await withTimeoutFallback(
-        fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-        ),
+      const { error: uploadError } = await withTimeoutFallback(
+        supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
         { timeoutMs: 8000, timeoutMessage: 'Cover photo upload is taking too long. Please check your connection and try again.' }
       );
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
-        throw new Error(`Upload failed (${res.status}). Please try again.`);
-      }
-      const data = await res.json();
-      const key: string | null = data?.key ?? null;
-      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
+      const url: string | null = urlData?.publicUrl ?? null;
       if (url) {
         setCoverUrl(url);
-        const { error: updateError } = await insforge.database
+        const { error: updateError } = await supabase
           .from('users')
           .update({ cover_url: url })
           .eq('id', currentUser.id);
@@ -825,7 +808,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         }
       }
 
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('users')
         .update({
           full_name: sanitize(name),
@@ -1483,7 +1466,7 @@ export function SettingsScreen({
   // Load promotions_enabled from DB on mount
   useEffect(() => {
     if (!currentUser?.id) return;
-    insforge.database
+    supabase
       .from('users')
       .select('promotions_enabled')
       .eq('id', currentUser.id)
@@ -1498,7 +1481,7 @@ export function SettingsScreen({
   const handlePromoToggle = async (val: boolean) => {
     setPromoNotifs(val);
     if (!currentUser?.id) return;
-    await insforge.database
+    await supabase
       .from('users')
       .update({ promotions_enabled: val })
       .eq('id', currentUser.id);
@@ -1676,7 +1659,7 @@ function DeleteAccountScreen({
       // function see auth.uid() as null and fail with "Not authenticated"
       // even though the user is genuinely signed in.
       await getAuthToken();
-      const { error: rpcErr } = await insforge.database.rpc('delete_own_account' as any);
+      const { error: rpcErr } = await supabase.rpc('delete_own_account' as any);
       if (rpcErr) throw rpcErr;
       setStep('done');
       setTimeout(() => onDeleted(), 3000);

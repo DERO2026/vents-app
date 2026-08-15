@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { CheckCircle } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { CATEGORIES } from './categories';
 
 interface InterestsScreenProps {
@@ -22,7 +22,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
     setSaving(true);
     setError(null);
     try {
-      await insforge.database.from('users').update({ interests: selected }).eq('id', userId);
+      await supabase.from('users').update({ interests: selected }).eq('id', userId);
       onDone();
     } catch (err: any) {
       setError(err?.message || 'Failed to save interests.');
