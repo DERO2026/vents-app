@@ -1,4 +1,4 @@
-import { insforge } from './insforge';
+import { supabase } from './supabase';
 
 interface VcBalanceResult {
   spendable: number;
@@ -26,7 +26,7 @@ export async function getVcBalance(userId: string, opts?: { force?: boolean }): 
     return inFlight.promise;
   }
 
-  const promise: Promise<VcBalanceResult | null> = Promise.resolve(insforge.database.rpc('get_my_vc_balance' as any)).then(
+  const promise: Promise<VcBalanceResult | null> = Promise.resolve(supabase.rpc('get_my_vc_balance' as any)).then(
     ({ data }: any) => {
       const result: VcBalanceResult = { spendable: data?.spendable ?? 0, expired_this_call: data?.expired_this_call ?? 0 };
       cache = { userId, data: result, fetchedAt: Date.now() };

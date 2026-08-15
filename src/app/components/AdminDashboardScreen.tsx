@@ -7,8 +7,7 @@ import {
   Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
-import { insforge, getAuthToken } from '../../lib/insforge';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
@@ -765,7 +764,7 @@ export function AdminDashboardScreen({
     // so a plain client-side sum only ever returned the admin's own
     // balance — admin_get_vc_aggregates() (SECURITY DEFINER, admin-gated)
     // sums the real platform-wide balance server-side instead.
-    insforge.database.rpc('admin_get_vc_aggregates').then(({ data }: any) => {
+    supabase.rpc('admin_get_vc_aggregates').then(({ data }: any) => {
       const row = (data || [])[0] || {};
       setVcAggregates({
         circulation: Number(row.circulation || 0),
@@ -775,7 +774,7 @@ export function AdminDashboardScreen({
       });
     }, (err: any) => console.error('VC aggregates fetch error:', err));
     setVcLoading(true);
-    insforge.database
+    supabase
       .from('vc_transactions')
       .select('id, user_id, amount, type, status, reference_id, created_at')
       .order('created_at', { ascending: false })
@@ -794,7 +793,7 @@ export function AdminDashboardScreen({
       supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('payment_status', 'paid'),
       // vc_transactions.type is 'earn'/'spend'/'refund'/'referral' — there is
       // no 'credit' value, so this used to always compute vcTotal as 0.
-      insforge.database.from('vc_transactions').select('amount').eq('type', 'earn').eq('status', 'active'),
+      supabase.from('vc_transactions').select('amount').eq('type', 'earn').eq('status', 'active'),
       supabase.from('tickets').select('amount').eq('payment_status', 'paid'),
       // Signup-completion state (auth.users.email_verified), not the
       // organizer trust badge (users.is_verified) — see
@@ -985,12 +984,12 @@ export function AdminDashboardScreen({
       // placeholder's promise was silently a no-op — query users directly
       // (same table/pattern the Users tab's loadUsers already uses) so
       // admins can actually find someone by email, not just name/username.
-      let query = insforge.database
+      let query = supabase
         .from('users')
         .select('id, full_name, username, email, avatar_url')
         .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like}`);
       if (uuidRe.test(q)) {
-        query = insforge.database
+        query = supabase
           .from('users')
           .select('id, full_name, username, email, avatar_url')
           .or(`full_name.ilike.${like},username.ilike.${like},email.ilike.${like},id.eq.${q}`);
@@ -1015,7 +1014,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('credit_vents_cents',
       { target_type: 'user', target_id: uid, target_label: label, payload: { amount: amt, reason: rsn }, changes: { credit_vc: amt } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_credit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
+        const { error } = await supabase.rpc('admin_credit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
         if (error) throw error;
         setVcMsg(`✓ ${amt} VC credited to ${label}…`);
         setVcTransfer({ userId: '', amount: '', reason: '' });
@@ -1039,7 +1038,7 @@ export function AdminDashboardScreen({
     await submitOrExecute('debit_vents_cents',
       { target_type: 'user', target_id: uid, target_label: label, payload: { amount: amt, reason: rsn }, changes: { debit_vc: amt } },
       async () => {
-        const { error } = await insforge.database.rpc('admin_debit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
+        const { error } = await supabase.rpc('admin_debit_vents_cents' as any, { p_user_id: uid, p_amount: amt, p_reason: rsn });
         if (error) throw error;
         setVcDebitMsg(`✓ ${amt} VC debited from ${label}…`);
         setVcDebit({ amount: '', reason: '' });
