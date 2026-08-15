@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { insforge } from './insforge';
+import { supabase } from './supabase';
 
 // ─── Door Manager real-time data layer ───────────────────────────────────────
 // Backs the Organizer Door Manager dashboard. Subscribes to the per-event
@@ -131,8 +131,8 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
   const refreshStats = useCallback(async () => {
     if (!eventId) return;
     const [{ data: s }, { data: f }] = await Promise.all([
-      insforge.database.rpc('get_door_stats' as any, { p_event_id: eventId }),
-      insforge.database.rpc('get_recent_checkins' as any, { p_event_id: eventId, p_limit: 25 }),
+      supabase.rpc('get_door_stats' as any, { p_event_id: eventId }),
+      supabase.rpc('get_recent_checkins' as any, { p_event_id: eventId, p_limit: 25 }),
     ]);
     if (s) setStats(s as DoorStats);
     if (Array.isArray(f)) setFeed(f as FeedItem[]);
@@ -145,7 +145,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     if (reset) { offsetRef.current = 0; setLoadingList(true); }
     else setLoadingMore(true);
 
-    const { data, error } = await insforge.database.rpc('get_event_attendees' as any, {
+    const { data, error } = await supabase.rpc('get_event_attendees' as any, {
       p_event_id: eventId,
       p_search: search || null,
       p_filter: filter,
@@ -184,7 +184,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     if (reset) { scanLogOffsetRef.current = 0; setLoadingScanLog(true); }
     else setLoadingMoreScanLog(true);
 
-    const { data, error } = await insforge.database.rpc('get_scan_log' as any, {
+    const { data, error } = await supabase.rpc('get_scan_log' as any, {
       p_event_id: eventId,
       p_result: scanLogFilter === 'all' ? null : scanLogFilter,
       p_limit: SCAN_LOG_PAGE_SIZE,
@@ -211,36 +211,27 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
   }, [eventId, scanLogFilter, loadScanLog]);
 
   // ── Realtime subscription: refetch stats/feed on every door broadcast ───────
+  // Server-side triggers (0004_functions.sql) broadcast 'checkin' / 'ticket' /
+  // 'scan_attempt' on the 'door:<eventId>' topic via realtime.send() — same
+  // supabase.channel() broadcast convention as NotificationsScreen.tsx's
+  // 'user:<id>' channel and useOrganizerEvents.ts's 'organizer-events:<id>'.
   useEffect(() => {
     if (!eventId) return;
-    const channel = `door:${eventId}`;
-    let subscribed = false;
-    let torn = false;
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => { refreshStats(); loadList(true); loadScanLog(true); }, 300);
     };
 
-    insforge.realtime.connect()
-      .then(() => insforge.realtime.subscribe(channel))
-      .then(() => {
-        if (torn) { insforge.realtime.unsubscribe(channel); return; }
-        subscribed = true; setLive(true);
-      })
-      .catch(() => setLive(false));
-
-    insforge.realtime.on('checkin', bump);
-    insforge.realtime.on('ticket', bump);
-    insforge.realtime.on('scan_attempt', bump);
+    const channel = supabase.channel(`door:${eventId}`, { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'checkin' }, bump);
+    channel.on('broadcast', { event: 'ticket' }, bump);
+    channel.on('broadcast', { event: 'scan_attempt' }, bump);
+    channel.subscribe((status) => setLive(status === 'SUBSCRIBED'));
 
     return () => {
-      torn = true;
       if (debounce) clearTimeout(debounce);
-      insforge.realtime.off?.('checkin', bump);
-      insforge.realtime.off?.('ticket', bump);
-      insforge.realtime.off?.('scan_attempt', bump);
-      if (subscribed) insforge.realtime.unsubscribe(channel);
+      supabase.removeChannel(channel);
       setLive(false);
     };
     // loadList/refreshStats/loadScanLog are stable per (eventId, search, filter,
@@ -252,7 +243,7 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
   const manualCheckIn = useCallback(async (ticketId: string): Promise<ManualCheckInResult> => {
     if (!actorId) return { ok: false, message: 'Not signed in.' };
     try {
-      const { data, error } = await insforge.database.rpc('manual_check_in' as any, {
+      const { data, error } = await supabase.rpc('manual_check_in' as any, {
         p_ticket_id: ticketId,
         p_actor_id: actorId,
         p_device_id: getDeviceId(),
