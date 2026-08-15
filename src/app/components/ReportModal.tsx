@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { X } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { sanitize } from '../../lib/sanitize';
 import { PrimaryButton } from './shared/Button';
 
@@ -26,7 +26,7 @@ export function ReportModal({ reporterId, targetType, targetId, targetName, onCl
     setSubmitting(true);
     setError(null);
     try {
-      const { error: err } = await insforge.database.from('reports').insert([{
+      const { error: err } = await supabase.from('reports').insert([{
         reporter_id: reporterId,
         target_type: targetType,
         target_id: targetId,

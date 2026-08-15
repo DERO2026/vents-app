@@ -10,7 +10,6 @@ import {
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
 
@@ -77,7 +76,7 @@ export function OrganizerDashboard({
           //    payment_status='paid'-only query did.
           if (eventsData.length > 0) {
             const eventIds = eventsData.map((e: any) => e.id);
-            const { data: statsData, error: statsError } = await insforge.database
+            const { data: statsData, error: statsError } = await supabase
               .rpc('get_event_ticket_stats', { p_event_ids: eventIds });
 
             if (statsError) throw statsError;
