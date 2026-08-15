@@ -24,8 +24,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid action' });
   }
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!baseUrl || !anonKey) return res.status(500).json({ error: 'Payout system not configured' });
 
   // ── Rate limit (strict): ≤ 8 bank mutations / 10 min / user ─────────────
@@ -40,7 +40,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const rpcHeaders = { 'Content-Type': 'application/json', Authorization: `Bearer ${freshToken}`, apikey: anonKey };
   const callRpc = async (fn: string, params: any) => {
-    const r = await fetch(`${baseUrl}/api/database/rpc/${fn}`, { method: 'POST', headers: rpcHeaders, body: JSON.stringify(params) });
+    const r = await fetch(`${baseUrl}/rest/v1/rpc/${fn}`, { method: 'POST', headers: rpcHeaders, body: JSON.stringify(params) });
     if (!r.ok) {
       const j = await r.json().catch(() => null);
       const msg = j?.message || '';
