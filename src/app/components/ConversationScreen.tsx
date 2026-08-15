@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
@@ -125,7 +124,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   useEffect(() => {
     if (!otherUser?.id) return;
-    insforge.database
+    supabase
       .from('public_profiles')
       .select('last_active_at')
       .eq('id', otherUser.id)

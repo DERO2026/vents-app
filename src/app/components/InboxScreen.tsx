@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X, Check } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { shareLink } from '../../lib/shareLink';
@@ -80,7 +79,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       ])];
 
       const { data: profiles } = otherIds.length
-        ? await insforge.database.from('public_profiles').select('id, full_name, username, avatar_url, last_active_at').in('id', otherIds as string[])
+        ? await supabase.from('public_profiles').select('id, full_name, username, avatar_url, last_active_at').in('id', otherIds as string[])
         : { data: [] as any[] };
 
       const profileMap: Record<string, any> = {};
