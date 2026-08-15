@@ -50,8 +50,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!secret || !baseUrl || !anonKey) {
     return res.status(500).json({ error: 'Not configured' });
   }
@@ -77,7 +77,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // activate_event_promotion() re-verifies ownership via the forwarded
     // token's auth.uid() and is idempotent on payment_ref (ON CONFLICT DO
     // NOTHING), so a retry with the same reference is a safe no-op.
-    const rpcRes = await fetch(`${baseUrl}/api/database/rpc/activate_event_promotion`, {
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/activate_event_promotion`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
