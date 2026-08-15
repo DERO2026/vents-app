@@ -162,6 +162,22 @@ export async function sendTicketRefundEmail(params: {
   );
 }
 
+// Best-effort companion to Supabase Auth's own signup-verification email —
+// that one carries the actual 6-digit code (Supabase, not this codebase,
+// controls its content), this is just a branded one-tap "jump back into the
+// app" reminder. Never blocks signup if it fails.
+export async function sendVerifyAccountEmail(to: string, verifyUrl: string): Promise<boolean> {
+  return sendEmail(
+    to,
+    'Verify your Vents account',
+    wrapTemplate('Almost there 👋', `
+      <p style="color: #C4C9E0; font-size: 14px; line-height: 1.6;">We've sent a separate email with your 6-digit verification code. Tap the button below to jump straight back into Vents and enter it.</p>
+      <a href="${escapeHtml(verifyUrl)}" style="display:inline-block;background:linear-gradient(135deg,#7B2FBE,#4F46E5);color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;">Verify Account</a>
+      <p style="color: #8B8FA8; font-size: 12px; margin-top: 20px;">If the button doesn't work, open the Vents app or getvents.com and enter the code from the other email.</p>
+    `)
+  );
+}
+
 function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] as string));
 }

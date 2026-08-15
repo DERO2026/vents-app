@@ -1,8 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
-import { insforge, clearRefreshToken, getAuthToken } from '../lib/insforge';
-import { supabase } from '../lib/supabase';
+import { supabase, getAuthToken } from '../lib/supabase';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
@@ -333,7 +332,7 @@ export default function App() {
     if (!currentUser?.id) return;
     let cancelled = false;
     const syncRole = () => {
-      insforge.database
+      supabase
         .from('users')
         .select('role')
         .eq('id', currentUser.id)
@@ -449,7 +448,7 @@ export default function App() {
           window.history.replaceState({}, document.title, cleanUrl);
           setDeepLinkPending(true);
           Promise.resolve(
-            insforge.database
+            supabase
               .from('public_profiles')
               .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
               .eq('id', userDeepLink)
@@ -545,7 +544,6 @@ export default function App() {
         // Item 20: reject suspended users immediately on session restore
         if (profile?.status === 'suspended') {
           await supabase.auth.signOut().catch(() => {});
-          await clearRefreshToken();
           // Same as the normal sign-out path below — without this the
           // suspended user's device keeps its push token registered (and
           // its registration listener bound to their id), so it keeps
@@ -591,7 +589,7 @@ export default function App() {
   // not a real presence channel, an honest approximation.
   useEffect(() => {
     if (!currentUser?.id) return;
-    const beat = () => { insforge.database.rpc('heartbeat_presence', {}).then(() => {}, () => {}); };
+    const beat = () => { supabase.rpc('heartbeat_presence', {}).then(() => {}, () => {}); };
     beat();
     const interval = setInterval(beat, 30000);
     return () => clearInterval(interval);
@@ -719,7 +717,7 @@ export default function App() {
         return;
       }
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('blocked_users')
           .select('blocked_id')
           .eq('blocker_id', currentUser.id);
@@ -756,7 +754,7 @@ export default function App() {
         return;
       }
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('saved_events')
           .select('event_id')
           .eq('user_id', currentUser.id);
@@ -1388,14 +1386,14 @@ export default function App() {
 
     try {
       if (isSaved) {
-        const { error } = await insforge.database
+        const { error } = await supabase
           .from('saved_events')
           .delete()
           .eq('user_id', currentUser.id)
           .eq('event_id', eventId);
         if (error) throw error;
       } else {
-        const { error } = await insforge.database
+        const { error } = await supabase
           .from('saved_events')
           .insert([{
             user_id: currentUser.id,
@@ -1472,7 +1470,7 @@ export default function App() {
     // "message" push carries userId + screen:'chat'; without this ordering
     // they'd fall into the generic event-details/user-profile routes instead.
     if (data.screen === 'sales-analytics' && data.eventId) {
-      insforge.database
+      supabase
         .from('events')
         .select('id, title')
         .eq('id', data.eventId)
@@ -1487,7 +1485,7 @@ export default function App() {
       return;
     }
     if (data.screen === 'chat' && data.userId) {
-      insforge.database
+      supabase
         .from('public_profiles')
         .select('id, full_name, username, avatar_url, vc_badge')
         .eq('id', data.userId)
@@ -1523,7 +1521,7 @@ export default function App() {
       return;
     }
     if (data.userId) {
-      insforge.database
+      supabase
         .from('public_profiles')
         .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
         .eq('id', data.userId)
@@ -1620,7 +1618,7 @@ export default function App() {
     setScreenStack([]);
     // Check if new user needs to pick interests
     try {
-      const { data } = await insforge.database.from('users').select('interests').eq('id', userProfile.id).maybeSingle();
+      const { data } = await supabase.from('users').select('interests').eq('id', userProfile.id).maybeSingle();
       if (!data?.interests || data.interests.length === 0) {
         setShowInterests(true);
       }
@@ -1632,9 +1630,8 @@ export default function App() {
     analytics.loggedOut();
     // Drop this device's push token so a signed-out user stops receiving pushes.
     if (currentUser?.id) await unregisterPushNotifications(currentUser.id).catch(() => {});
-    await clearRefreshToken();
     try {
-      await insforge.auth.signOut();
+      await supabase.auth.signOut();
     } catch (err) {
       console.error("Sign out error:", err);
     }
@@ -1856,7 +1853,7 @@ export default function App() {
                       setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
                       localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                       try {
-                        await insforge.database.rpc('promote_to_organizer');
+                        await supabase.rpc('promote_to_organizer');
                       } catch (err) {
                         console.error('Failed to promote to organizer:', err);
                       }
@@ -1908,7 +1905,7 @@ export default function App() {
               onProfilePress={() => handleTabChange('profile')}
               onCreatePress={() => navigateTo('org-dashboard')}
               onUserPress={async (u) => {
-                const { data } = await insforge.database
+                const { data } = await supabase
                   .from('public_profiles')
                   .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', u.id)
@@ -1976,9 +1973,9 @@ export default function App() {
                 if (currentUser?.id && currentUser.role !== 'admin') {
                   setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
                   localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                  const { error: promoteErr1 } = await insforge.database.rpc('promote_to_organizer');
+                  const { error: promoteErr1 } = await supabase.rpc('promote_to_organizer');
                   if (!promoteErr1 || promoteErr1?.message?.includes('already been set')) {
-                    const { error: logErr1 } = await insforge.database.rpc('log_organizer_promotion' as any, {
+                    const { error: logErr1 } = await supabase.rpc('log_organizer_promotion' as any, {
                       p_user_id: currentUser.id,
                       p_email: currentUser.email || '',
                       p_username: currentUser.username || '',
@@ -1998,7 +1995,7 @@ export default function App() {
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
                     if (currentUser.role !== 'admin') {
                       setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
-                      const { error: promoteErr } = await insforge.database.rpc('promote_to_organizer');
+                      const { error: promoteErr } = await supabase.rpc('promote_to_organizer');
                       const alreadyOrganizer = promoteErr?.message?.includes('already been set');
                       if (promoteErr && !alreadyOrganizer) {
                         console.error('Failed to promote to organizer:', JSON.stringify(promoteErr));
@@ -2006,7 +2003,7 @@ export default function App() {
                         setUserRole('attendee');
                         setScreen('profile');
                       } else {
-                        const { error: logErr2 } = await insforge.database.rpc('log_organizer_promotion' as any, {
+                        const { error: logErr2 } = await supabase.rpc('log_organizer_promotion' as any, {
                           p_user_id: currentUser.id,
                           p_email: currentUser.email || '',
                           p_username: currentUser.username || '',
@@ -2119,7 +2116,7 @@ export default function App() {
               onOpenDoorManager={() => navigateTo('door-manager')}
               purchasesDisabled={featureFlags.disablePurchases}
               onOrganizerPress={async (organizerId) => {
-                const { data } = await insforge.database
+                const { data } = await supabase
                   .from('public_profiles')
                   .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', organizerId)
@@ -2127,7 +2124,7 @@ export default function App() {
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
               }}
               onMessageOrganizer={async (organizerId, eventId, eventTitle) => {
-                const { data } = await insforge.database
+                const { data } = await supabase
                   .from('public_profiles')
                   .select('id, full_name, username, avatar_url')
                   .eq('id', organizerId)
@@ -2349,7 +2346,7 @@ export default function App() {
               eventTitle={conversationEventTitle}
               onBack={goBack}
               onNavigateToProfile={async (userId) => {
-                const { data } = await insforge.database
+                const { data } = await supabase
                   .from('public_profiles')
                   .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
                   .eq('id', userId)

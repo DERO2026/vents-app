@@ -3,9 +3,9 @@ import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, Chevr
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
-import { insforge, clearRefreshToken } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
+import { apiUrl } from '../../lib/apiBase';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -17,20 +17,14 @@ import { signupSchema, loginSchema, firstValidationError } from '../../lib/schem
 import { REGION } from '../../lib/regionConfig';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 
-// Best-effort abuse guard for traffic going through this screen — InsForge's
-// own /api/auth/* endpoints run outside our schema, so this can't stop a
-// scripted attacker who skips our UI and calls them directly. It does stop
-// the overwhelmingly common case: a script or bot hammering our actual
+// Best-effort abuse guard for traffic going through this screen — Supabase
+// Auth's own endpoints run outside our schema, so this can't stop a scripted
+// attacker who skips our UI and calls them directly. It does stop the
+// overwhelmingly common case: a script or bot hammering our actual
 // login/signup/reset form. Dual-keyed server-side (per-identifier and
 // per-IP) inside check_auth_rate_limit(); throws a friendly message rather
 // than letting the raw 'rate_limited' RPC error reach the user.
 async function checkAuthRateLimit(action: 'login' | 'signup' | 'password_reset', identifier: string) {
-  // Uses the Supabase client regardless of which backend the calling flow
-  // authenticates against — check_auth_rate_limit() is a pure anti-abuse
-  // counter keyed by action+identifier, not tied to session state, so
-  // login (still InsForge-authenticated for now) and signup/reset (now
-  // Supabase-authenticated) can safely share one rate-limit bucket on
-  // Supabase without affecting how either flow actually signs a user in.
   const { error } = await supabase.rpc('check_auth_rate_limit', { p_action: action, p_identifier: identifier });
   if (error) {
     if (String((error as any)?.message || error).includes('rate_limited')) {
@@ -54,7 +48,7 @@ interface AuthScreenProps {
   // screen instead of the sign-up form.
   pendingVerificationEmail?: string;
   // Kill switch (app_config.disable_signups) — the server-side signup path
-  // itself can't be gated (InsForge's own /api/auth/signup runs outside
+  // itself can't be gated (Supabase Auth's own signup endpoint runs outside
   // our schema), so this blocks the client's own signup attempt and the
   // check_signups_enabled() pre-flight RPC blocks it again server-side for
   // any caller that goes through our RPC layer at all.
@@ -538,19 +532,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         setForgotOtpStep(true);
 
       } else if (mode === 'reset') {
-        if (!password) throw new Error('Password is required.');
-        if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');
-        if (password !== confirmPassword) throw new Error('Passwords do not match.');
-        if (!resetToken) throw new Error('Reset token is missing or invalid. Please request a new link.');
-        
-        const { error } = await insforge.auth.resetPassword({
-          newPassword: password,
-          otp: resetToken
-        });
-        if (error) throw error;
-        
-        setSuccessMessage('Password reset successfully! Please sign in with your new password.');
-        setMode('login');
+        // Legacy InsForge deep-link recovery — superseded by the in-app OTP
+        // flow above (mode === 'forgot': verifyOtp + updateUser). Supabase's
+        // recovery email now sends a 6-digit code, not a link carrying a
+        // token these params could consume, so this mode is unreachable via
+        // any link Supabase's own email templates actually produce.
+        setMode('forgot');
         setPassword('');
         setConfirmPassword('');
       } else if (mode === 'signup') {
@@ -746,7 +733,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           // 3.5: Block banned / deleted accounts immediately after auth
           if (profile?.status === 'suspended' || profile?.status === 'deleted') {
             await supabase.auth.signOut().catch(() => {});
-            await clearRefreshToken();
             setBanInfo({ status: profile.status, until: profile.banned_until ?? null });
             setLoading(false);
             return;
@@ -922,28 +908,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   // Best-effort branded companion email with a one-tap "Verify Account"
   // button that lands the user straight back on this OTP screen (email
   // pre-filled) instead of making them re-navigate the app from scratch.
-  // The 6-digit code itself is still delivered separately by InsForge's own
-  // verification email — this repo has no access to that code's value, so
-  // it can't be embedded here. Never blocks or fails the signup flow.
+  // The 6-digit code itself is still delivered separately by Supabase Auth's
+  // own verification email — this repo has no access to that code's value,
+  // so it can't be embedded here. Never blocks or fails the signup flow.
+  // Merged into status-email.ts's request_type dispatch (rather than its
+  // own endpoint) to stay under Vercel Hobby's 12-serverless-function cap.
   const sendVerifyAccountEmail = (toEmail: string) => {
-    const verifyUrl = `${window.location.origin}/?verify_email=${encodeURIComponent(toEmail)}`;
-    insforge.emails.send({
-      to: toEmail,
-      subject: 'Verify your Vents account',
-      html: `
-        <div style="font-family:Inter,Arial,sans-serif;background:#020005;padding:32px 24px;color:#F0F0FF;">
-          <h1 style="font-size:20px;margin:0 0 16px;">Almost there 👋</h1>
-          <p style="font-size:14px;line-height:1.6;color:#C4C9E0;margin:0 0 24px;">
-            We've sent a separate email with your 6-digit verification code. Tap the button below to jump straight back into Vents and enter it.
-          </p>
-          <a href="${verifyUrl}" style="display:inline-block;background:linear-gradient(135deg,#7B2FBE,#4F46E5);color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:14px 28px;border-radius:14px;">
-            Verify Account
-          </a>
-          <p style="font-size:12px;color:#8B8FA8;margin:24px 0 0;">
-            If the button doesn't work, open the Vents app or getvents.com and enter the code from the other email.
-          </p>
-        </div>
-      `,
+    fetch(apiUrl('/api/notify/status-email'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request_type: 'verify_account', email: toEmail }),
     }).catch((err: any) => console.warn('Verify-account email failed to send (non-blocking):', err));
   };
 

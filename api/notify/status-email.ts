@@ -1,6 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import QRCode from 'qrcode';
-import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail, sendPayoutDecisionEmail } from '../_lib/mailer.js';
+import { sendOrganizerRequestDecisionEmail, sendOrganizerVerificationDecisionEmail, sendPayoutDecisionEmail, sendVerifyAccountEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 
@@ -82,7 +82,7 @@ async function sendTicketEmailResend(to: string, subject: string, html: string):
 async function mintTicketToken(ticketId: string, baseUrl: string, headers: Record<string, string>): Promise<string | null> {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const res = await fetch(`${baseUrl}/api/database/rpc/generate_ticket_token`, {
+      const res = await fetch(`${baseUrl}/rest/v1/rpc/generate_ticket_token`, {
         method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ p_ticket_id: ticketId }),
       });
@@ -119,14 +119,14 @@ async function mintTicketToken(ticketId: string, baseUrl: string, headers: Recor
 async function renderAndHostQr(token: string, ticketId: string, baseUrl: string, headers: Record<string, string>): Promise<string | null> {
   try {
     const png = await QRCode.toBuffer(token, { width: 480, margin: 2, errorCorrectionLevel: 'L', color: { dark: '#0A0B14', light: '#ffffff' } });
-    const fd = new FormData();
-    fd.append('file', new File([png], `ticket-qr-${ticketId}-${Date.now()}.png`, { type: 'image/png' }));
-    const res = await fetch(`${baseUrl}/api/storage/buckets/events/objects`, { method: 'POST', headers, body: fd });
+    const key = `ticket-qr-${ticketId}-${Date.now()}.png`;
+    const res = await fetch(`${baseUrl}/storage/v1/object/events/${encodeURIComponent(key)}`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'image/png', 'x-upsert': 'false' },
+      body: png,
+    });
     if (!res.ok) { console.warn('[ticket-email] QR upload failed', { ticketId, status: res.status }); return null; }
-    const data = await res.json().catch(() => null);
-    if (data?.url) return data.url as string;
-    if (data?.key) return `${baseUrl}/api/storage/buckets/events/objects/${encodeURIComponent(data.key)}`;
-    return null;
+    return `${baseUrl}/storage/v1/object/public/events/${encodeURIComponent(key)}`;
   } catch (e) {
     console.warn('[ticket-email] QR render/upload threw', { ticketId, e });
     return null;
@@ -150,11 +150,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // ── Verify-account companion email (unauthenticated) ───────────────────────
+  // Fires during signup/resend, before the user has a session — called
+  // unauthenticated on purpose (mirrors verify-account-email.ts, merged in
+  // here to stay under Vercel Hobby's 12-serverless-function cap, same
+  // consolidation pattern already used for admin-payout-action.ts). The
+  // verify link and template are fixed server-side; the only client input
+  // is the destination address, so there's nothing an abuser could use to
+  // send arbitrary content.
+  if ((req.body || {}).request_type === 'verify_account') {
+    const { email } = req.body || {};
+    if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({ error: 'A valid email is required' });
+    }
+    const origin = (req.headers.origin as string) || 'https://getvents.com';
+    const verifyUrl = `${origin}/?verify_email=${encodeURIComponent(email)}`;
+    try {
+      const sent = await sendVerifyAccountEmail(email, verifyUrl);
+      return res.status(200).json({ sent });
+    } catch (err: any) {
+      return res.status(500).json({ error: err?.message || 'Could not send verification email' });
+    }
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
-  const baseUrlEarly = process.env.VITE_INSFORGE_URL;
-  const anonKeyEarly = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrlEarly = process.env.VITE_SUPABASE_URL;
+  const anonKeyEarly = process.env.VITE_SUPABASE_ANON_KEY;
 
   // ── Self-serve ticket confirmation (non-admin) ─────────────────────────────
   // The buyer triggers this right after a group purchase. We authenticate
@@ -176,7 +199,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // The caller's own tickets for this event (RLS also restricts to owner —
       // only the buyer can trigger delivery, but each ticket is then routed to
       // the attendee email that was entered for IT at checkout).
-      const tRes = await fetch(`${baseUrlEarly}/api/database/records/tickets?event_id=eq.${encodeURIComponent(event_id)}&user_id=eq.${encodeURIComponent(session.userId)}&select=id,ticket_type,holder_name,holder_email,created_at,status&order=created_at.desc&limit=20`, { headers: h });
+      const tRes = await fetch(`${baseUrlEarly}/rest/v1/tickets?event_id=eq.${encodeURIComponent(event_id)}&user_id=eq.${encodeURIComponent(session.userId)}&select=id,ticket_type,holder_name,holder_email,created_at,status&order=created_at.desc&limit=20`, { headers: h });
       if (!tRes.ok) return res.status(tRes.status).json({ error: 'Could not load tickets' });
       const tickets = (await tRes.json().catch(() => [])) as any[];
       if (!Array.isArray(tickets) || tickets.length === 0) return res.status(404).json({ error: 'No tickets found' });
@@ -185,14 +208,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const newest = new Date(tickets[0].created_at).getTime();
       const batch = tickets.filter((t) => Math.abs(new Date(t.created_at).getTime() - newest) < 10 * 60 * 1000);
 
-      const evRes = await fetch(`${baseUrlEarly}/api/database/records/events?id=eq.${encodeURIComponent(event_id)}&select=title,event_date,location`, { headers: h });
+      const evRes = await fetch(`${baseUrlEarly}/rest/v1/events?id=eq.${encodeURIComponent(event_id)}&select=title,event_date,location`, { headers: h });
       const ev = (await evRes.json().catch(() => []))?.[0] || {};
       const dateStr = ev.event_date ? new Date(ev.event_date).toLocaleString('en-NG', { dateStyle: 'full', timeStyle: 'short' }) : 'See app';
 
       // Confirmation SMS to the buyer's own on-file number — pulled server-side
       // (never client-supplied), same text the client used to send directly
       // with the now-revoked Sendchamp key. Best-effort, never blocks the email.
-      fetch(`${baseUrlEarly}/api/database/records/users?id=eq.${encodeURIComponent(session.userId)}&select=phone_number`, { headers: h })
+      fetch(`${baseUrlEarly}/rest/v1/users?id=eq.${encodeURIComponent(session.userId)}&select=phone_number`, { headers: h })
         .then((r) => r.json().catch(() => []))
         .then((rows: any[]) => {
           const phone = Array.isArray(rows) ? rows[0]?.phone_number : null;
@@ -278,16 +301,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: 'Invalid decision' });
   }
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!baseUrl || !anonKey) return res.status(500).json({ error: 'Not configured' });
 
-  const insforgeHeaders = { Authorization: authHeader, apikey: anonKey };
+  const supabaseHeaders = { Authorization: authHeader, apikey: anonKey };
 
   try {
-    const adminCheckRes = await fetch(`${baseUrl}/api/database/rpc/is_admin`, {
+    const adminCheckRes = await fetch(`${baseUrl}/rest/v1/rpc/is_admin`, {
       method: 'POST',
-      headers: { ...insforgeHeaders, 'Content-Type': 'application/json' },
+      headers: { ...supabaseHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({}),
     });
     const isAdmin = adminCheckRes.ok && (await adminCheckRes.json().catch(() => false)) === true;
@@ -299,8 +322,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const ownerCol = request_type === 'payout' ? 'organizer_id' : 'user_id';
     const extraSelect = request_type === 'cac' ? ',company_name' : request_type === 'payout' ? ',amount_kobo' : '';
     const reqRes = await fetch(
-      `${baseUrl}/api/database/records/${table}?id=eq.${encodeURIComponent(request_id)}&select=${ownerCol}${extraSelect}`,
-      { headers: insforgeHeaders }
+      `${baseUrl}/rest/v1/${table}?id=eq.${encodeURIComponent(request_id)}&select=${ownerCol}${extraSelect}`,
+      { headers: supabaseHeaders }
     );
     if (!reqRes.ok) return res.status(reqRes.status).json({ error: 'Could not load request' });
     const reqRows = await reqRes.json();
@@ -309,8 +332,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!ownerId) return res.status(404).json({ error: 'Request not found' });
 
     const userRes = await fetch(
-      `${baseUrl}/api/database/records/users?id=eq.${encodeURIComponent(ownerId)}&select=full_name,email,phone_number`,
-      { headers: insforgeHeaders }
+      `${baseUrl}/rest/v1/users?id=eq.${encodeURIComponent(ownerId)}&select=full_name,email,phone_number`,
+      { headers: supabaseHeaders }
     );
     if (!userRes.ok) return res.status(userRes.status).json({ error: 'Could not load user' });
     const userRows = await userRes.json();
