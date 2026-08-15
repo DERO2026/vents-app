@@ -7,7 +7,7 @@
 // the RPC's verdict. Kept deliberately free of any React/UI concerns so it can
 // be unit-exercised and reused.
 
-import { insforge, getAuthToken } from '../../../lib/insforge';
+import { supabase } from '../../../lib/supabase';
 
 export type ScanStatus = 'valid' | 'already_scanned' | 'denied' | 'offline';
 
@@ -81,9 +81,8 @@ export async function validateTicket(
 ): Promise<ScanOutcome> {
   const ticketId = rawTicketId.trim();
   try {
-    await getAuthToken();
     const { data, error } = (await withTimeout(
-      insforge.database.rpc('verify_entry_pass' as any, {
+      supabase.rpc('verify_entry_pass' as any, {
         p_ticket_id: ticketId,
         p_actor_id: actorId,
       }),

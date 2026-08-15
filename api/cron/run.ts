@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
+import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 
 // ─── Daily notification sweep (Vercel Cron) ───────────────────────────────
 // Combines what were originally two separate cron endpoints
@@ -20,14 +21,16 @@ import crypto from 'node:crypto';
 //    in the day are still sitting unsent too) and actually delivers them,
 //    reusing the same JWT-signing approach as api/push/send.ts (kept
 //    duplicated rather than shared — that endpoint authenticates with a
-//    caller's super-admin session, this one with INSFORGE_API_KEY + a
-//    CRON_SECRET; different enough auth shape that sharing a handler would
-//    be more confusing than one extra file was).
+//    caller's super-admin session, this one with the project_admin DB
+//    connection + a CRON_SECRET; different enough auth shape that sharing
+//    a handler would be more confusing than one extra file was).
 //
 // No user session exists for a scheduled job, so this reads/writes the
-// database via INSFORGE_API_KEY (the same admin-only credential
-// api/webhook/paystack.ts and api/wallet/reconcile-payouts.ts already use)
-// against RPCs locked to `project_admin`.
+// database via a direct project_admin Postgres connection (the same
+// pattern api/webhook/paystack.ts and api/wallet/reconcile-payouts.ts
+// already use — see api/_lib/projectAdminDb.ts for why a plain API key/
+// JWT isn't an option on this project) against RPCs locked to
+// `project_admin`.
 
 function b64url(input: Buffer | string): string {
   const buf = typeof input === 'string' ? Buffer.from(input, 'utf8') : input;
@@ -86,26 +89,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Not authorized' });
   }
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const adminKey = process.env.INSFORGE_API_KEY;
-  if (!baseUrl || !adminKey) return res.status(500).json({ error: 'Backend not configured' });
-
-  const systemHeaders = {
-    'Content-Type': 'application/json',
-    Authorization: `Bearer ${adminKey}`,
-    apikey: adminKey,
-  };
-  const rpc = (fn: string, args: unknown) =>
-    fetch(`${baseUrl}/api/database/rpc/${fn}`, { method: 'POST', headers: systemHeaders, body: JSON.stringify(args) });
-
   // ── 1) Reminder sweep ──────────────────────────────────────────────────
   let reminderResult: any = null;
-  const sweepRes = await rpc('run_event_reminder_sweep', {});
-  if (sweepRes.ok) {
-    const sweepJson = await sweepRes.json().catch(() => null);
-    reminderResult = Array.isArray(sweepJson) ? sweepJson[0] : sweepJson;
-  } else {
-    reminderResult = { error: `sweep failed (${sweepRes.status})` };
+  try {
+    const sweepRows = await callProjectAdminTableRpc<any>('run_event_reminder_sweep', []);
+    reminderResult = sweepRows[0] ?? null;
+  } catch (err: any) {
+    reminderResult = { error: `sweep failed: ${err?.message || err}` };
   }
 
   // ── 2) Push delivery ────────────────────────────────────────────────────
@@ -121,11 +111,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
-  const pendingRes = await rpc('get_pending_push_notifications', { p_limit: 200 });
-  if (!pendingRes.ok) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'Failed to read pending notifications', status: pendingRes.status } });
+  let rows: PendingRow[];
+  try {
+    rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
+  } catch (err: any) {
+    return res.status(200).json({ reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
-  const rows = (await pendingRes.json()) as PendingRow[];
   if (!rows.length) {
     return res.status(200).json({ reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
@@ -179,7 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // the token so future notifications skip it entirely.
         pruned.add(row.token);
         toMark.add(row.notification_id);
-        await rpc('prune_push_token', { p_token: row.token }).catch(() => {});
+        await callProjectAdminRpc('prune_push_token', [row.token]).catch(() => {});
         return;
       }
     }
@@ -189,7 +180,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }));
 
   if (toMark.size > 0) {
-    await rpc('mark_notifications_pushed', { p_ids: Array.from(toMark) }).catch(() => {});
+    await callProjectAdminRpc('mark_notifications_pushed', [Array.from(toMark)]).catch(() => {});
   }
 
   return res.status(200).json({
