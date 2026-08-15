@@ -2,8 +2,7 @@ import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
-import { insforge, getAuthToken } from '../../lib/insforge';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { shareLink } from '../../lib/shareLink';
 
@@ -54,7 +53,7 @@ export function UserProfileScreen({
 
   useEffect(() => {
     if (!currentUserId || isOwnProfile || !user?.id) return;
-    insforge.database
+    supabase
       .from('blocked_users')
       .select('id')
       .eq('blocker_id', currentUserId)
@@ -69,8 +68,8 @@ export function UserProfileScreen({
     try {
       await getAuthToken();
       const { error } = isBlocked
-        ? await insforge.database.rpc('unblock_user' as any, { p_blocked_id: user.id })
-        : await insforge.database.rpc('block_user' as any, { p_blocked_id: user.id });
+        ? await supabase.rpc('unblock_user' as any, { p_blocked_id: user.id })
+        : await supabase.rpc('block_user' as any, { p_blocked_id: user.id });
       if (error) throw error;
       setIsBlocked(!isBlocked);
     } catch (err: any) {

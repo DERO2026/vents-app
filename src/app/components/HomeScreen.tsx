@@ -6,7 +6,6 @@ import {
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
 } from 'lucide-react';
 import { Event } from './types';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
@@ -925,7 +924,7 @@ export function HomeScreen({
   const [suggestedPeople, setSuggestedPeople] = useState<any[]>([]);
 
   useEffect(() => {
-    insforge.database
+    supabase
       .from('public_profiles')
       .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
       .eq('is_verified', true)
@@ -940,7 +939,7 @@ export function HomeScreen({
     const t = setTimeout(async () => {
       try {
         const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
-        const { data } = await insforge.database
+        const { data } = await supabase
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)

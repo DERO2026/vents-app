@@ -28,7 +28,6 @@ import {
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
@@ -306,7 +305,7 @@ export function EventDetailsScreen({
     const fetchOrganizerProfile = async () => {
       if (!event.organizer_id) return;
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, is_verified, state, vc_badge')
           .eq('id', event.organizer_id)

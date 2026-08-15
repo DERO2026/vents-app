@@ -2,7 +2,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
 import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
@@ -117,7 +116,7 @@ export function ExploreScreen({
           }
           const partnerIds = [...new Set([...seen.keys(), ...pendingIncoming.map((r: any) => r.requester_id)])];
           if (partnerIds.length === 0) { setConversations([]); setRequests([]); return; }
-          const { data: profiles } = await insforge.database
+          const { data: profiles } = await supabase
             .from('public_profiles')
             .select('id, full_name, username, avatar_url, vc_badge, last_active_at')
             .in('id', partnerIds);
@@ -174,7 +173,7 @@ export function ExploreScreen({
     const t = setTimeout(async () => {
       try {
         const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
-        const { data } = await insforge.database
+        const { data } = await supabase
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
