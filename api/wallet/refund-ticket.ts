@@ -28,13 +28,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!paystackSecret || !baseUrl || !anonKey) {
     return res.status(500).json({ error: 'Refund system not configured' });
   }
 
-  const insforgeHeaders = {
+  const supabaseHeaders = {
     'Content-Type': 'application/json',
     Authorization: authHeader,
     apikey: anonKey,
@@ -44,9 +44,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // is_admin()/organizer-of-event authorization, the paid-only guard, and
     // the flip to 'refund_pending' (or straight to 'refunded' for free
     // tickets with nothing to move) all happen atomically inside this RPC.
-    const rpcRes = await fetch(`${baseUrl}/api/database/rpc/refund_ticket`, {
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/refund_ticket`, {
       method: 'POST',
-      headers: insforgeHeaders,
+      headers: supabaseHeaders,
       body: JSON.stringify({ p_ticket_id: ticket_id, p_reason: reason.trim() }),
     });
     if (!rpcRes.ok) {
@@ -88,9 +88,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // insufficient balance, already fully refunded on their side, etc) --
       // release the ticket back to 'paid' rather than leaving it stuck
       // showing cancelled with no refund actually in flight.
-      await fetch(`${baseUrl}/api/database/rpc/admin_revert_stuck_refund`, {
+      await fetch(`${baseUrl}/rest/v1/rpc/admin_revert_stuck_refund`, {
         method: 'POST',
-        headers: insforgeHeaders,
+        headers: supabaseHeaders,
         body: JSON.stringify({
           p_ticket_id: ticket_id,
           p_reason: 'Paystack refund creation failed: ' + (refundJson?.message || `HTTP ${refundRes.status}`),
@@ -99,9 +99,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: refundJson?.message || 'Paystack refund initiation failed' });
     }
 
-    await fetch(`${baseUrl}/api/database/rpc/attach_ticket_refund_id`, {
+    await fetch(`${baseUrl}/rest/v1/rpc/attach_ticket_refund_id`, {
       method: 'POST',
-      headers: insforgeHeaders,
+      headers: supabaseHeaders,
       body: JSON.stringify({ p_ticket_id: ticket_id, p_refund_id: refundId }),
     });
 
