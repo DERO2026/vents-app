@@ -19,6 +19,7 @@ import { LocationPicker } from './LocationPicker';
 import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
 import { REGION } from '../../lib/regionConfig';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { pickImage } from '../../lib/pickImage';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -137,7 +138,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     stepContentRef.current?.scrollTo({ top: 0 });
   }, [step]);
 
-  // Load the organizer's linked payout accounts and preselect their default.
+  // The event's own payout_account_id as loaded from the DB — kept separate
+  // from `payoutAccountId` (the actual selection) because it needs to be
+  // reconciled against the organizer's currently-active accounts, which can
+  // load in either order relative to the event fetch below.
+  const [loadedEventPayoutAccountId, setLoadedEventPayoutAccountId] = useState<string | null>(null);
+
+  // Load the organizer's linked, ACTIVE payout accounts. Re-runs on every
+  // mount of this screen (i.e. every time Edit Event is opened), so a
+  // newly-added or newly-deactivated account is never stale.
   useEffect(() => {
     if (!currentUser?.id) return;
     let cancelled = false;
@@ -147,15 +156,29 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           .from('organizer_bank_accounts')
           .select('id, bank_name, account_number, is_default')
           .eq('organizer_id', currentUser.id)
+          .eq('is_active', true)
           .order('is_default', { ascending: false });
         if (cancelled) return;
-        const accts = (data as any[]) || [];
-        setPayoutAccounts(accts);
-        setPayoutAccountId(prev => prev && accts.some(a => a.id === prev) ? prev : (accts.find(a => a.is_default)?.id ?? accts[0]?.id ?? null));
+        setPayoutAccounts((data as any[]) || []);
       } catch { /* non-blocking — the DB trigger still auto-fills the default */ }
     })();
     return () => { cancelled = true; };
-  }, [currentUser?.id]);
+  }, [currentUser?.id, editEventId]);
+
+  // Reconcile the selected payout account whenever either the active-accounts
+  // list or the loaded event's stored payout_account_id changes, regardless
+  // of which resolves first. Prefers the event's own account if it's still
+  // active; falls back to the organizer's default active account if it was
+  // soft-deleted/deactivated (or no event is loaded, i.e. create mode).
+  useEffect(() => {
+    if (payoutAccounts.length === 0) return;
+    setPayoutAccountId(prev => {
+      const preferred = loadedEventPayoutAccountId || prev;
+      return preferred && payoutAccounts.some(a => a.id === preferred)
+        ? preferred
+        : (payoutAccounts.find(a => a.is_default)?.id ?? payoutAccounts[0].id);
+    });
+  }, [payoutAccounts, loadedEventPayoutAccountId]);
 
   useEffect(() => {
     if (!editEventId) return;
@@ -179,7 +202,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         if (cancelled || !data) return;
         const row = data as any;
         setTitle(row.title || '');
-        if (row.payout_account_id) setPayoutAccountId(row.payout_account_id);
+        // Don't set payoutAccountId directly here — the event's stored
+        // payout_account_id may point at a since-soft-deleted/deactivated
+        // bank account. The reconciliation effect above validates it against
+        // the organizer's current active accounts and falls back to the
+        // default if it's no longer valid.
+        setLoadedEventPayoutAccountId(row.payout_account_id || null);
         const cats: string[] = Array.isArray(row.categories) && row.categories.length
           ? row.categories
           : (row.category ? [row.category] : []);
@@ -317,6 +345,19 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     });
   }, []);
 
+  // Object URLs created in handleImageChange/handleGalleryFileChange are
+  // normally revoked by closeCropper once the crop finishes/cancels — but if
+  // the screen unmounts while the cropper is still open (e.g. the user
+  // navigates away via onBack from underneath it), that revoke never runs
+  // and the blob stays pinned in memory for the life of the page. Tracked
+  // via a ref (rather than depending on cropSrc directly) so this only
+  // revokes once, on unmount, using whatever URL was current at the time.
+  const cropSrcRef = useRef<string | null>(null);
+  cropSrcRef.current = cropSrc;
+  useEffect(() => {
+    return () => { if (cropSrcRef.current) URL.revokeObjectURL(cropSrcRef.current); };
+  }, []);
+
   const uploadFlierBlob = useCallback(async (croppedBlob: Blob): Promise<{ url: string; key: string | null }> => {
     // Production media pipeline: compresses the flier, generates a responsive
     // thumbnail, uploads BOTH directly to the S3-compatible `events` bucket
@@ -352,14 +393,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     }
   }, [closeCropper, cropTarget, uploadFlierBlob]);
 
-  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const processCoverImageFile = (file: File) => {
     if (uploadingImage) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (e.target) {
-      e.target.value = '';
-    }
 
     // Previously only checked file size — a HEIC (common on iPhone camera
     // rolls) or PDF picked from Files would sail past this and only fail
@@ -382,12 +417,20 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     setCropTarget('cover');
     setCropSrc(URL.createObjectURL(file));
   };
-
-  const handleGalleryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (uploadingGallery || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
+  const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
     if (e.target) e.target.value = '';
+    if (file) processCoverImageFile(file);
+  };
+  const openCoverImagePicker = async () => {
+    if (uploadingImage || submitting) return;
+    const native = await pickImage();
+    if (native) { processCoverImageFile(native); return; }
+    fileInputRef.current?.click();
+  };
+
+  const processGalleryImageFile = (file: File) => {
+    if (uploadingGallery || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
     if (!ACCEPTED_IMAGE_TYPES.has(file.type)) {
       setErrorMessage('Please choose a JPG, PNG, or WEBP image.');
       return;
@@ -398,6 +441,17 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     }
     setCropTarget('gallery');
     setCropSrc(URL.createObjectURL(file));
+  };
+  const handleGalleryFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (e.target) e.target.value = '';
+    if (file) processGalleryImageFile(file);
+  };
+  const openGalleryImagePicker = async () => {
+    if (uploadingGallery || submitting || galleryUrls.length >= MAX_GALLERY_FLIERS) return;
+    const native = await pickImage();
+    if (native) { processGalleryImageFile(native); return; }
+    galleryFileInputRef.current?.click();
   };
 
   const removeGalleryImage = (index: number) => {
@@ -937,7 +991,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               />
             )}
             <div
-              onClick={() => { if (!uploadingImage && !submitting) fileInputRef.current?.click(); }}
+              onClick={openCoverImagePicker}
               style={{
                 height: '260px',
                 background: '#090514',
@@ -1045,7 +1099,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 {galleryUrls.length < MAX_GALLERY_FLIERS && (
                   <button
                     type="button"
-                    onClick={() => { if (!uploadingGallery && !submitting) galleryFileInputRef.current?.click(); }}
+                    onClick={openGalleryImagePicker}
                     disabled={uploadingGallery || submitting}
                     style={{
                       width: '72px',
@@ -1563,7 +1617,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   border: '1px solid rgba(255,255,255,0.05)',
                 }}
               >
-                <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{label}</span>
+                <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{label}</span>
                 <span
                   style={{
                     color: value.includes('not set') ? '#8B8FA8' : '#F0F0FF',
@@ -1571,6 +1625,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     fontWeight: 600,
                     textAlign: 'right',
                     maxWidth: '180px',
+                    display: 'inline-block',
+                    wordBreak: 'break-word',
                   }}
                 >
                   {value}
@@ -1624,7 +1680,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           background: 'rgba(6,10,18,0.95)',
           backdropFilter: 'blur(20px)',
           borderTop: '1px solid rgba(255,255,255,0.08)',
-          padding: '14px 16px 28px',
+          padding: '14px 16px calc(28px + env(safe-area-inset-bottom))',
         }}
       >
         <button
@@ -1721,9 +1777,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       {showCityModal && stateName && NIGERIA_CITIES[stateName] && (
         <PickerSheet
           title="Select City"
-          searchPlaceholder="Search city..."
+          searchPlaceholder="Search or type a city/area..."
           value={city}
           options={NIGERIA_CITIES[stateName].map((c) => ({ value: c, label: c }))}
+          allowCustom
           onSelect={(v) => {
             setCity(v);
             setShowCityModal(false);

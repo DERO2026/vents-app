@@ -387,7 +387,7 @@ function CardSkeleton() {
   );
 }
 
-const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
+export const HorizontalEventCard = memo(function HorizontalEventCard({ event, onPress, isSaved, onToggleSave, badgeText, badgeColor }: {
   event: Event;
   onPress: (e: Event) => void;
   isSaved: boolean;
@@ -709,7 +709,7 @@ function FeaturedCarousel({
             onClick={(ev) => { ev.stopPropagation(); haptics.light(); onToggleSave(event.id); }}
             style={{ position: 'absolute', top: '14px', right: '14px', background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', borderRadius: '50%', width: '34px', height: '34px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
           >
-            <span style={{ fontSize: '14px' }}>{isSaved.includes(event.id) ? '🔖' : '🔖'}</span>
+            <span style={{ fontSize: '14px', filter: isSaved.includes(event.id) ? 'none' : 'grayscale(1) opacity(0.6)' }}>🔖</span>
           </button>
           {/* Info overlay at bottom */}
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
@@ -930,7 +930,7 @@ export function HomeScreen({
       .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
       .eq('is_verified', true)
       .limit(5)
-      .then(({ data }) => setSuggestedPeople(data || []));
+      .then(({ data }) => setSuggestedPeople(data || []), () => { /* ignore */ });
   }, []);
 
   useEffect(() => {

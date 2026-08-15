@@ -7,10 +7,13 @@ import { registerPushNotifications, unregisterPushNotifications, setPushActionHa
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification } from '../lib/pendingVerification';
+import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
 import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
+import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
+import { useSwipeBack } from '../lib/useSwipeBack';
 
 import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
@@ -172,6 +175,11 @@ export default function App() {
   // update), so without this, Back had nothing to actually restore — the
   // view got stuck on whichever related event was tapped last.
   const [eventHistoryStack, setEventHistoryStack] = useState<Event[]>([]);
+  // Kept in sync below so the backButton listener (registered once on mount)
+  // always sees current values without re-subscribing on every navigation.
+  const screenRef = useRef(screen);
+  const screenStackRef = useRef(screenStack);
+  const goBackRef = useRef<() => void>(() => {});
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
@@ -256,6 +264,15 @@ export default function App() {
       setActiveTab('home');
     }
   }, [screenStack, screen, userRole, eventHistoryStack]);
+
+  useEffect(() => { screenRef.current = screen; }, [screen]);
+  useEffect(() => { screenStackRef.current = screenStack; }, [screenStack]);
+  useEffect(() => { goBackRef.current = goBack; }, [goBack]);
+
+  // iOS-style edge-swipe-to-go-back — same "can we actually go back" check
+  // as the hardware back-button listener above, so both paths agree on when
+  // a swipe/press should pop the stack vs. do nothing.
+  const swipeBack = useSwipeBack(screenStack.length > 0 || screen === 'event-details', goBack);
 
   const handleSplashComplete = useCallback(() => {
     setSplashMinTimePassed(true);
@@ -1450,6 +1467,47 @@ export default function App() {
   // with the app backgrounded).
   const pushActionRef = useRef<(data: Record<string, any>) => void>(() => {});
   pushActionRef.current = (data: Record<string, any>) => {
+    // Checked before the generic data.eventId/data.userId branches below —
+    // a "sale" push carries both eventId and screen:'sales-analytics', and a
+    // "message" push carries userId + screen:'chat'; without this ordering
+    // they'd fall into the generic event-details/user-profile routes instead.
+    if (data.screen === 'sales-analytics' && data.eventId) {
+      insforge.database
+        .from('events')
+        .select('id, title')
+        .eq('id', data.eventId)
+        .maybeSingle()
+        .then(({ data: evtData, error: evtError }) => {
+          if (evtError || !evtData) return;
+          setAnalyticsEventId(evtData.id);
+          setAnalyticsEventTitle(evtData.title);
+          setScreenStack([]);
+          setScreen('sales-analytics');
+        });
+      return;
+    }
+    if (data.screen === 'chat' && data.userId) {
+      insforge.database
+        .from('public_profiles')
+        .select('id, full_name, username, avatar_url, vc_badge')
+        .eq('id', data.userId)
+        .maybeSingle()
+        .then(({ data: userData, error: userError }) => {
+          if (userError || !userData) return;
+          setConversationUser({
+            id: userData.id,
+            name: userData.full_name || userData.username || 'User',
+            avatarUrl: userData.avatar_url || undefined,
+            vc_badge: userData.vc_badge || undefined,
+          });
+          // Clear any stale event-context banner left over from whatever
+          // conversation was open before this push was tapped.
+          setConversationEventId(undefined);
+          setScreenStack([]);
+          setScreen('conversation');
+        });
+      return;
+    }
     if (data.eventId) {
       supabase
         .from('events')
@@ -1513,10 +1571,35 @@ export default function App() {
           const parsed = new URL(url);
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
-          if (eventId) pushActionRef.current({ eventId });
-          else if (userId) pushActionRef.current({ userId });
+          const screen = parsed.searchParams.get('screen');
+          if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
+          else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
+          else if (screen) pushActionRef.current({ screen });
         } catch (err) {
           console.warn('[deep-link] failed to parse appUrlOpen url:', err);
+        }
+      });
+      removeListener = () => sub.remove();
+    })();
+    return () => removeListener?.();
+  }, []);
+
+  // Android hardware back button — navigation here is in-memory (screenStack),
+  // not a web router, so nothing was intercepting it before: it fell through to
+  // Capacitor's default behavior, which exits the app from any screen instead of
+  // popping the internal stack. Reuse the same goBack() the on-screen back arrows
+  // call; only let the OS handle it (minimize/exit) once we're already at the
+  // root of the stack.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let removeListener: (() => void) | undefined;
+    (async () => {
+      const { App: CapacitorApp } = await import('@capacitor/app');
+      const sub = await CapacitorApp.addListener('backButton', () => {
+        if (screenStackRef.current.length > 0 || screenRef.current === 'event-details') {
+          goBackRef.current();
+        } else {
+          CapacitorApp.minimizeApp();
         }
       });
       removeListener = () => sub.remove();
@@ -1588,7 +1671,7 @@ export default function App() {
           A new version of Vents is available with important fixes. Please refresh to continue.
         </p>
         <button
-          onClick={() => window.location.href = 'https://getvents.com'}
+          onClick={() => openExternalUrl('https://getvents.com')}
           style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', padding: '14px 32px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
         >
           Reload Vents
@@ -1650,6 +1733,7 @@ export default function App() {
           </button>
         </div>
       )}
+      <PermissionSheetHost />
       <style>{`
         .light-theme { color-scheme: light; }
         .phone-frame {
@@ -1724,7 +1808,7 @@ export default function App() {
               </button>
             </div>
           )}
-          <div className="absolute inset-0">
+          <div className="absolute inset-0" style={swipeBack.style} {...swipeBack.handlers}>
             {/* ── AUTH FLOW ── */}
             {authLoading ? (
               <SplashScreen onComplete={handleSplashComplete} />

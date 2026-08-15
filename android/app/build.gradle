@@ -1,5 +1,22 @@
 apply plugin: 'com.android.application'
 
+// Release signing was previously done only through Android Studio's
+// interactive "Generate Signed Bundle/APK" wizard — there was no
+// signingConfigs block at all, so `gradlew bundleRelease`/`assembleRelease`
+// from a plain terminal or CI could not produce a signed, installable
+// release artifact. Loads path/alias/passwords from a gitignored
+// android/keystore.properties file (never committed — see .gitignore) so
+// the actual secrets never need to live in this tracked build script.
+// Absent that file, release builds simply have no signingConfig, same
+// fallback behavior as before this change (the Android Studio wizard path
+// still works unaffected).
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+def keystoreProperties = new Properties()
+def hasKeystoreProperties = keystorePropertiesFile.exists()
+if (hasKeystoreProperties) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
 android {
     namespace = "com.getvents.app"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,11 +33,24 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasKeystoreProperties) {
+            release {
+                storeFile file(keystoreProperties['storeFile'])
+                storePassword keystoreProperties['storePassword']
+                keyAlias keystoreProperties['keyAlias']
+                keyPassword keystoreProperties['keyPassword']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled true
             shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            if (hasKeystoreProperties) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

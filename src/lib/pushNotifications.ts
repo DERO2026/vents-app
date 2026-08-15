@@ -25,6 +25,7 @@
 import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase';
 import { trackEvent } from './analytics';
+import { askPermission, notifyPermissionDenied } from './permissionPrimer';
 
 const isNative = Capacitor.isNativePlatform();
 let registered = false;
@@ -76,10 +77,26 @@ export async function registerPushNotifications(userId: string): Promise<void> {
     const perm = await FirebaseMessaging.checkPermissions();
     let receive = perm.receive;
     if (receive === 'prompt' || receive === 'prompt-with-rationale') {
+      // Soft pre-ask, shown once per device before the OS prompt — every
+      // login re-runs this function, so without the "shown once" gate this
+      // would nag on every single login instead of just the first.
+      const decision = await askPermission('notifications', {
+        icon: 'bell',
+        title: 'Stay in the Loop',
+        message: 'Get notified about ticket confirmations, event reminders, and new messages.',
+      });
+      if (decision === 'skip') return;
       receive = (await FirebaseMessaging.requestPermissions()).receive;
     }
     if (receive !== 'granted') {
       console.info('[push] permission not granted:', receive);
+      if (receive === 'denied') {
+        notifyPermissionDenied({
+          icon: 'bell',
+          title: 'Notifications Off',
+          message: 'You previously denied notifications. Open Settings to turn them back on so you don’t miss ticket and event updates.',
+        });
+      }
       return;
     }
 

@@ -6,7 +6,9 @@ import { formatPrice } from './data';
 import confetti from 'canvas-confetti';
 import QRCodeLib from 'qrcode';
 import { useSignedTicketToken } from '../../lib/ticketToken';
-import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
+import { renderTicketImage, saveTicketToGallery } from '../../lib/ticketImage';
+import { Capacitor } from '@capacitor/core';
+import { shareLink } from '../../lib/shareLink';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -40,6 +42,11 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   const [saveToast, setSaveToast] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [shareToast, setShareToast] = useState(false);
+  // Guards the toast setTimeouts below — "View My Tickets"/"Back to Home" can
+  // navigate away immediately after a save/share action, and without this the
+  // timeouts would call setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
   // The gate scanner accepts ONLY a signed v2 pass token — a raw id/JSON blob
   // is rejected as "missing cryptographic signature". Mint the same signed
   // token QRTicket uses so this post-purchase QR is scannable too.
@@ -67,43 +74,33 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         signedToken,
       });
       if (!blob) throw new Error('Failed to render ticket image');
-      const saved = await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
-      if (saved) {
+      const result = await saveTicketToGallery(blob, `vents-ticket-${ticket.ticketId}.png`);
+      if (!mountedRef.current) return;
+      if (result === 'saved') {
         setSaveToast(true);
-        setTimeout(() => setSaveToast(false), 2500);
+        setTimeout(() => { if (mountedRef.current) setSaveToast(false); }, 2500);
       } else {
         setSaveError(true);
-        setTimeout(() => setSaveError(false), 3000);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
       }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
-      setSaveError(true);
-      setTimeout(() => setSaveError(false), 3000);
+      if (mountedRef.current) {
+        setSaveError(true);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
+      }
     } finally {
-      setSaving(false);
+      if (mountedRef.current) setSaving(false);
     }
   };
 
   const handleShare = async () => {
     const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
     const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nTicket Reference: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: 'My VENTS Ticket', text, url: eventUrl });
-      } catch {
-        // user cancelled
-      }
-    } else {
-      // Unguarded — rejects on insecure contexts (non-HTTPS) or without a
-      // user-activation gesture, which would have surfaced as an unhandled
-      // promise rejection with no feedback to the user.
-      try {
-        await navigator.clipboard.writeText(text);
-        setShareToast(true);
-        setTimeout(() => setShareToast(false), 2500);
-      } catch {
-        console.warn('Clipboard write failed');
-      }
+    const result = await shareLink({ title: 'My VENTS Ticket', text, url: eventUrl });
+    if (result === 'copied' && mountedRef.current) {
+      setShareToast(true);
+      setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
     }
   };
 
@@ -335,7 +332,9 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       {/* Toast notifications */}
       {saveToast && (
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#10B981', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
-          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Ticket saved</span>
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
+            ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
+          </span>
         </div>
       )}
       {saveError && (

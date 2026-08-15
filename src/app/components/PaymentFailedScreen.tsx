@@ -1,5 +1,5 @@
 import { AlertTriangle, Home, Copy, Check } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 interface PaymentFailedScreenProps {
   eventTitle: string;
@@ -16,12 +16,18 @@ interface PaymentFailedScreenProps {
 // payment reference to quote to support.
 export function PaymentFailedScreen({ eventTitle, reference, message, onGoHome }: PaymentFailedScreenProps) {
   const [copied, setCopied] = useState(false);
+  // Guards the setTimeout below — "Back to Home" can navigate away right
+  // after a copy, and without this the timeout would call setState on an
+  // unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
 
   const handleCopyRef = async () => {
     try {
       await navigator.clipboard.writeText(reference);
+      if (!mountedRef.current) return;
       setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => { if (mountedRef.current) setCopied(false); }, 2000);
     } catch { /* clipboard unavailable — reference is still visible on screen */ }
   };
 

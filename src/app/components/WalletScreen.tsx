@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
 import { insforge, getAuthToken } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
@@ -123,7 +124,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       const [wRes, tRes, bRes, vRes] = await Promise.all([
         supabase.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
         supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
-        supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
+        supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         supabase.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
@@ -144,15 +145,23 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
   // Detect a real platform authenticator (Face ID / Touch ID / Android
   // biometric) so the "Use biometrics" button is only offered when it can
-  // actually run — we never pretend it exists.
+  // actually run — we never pretend it exists. Native previously just
+  // assumed availability from Capacitor.isNativePlatform() alone (the
+  // WebAuthn check below it only runs on web, where PublicKeyCredential
+  // exists) — "biometrics" on native was never actually checked, and
+  // confirmWithBiometrics() below silently fell through to the cached
+  // password with no real biometric prompt at all.
   useEffect(() => {
     let alive = true;
-    const anyWin = window as any;
-    const w: any = anyWin.PublicKeyCredential;
+    if (Capacitor.isNativePlatform()) {
+      import('@capgo/capacitor-native-biometric').then(({ NativeBiometric }) =>
+        NativeBiometric.isAvailable().then((r) => { if (alive) setBiometricAvailable(r.isAvailable); }).catch(() => {})
+      );
+      return () => { alive = false; };
+    }
+    const w: any = (window as any).PublicKeyCredential;
     if (w?.isUserVerifyingPlatformAuthenticatorAvailable) {
       w.isUserVerifyingPlatformAuthenticatorAvailable().then((ok: boolean) => { if (alive) setBiometricAvailable(!!ok); }).catch(() => {});
-    } else if (anyWin.Capacitor?.isNativePlatform?.()) {
-      setBiometricAvailable(true); // native shell exposes biometric APIs
     }
     return () => { alive = false; };
   }, []);
@@ -188,12 +197,20 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const confirmWithBiometrics = async () => {
     setConfirmError('');
     try {
-      const anyWin = window as any;
-      if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
-        const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
-        await navigator.credentials.get({
-          publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
-        } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+      if (Capacitor.isNativePlatform()) {
+        const { NativeBiometric } = await import('@capgo/capacitor-native-biometric');
+        await NativeBiometric.verifyIdentity({
+          reason: 'Confirm this wallet action',
+          title: 'Biometric Confirmation',
+        }).catch(() => { throw new Error('Biometric check was cancelled.'); });
+      } else {
+        const anyWin = window as any;
+        if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
+          const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+          await navigator.credentials.get({
+            publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
+          } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+        }
       }
       if (!cachedPassword.current) {
         setConfirmError('Enter your password once to enable biometric confirmation.');
@@ -321,7 +338,22 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // Remove a linked account — gated.
   const handleRemoveBank = (acct: BankAccount) => {
     requestConfirm(`Remove ${acct.bank_name} · ${acct.account_number}`, async (password) => {
-      await authedFetch('/api/v1/wallet/save-bank', { action: 'remove', account_id: acct.id, password });
+      try {
+        await authedFetch('/api/v1/wallet/save-bank', { action: 'remove', account_id: acct.id, password });
+      } catch (err: any) {
+        // "Bank account not found" means the server already doesn't have an
+        // active row for this id — most likely a stale local list (an
+        // earlier remove succeeded but this screen's state never refreshed,
+        // or another tab/device removed it). The outcome the user wanted —
+        // this account gone — is already true, so refresh and stop rather
+        // than surfacing a scary error and leaving a ghost row the user can
+        // never successfully "remove" again.
+        if (/not found/i.test(err?.message || '')) {
+          await load();
+          return;
+        }
+        throw err;
+      }
       await load();
     });
   };
@@ -348,7 +380,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           <span style={{ color: '#8B8FA8' }}>Loading…</span>
         </div>
       ) : (
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
               <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
@@ -386,9 +418,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             </button>
             <button
               onClick={openAddBank}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: emailVerified === false ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: emailVerified === false ? 0.5 : 1 }}
-              disabled={emailVerified === false}
-              title={emailVerified === false ? 'Verify your email to add a payout bank account' : undefined}
+              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+              disabled={emailVerified === false || bankAccounts.length >= 3}
+              title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
             >
               <Plus size={18} color="#8B8FA8" />
               <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>Add Bank</span>

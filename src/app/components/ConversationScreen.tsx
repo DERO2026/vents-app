@@ -6,6 +6,8 @@ import { supabase } from '../../lib/supabase';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
+import { pickImage } from '../../lib/pickImage';
+import { isOnline as isDeviceOnline } from '../../lib/isOnline';
 
 interface ConversationScreenProps {
   currentUser: { id: string };
@@ -70,6 +72,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   // different topics, not the same channel used both ways.
   const typingSendChannelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   function flash(msg: string) {
     setToast(msg);
@@ -287,29 +291,32 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }, [messages]);
 
   async function attemptSend(localId: string, text: string, replyToId: string | null, attempt: number) {
-    if (!navigator.onLine) {
-      setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
+    if (!(await isDeviceOnline())) {
+      if (isMountedRef.current) setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
       return;
     }
-    setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'sending' } : m));
+    if (isMountedRef.current) setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'sending' } : m));
     try {
       const { error } = await supabase.rpc('send_direct_message', {
         p_recipient_id: otherUser.id, p_body: text, p_event_id: eventId || null,
         p_image_url: null, p_media_type: null, p_reply_to_id: replyToId,
       });
       if (error) throw error;
+      if (!isMountedRef.current) return;
       setPendingMessages(prev => prev.filter(m => m.id !== localId));
       await load();
       loadRequestStatus();
     } catch (e: any) {
       if (String(e?.message || e).includes('blocked') || String(e?.message || e).includes('not accepting')) {
-        setPendingMessages(prev => prev.filter(m => m.id !== localId));
-        flash(e?.message || 'This message could not be delivered.');
+        if (isMountedRef.current) {
+          setPendingMessages(prev => prev.filter(m => m.id !== localId));
+          flash(e?.message || 'This message could not be delivered.');
+        }
         return;
       }
       const delay = Math.min(30000, 1000 * 2 ** attempt);
-      setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
-      setTimeout(() => attemptSend(localId, text, replyToId, attempt + 1), delay);
+      if (isMountedRef.current) setPendingMessages(prev => prev.map(m => m.id === localId ? { ...m, _pending: 'queued' } : m));
+      setTimeout(() => { if (isMountedRef.current) attemptSend(localId, text, replyToId, attempt + 1); }, delay);
     }
   }
 
@@ -463,7 +470,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             </div>
             <button onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', color: '#A78BFA', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+          <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
             {searching ? (
               <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '24px', fontSize: '13px' }}>Searching…</p>
             ) : searchQuery && searchResults.length === 0 ? (
@@ -549,7 +556,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       )}
 
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', scrollbarWidth: 'none' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '20px' }}>Loading…</p>
         ) : messages.length === 0 && pendingMessages.length === 0 ? (
@@ -663,7 +670,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         transform: 'translateZ(0)', position: 'relative', zIndex: 10,
       }}>
         {imageSharingEnabled && (
-          <button onClick={() => imgInputRef.current?.click()} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
+          <button onClick={async () => { const native = await pickImage(); if (native) { sendImageMessage(native); return; } imgInputRef.current?.click(); }} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
             <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
           </button>
         )}

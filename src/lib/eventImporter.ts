@@ -1,8 +1,9 @@
 import { getAuthToken } from './insforge';
 import { REGION } from './regionConfig';
 import { withTimeoutFallback } from './withTimeoutFallback';
-import { isKnownState, isKnownCity } from './nigeriaLocations';
+import { isKnownState, isKnownCity, matchNigeriaState } from './nigeriaLocations';
 import { apiUrl } from './apiBase';
+import { loadGoogleMaps } from './googleMaps';
 
 // Never let a raw SDK/framework error reach an admin's screen (leaks
 // internal implementation details like "InsForgeError: ..."). Log the real
@@ -22,8 +23,11 @@ export function friendlyPublishError(err: any): string {
 export interface ImportedEvent {
   title: string;
   description: string;
+  organizer_name?: string;
   date: string;
+  end_date?: string;
   time: string;
+  end_time?: string;
   venue: string;
   address: string;
   city: string;
@@ -35,6 +39,17 @@ export interface ImportedEvent {
   capacity: number;
   image_url: string;
   source_url: string;
+  contact_phone?: string;
+  social_instagram?: string;
+  // Populated client-side after extraction by resolveEventLocations() below
+  // — never returned by the AI itself, which has no way to geocode.
+  latitude?: number | null;
+  longitude?: number | null;
+  place_id?: string | null;
+  // True once Google Places has confirmed venue+city+state resolve to a
+  // real place — lets the UI show a "location verified" signal distinct
+  // from "the AI merely guessed a plausible-looking city/state".
+  location_verified?: boolean;
 }
 
 
@@ -61,6 +76,69 @@ export async function extractEventsFromText(rawText: string): Promise<ImportedEv
 
 export async function extractEventsFromUrl(url: string): Promise<ImportedEvent[]> {
   return extractEventsFromText(`Event page: ${url}`);
+}
+
+function parseGeocoderAddress(components: any[] | undefined): { city: string; state: string } {
+  const byType = (type: string) => components?.find((c) => c.types?.includes(type))?.long_name ?? '';
+  const city = byType('locality') || byType('administrative_area_level_2') || '';
+  const rawState = byType('administrative_area_level_1');
+  return { city, state: matchNigeriaState(rawState) || rawState };
+}
+
+// Best-effort geocoding pass over already-extracted events — the AI has no
+// way to actually verify a location exists, only to transcribe what the
+// source text says. This resolves venue+city+state (whatever's present)
+// through Google's Geocoder and fills in gaps / confirms the guess with a
+// real coordinate, without ever overriding a field the AI (or an admin
+// editing afterward) already populated with something more specific.
+// Never throws and never blocks the import — a geocoding failure just
+// means the event goes through un-verified, same as before this existed.
+export async function resolveEventLocations(events: ImportedEvent[]): Promise<ImportedEvent[]> {
+  try {
+    await loadGoogleMaps();
+  } catch {
+    return events; // Places unavailable — import still works, just unverified.
+  }
+  const google = (window as any).google;
+  if (!google?.maps?.Geocoder) return events;
+  const geocoder = new google.maps.Geocoder();
+
+  const geocodeOne = (query: string): Promise<{ lat: number; lng: number; placeId: string; city: string; state: string } | null> =>
+    new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 6000);
+      geocoder.geocode({ address: `${query}, Nigeria` }, (results: any[], status: string) => {
+        clearTimeout(timer);
+        if (status !== 'OK' || !results?.[0]) return resolve(null);
+        const r = results[0];
+        const { city, state } = parseGeocoderAddress(r.address_components);
+        resolve({
+          lat: r.geometry.location.lat(),
+          lng: r.geometry.location.lng(),
+          placeId: r.place_id,
+          city,
+          state,
+        });
+      });
+    });
+
+  return Promise.all(
+    events.map(async (event) => {
+      const query = [event.venue, event.city, event.state].filter(Boolean).join(', ');
+      if (!query.trim()) return event; // nothing to geocode at all
+      const geo = await geocodeOne(query);
+      if (!geo) return event;
+      return {
+        ...event,
+        latitude: geo.lat,
+        longitude: geo.lng,
+        place_id: geo.placeId,
+        // Only fills a gap — never overwrites a value the AI already found.
+        city: event.city || geo.city,
+        state: event.state || geo.state,
+        location_verified: true,
+      };
+    })
+  );
 }
 
 // Unauthenticated boolean status check — lets the admin UI show a "setup
@@ -97,7 +175,12 @@ const PUBLISH_TIMEOUT_MS = 12000;
 // publish straight to 'live' with an empty location field, since the row
 // actually written uses the sanitized (possibly blanked) city.
 function isImportComplete(event: ImportedEvent, sanitizedState: string, sanitizedCity: string): boolean {
-  return !!(event.title?.trim() && event.venue?.trim() && event.date && sanitizedState && sanitizedCity);
+  // A Google-verified coordinate (resolveEventLocations already confirmed a
+  // real place exists at venue+city+state) is as good as a clean
+  // state/city match even if the geocoder's own city/state strings didn't
+  // line up perfectly with our canonical list.
+  const locationOk = (sanitizedState && sanitizedCity) || (event.location_verified && event.latitude != null);
+  return !!(event.title?.trim() && event.venue?.trim() && event.date && locationOk);
 }
 
 async function publishOne(event: ImportedEvent, organizerId: string, database: any): Promise<{ ok: true; draft: boolean } | { ok: false; error: string }> {
@@ -110,6 +193,11 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
   const eventDate = event.date
     ? `${event.date}T${time}:00${REGION.timezoneOffset}`
     : new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  // Multi-day support (see migrations/20260802120000_add-end-date-to-events)
+  // — only set when the source text explicitly named a later end date.
+  const endDate = event.end_date
+    ? `${event.end_date}T${event.end_time || time}:00${REGION.timezoneOffset}`
+    : null;
 
   // Never trust an AI-guessed state/city that doesn't match a real Nigerian
   // state/LGA — a wrong value here is worse than a blank one, since a blank
@@ -152,6 +240,7 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
     // `location` string (same convention CreateEventScreen uses on insert).
     location: locationString,
     event_date: eventDate,
+    end_date: endDate,
     price,
     category: categories[0] || '',
     categories,
@@ -166,6 +255,10 @@ async function publishOne(event: ImportedEvent, organizerId: string, database: a
     ticket_goal: capacity,
     ticket_types: ticketTypes,
     start_time: time,
+    end_time: event.end_time || null,
+    latitude: event.latitude ?? null,
+    longitude: event.longitude ?? null,
+    place_id: event.place_id ?? null,
   };
 
   for (let attempt = 0; attempt < 2; attempt++) {

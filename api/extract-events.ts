@@ -65,16 +65,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       signal: ctrl.signal,
       body: JSON.stringify({
         model: 'claude-sonnet-5',
-        max_tokens: 4000,
+        // A full-page copy/paste (nav, footer, cookie banners, multiple
+        // listed events) can genuinely need more than 4000 output tokens
+        // once several events are each extracted to the full schema below —
+        // a response that hits the token cap mid-array silently produces
+        // truncated, unparseable JSON, which the fallback below then had no
+        // choice but to give up on and report as "no events found".
+        max_tokens: 8000,
         messages: [{
           role: 'user',
-          content: `Today is ${today}. Extract all events from this text into the VENTS event schema. May contain one or multiple events.
+          content: `Today is ${today}. Extract all events from this text into the VENTS event schema. The text was copied from a real event page or flyer and may be messy — inconsistent line breaks, mixed-in navigation/ad text, emoji, multiple languages, or run-together sentences. Never fail or refuse because of messy formatting: always return your best-effort extraction for every event you can identify, even from partial or oddly-formatted input. May contain one or multiple events.
 
 For each event return exactly these fields:
 - title: event name
-- description: 2-3 sentence description. Write one if not provided, based on the event name
-- date: YYYY-MM-DD. Assume 2026 if year missing. Use 2-4 weeks from today if no date given at all
-- time: HH:MM 24hr. Default 10:00 if missing
+- description: 2-3 sentence description. Write one if not provided, based on the event name and any other context found
+- organizer_name: the organizing person, brand, or company name if stated (e.g. "DJ Dave", "Eko Events Ltd"). Empty string "" if not mentioned — never guess
+- date: YYYY-MM-DD, the event's start date. Assume 2026 if year missing. Use 2-4 weeks from today if no date given at all
+- end_date: YYYY-MM-DD, ONLY if the text explicitly states the event runs across multiple days (e.g. "Aug 9-11", "runs through Sunday"). Empty string "" for a single-day event — do not invent one
+- time: HH:MM 24hr, start time. Default 10:00 if missing
+- end_time: HH:MM 24hr, ONLY if an explicit end/closing time is stated. Empty string "" if not stated
 - venue: the venue/building/business name ONLY (e.g. "Eko Hotel & Suites", "Baze University") — never a full address, never a city or state
 - address: street-level address detail if explicitly given (street name, area/district). Empty string "" if not stated — do NOT guess or reuse the venue name here
 - city: the city or LGA name, ONLY if explicitly stated or unambiguous from a well-known venue (e.g. "Eko Hotel" -> "Lagos Island" is NOT safe to guess — leave empty unless genuinely confident). Empty string "" if uncertain
@@ -84,11 +93,13 @@ For each event return exactly these fields:
 - is_free: true if the event is free or no price is stated
 - price: ticket price in NGN as a number. 0 if free/unstated
 - capacity: total ticket capacity/quantity as a number if stated, else 0 (means "not specified" — never invent a number)
-- image_url: "" (never fabricate a URL)
+- image_url: a literal, complete image URL (http/https, ending in a common image extension or from an obvious image-hosting path) ONLY if one is actually present verbatim in the text. Empty string "" otherwise — never fabricate or guess a URL
+- contact_phone: a phone number explicitly given for enquiries/booking, digits and leading + only. Empty string "" if none
+- social_instagram: an Instagram handle if stated, without the @ symbol. Empty string "" if none
 
 Leave any field empty ("" or 0) rather than guessing — an admin will fill in anything left blank before publishing. Never place a venue, building, or organization name into the state or city field.
 
-Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ].
+Return ONLY a valid JSON array. No markdown, no backticks, no explanation. Start with [ end with ]. If genuinely no event can be identified in the text at all, return an empty array [] rather than an error.
 
 Text:
 ${text}`
@@ -103,7 +114,12 @@ ${text}`
     }
 
     const data = await response.json();
-    const content = data.content?.[0]?.text || '[]';
+    let content: string = data.content?.[0]?.text || '[]';
+    // Despite the prompt explicitly saying "no markdown, no backticks",
+    // Claude occasionally still wraps the array in a ```json fence anyway —
+    // strip it before attempting to parse rather than relying solely on the
+    // regex fallback below to happen to still work around it.
+    content = content.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
 
     // Claude is asked for a JSON array but nothing enforces that shape — if
     // it ever returns an object instead (e.g. {"events": [...]}), a single
@@ -112,19 +128,50 @@ ${text}`
     // try/catch, and surfaced as an opaque 500 "Unknown error" with no clue
     // what actually happened.
     let events: any = [];
+    let parseFailed = false;
     try {
       events = JSON.parse(content);
     } catch {
       const match = content.match(/\[[\s\S]*\]/);
       if (match) {
-        try { events = JSON.parse(match[0]); } catch { events = []; }
+        try { events = JSON.parse(match[0]); } catch { parseFailed = true; }
+      } else {
+        parseFailed = true;
       }
     }
+
+    // A response that hit max_tokens mid-array is valid up to the last
+    // complete object but has no closing `]` (or `}` on the last object) —
+    // rather than discarding everything already extracted, salvage every
+    // complete `{...}` object found and treat that as the result. Genuinely
+    // better than silently reporting "no events found" when Claude did in
+    // fact find and format several, just ran out of room for the last one.
+    if (parseFailed) {
+      const objectMatches = content.match(/\{[^{}]*\}/g);
+      if (objectMatches) {
+        events = objectMatches
+          .map((s: string) => { try { return JSON.parse(s); } catch { return null; } })
+          .filter(Boolean);
+      }
+    }
+
     if (!Array.isArray(events)) {
       events = Array.isArray(events?.events) ? events.events : [];
     }
 
-    return res.status(200).json({ events: (events as any[]).filter((e: any) => e && e.title) });
+    const finalEvents = (events as any[]).filter((e: any) => e && e.title);
+
+    // Diagnostic logging — visible via `vercel logs` / the dashboard.
+    // Previously this endpoint returned 200 with an empty array on ANY
+    // parse failure with zero trace of what Claude actually said, making a
+    // report of "it found nothing" undiagnosable after the fact.
+    console.log(
+      `[extract-events] input=${text.length}chars stop_reason=${data.stop_reason} ` +
+      `parsedEvents=${finalEvents.length} parseFailed=${parseFailed} ` +
+      `rawContentPreview=${JSON.stringify(content.slice(0, 300))}`
+    );
+
+    return res.status(200).json({ events: finalEvents });
   } catch (error: any) {
     if (error?.name === 'AbortError') {
       return res.status(504).json({ error: 'Extraction took too long. Try a shorter piece of text.' });

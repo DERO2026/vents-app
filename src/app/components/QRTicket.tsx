@@ -5,9 +5,9 @@ import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { useSignedTicketToken } from '../../lib/ticketToken';
 import { analytics } from '../../lib/analyticsEvents';
-import { renderTicketImage, downloadBlob } from '../../lib/ticketImage';
+import { renderTicketImage, downloadBlob, saveTicketToGallery } from '../../lib/ticketImage';
+import { Capacitor } from '@capacitor/core';
 import { ticketDisplayCode } from '../../lib/ticketCode';
-import { openExternalUrl } from '../../lib/externalLink';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -78,25 +78,56 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
   const timestamp = `${ticket.event.date} · ${ticket.event.time}`;
 
+  // Guards the saveError setTimeout below — Back to Home/Back navigates away
+  // immediately after a failed save, and without this the timeout would call
+  // setState on an unmounted component.
+  const mountedRef = useRef(true);
+  useEffect(() => () => { mountedRef.current = false; }, []);
+
   // Track when a holder opens their ticket QR (fires once per open).
   useEffect(() => {
     if (ticket.event?.id) analytics.ticketQrViewed(ticket.event.id);
   }, [ticket.event?.id]);
 
+  // Both Save and Share render the exact same ticket image — pulled into
+  // one helper so the "no signed token yet" guard and the render call
+  // aren't duplicated between them.
+  const renderThisTicket = () =>
+    renderTicketImage({
+      title: ticket.event.title,
+      dateTimeLabel: `${ticket.event.date} · ${ticket.event.time}`,
+      venue: ticket.event.venue,
+      ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
+      holderName: ticket.holderName,
+      referenceNumber: ticketDisplayCode(ticket.ticketId),
+      signedToken,
+    });
+
+  const [sharing, setSharing] = useState(false);
+
+  // Shares the actual ticket image (QR + event details) via the OS share
+  // sheet — distinct from the plain-text "come to this event" share this
+  // button used to send; a share sheet full of apps to send a photo to is
+  // the native pattern here, not a bare text snippet. Deliberately does NOT
+  // include the raw ticket_id or signed token as text anywhere; only the
+  // rendered QR image carries the credential.
   const handleShare = async () => {
-    // Never include the raw ticket_id — only the signed token is ever a
-    // valid entry credential, and it isn't meant to be typed/forwarded as
-    // text anyway. Share plain event details instead.
-    const text = `🏟️ ${ticket.event.title}\n📅 ${ticket.event.date} · ${ticket.event.venue}\n\nSee you there!`;
-    if (navigator.share) {
-      await navigator.share({ title: ticket.event.title, text }).catch(() => {});
-    } else {
-      openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
+    if (sharing || !signedToken) return;
+    setSharing(true);
+    try {
+      const blob = await renderThisTicket();
+      if (!blob) throw new Error('Failed to render ticket image');
+      await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
+    } catch (err) {
+      console.error('Failed to share ticket image:', err);
+    } finally {
+      if (mountedRef.current) setSharing(false);
     }
   };
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
+  const [saveToast, setSaveToast] = useState(false);
 
   const handleSave = async () => {
     // Render a real, self-contained ticket image (event title, date/venue,
@@ -112,28 +143,26 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
     if (saving || !signedToken) return;
     setSaving(true);
     setSaveError(false);
-    let failed = false;
     try {
-      const blob = await renderTicketImage({
-        title: ticket.event.title,
-        dateTimeLabel: `${ticket.event.date} · ${ticket.event.time}`,
-        venue: ticket.event.venue,
-        ticketTypeLabel: `${ticket.ticketType.name} · x${ticket.quantity}`,
-        holderName: ticket.holderName,
-        referenceNumber: ticketDisplayCode(ticket.ticketId),
-        signedToken,
-      });
+      const blob = await renderThisTicket();
       if (!blob) throw new Error('Failed to render ticket image');
-      failed = !(await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`));
+      const result = await saveTicketToGallery(blob, `vents-ticket-${ticket.ticketId}.png`);
+      if (!mountedRef.current) return;
+      if (result === 'saved') {
+        setSaveToast(true);
+        setTimeout(() => { if (mountedRef.current) setSaveToast(false); }, 2500);
+      } else {
+        setSaveError(true);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
+      }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
-      failed = true;
-    } finally {
-      setSaving(false);
-      if (failed) {
+      if (mountedRef.current) {
         setSaveError(true);
-        setTimeout(() => setSaveError(false), 3000);
+        setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);
       }
+    } finally {
+      if (mountedRef.current) setSaving(false);
     }
   };
 
@@ -142,6 +171,13 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       {saveError && (
         <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#EF4444', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
+        </div>
+      )}
+      {saveToast && (
+        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+          <span style={{ color: '#4ADE80', fontSize: '13px', fontWeight: 600 }}>
+            {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
+          </span>
         </div>
       )}
       {/* Header */}
@@ -166,7 +202,10 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         </h1>
         <button
           onClick={handleShare}
-          className="w-9 h-9 rounded-full flex items-center justify-center" style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+          disabled={sharing || !signedToken}
+          className="w-9 h-9 rounded-full flex items-center justify-center"
+          style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1, opacity: (sharing || !signedToken) ? 0.5 : 1, cursor: (sharing || !signedToken) ? 'not-allowed' : 'pointer' }}
+        >
           <Share2 size={16} color="#F0F0FF" />
         </button>
       </div>

@@ -42,6 +42,8 @@ export function NotificationsScreen({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartY = useRef<number | null>(null);
 
   const mapRow = (n: any): Notification => ({
     id: n.id,
@@ -216,8 +218,24 @@ export function NotificationsScreen({
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        position: 'relative',
+      }}
+      onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
+      onTouchEnd={(e) => {
+        if (pullStartY.current === null) return;
+        const dy = e.changedTouches[0].clientY - pullStartY.current;
+        pullStartY.current = null;
+        if (dy > 400 && !pullRefreshing) {
+          setPullRefreshing(true);
+          fetchNotifications().finally(() => setPullRefreshing(false));
+        }
       }}
     >
+      {pullRefreshing && (
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200 }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid rgba(123,47,247,0.2)', borderTop: '3px solid #7B2FF7', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      )}
       {/* Header */}
       <div
         style={{
@@ -361,27 +379,37 @@ export function NotificationsScreen({
               const offsetX = swipe?.id === notif.id ? swipe.offsetX : 0;
               return (
                 <div key={notif.id} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden' }}>
-                  {/* Delete-reveal background */}
-                  <div style={{
-                    position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
-                  }}>
-                    <div
-                      style={{
-                        width: '34px',
-                        height: '34px',
-                        borderRadius: '50%',
-                        background: 'rgba(239,68,68,0.2)',
-                        border: '1px solid rgba(239,68,68,0.35)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <Trash2 size={15} color="#EF4444" />
+                  {/* Delete-reveal background — only exists in the DOM for
+                      the row actually mid-swipe, rather than being rendered
+                      for every row and relying solely on the parent's
+                      overflow:hidden to clip it. A translated sibling can
+                      get promoted to its own compositing layer in some
+                      WebView versions, which has been known to ignore the
+                      ancestor's overflow:hidden clip and show through —
+                      not rendering it at all when idle removes that failure
+                      mode entirely instead of depending on clipping. */}
+                  {offsetX !== 0 && (
+                    <div style={{
+                      position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
+                    }}>
+                      <div
+                        style={{
+                          width: '34px',
+                          height: '34px',
+                          borderRadius: '50%',
+                          background: 'rgba(239,68,68,0.2)',
+                          border: '1px solid rgba(239,68,68,0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0,
+                        }}
+                      >
+                        <Trash2 size={15} color="#EF4444" />
+                      </div>
                     </div>
-                  </div>
+                  )}
                   <div
                     onClick={() => { if (offsetX === 0) markRead(notif.id); }}
                     onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (offsetX === 0) markRead(notif.id); } }}

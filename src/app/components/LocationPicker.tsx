@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { MapPin, Loader, WifiOff } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
+import { isOnline } from '../../lib/isOnline';
 
 export interface LocationValue {
   address: string;
@@ -90,9 +92,7 @@ export function LocationPicker({
   // is ever applied.
   const requestSeqRef = useRef(0);
 
-  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>(
-    typeof navigator !== 'undefined' && navigator.onLine === false ? 'offline' : 'loading'
-  );
+  const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable' | 'offline'>('loading');
   const [retryKey, setRetryKey] = useState(0);
   const [text, setText] = useState(value.address);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -100,10 +100,24 @@ export function LocationPicker({
   const [searching, setSearching] = useState(false);
   const valueRef = useRef(value);
   valueRef.current = value;
+  // Guards fetchSuggestions/reverseGeocode/handleSelect's setState calls
+  // against firing after this component has unmounted (e.g. user picks a
+  // suggestion or a debounced search resolves just as the form navigates
+  // away).
+  const isMountedRef = useRef(true);
+  useEffect(() => () => { isMountedRef.current = false; }, []);
 
   useEffect(() => {
     setText(value.address);
   }, [value.address]);
+
+  // The pending debounced search must not fire after unmount — otherwise a
+  // stale fetchSuggestions call runs against a component that's gone.
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
 
   // A genuinely offline device gets a distinct message from "unavailable"
   // (misconfigured key, blocked request, etc.) — same symptom (no search),
@@ -115,9 +129,24 @@ export function LocationPicker({
       setStatus((s) => (s === 'offline' ? 'loading' : s));
       setRetryKey((k) => k + 1);
     };
-    window.addEventListener('offline', goOffline);
-    window.addEventListener('online', goOnline);
+    // navigator.onLine / the window online/offline events are unreliable in a
+    // WebView (can report connected with no real internet access) — prefer
+    // @capacitor/network's OS-level status on native, same window events on web.
+    let removeNetListener: (() => void) | undefined;
+    if (Capacitor.isNativePlatform()) {
+      (async () => {
+        const { Network } = await import('@capacitor/network');
+        const sub = await Network.addListener('networkStatusChange', (s) => {
+          if (s.connected) goOnline(); else goOffline();
+        });
+        removeNetListener = () => sub.remove();
+      })();
+    } else {
+      window.addEventListener('offline', goOffline);
+      window.addEventListener('online', goOnline);
+    }
     return () => {
+      removeNetListener?.();
       window.removeEventListener('offline', goOffline);
       window.removeEventListener('online', goOnline);
     };
@@ -127,21 +156,24 @@ export function LocationPicker({
   // googleMaps.ts). Only flips `status`; the map effect below waits for
   // 'ready' before touching the DOM.
   useEffect(() => {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) { setStatus('offline'); return; }
     let cancelled = false;
-    loadGoogleMaps()
-      .then(() => {
-        if (cancelled) return;
-        const google = (window as any).google;
-        geocoderRef.current = new google.maps.Geocoder();
-        sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
-        setStatus('ready');
-      })
-      .catch((e) => {
-        console.error('Location search unavailable:', e);
-        if (cancelled) return;
-        setStatus(navigator.onLine === false ? 'offline' : 'unavailable');
-      });
+    isOnline().then((online) => {
+      if (cancelled) return;
+      if (!online) { setStatus('offline'); return; }
+      loadGoogleMaps()
+        .then(() => {
+          if (cancelled) return;
+          const google = (window as any).google;
+          geocoderRef.current = new google.maps.Geocoder();
+          sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+          setStatus('ready');
+        })
+        .catch(async (e) => {
+          console.error('Location search unavailable:', e);
+          if (cancelled) return;
+          setStatus((await isOnline()) ? 'unavailable' : 'offline');
+        });
+    });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [retryKey]);
@@ -208,6 +240,7 @@ export function LocationPicker({
       return;
     }
     geocoderRef.current.geocode({ location: { lat, lng } }, (results: any[], geoStatus: string) => {
+      if (!isMountedRef.current) return;
       const result = geoStatus === 'OK' ? results?.[0] : null;
       const address = result ? result.formatted_address : valueRef.current.address;
       const { city, state, country } = parseAddressComponents(result?.address_components);
@@ -231,38 +264,16 @@ export function LocationPicker({
   // The actual Autocomplete service call. Debounced 300ms from onChange
   // below (step 1 of the requested fix: confirm this is really firing).
   async function fetchSuggestions(query: string) {
-    // TEMP DEBUG (requested): every branch below logs via console.log
-    // (never console.error) specifically so nothing gets lost to a
-    // console filtered to "Info"/"Log" level, or missed as a red line
-    // sitting next to what looks like the important output. The whole
-    // body is one big try/catch so a genuinely unexpected exception still
-    // prints instead of vanishing silently.
-    console.log('[LocationPicker] ① fetchSuggestions called with query:', JSON.stringify(query), '| status:', status);
-
     try {
-      if (status !== 'ready') {
-        console.log('[LocationPicker] ✗ STOPPED — status is', JSON.stringify(status), '(the SDK is not ready yet, so no request was made)');
-        return;
-      }
+      if (status !== 'ready') return;
 
       const google = (window as any).google;
-      const chain = {
-        'window.google': typeof google,
-        'google.maps': typeof google?.maps,
-        'google.maps.places': typeof google?.maps?.places,
-        'google.maps.places.AutocompleteSuggestion': typeof google?.maps?.places?.AutocompleteSuggestion,
-        'google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions': typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions,
-      };
-      console.log('[LocationPicker] ② API surface check:', chain);
-
       if (typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions !== 'function') {
-        console.log(`[LocationPicker] STOPPED - fetchAutocompleteSuggestions is not a function (see the API surface check above for which link in the chain is missing). This usually means the "Places API (New)" product itself is not enabled on this API key's Google Cloud project - separate from HTTP-referrer restrictions - or the loaded library version is stale.`);
         return;
       }
 
       const mySeq = ++requestSeqRef.current;
       setSearching(true);
-      console.log('[LocationPicker] ③ calling fetchAutocompleteSuggestions...');
 
       const response = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
         input: query,
@@ -270,12 +281,8 @@ export function LocationPicker({
         sessionToken: sessionTokenRef.current,
       });
       const raw = response?.suggestions;
-      console.log('[LocationPicker] ④ fetchAutocompleteSuggestions resolved. Raw response:', response, '| suggestions array length:', raw?.length ?? 'undefined (response.suggestions itself is missing!)');
 
-      if (mySeq !== requestSeqRef.current) {
-        console.log('[LocationPicker] ⑤ discarded — a newer keystroke already superseded this request');
-        return;
-      }
+      if (mySeq !== requestSeqRef.current) return;
 
       const mapped: Suggestion[] = (raw || [])
         .filter((s: any) => s.placePrediction)
@@ -285,15 +292,17 @@ export function LocationPicker({
           const secondary = p.secondaryText?.text ?? '';
           return { key: p.placeId || String(i), mainText: main, secondaryText: secondary, prediction: p };
         });
-      console.log('[LocationPicker] ⑤ mapped', mapped.length, 'suggestion(s) into state; opening dropdown:', mapped.length > 0);
+      if (!isMountedRef.current) return;
       setSuggestions(mapped);
       setDropdownOpen(mapped.length > 0);
-    } catch (err: any) {
-      console.log('[LocationPicker] ✗ EXCEPTION THROWN:', err?.message || err, err);
-      setSuggestions([]);
-      setDropdownOpen(false);
+    } catch (err) {
+      console.error('[LocationPicker] fetchSuggestions failed:', err);
+      if (isMountedRef.current) {
+        setSuggestions([]);
+        setDropdownOpen(false);
+      }
     } finally {
-      setSearching(false);
+      if (isMountedRef.current) setSearching(false);
     }
   }
 

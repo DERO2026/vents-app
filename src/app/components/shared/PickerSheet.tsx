@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Search, X, Check, ChevronDown } from 'lucide-react';
 
 export interface PickerOption {
@@ -68,6 +68,12 @@ export function PickerSheet({
   onClose,
   searchPlaceholder = 'Search...',
   searchable = true,
+  // For lists that can never be exhaustive (e.g. every neighbourhood in
+  // Nigeria) — when the typed query matches nothing, offers "Use '<query>'"
+  // so the list is a set of suggestions, not a hard allowlist that blocks
+  // anyone whose city isn't already in it.
+  allowCustom = false,
+  customLabel = (q: string) => `Use "${q}"`,
 }: {
   title: string;
   options: PickerOption[];
@@ -76,11 +82,40 @@ export function PickerSheet({
   onClose: () => void;
   searchPlaceholder?: string;
   searchable?: boolean;
+  allowCustom?: boolean;
+  customLabel?: (query: string) => string;
 }) {
   const [query, setQuery] = useState('');
+  // Drag-to-dismiss — only the grab handle + header area is a drag surface
+  // (not the scrollable option list, so a downward scroll there never gets
+  // mistaken for a dismiss gesture).
+  const [dragY, setDragY] = useState(0);
+  const [dragging, setDragging] = useState(false);
+  const dragStartY = useRef<number | null>(null);
+  const handleDragStart = (e: React.TouchEvent) => {
+    dragStartY.current = e.touches[0].clientY;
+    setDragging(true);
+  };
+  const handleDragMove = (e: React.TouchEvent) => {
+    if (dragStartY.current === null) return;
+    const dy = e.touches[0].clientY - dragStartY.current;
+    if (dy > 0) setDragY(dy);
+  };
+  const handleDragEnd = () => {
+    dragStartY.current = null;
+    setDragging(false);
+    if (dragY > 100) {
+      onClose();
+    } else {
+      setDragY(0);
+    }
+  };
   const filtered = searchable
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
+  const trimmedQuery = query.trim();
+  const exactMatchExists = filtered.some((o) => o.label.toLowerCase() === trimmedQuery.toLowerCase());
+  const showCustomOption = allowCustom && trimmedQuery.length > 0 && !exactMatchExists;
 
   return (
     <div
@@ -116,15 +151,19 @@ export function PickerSheet({
           boxShadow: '0 -20px 50px rgba(0,0,0,0.45)',
           padding: '12px 20px calc(20px + env(safe-area-inset-bottom))',
           animation: 'pickerSheetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          transform: dragY ? `translateY(${dragY}px)` : undefined,
+          transition: dragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Grab handle — the standard bottom-sheet affordance signalling
-            this can be swiped/tapped away, distinct from a full page. */}
-        <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-          <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-        </div>
+        {/* Grab handle + header — the drag surface for swipe-to-dismiss;
+            deliberately excludes the scrollable option list below so a
+            downward scroll there is never mistaken for a dismiss gesture. */}
+        <div onTouchStart={handleDragStart} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
+            <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
+          </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
           <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
             {title}
           </h3>
@@ -145,6 +184,7 @@ export function PickerSheet({
           >
             <X size={15} color="#C4C9E0" />
           </button>
+          </div>
         </div>
 
         {searchable && (
@@ -192,10 +232,28 @@ export function PickerSheet({
             overscrollBehavior: 'contain',
           }}
         >
-          {filtered.length === 0 && (
+          {filtered.length === 0 && !showCustomOption && (
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
               No results found.
             </p>
+          )}
+          {showCustomOption && (
+            <div
+              onClick={() => onSelect(trimmedQuery)}
+              style={{
+                background: 'rgba(168,85,247,0.1)',
+                border: '1.5px dashed rgba(168,85,247,0.4)',
+                borderRadius: '12px',
+                padding: '14px 16px',
+                cursor: 'pointer',
+                color: '#A78BFA',
+                fontSize: '14px',
+                fontWeight: 600,
+                flexShrink: 0,
+              }}
+            >
+              {customLabel(trimmedQuery)}
+            </div>
           )}
           {filtered.map((o) => {
             const isSelected = value === o.value;

@@ -282,12 +282,12 @@ export function ExploreScreen({
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{u.name}</span>
-                            {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" />}
-                            <BadgeChip tier={u.vc_badge} />
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
+                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
+                            {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" style={{ flexShrink: 0 }} />}
+                            <span style={{ flexShrink: 0 }}><BadgeChip tier={u.vc_badge} /></span>
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: '#94A3B8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
@@ -361,8 +361,8 @@ export function ExploreScreen({
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600 }}>{name}</span>
-                              <BadgeChip tier={profile?.vc_badge} />
+                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
+                              <span style={{ flexShrink: 0 }}><BadgeChip tier={profile?.vc_badge} /></span>
                             </div>
                             <span style={{ color: '#94A3B8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                           </div>

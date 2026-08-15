@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X, Check } from 'lucide-react';
 import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
+import { shareLink } from '../../lib/shareLink';
 
 interface InboxScreenProps {
   currentUser: { id: string };
@@ -37,6 +38,8 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   const [actionBusy, setActionBusy] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [pullRefreshing, setPullRefreshing] = useState(false);
+  const pullStartY = useRef<number | null>(null);
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
@@ -189,18 +192,31 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   async function handleShare(thread: Thread) {
     const deepLink = `${window.location.origin}/?user=${thread.otherUserId}`;
     const text = `Check out ${thread.otherUserName} on Vents 👇\n${deepLink}`;
-    try {
-      if (navigator.share) await navigator.share({ title: thread.otherUserName, text, url: deepLink });
-      else { await navigator.clipboard.writeText(deepLink); flash('Profile link copied.'); }
-    } catch {
-      // user cancelled share sheet
-    }
+    const result = await shareLink({ title: thread.otherUserName, text, url: deepLink });
+    if (result === 'copied') flash('Profile link copied.');
     setMenuThread(null);
   }
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+    <div
+      style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
+      onTouchEnd={(e) => {
+        if (pullStartY.current === null) return;
+        const dy = e.changedTouches[0].clientY - pullStartY.current;
+        pullStartY.current = null;
+        if (dy > 400 && !pullRefreshing) {
+          setPullRefreshing(true);
+          load().finally(() => setPullRefreshing(false));
+        }
+      }}
+    >
       <style>{`@keyframes rowIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+      {pullRefreshing && (
+        <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200 }}>
+          <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid rgba(123,47,247,0.2)', borderTop: '3px solid #7B2FF7', animation: 'spin 0.8s linear infinite' }} />
+        </div>
+      )}
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
@@ -246,7 +262,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none' }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px 16px' }}>Loading…</p>
         ) : tab === 'requests' ? (

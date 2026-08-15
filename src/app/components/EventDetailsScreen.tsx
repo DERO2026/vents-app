@@ -23,20 +23,22 @@ import {
   Shield,
   ScanLine,
   LayoutDashboard,
+  AlertCircle,
 } from 'lucide-react';
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
-import { mapDbEventToFrontend } from './HomeScreen';
+import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
+import { downloadBlob } from '../../lib/ticketImage';
+import { shareLink } from '../../lib/shareLink';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { ReportModal } from './ReportModal';
 import { ImageCarousel } from './ImageCarousel';
-import { LazyImage } from './LazyImage';
 import { FlyerLightbox } from './FlyerLightbox';
 import { EventMap } from './EventMap';
 
@@ -254,6 +256,7 @@ export function EventDetailsScreen({
   const canManageDoor = isEventOwner || isSubAdmin || isRootAdmin || isPlatformAdmin;
 
   const [expanded, setExpanded] = useState(false);
+  const [bookingError, setBookingError] = useState<string | null>(null);
   const [showMapDialog, setShowMapDialog] = useState(false);
   const [flyerFullScreen, setFlyerFullScreen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -293,10 +296,13 @@ export function EventDetailsScreen({
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
   const [loadingRelated, setLoadingRelated] = useState(true);
   const [shared, setShared] = useState(false);
+  const [calendarError, setCalendarError] = useState(false);
   const [showReport, setShowReport] = useState(false);
 
   // 1. Static metadata (organizer profile and related events) - fetch once per event
   useEffect(() => {
+    let cancelled = false;
+
     const fetchOrganizerProfile = async () => {
       if (!event.organizer_id) return;
       try {
@@ -305,9 +311,9 @@ export function EventDetailsScreen({
           .select('id, full_name, username, avatar_url, is_verified, state, vc_badge')
           .eq('id', event.organizer_id)
           .maybeSingle();
-        
+
         if (error) throw error;
-        if (data) {
+        if (data && !cancelled) {
           setOrganizerProfile(data);
         }
       } catch (err) {
@@ -341,19 +347,20 @@ export function EventDetailsScreen({
         const { data, error } = await relatedQuery.limit(4);
 
         if (error) throw error;
-        if (data) {
+        if (data && !cancelled) {
           const mapped = data.map(mapDbEventToFrontend);
           setRelatedEvents(mapped);
         }
       } catch (err) {
         console.error('Failed to fetch related events:', err);
       } finally {
-        setLoadingRelated(false);
+        if (!cancelled) setLoadingRelated(false);
       }
     };
 
     fetchOrganizerProfile();
     fetchRelatedEvents();
+    return () => { cancelled = true; };
   }, [event.id, event.category, event.organizer_id]);
 
   // 2. Dynamic attendee count - re-fetch when event changes or booking state updates.
@@ -362,17 +369,19 @@ export function EventDetailsScreen({
   // of payment_status, which could show a different number here than on
   // SalesAnalyticsScreen/OrganizerDashboard for the same event.
   useEffect(() => {
+    let cancelled = false;
     const fetchAttendeeCount = async () => {
       try {
         const { data, error } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
         if (error) throw error;
-        setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
+        if (!cancelled) setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {
         console.error('Failed to fetch attendee count:', err);
       }
     };
 
     fetchAttendeeCount();
+    return () => { cancelled = true; };
   }, [event.id, isBooked]);
 
   const handleShare = async () => {
@@ -384,17 +393,7 @@ export function EventDetailsScreen({
       `📍 ${event.venue}, ${event.city}\n` +
       `\nGet tickets on Vents 👇\n${deepLink}`;
 
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: event.title, text, url: deepLink });
-      } else {
-        await navigator.clipboard.writeText(deepLink).catch(() => {
-          openExternalUrl(`https://wa.me/?text=${encodeURIComponent(text)}`);
-        });
-      }
-    } catch {
-      // User cancelled share
-    }
+    await shareLink({ title: event.title, text, url: deepLink });
     // Always copy to clipboard silently so users can paste the link
     navigator.clipboard.writeText(deepLink).catch(() => {});
     setShared(true);
@@ -424,11 +423,25 @@ export function EventDetailsScreen({
   }
 
   const openMap = (provider: 'google' | 'apple') => {
-    const query = encodeURIComponent(`${event.venue}, ${event.area}, ${event.city}, Nigeria`);
-    const url = provider === 'google'
-      ? `https://www.google.com/maps/search/?api=1&query=${query}`
-      : `https://maps.apple.com/?q=${query}`;
-    openExternalUrl(url);
+    const label = `${event.venue}, ${event.area}, ${event.city}, Nigeria`;
+    const query = encodeURIComponent(label);
+    const hasCoords = event.latitude != null && event.longitude != null;
+    const coords = hasCoords ? `${event.latitude},${event.longitude}` : '';
+    const webUrl = provider === 'google'
+      ? `https://www.google.com/maps/search/?api=1&query=${hasCoords ? coords : query}`
+      : `https://maps.apple.com/?q=${query}${hasCoords ? `&ll=${coords}` : ''}`;
+
+    // Previously attempted a raw geo:/comgooglemaps:// URI scheme first (to
+    // open the actual installed Maps app instead of an in-app browser tab),
+    // with a visibilitychange-based fallback to this same web URL. Reverted:
+    // an unhandled or malformed custom-scheme URI just silently does nothing
+    // in an Android WebView — no error, no navigation, nothing to catch —
+    // and that's exactly what got reported ("nothing happens when I tap
+    // Google Maps"). openExternalUrl + Browser.open() is the same mechanism
+    // already used everywhere else in this app (WhatsApp, Terms, Privacy
+    // links) and has never been reported broken — reliability over the
+    // marginal benefit of skipping the in-app browser tab.
+    openExternalUrl(webUrl);
     setShowMapDialog(false);
   };
   const capacityPct = Math.round((realAttendeeCount / (event.capacity || 1000)) * 100);
@@ -455,24 +468,27 @@ export function EventDetailsScreen({
       `DTSTART:${fmt(dtStart)}`,
       `DTEND:${fmt(dtEnd)}`,
       `SUMMARY:${(event.title || '').replace(/,/g, '\\,')}`,
-      `LOCATION:${(event.venue || '').replace(/,/g, '\\,')}`,
+      `LOCATION:${[event.venue, event.area, event.city, event.state].filter(Boolean).join(', ').replace(/,/g, '\\,')}`,
       `DESCRIPTION:${(event.description || '').replace(/\n/g, '\\n').replace(/,/g, '\\,')}`,
       'END:VEVENT', 'END:VCALENDAR',
     ].join('\r\n');
-  }, [(event as any).event_date, event.date, (event as any).end_time, event.title, event.venue, event.description]);
+  }, [(event as any).event_date, event.date, (event as any).end_time, event.title, event.venue, event.area, event.city, event.state, event.description]);
 
-  // Object URL is created once per icsContent change and explicitly
-  // revoked on the next change/unmount — previously this was recreated on
-  // every single render with no revocation at all, leaking a blob URL
-  // per render for as long as the page stayed open.
-  const [icsUrl, setIcsUrl] = useState<string | null>(null);
-  useEffect(() => {
-    if (!icsContent) { setIcsUrl(null); return; }
-    const blob = new Blob([icsContent], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    setIcsUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [icsContent]);
+  const [addingToCalendar, setAddingToCalendar] = useState(false);
+  const handleAddToCalendar = async () => {
+    if (!icsContent || addingToCalendar) return;
+    setAddingToCalendar(true);
+    try {
+      const blob = new Blob([icsContent], { type: 'text/calendar' });
+      const ok = await downloadBlob(blob, `${event.title || 'event'}.ics`);
+      if (!ok) {
+        setCalendarError(true);
+        setTimeout(() => setCalendarError(false), 2500);
+      }
+    } finally {
+      setAddingToCalendar(false);
+    }
+  };
 
   return (
     <div
@@ -826,15 +842,21 @@ export function EventDetailsScreen({
           />
         </div>
 
-        {/* Add to Calendar — icsUrl is memoized + explicitly revoked (see
-            icsContent/icsUrl above), not recreated on every render. */}
-        {icsUrl && (
+        {/* Add to Calendar — <a download> is a browser-only mechanism that
+            silently no-ops inside a Capacitor WebView release build (no
+            download manager to hand it to). downloadBlob() (ticketImage.ts)
+            already solves exactly this: native writes to cache + opens the
+            OS share sheet (which offers "Add to Calendar"/opens the
+            Calendar app directly for a .ics), web keeps the plain
+            blob-download anchor. */}
+        {icsContent && (
           <SecondaryButton
-            onClick={() => { const a = document.createElement('a'); a.href = icsUrl; a.download = `${event.title || 'event'}.ics`; a.click(); }}
+            onClick={handleAddToCalendar}
+            disabled={addingToCalendar}
             icon={<CalendarPlus size={16} color="#10B981" />}
             style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10B981', marginBottom: '16px' }}
           >
-            Add to Calendar
+            {addingToCalendar ? 'Opening…' : 'Add to Calendar'}
           </SecondaryButton>
         )}
 
@@ -990,8 +1012,8 @@ export function EventDetailsScreen({
                 >
                   <Phone size={16} color="#A855F7" />
                 </a>
-                <a
-                  href={`https://wa.me/${event.contactPhone.replace(/\D/g, '')}`}
+                <button
+                  onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
                   style={{
                     width: '40px',
                     height: '40px',
@@ -1001,11 +1023,11 @@ export function EventDetailsScreen({
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    textDecoration: 'none',
+                    cursor: 'pointer',
                   }}
                 >
                   <MessageCircle size={16} color="#25D366" />
-                </a>
+                </button>
               </div>
             </div>
           </div>
@@ -1219,9 +1241,9 @@ export function EventDetailsScreen({
               Related Events
             </p>
             {loadingRelated ? (
-              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6 }} />
+                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
                 ))}
               </div>
             ) : relatedEvents.length === 0 ? (
@@ -1230,38 +1252,15 @@ export function EventDetailsScreen({
                 <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
               </div>
             ) : (
-              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {relatedEvents.map((evt) => (
-                  <div
+                  <HorizontalEventCard
                     key={evt.id}
-                    onClick={() => onEventPress && onEventPress(evt)}
-                    style={{
-                      width: '150px',
-                      background: '#090514',
-                      border: '1px solid rgba(255,255,255,0.05)',
-                      borderRadius: '16px',
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                    }}
-                  >
-                    <LazyImage
-                      src={evt.image}
-                      thumbnailUrl={(evt as any).thumbnail_url ?? null}
-                      alt=""
-                      objectFit="cover"
-                      style={{ width: '100%', height: '80px' }}
-                    />
-                    <div style={{ padding: '8px' }}>
-                      <p style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden', height: '32px', lineHeight: 1.3, marginBottom: '4px' }}>
-                        {evt.title}
-                      </p>
-                      <p style={{ color: '#8B8FA8', fontSize: '10px' }}>{evt.date}</p>
-                      <p style={{ color: formatPriceRange(evt.ticketTypes) === 'Free' ? '#06D6A0' : '#FFB830', fontSize: '11px', fontWeight: 700, marginTop: '2px' }}>
-                        {formatPriceRange(evt.ticketTypes)}
-                      </p>
-                    </div>
-                  </div>
+                    event={evt}
+                    onPress={() => onEventPress && onEventPress(evt)}
+                    isSaved={false}
+                    onToggleSave={() => {}}
+                  />
                 ))}
               </div>
             )}
@@ -1362,6 +1361,14 @@ export function EventDetailsScreen({
         </div>
       )}
 
+      {bookingError && (
+        <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '88px', zIndex: 20 }}>
+          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: '#FCA5A5', fontSize: '13px', fontWeight: 600 }}>
+            {bookingError}
+          </div>
+        </div>
+      )}
+
       {/* Sticky bottom bar */}
       <div
         style={{
@@ -1393,7 +1400,8 @@ export function EventDetailsScreen({
               }
             } catch (err: any) {
               console.error('BOOK BUTTON CRASH:', err);
-              alert('Booking error: ' + (err?.message || String(err)));
+              setBookingError(err?.message || String(err));
+              setTimeout(() => setBookingError(null), 3500);
             }
           }}
           disabled={!canBook || purchasesDisabled}
@@ -1449,6 +1457,19 @@ export function EventDetailsScreen({
         }}>
           <CheckCircle size={14} color="#fff" />
           Link copied to clipboard!
+        </div>
+      )}
+
+      {calendarError && (
+        <div style={{
+          position: 'absolute', top: '30px', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(239,68,68,0.95)', backdropFilter: 'blur(10px)',
+          border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '8px 16px',
+          zIndex: 100, color: '#fff', fontSize: '13px', fontWeight: 600,
+          boxShadow: '0 4px 12px rgba(0,0,0,0.25)', display: 'flex', alignItems: 'center', gap: '6px',
+        }}>
+          <AlertCircle size={14} color="#fff" />
+          Couldn't open calendar. Please try again.
         </div>
       )}
       {showReport && currentUserId && (
