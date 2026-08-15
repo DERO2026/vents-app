@@ -1,8 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
-import { insforge, getAuthToken } from '../../lib/insforge';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 

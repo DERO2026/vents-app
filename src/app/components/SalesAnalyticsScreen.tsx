@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 
 interface SalesAnalyticsScreenProps {

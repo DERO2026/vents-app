@@ -1,7 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, X } from 'lucide-react';
 import { OrganizerEvent } from './types';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { sanitize } from '../../lib/sanitize';
 import { eventCreateSchema, firstValidationError } from '../../lib/schemas';

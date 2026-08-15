@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
-import { insforge, getAuthToken } from '../../lib/insforge';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';

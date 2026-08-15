@@ -4,7 +4,6 @@ import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
-import { insforge } from '../../lib/insforge';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';

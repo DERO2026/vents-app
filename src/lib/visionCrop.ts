@@ -1,4 +1,4 @@
-import { getAuthToken } from './insforge';
+import { getAuthToken } from './supabase';
 import { apiUrl } from './apiBase';
 
 // Client for the serverless vision endpoint (api/vision/smart-crop). Downscales
