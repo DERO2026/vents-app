@@ -198,6 +198,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   // separately so the selector can change without re-parsing the input.
   const [phone, setPhone] = useState<string>('');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
+  // NIGERIA_STATES only makes sense for a Nigerian phone/account — every
+  // other country falls back to a free-text region field rather than a
+  // fabricated or incorrect subdivision list (no per-country states/
+  // provinces data exists yet for the other ~189 countries).
+  const isNigeriaSelected = (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso === 'NG';
+  const handlePhoneCountryChange = (code: string) => {
+    // Switching country must not leave a stale Nigerian state (or a
+    // free-text value typed for a different country) behind.
+    setPhoneCountryCode(code);
+    setSignupState('');
+  };
   const [loading, setLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
   const [emailTouched, setEmailTouched] = useState(false);
@@ -1651,7 +1662,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {mode === 'signup' && (
                 <PhoneInput
                   countryCode={phoneCountryCode}
-                  onCountryCodeChange={setPhoneCountryCode}
+                  onCountryCodeChange={handlePhoneCountryChange}
                   value={phone}
                   onChange={setPhone}
                   height={52}
@@ -1737,43 +1748,56 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {mode === 'signup' && (
                 <>
                   
-                  {/* State selector */}
-                  <div
-                    onClick={() => setShowStateDropdown(true)}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      background: FIELD_BG,
-                      border: `1px solid ${FIELD_BORDER}`,
-                      borderRadius: FIELD_RADIUS,
-                      padding: '14px 16px',
-                      gap: '12px',
-                      position: 'relative',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <MapPin size={18} color="#8B8FA8" />
+                  {/* State selector — Nigerian users get the existing
+                      NIGERIA_STATES picker; every other country falls back
+                      to a free-text State/Region field (see
+                      isNigeriaSelected above). */}
+                  {isNigeriaSelected ? (
                     <div
+                      onClick={() => setShowStateDropdown(true)}
                       style={{
-                        flex: 1,
-                        color: signupState ? '#F0F0FF' : '#8B8FA8',
-                        fontSize: '14px',
-                        fontFamily: 'Inter, sans-serif',
-                        textAlign: 'left',
+                        display: 'flex',
+                        alignItems: 'center',
+                        background: FIELD_BG,
+                        border: `1px solid ${FIELD_BORDER}`,
+                        borderRadius: FIELD_RADIUS,
+                        padding: '14px 16px',
+                        gap: '12px',
+                        position: 'relative',
+                        cursor: 'pointer',
                       }}
                     >
-                      {signupState || 'Select State'}
+                      <MapPin size={18} color="#8B8FA8" />
+                      <div
+                        style={{
+                          flex: 1,
+                          color: signupState ? '#F0F0FF' : '#8B8FA8',
+                          fontSize: '14px',
+                          fontFamily: 'Inter, sans-serif',
+                          textAlign: 'left',
+                        }}
+                      >
+                        {signupState || 'Select State'}
+                      </div>
+                      <ChevronDown
+                        size={16}
+                        color="#8B8FA8"
+                        style={{
+                          pointerEvents: 'none',
+                          position: 'absolute',
+                          right: '16px',
+                        }}
+                      />
                     </div>
-                    <ChevronDown
-                      size={16}
-                      color="#8B8FA8"
-                      style={{
-                        pointerEvents: 'none',
-                        position: 'absolute',
-                        right: '16px',
-                      }}
+                  ) : (
+                    <InputRow
+                      icon={MapPin}
+                      placeholder="State / Region / Province"
+                      value={signupState}
+                      onChange={setSignupState}
+                      onEnter={submitOnEnter}
                     />
-                  </div>
+                  )}
 
                   {/* Role picker — hidden if role was pre-selected from RoleSelectScreen */}
                   {!userRole && <div style={{ marginTop: '4px' }}>
@@ -1897,7 +1921,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         )}
       </div>
       
-      {showStateDropdown && (
+      {showStateDropdown && isNigeriaSelected && (
         <PickerSheet
           title="Select State"
           searchPlaceholder="Search state..."
