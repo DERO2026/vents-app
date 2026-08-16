@@ -6,6 +6,7 @@ import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { haptics } from '../../lib/haptics';
+import { Sentry } from '../../lib/sentry';
 
 interface ExploreScreenProps {
   onUserPress: (user: UserProfile) => void;
@@ -139,6 +140,7 @@ export function ExploreScreen({
           })));
         } catch (err) {
           console.error('Failed to build conversation list:', err);
+          Sentry.captureException(err);
         } finally {
           setLoadingChats(false);
         }
@@ -157,6 +159,7 @@ export function ExploreScreen({
       if (action === 'accept') loadConversations();
     } catch (err) {
       console.error('Failed to respond to message request:', err);
+      Sentry.captureException(err);
     } finally {
       setRespondingId(null);
     }

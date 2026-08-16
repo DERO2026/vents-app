@@ -19,6 +19,7 @@ import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
 import { REGION } from '../../lib/regionConfig';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
+import { Sentry } from '../../lib/sentry';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -621,6 +622,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
     } catch (err: any) {
       console.error('Failed to save event:', err);
+      Sentry.captureException(err);
       setErrorMessage(err.message || 'Failed to save event. Please try again.');
     } finally {
       setSubmitting(false);
@@ -719,6 +721,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       onUpdated?.(updatedEvent);
     } catch (err: any) {
       console.error('Failed to update event:', err);
+      Sentry.captureException(err);
       setErrorMessage(err.message || 'Failed to update event. Please try again.');
     } finally {
       setSubmitting(false);

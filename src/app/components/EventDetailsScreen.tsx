@@ -25,6 +25,7 @@ import {
   LayoutDashboard,
   AlertCircle,
 } from 'lucide-react';
+import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
@@ -114,6 +115,7 @@ function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string):
       }
     } catch (e) {
       console.error("Failed to parse fallback date:", e);
+      Sentry.captureException(e);
     }
   }
 
@@ -317,6 +319,7 @@ export function EventDetailsScreen({
         }
       } catch (err) {
         console.error('Failed to fetch organizer profile:', err);
+        Sentry.captureException(err);
       }
     };
 
@@ -352,6 +355,7 @@ export function EventDetailsScreen({
         }
       } catch (err) {
         console.error('Failed to fetch related events:', err);
+        Sentry.captureException(err);
       } finally {
         if (!cancelled) setLoadingRelated(false);
       }
@@ -376,6 +380,7 @@ export function EventDetailsScreen({
         if (!cancelled) setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {
         console.error('Failed to fetch attendee count:', err);
+        Sentry.captureException(err);
       }
     };
 
@@ -1399,6 +1404,7 @@ export function EventDetailsScreen({
               }
             } catch (err: any) {
               console.error('BOOK BUTTON CRASH:', err);
+              Sentry.captureException(err);
               setBookingError(err?.message || String(err));
               setTimeout(() => setBookingError(null), 3500);
             }

@@ -625,6 +625,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         }
       } catch (err) {
         console.error("Failed to check username availability:", err);
+        Sentry.captureException(err);
       } finally {
         setUsernameChecking(false);
       }
@@ -664,6 +665,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         }
       } catch (err) {
         console.error("Failed to load profile:", err);
+        Sentry.captureException(err);
       } finally {
         setLoading(false);
       }
@@ -1474,6 +1476,7 @@ export function SettingsScreen({
       setTimeout(() => setNotifsCleared(false), 2500);
     } catch (err) {
       console.error('Failed to clear notifications:', err);
+      Sentry.captureException(err);
     } finally {
       setClearingNotifs(false);
     }
@@ -1681,6 +1684,7 @@ function DeleteAccountScreen({
       setTimeout(() => onDeleted(), 3000);
     } catch (err: any) {
       console.error('Account deletion failed:', err);
+      Sentry.captureException(err);
       setError('Account deletion failed. Please try again or contact support@getvents.com.');
     } finally {
       setLoading(false);

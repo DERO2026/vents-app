@@ -6,6 +6,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { Sentry } from '../../lib/sentry';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -92,6 +93,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       }
     } catch (err) {
       console.error('Failed to fetch organizer events:', err);
+      Sentry.captureException(err);
     }
   };
 
@@ -133,6 +135,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           if (onPromoted) onPromoted();
         } catch (err: any) {
           console.error('Failed to activate event promotion:', err);
+          Sentry.captureException(err);
           // err?.message is set from the API's own error response above and
           // is almost always truthy, so `err?.message || '...reference: X'`
           // never actually reached the reference — the one thing the user

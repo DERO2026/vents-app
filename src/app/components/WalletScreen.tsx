@@ -4,6 +4,7 @@ import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Chec
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
+import { Sentry } from '../../lib/sentry';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -135,6 +136,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       setEmailVerified(vRes.data === true);
     } catch (e) {
       console.error('Wallet load error:', e);
+      Sentry.captureException(e);
     } finally {
       setLoading(false);
     }
@@ -276,6 +278,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       setBanks(json.banks || []);
     } catch (e: any) {
       console.error('Failed to load bank list:', e);
+      Sentry.captureException(e);
       setBanksError(e?.message || 'Failed to load bank list. Check your connection and try again.');
     } finally {
       setBanksLoading(false);

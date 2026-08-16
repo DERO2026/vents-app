@@ -8,6 +8,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { renderTicketImage, downloadBlob, saveTicketToGallery } from '../../lib/ticketImage';
 import { Capacitor } from '@capacitor/core';
 import { ticketDisplayCode } from '../../lib/ticketCode';
+import { Sentry } from '../../lib/sentry';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -52,7 +53,7 @@ function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) 
         ctx?.drawImage(offscreen, 0, 0);
         drawnRef.current = value;
       })
-      .catch(console.error);
+      .catch((e) => { console.error(e); Sentry.captureException(e); });
   }, [value, size]);
 
   return (
@@ -120,6 +121,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       await downloadBlob(blob, `vents-ticket-${ticket.ticketId}.png`);
     } catch (err) {
       console.error('Failed to share ticket image:', err);
+      Sentry.captureException(err);
     } finally {
       if (mountedRef.current) setSharing(false);
     }
@@ -157,6 +159,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
+      Sentry.captureException(err);
       if (mountedRef.current) {
         setSaveError(true);
         setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);

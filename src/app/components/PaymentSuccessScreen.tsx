@@ -9,6 +9,7 @@ import { useSignedTicketToken } from '../../lib/ticketToken';
 import { renderTicketImage, saveTicketToGallery } from '../../lib/ticketImage';
 import { Capacitor } from '@capacitor/core';
 import { shareLink } from '../../lib/shareLink';
+import { Sentry } from '../../lib/sentry';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -85,6 +86,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       }
     } catch (err) {
       console.error('Failed to save ticket image:', err);
+      Sentry.captureException(err);
       if (mountedRef.current) {
         setSaveError(true);
         setTimeout(() => { if (mountedRef.current) setSaveError(false); }, 3000);

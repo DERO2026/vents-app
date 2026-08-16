@@ -5,6 +5,7 @@ import { X, Check, Crop as CropIcon, RotateCcw, Sparkles, HelpCircle } from 'luc
 import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { computeSmartCropCached, cropFromFocus, type AreaPct } from '../../lib/smartCrop';
 import { fetchVisionFocus, type VisionFocus } from '../../lib/visionCrop';
+import { Sentry } from '../../lib/sentry';
 
 interface ImageCropperModalProps {
   imageSrc: string;
@@ -314,6 +315,7 @@ export function ImageCropperModal({
       onCropComplete(blob);
     } catch (e) {
       console.error('Failed to crop image:', e);
+      Sentry.captureException(e);
       setError('Could not crop this image. Try again or pick a different photo.');
       setBusy(false);
     }

@@ -17,6 +17,7 @@ import { signupSchema, loginSchema, firstValidationError } from '../../lib/schem
 import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
+import { Sentry } from '../../lib/sentry';
 
 // Best-effort abuse guard for traffic going through this screen — Supabase
 // Auth's own endpoints run outside our schema, so this can't stop a scripted
@@ -366,6 +367,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       }
     } catch (err: any) {
       console.error("Failed to upload avatar:", err);
+      Sentry.captureException(err);
       setErrorMessage(err.message || "Failed to upload photo. Proceeding without avatar.");
     } finally {
       setAvatarUploading(false);
@@ -487,6 +489,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             else sessionStorage.removeItem('vents_ref_code');
           } catch (e) {
             console.error('Referral completion threw:', e);
+            Sentry.captureException(e);
           }
         }
 
@@ -690,7 +693,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             state: userMetaPayload.state,
             avatar_url: userMetaPayload.avatar_url || null,
             date_of_birth: dob || null,
-          }, { onConflict: 'id' }).then(() => {}, (e: any) => console.error('Signup Failure Trace — profile upsert:', e));
+          }, { onConflict: 'id' }).then(() => {}, (e: any) => { console.error('Signup Failure Trace — profile upsert:', e); Sentry.captureException(e); });
         }
 
         // Session persistence across reloads is handled automatically by
@@ -797,6 +800,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       // Always log the raw error — the friendly-message mapping below can
       // otherwise swallow the real cause with zero diagnostic trail.
       console.error(`${mode === 'signup' ? 'Signup' : mode === 'login' ? 'Login' : 'Auth'} Failure Trace:`, err);
+      Sentry.captureException(err);
       const msg = (typeof err?.message === 'string' ? err.message : '') + ' ' +
         (typeof err?.error_description === 'string' ? err.error_description : '');
       const msgL = msg.toLowerCase();

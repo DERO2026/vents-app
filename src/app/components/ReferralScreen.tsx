@@ -3,6 +3,7 @@ import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lu
 import { supabase } from '../../lib/supabase';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 import { haptics } from '../../lib/haptics';
+import { Sentry } from '../../lib/sentry';
 
 const MAX_REFERRALS = 5;
 const CENTS_PER_REFERRAL = 300;
@@ -77,6 +78,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         setProfileBonusClaimed(!!(bonusRes.data));
       } catch (err) {
         console.error('Failed to load VC data:', err);
+        Sentry.captureException(err);
       } finally {
         setLoading(false);
       }
@@ -93,6 +95,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       setReferrals((prev) => prev.filter((r) => r.id !== id));
     } catch (err: any) {
       console.error('Could not cancel invite:', err?.message || err);
+      Sentry.captureException(err?.message || err);
     } finally {
       setCancellingId(null);
       setConfirmCancel(null);

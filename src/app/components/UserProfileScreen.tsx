@@ -5,6 +5,7 @@ import { UserProfile } from './types';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { shareLink } from '../../lib/shareLink';
+import { Sentry } from '../../lib/sentry';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -74,6 +75,7 @@ export function UserProfileScreen({
       setIsBlocked(!isBlocked);
     } catch (err: any) {
       console.error('Block/unblock failed:', err);
+      Sentry.captureException(err);
     } finally {
       setBlockLoading(false);
     }
@@ -134,6 +136,7 @@ export function UserProfileScreen({
         setEventsAttended(distinctEvents.size);
       } catch (err) {
         console.error("Failed to fetch user profile stats:", err);
+        Sentry.captureException(err);
       }
     }
     fetchStats();

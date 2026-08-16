@@ -7,6 +7,7 @@ import {
   Sparkles,
   ScanLine,
 } from 'lucide-react';
+import { Sentry } from '../../lib/sentry';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
@@ -116,6 +117,7 @@ export function OrganizerDashboard({
         // events, ₦0 revenue" — indistinguishable, and the worst possible
         // false message for an organizer checking numbers on event day.
         console.error("Failed to load organizer dashboard data:", err);
+        Sentry.captureException(err);
         setLoadError(err?.message || 'Could not load your dashboard. Pull to refresh or try again shortly.');
       } finally {
         setLoading(false);

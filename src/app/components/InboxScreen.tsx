@@ -3,6 +3,7 @@ import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X,
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { shareLink } from '../../lib/shareLink';
+import { Sentry } from '../../lib/sentry';
 
 interface InboxScreenProps {
   currentUser: { id: string };
@@ -122,6 +123,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       );
     } catch (e) {
       console.error('InboxScreen load error', e);
+      Sentry.captureException(e);
     } finally {
       setLoading(false);
     }

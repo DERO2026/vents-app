@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import { SecondaryButton } from './shared/Button';
+import { Sentry } from '../../lib/sentry';
 
 interface EventMapProps {
   latitude: number | null | undefined;
@@ -43,6 +44,7 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
       .then(() => { if (!cancelled) setStatus('ready'); })
       .catch((e) => {
         console.error('Event map unavailable:', e);
+        Sentry.captureException(e);
         if (!cancelled) setStatus('unavailable');
       });
     return () => { cancelled = true; };

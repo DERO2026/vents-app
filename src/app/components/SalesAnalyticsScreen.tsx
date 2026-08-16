@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
+import { Sentry } from '../../lib/sentry';
 
 interface SalesAnalyticsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -345,6 +346,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         });
       } catch (err) {
         console.error("Failed to load analytics:", err);
+        Sentry.captureException(err);
       } finally {
         setLoading(false);
       }

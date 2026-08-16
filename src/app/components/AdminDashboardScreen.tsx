@@ -7,6 +7,7 @@ import {
   Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
 } from 'lucide-react';
+import { Sentry } from '../../lib/sentry';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
@@ -189,6 +190,7 @@ async function notifyByEmail(requestType: 'organizer' | 'cac' | 'payout', reques
     });
   } catch (err) {
     console.error('Notification email failed:', err);
+    Sentry.captureException(err);
   }
 }
 
@@ -255,6 +257,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
       const { data: walsRaw, error: walError } = walRes;
       if (reqError || walError) {
         console.error('PayoutsTab load error:', reqError || walError);
+        Sentry.captureException(reqError || walError);
         setLoadError((reqError || walError)?.message || 'Failed to load payouts.');
       }
       // organizer_wallets FK points to auth.users — PostgREST can't embed it.
@@ -295,6 +298,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
       setWallets(wals);
     } catch (err: any) {
       console.error('PayoutsTab load threw:', err);
+      Sentry.captureException(err);
       setLoadError(err?.message || 'Failed to load payouts.');
     } finally {
       setLoading(false);
@@ -772,7 +776,7 @@ export function AdminDashboardScreen({
         credits: Number(row.credits || 0),
         debits: Number(row.debits || 0),
       });
-    }, (err: any) => console.error('VC aggregates fetch error:', err));
+    }, (err: any) => { console.error('VC aggregates fetch error:', err); Sentry.captureException(err); });
     setVcLoading(true);
     supabase
       .from('vc_transactions')
@@ -781,7 +785,7 @@ export function AdminDashboardScreen({
       .limit(100)
       .then(
         ({ data }) => { setVcTxns(data || []); setVcLoading(false); },
-        (err) => { console.error('VC transactions fetch error:', err); setVcLoading(false); }
+        (err) => { console.error('VC transactions fetch error:', err); Sentry.captureException(err); setVcLoading(false); }
       );
   }, [tab]);
 
@@ -857,7 +861,7 @@ export function AdminDashboardScreen({
       .limit(50)
       .then(
         ({ data }) => { setPendingOrgs(data || []); setPendingOrgsLoading(false); },
-        (err) => { console.error('Pending orgs fetch error:', err); setPendingOrgsLoading(false); }
+        (err) => { console.error('Pending orgs fetch error:', err); Sentry.captureException(err); setPendingOrgsLoading(false); }
       );
   }, [tab]);
 
@@ -874,6 +878,7 @@ export function AdminDashboardScreen({
       setCacRequests(data || []);
     } catch (err) {
       console.error('CAC requests fetch error:', err);
+      Sentry.captureException(err);
       setCacRequests([]);
     } finally {
       setCacRequestsLoading(false);
@@ -905,6 +910,7 @@ export function AdminDashboardScreen({
       });
     } catch (err) {
       console.error('Verification stats fetch error:', err);
+      Sentry.captureException(err);
       setVerifyStats(null);
     } finally {
       setVerifyStatsLoading(false);
@@ -1191,6 +1197,7 @@ export function AdminDashboardScreen({
         setOrgRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
       } catch (error: any) {
         console.error('Org requests fetch error:', error);
+        Sentry.captureException(error);
         flash(false, 'Failed to load requests: ' + (error?.message || JSON.stringify(error)));
       } finally {
         setOrgRequestsLoading(false);
@@ -1289,6 +1296,7 @@ export function AdminDashboardScreen({
         }
       } catch (err) {
         console.error('Reports fetch error:', err);
+        Sentry.captureException(err);
       } finally {
         setReportsLoading(false);
       }
@@ -1607,7 +1615,7 @@ export function AdminDashboardScreen({
           await writeAuditLog(currentUser,'ROOT_broadcast', null, { message: broadcastMsg, recipients: allUsers?.length ?? 0 });
           setBroadcastMsg('');
           flash(true, `Broadcast sent to ${allUsers?.length ?? 0} users.`);
-        } catch (err: any) { console.error('Broadcast error:', JSON.stringify(err), err?.message, err?.code, err?.details); flash(false, err?.message || 'Failed to broadcast.'); }
+        } catch (err: any) { console.error('Broadcast error:', JSON.stringify(err), err?.message, err?.code, err?.details); Sentry.captureException(err); flash(false, err?.message || 'Failed to broadcast.'); }
         finally { setIsSending(false); }
       },
     });
@@ -2918,6 +2926,7 @@ export function AdminDashboardScreen({
                         return { ...event, image_url: asset.url };
                       } catch (e) {
                         console.error('[admin-import] flyer upload failed for index', i, e);
+                        Sentry.captureException(e);
                         return event; // fall back to the AI's image_url rather than blocking the whole publish
                       }
                     }));

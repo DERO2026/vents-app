@@ -7,6 +7,7 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { haptics } from '../../lib/haptics';
 import { pickImage } from '../../lib/pickImage';
 import { isOnline as isDeviceOnline } from '../../lib/isOnline';
+import { Sentry } from '../../lib/sentry';
 
 interface ConversationScreenProps {
   currentUser: { id: string };
@@ -181,6 +182,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       }
     } catch (e) {
       console.error('ConversationScreen load error', e);
+      Sentry.captureException(e);
     } finally {
       setLoading(false);
     }
@@ -259,6 +261,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       loadRequestStatus();
     } catch (e: any) {
       console.error('Image send failed', e);
+      Sentry.captureException(e);
       flash(e?.message || 'Failed to send image');
     } finally { setUploadingImg(false); }
   }, [currentUser.id, otherUser.id, eventId, imageSharingEnabled]);

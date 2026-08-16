@@ -4,6 +4,7 @@ import { Capacitor } from '@capacitor/core';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
 import { isOnline } from '../../lib/isOnline';
+import { Sentry } from '../../lib/sentry';
 
 export interface LocationValue {
   address: string;
@@ -170,6 +171,7 @@ export function LocationPicker({
         })
         .catch(async (e) => {
           console.error('Location search unavailable:', e);
+          Sentry.captureException(e);
           if (cancelled) return;
           setStatus((await isOnline()) ? 'unavailable' : 'offline');
         });
@@ -297,6 +299,7 @@ export function LocationPicker({
       setDropdownOpen(mapped.length > 0);
     } catch (err) {
       console.error('[LocationPicker] fetchSuggestions failed:', err);
+      Sentry.captureException(err);
       if (isMountedRef.current) {
         setSuggestions([]);
         setDropdownOpen(false);
@@ -353,6 +356,7 @@ export function LocationPicker({
       if (lat != null && lng != null) placeMarker(lat, lng);
     } catch (err) {
       console.error('Failed to resolve selected place:', err);
+      Sentry.captureException(err);
     } finally {
       // New session for the next search, per Google's billing guidance —
       // one token covers "type → select", not the whole component lifetime.

@@ -16,6 +16,7 @@ import {
   Camera,
   Wallet,
 } from 'lucide-react';
+import { Sentry } from '../../lib/sentry';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -178,6 +179,7 @@ export function ProfileScreen({
         }
       } catch (err) {
         console.error("Failed to fetch profile stats:", err);
+        Sentry.captureException(err);
       }
     }
     fetchStats();

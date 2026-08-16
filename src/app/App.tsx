@@ -97,6 +97,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("ErrorBoundary caught an error:", error, errorInfo);
+    Sentry.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
   }
 
   public render() {
@@ -419,6 +420,7 @@ export default function App() {
             .then(({ data: evtData, error: evtError }: any) => {
               if (evtError) {
                 console.error('Failed to load event from deep link:', evtError);
+                Sentry.captureException(evtError);
                 setAppToastError('Could not open that event link. Please try again.');
                 return;
               }
@@ -433,6 +435,7 @@ export default function App() {
               }
             }, (err: any) => {
               console.error('Deep link event fetch failed:', err);
+              Sentry.captureException(err);
               setAppToastError('Could not open that event link. Please try again.');
             })
             .finally(() => { setDeepLinkPending(false); });
@@ -464,6 +467,7 @@ export default function App() {
               setScreen('user-profile');
             }, (err: any) => {
               console.error('Deep link user fetch failed:', err);
+              Sentry.captureException(err);
               setAppToastError('Could not open that profile link. Please try again.');
             })
             .finally(() => { setDeepLinkPending(false); });
@@ -574,6 +578,7 @@ export default function App() {
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
+        Sentry.captureException(err);
         setAuthError(err?.message || "An unexpected error occurred during auth rehydration.");
         setCurrentUser(null);
       } finally {
@@ -726,6 +731,7 @@ export default function App() {
         if (data) setBlockedIds(new Set(data.map((b: any) => b.blocked_id)));
       } catch (err) {
         console.error('Failed to fetch blocked users:', err);
+        Sentry.captureException(err);
       }
     }
     fetchBlocked();
@@ -765,6 +771,7 @@ export default function App() {
         }
       } catch (err) {
         console.error("Failed to fetch saved events:", err);
+        Sentry.captureException(err);
       }
     }
     fetchSavedEvents();
@@ -1072,6 +1079,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch events / rank feed centrally:', err);
+      Sentry.captureException(err);
     } finally {
       setLoadingEvents(false);
     }
@@ -1104,6 +1112,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to fetch unread notifications count:", err);
+      Sentry.captureException(err);
     }
   }, [currentUser]);
 
@@ -1335,6 +1344,7 @@ export default function App() {
       // reference so the user can get support, and never trigger a
       // duplicate charge automatically.
       console.error('Failed to create ticket after payment:', err);
+      Sentry.captureException(err);
       setPaymentFailure({
         eventTitle: ticket.event.title,
         reference: ticket.ticketId ?? 'unknown',
@@ -1405,6 +1415,7 @@ export default function App() {
       }
     } catch (err) {
       console.error("Failed to toggle save event:", err);
+      Sentry.captureException(err);
       // Revert optimistic update
       setSavedEvents((prev) =>
         isSaved ? [...prev, eventId] : prev.filter((id) => id !== eventId)
@@ -1636,6 +1647,7 @@ export default function App() {
       await supabase.auth.signOut();
     } catch (err) {
       console.error("Sign out error:", err);
+      Sentry.captureException(err);
     }
     setCurrentUser(null);
     setUserRole('attendee');
@@ -1858,6 +1870,7 @@ export default function App() {
                         await supabase.rpc('promote_to_organizer');
                       } catch (err) {
                         console.error('Failed to promote to organizer:', err);
+                        Sentry.captureException(err);
                       }
                     }
                   } else {
@@ -2001,6 +2014,7 @@ export default function App() {
                       const alreadyOrganizer = promoteErr?.message?.includes('already been set');
                       if (promoteErr && !alreadyOrganizer) {
                         console.error('Failed to promote to organizer:', JSON.stringify(promoteErr));
+                        Sentry.captureException(promoteErr);
                         setCurrentUser(prev => prev ? { ...prev, role: 'user' } : null);
                         setUserRole('attendee');
                         setScreen('profile');

@@ -4,6 +4,7 @@ import { Notification } from './types';
 import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { ConfirmDialog } from './ConfirmDialog';
+import { Sentry } from '../../lib/sentry';
 
 function formatRelativeTime(isoString: string): string {
   const diff = Date.now() - new Date(isoString).getTime();
@@ -73,6 +74,7 @@ export function NotificationsScreen({
       }
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
+      Sentry.captureException(err);
     } finally {
       setLoading(false);
     }
@@ -97,6 +99,7 @@ export function NotificationsScreen({
       }
     } catch (err) {
       console.error("Failed to load more notifications:", err);
+      Sentry.captureException(err);
     } finally {
       setLoadingMore(false);
     }
@@ -139,6 +142,7 @@ export function NotificationsScreen({
       onRefreshUnread?.();
     } catch (err) {
       console.error("Failed to mark all as read:", err);
+      Sentry.captureException(err);
       fetchNotifications();
     }
   };
@@ -156,6 +160,7 @@ export function NotificationsScreen({
       onRefreshUnread?.();
     } catch (err) {
       console.error("Failed to mark notification as read:", err);
+      Sentry.captureException(err);
       fetchNotifications();
     }
   };
@@ -170,6 +175,7 @@ export function NotificationsScreen({
       onRefreshUnread?.();
     } catch (err) {
       console.error("Failed to delete notification:", err);
+      Sentry.captureException(err);
       setItems(prevItems);
     }
   };
@@ -186,6 +192,7 @@ export function NotificationsScreen({
       onRefreshUnread?.();
     } catch (err) {
       console.error("Failed to clear notifications:", err);
+      Sentry.captureException(err);
       setItems(prevItems);
     } finally {
       setClearing(false);

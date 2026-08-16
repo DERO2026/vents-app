@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
+import { Sentry } from '../../lib/sentry';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -119,6 +120,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         // indistinguishable from "this event genuinely has no attendees",
         // with no retry.
         console.error('AttendeeListScreen load error', err);
+        Sentry.captureException(err);
         if (!cancelled) setLoadError(err?.message || 'Could not load attendees. Pull to refresh or try again.');
       } finally {
         if (!cancelled) setLoading(false);

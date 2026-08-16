@@ -4,6 +4,7 @@ import { Event } from './types';
 import { formatPriceRange } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
+import { Sentry } from '../../lib/sentry';
 
 interface SavedScreenProps {
   savedEventIds: string[];
@@ -58,6 +59,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
         setSavedEvents(savedEventIds.map((id) => byId.get(id)).filter((e): e is Event => !!e));
       } catch (err) {
         console.error('Failed to fetch saved events:', err);
+        Sentry.captureException(err);
       } finally {
         if (!cancelled) setLoading(false);
       }
