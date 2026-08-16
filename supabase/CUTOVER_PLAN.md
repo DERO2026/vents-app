@@ -853,3 +853,55 @@ fix; no unrelated changes bundled in.
   until PR #3 is merged and deployed, which has not been authorized.
 - The two historical stuck `pending` tickets (§10) — you explicitly
   declined reconciliation; left untouched, as instructed.
+
+## §12. PR #3 merged — Production now runs the Supabase-backed app (2026-08-16)
+
+Following the read-only Production-readiness audit (verdict: READY TO
+MERGE) and your explicit authorization, PR #3 was merged into `main`
+and deployed. Verified, not assumed:
+
+- **Merge commit:** `b84fada9dfcce279ccf4bfefd573b5984e6e2d5f`.
+- **Production deployment:** `dpl_8EaW7JM1M5L7YWKXvXPujFZeiC3o`, reached
+  `READY` (build completed in 26s).
+- **`getvents.com` is aliased to this deployment** — confirmed via the
+  deployment's own `alias` list, and independently via a changed bundle
+  filename on a live fetch of `https://getvents.com/`.
+- **Production is now running the Supabase-backed application.**
+  Confirmed directly by reading `origin/main`'s merged
+  `api/webhook/paystack.ts`: it imports and calls
+  `callProjectAdminRpc('finalize_pending_purchase', ...)` and
+  `callProjectAdminRpc('confirm_ticket_payment', ...)` — the Supabase
+  `project_admin` RPC path already proven working end-to-end on
+  Preview (§10).
+- **The old InsForge webhook implementation no longer runs in
+  Production.** The same file-read confirms zero references to
+  `VITE_INSFORGE_URL`/`INSFORGE_API_KEY` in the now-merged handler —
+  those only existed in the pre-merge `main` version.
+- **Production Paystack remains Live-mode**, unchanged by this
+  deployment. **Preview remains isolated on Test-mode**, unchanged —
+  both scoped exactly as verified in §10, neither touched by the
+  merge/deploy itself.
+- **No Production environment-variable or Paystack configuration
+  changes were required or made** during this deployment — the
+  existing Production-scoped Supabase and Paystack config (added
+  earlier this session, see the top-of-document update note and §3)
+  was already sufficient.
+- **No real Production payment has been performed yet** — this
+  deployment verification was code/config-level only (merged source,
+  deployment status, bundle change, absence of build/runtime errors),
+  not a live transaction against Production.
+- **The two historical pending Live-mode tickets remain untouched.**
+- **Build:** completed successfully with only the existing,
+  non-blocking chunk-size and dynamic-import warnings seen throughout
+  this session — no new warnings introduced.
+- **Runtime:** no errors or `500`s observed in the post-deployment
+  verification window.
+
+### What this does NOT yet confirm
+
+A real Production Paystack payment through this new deployment has
+not been run. The webhook *code* is confirmed correct and matches
+what was proven working on Preview, but an actual live-fire
+Production transaction — the only way to observe Production's webhook
+handler process a real event end-to-end — has not happened and was
+explicitly not authorized as part of this step.
