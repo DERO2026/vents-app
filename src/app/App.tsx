@@ -2075,6 +2075,14 @@ export default function App() {
               onRefreshUnread={fetchUnreadCount}
             />
           )}
+          {screen === 'my-tickets' && (() => {
+            // TEMPORARY DEBUG — remove after root-causing the missing-ticket
+            // issue. Fires synchronously right before MyTicketsScreen is
+            // rendered, so it can't be missed regardless of effect timing.
+            console.log('[TICKET_DEBUG] About to render MyTicketsScreen. allTickets.length:', allTickets.length, 'screen:', screen);
+            console.log('[TICKET_DEBUG] target ticket in allTickets (by event title match):', allTickets.find((t) => t.event?.title === 'KARAOKE NIGHT') || 'NOT FOUND in allTickets');
+            return null;
+          })()}
           {screen === 'my-tickets' && (
             <MyTicketsScreen
               tickets={allTickets}

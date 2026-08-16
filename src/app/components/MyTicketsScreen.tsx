@@ -15,6 +15,10 @@ interface MyTicketsScreenProps {
 }
 
 export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh }: MyTicketsScreenProps) {
+  // TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
+  // First line of the function body: fires on every render, synchronously,
+  // even if something further down throws.
+  console.log('[TICKET_DEBUG] MyTicketsScreen function body executing. tickets.length:', tickets.length, 'loading:', loading);
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
