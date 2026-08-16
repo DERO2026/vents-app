@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.getvents.app",
+      "sha256_cert_fingerprints": [
+        "80:27:98:EB:27:98:C8:E1:CF:9E:8E:95:D8:A1:1A:4B:BD:3F:0D:9B:0F:FC:9A:83:4B:B7:A5:92:91:32:68:66"
+      ]
+    }
+  }
+]
