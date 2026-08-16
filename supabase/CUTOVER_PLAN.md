@@ -738,6 +738,59 @@ they require a separate, deliberate reconciliation decision. They were
 deliberately left untouched during this investigation and this
 documentation pass — not modified, deleted, reconciled, or refunded.
 
+### Manual reconciliation plan for the two stuck Live-mode tickets
+
+Not yet executed — this is a plan awaiting explicit approval, recorded
+here so the decision and its reasoning aren't lost. Both `amount = ₦100`
+Live-mode charges (`VNT-d6781717a0b945fb910f6715143602e2`,
+`VNT-cfc5cf3fdfe143b398ec9e14c6df38f5`) were real money taken from a
+real card by mistake (bug #1 above), so this touches actual funds and
+a Production-adjacent database write — it should not be done casually
+or automated away.
+
+1. **Confirm actual Paystack charge status first, don't assume.**
+   In Paystack Dashboard → Live mode → Transactions, look up both
+   references directly and confirm each actually settled successfully
+   (not reversed, disputed, or already refunded some other way). Do
+   not proceed on the assumption that "webhook fired" means "money
+   definitely settled" — verify against Paystack's own record.
+
+2. **Decide, per ticket, refund vs. honor:** since both are real
+   ₦100 charges, the two options are:
+   - **Refund via Paystack** (Live mode → Transactions → Refund) —
+     appropriate since these were unintentional test charges, not a
+     real customer purchase. This is the expected default outcome.
+   - **Manually honor the ticket** (mark `payment_status = 'paid'`
+     directly in the `tickets` row) — only appropriate if there's a
+     reason to keep the charge as a legitimate sale rather than refund
+     it. Given these originated from internal testing, refunding is
+     expected to be the right call, but this is a decision for a human
+     to make, not to infer here.
+
+3. **If refunding:** initiate the refund directly in Paystack Dashboard
+   (Live mode) for each reference. This is a real financial action —
+   requires a human to click it, same as the original payment. Once
+   refunded, the corresponding `tickets` row's `payment_status` should
+   be moved to a terminal, clearly-labeled state (e.g. `refunded`, not
+   left as `pending` and not silently deleted) so the record stays
+   accurate and auditable. The exact SQL for that update should be
+   reviewed and run deliberately, not scripted as a blind bulk
+   operation — these are the only two rows affected, and each should
+   be checked individually first.
+
+4. **If honoring instead:** do not call `confirm_ticket_payment`
+   speculatively with a fabricated amount — that RPC exists specifically
+   to be driven by a genuine, signature-verified Paystack webhook
+   payload. A manual "honor this payment" action should be its own
+   explicit, audited administrative update (e.g. a direct, reviewed
+   `UPDATE` with a comment recording who approved it and why), not a
+   reuse of the webhook-confirmation code path against reference data.
+
+5. **Either way:** this action is out of scope for the Supabase
+   migration work itself and should be tracked as its own explicit,
+   approved step — not bundled into a future unrelated commit. No
+   action has been taken on these two rows as of this writing.
+
 ### Explicitly not touched by this work
 
 No Production code, no Production environment variables, no Live
