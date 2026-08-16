@@ -526,21 +526,23 @@ earlier session.
 
 ### Important
 
-7. **Signup's account "State" field is still hard-locked to
-   `NIGERIA_STATES`** regardless of the phone country chosen (flagged in §7
-   above, not fixed this pass either — still a materially bigger change
-   than phone/country handling). A non-Nigerian user can now complete
-   signup, but is still forced into a Nigerian state for their profile.
-8. **`RECORD_AUDIO` permission is declared but the voice-notes feature is
-   disabled** behind a feature flag — confirmed still true by re-reading
-   `migrations/20260710185537_media-feature-toggles.sql` and
-   `AndroidManifest.xml`. Google's automated review sometimes flags
-   declared-but-unused permissions. Either justify it in Play Console's
-   permissions declaration or strip it until voice notes ship.
-9. **`versionCode`/`versionName` are still at Gradle-template defaults**
-   (`1`/`"1.0"`, confirmed by re-reading `android/app/build.gradle`) — must
-   be bumped before the first real Play Store upload; trivial but a real
-   blocker for that specific step if forgotten.
+7. **RESOLVED (2026-08-16, see §11)**: Signup's account "State" field was
+   hard-locked to `NIGERIA_STATES` regardless of the phone country chosen.
+   Now country-aware — Nigeria keeps the existing picker unchanged, every
+   other country gets a free-text State/Region/Province field, and
+   switching country always clears any stale value.
+8. **RESOLVED (2026-08-16, see §11)**: `RECORD_AUDIO` was declared in
+   `AndroidManifest.xml` while the voice-notes feature was disabled
+   (`voice_notes_enabled` defaults `false`). Removed — a declared-but-
+   unused permission was a real Play Store review-flag risk for zero
+   feature benefit while the toggle stays off.
+9. **RESOLVED (2026-08-16, see §11)**: `versionCode`/`versionName` were
+   still at Gradle-template defaults (`1`/`"1.0"`). `versionName` bumped to
+   `"1.1.0"` to match the app's actual in-app version string (`APP_VERSION`
+   in `App.tsx`, and the "VENTS v1.1.0" footer already shown across four
+   screens) — it was a real mismatch, not just an unset default.
+   `versionCode` deliberately left at `1`: no build has ever been
+   submitted to Play Store, so `1` is correct for a first upload.
 10. **Every on-device item in `LAUNCH_CHECKLIST.md` §10 remains unverified**
     (splash-screen white-flash fix, native Save/Share Ticket, push
     tap-to-navigate routing, camera/QR scanner, back-button/edge-swipe) —
@@ -797,3 +799,57 @@ No Production code, no Production environment variables, no Live
 Paystack webhook configuration, and no Supabase database functions
 were modified. The two historical pending records were left exactly
 as found.
+
+## §11. Three launch-checklist items closed (2026-08-16)
+
+Following §8 Important items #7–#9. Each was a targeted, single-file
+fix; no unrelated changes bundled in.
+
+1. **Signup State field made country-aware**
+   (`src/app/components/AuthScreen.tsx`, commit `8c2e5ad`). Nigeria
+   keeps the existing `NIGERIA_STATES` picker unchanged. Every other
+   country now shows a free-text State/Region/Province input instead
+   of fabricated or incorrect subdivision data — no per-country
+   states/provinces list exists yet for the other ~189 countries.
+   Switching the selected phone country now always clears `signupState`,
+   so a stale Nigerian state (or a free-text value typed for a
+   different country) can never carry over. `npx tsc --noEmit`,
+   `npx vitest run` (10/10), and `npm run build` all clean before
+   commit.
+
+2. **`RECORD_AUDIO` permission removed**
+   (`android/app/src/main/AndroidManifest.xml`, commit `1ec0efc`).
+   `voice_notes_enabled` defaults `false` (`0002_tables.sql`) and voice
+   notes are disabled for MVP launch — the permission was declared but
+   unused, exactly what Google's automated review flags. Left a comment
+   marking the re-add condition explicitly: this permission (and a
+   native rebuild/resubmit) must come back **before**
+   `voice_notes_enabled` is ever flipped to `true` in Production —
+   without it, `getUserMedia`'s mic request is denied at the OS level
+   on Android before the WebView ever gets a chance to prompt. This is
+   a real tradeoff, not a free removal: enabling voice notes later now
+   requires a coordinated native update first, not just a DB toggle.
+
+3. **`versionName` aligned to `"1.1.0"`**
+   (`android/app/build.gradle`, commit `fdd9b29`). It was still the
+   Gradle template's `"1.0"`, while the app already presents itself as
+   v1.1.0 everywhere else (`APP_VERSION` in `App.tsx`; the "VENTS
+   v1.1.0" footer in `ProfileScreen.tsx`, `SettingsScreen.tsx`,
+   `WelcomeScreen.tsx`, `AdminDashboardScreen.tsx`) — a real mismatch,
+   not an arbitrary bump. `versionCode` deliberately left at `1`: no
+   build has ever been submitted to Play Store for this app, so `1` is
+   correct for a first upload; it must strictly increase on every
+   future upload from here.
+
+### What this does NOT close
+
+- Blockers #4/#5/#6 (`android/keystore.properties`,
+  `android/app/google-services.json`, Play Store submission assets) —
+  all still require something only you can provide.
+- Blocker #10 (all on-device/native testing) — still needs a physical
+  device or emulator, unavailable in this environment.
+- Blocker #2 (Production's purchase → webhook → confirmation flow) —
+  still unverified; Production runs the pre-migration InsForge code
+  until PR #3 is merged and deployed, which has not been authorized.
+- The two historical stuck `pending` tickets (§10) — you explicitly
+  declined reconciliation; left untouched, as instructed.
