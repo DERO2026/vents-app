@@ -785,6 +785,15 @@ export default function App() {
 
       if (error) throw error;
 
+      // TEMPORARY DEBUG — remove after root-causing the missing-ticket
+      // issue. Logs whether the raw response contains the ticket, and
+      // whether its embedded `events` join came back populated.
+      if (data) {
+        const dbg = data.find((t: any) => t.payment_ref === 'VNT-96450b1d35bd46139235f9e4ec93ebd9');
+        console.log('[TICKET_DEBUG] raw tickets response length:', data.length);
+        console.log('[TICKET_DEBUG] target ticket in raw response:', dbg ? { id: dbg.id, payment_ref: dbg.payment_ref, status: dbg.status, payment_status: dbg.payment_status, hasEvents: !!dbg.events, eventsValue: dbg.events } : 'NOT FOUND IN RAW DATA');
+      }
+
       if (data) {
         // Single source of truth for the embedded event's "attendees"
         // figure — previously read events.attendee_count, a column that
@@ -873,6 +882,13 @@ export default function App() {
             holderEmail: t.holder_email || undefined,
           };
         });
+
+        // TEMPORARY DEBUG — remove after root-causing the missing-ticket
+        // issue. Confirms whether the target ticket survived the .filter
+        // and .map above, and what its final mapped shape looks like.
+        const dbgMapped = mappedTickets.find((t) => t.ticketId === (data.find((r: any) => r.payment_ref === 'VNT-96450b1d35bd46139235f9e4ec93ebd9')?.id));
+        console.log('[TICKET_DEBUG] mappedTickets length:', mappedTickets.length, '(raw data length was', data.length, ')');
+        console.log('[TICKET_DEBUG] target ticket after filter+map:', dbgMapped || 'DROPPED — not in mappedTickets');
 
         setAllTickets(mappedTickets);
         // Warm the signed-token cache for every ticket as soon as the list is

@@ -70,6 +70,19 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
 
   const displayed = activeTab === 'upcoming' ? upcoming : past;
 
+  // TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
+  useEffect(() => {
+    const target = tickets.find((t) => t.ticketId && t.event?.title === 'KARAOKE NIGHT');
+    console.log('[TICKET_DEBUG] MyTicketsScreen received tickets prop, length:', tickets.length);
+    console.log('[TICKET_DEBUG] target ticket in props:', target ? { ticketId: target.ticketId, eventTitle: target.event?.title, eventDate: target.event?.date, eventTime: target.event?.time } : 'NOT IN PROPS');
+    if (target) {
+      const parsed = new Date(`${target.event.date} ${target.event.time}`);
+      console.log('[TICKET_DEBUG] target parsed date:', parsed.toString(), 'isNaN:', isNaN(parsed.getTime()), 'vs now:', new Date().toString());
+      console.log('[TICKET_DEBUG] target is in upcoming[]?', upcoming.some((t) => t.ticketId === target.ticketId));
+      console.log('[TICKET_DEBUG] target is in past[]?', past.some((t) => t.ticketId === target.ticketId));
+    }
+  }, [tickets]);
+
   return (
     <div
       onTouchStart={handleTouchStart}
