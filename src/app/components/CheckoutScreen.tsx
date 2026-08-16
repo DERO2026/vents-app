@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Lock, Tag, ChevronDown, AlertCircle, X, Users, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, Lock, Tag, AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
@@ -7,6 +7,8 @@ import { analytics } from '../../lib/analyticsEvents';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
+import { PhoneInput } from './PhoneInput';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -30,24 +32,6 @@ const INPUT_STYLE: React.CSSProperties = {
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
 }
-
-const COUNTRY_CODES = [
-  { flag: '🇳🇬', code: '+234', name: 'Nigeria', format: '080 0000 0000' },
-  { flag: '🇬🇧', code: '+44', name: 'UK', format: '07700 000000' },
-  { flag: '🇺🇸', code: '+1', name: 'USA', format: '(000) 000-0000' },
-  { flag: '🇨🇦', code: '+1', name: 'Canada', format: '(000) 000-0000' },
-  { flag: '🇬🇭', code: '+233', name: 'Ghana', format: '024 000 0000' },
-  { flag: '🇿🇦', code: '+27', name: 'South Africa', format: '071 000 0000' },
-  { flag: '🇰🇪', code: '+254', name: 'Kenya', format: '0712 000000' },
-  { flag: '🇫🇷', code: '+33', name: 'France', format: '06 00 00 00 00' },
-  { flag: '🇩🇪', code: '+49', name: 'Germany', format: '0151 00000000' },
-  { flag: '🇦🇺', code: '+61', name: 'Australia', format: '0412 000 000' },
-  { flag: '🇨🇳', code: '+86', name: 'China', format: '138 0000 0000' },
-  { flag: '🇮🇳', code: '+91', name: 'India', format: '98000 00000' },
-  { flag: '🇦🇪', code: '+971', name: 'UAE', format: '050 000 0000' },
-  { flag: '🇸🇳', code: '+221', name: 'Senegal', format: '77 000 00 00' },
-  { flag: '🇪🇹', code: '+251', name: 'Ethiopia', format: '091 000 0000' },
-];
 
 function Field({
   label,
@@ -109,10 +93,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [name, setName] = useState(currentUser?.full_name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
+  // Raw national-number digits only — the country dial code is tracked
+  // separately, same pattern as Sign Up's PhoneInput usage in AuthScreen.tsx.
   const [phone, setPhone] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
-  const [selectedCountry, setSelectedCountry] = useState(COUNTRY_CODES[0]);
-  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(DEFAULT_COUNTRY.code);
   const [promoCode, setPromoCode] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [promoDiscountPct, setPromoDiscountPct] = useState(0);
@@ -153,9 +138,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // about their booking — previously only validated (and required) for
   // *additional* attendees on a group purchase, leaving the far more common
   // single-ticket purchase with no phone requirement at all.
+  //
+  // Country-aware validation, same as Sign Up (AuthScreen.tsx): a plausible
+  // digit-count range for the selected country rather than a flat "7 digits"
+  // check that doesn't actually mean anything once the buyer isn't Nigerian.
   const phoneDigits = phone.replace(/\D/g, '');
-  const phoneError = phoneTouched && phoneDigits.length < 7
-    ? 'Enter a valid phone number'
+  const selectedPhoneCountry = COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY;
+  const phoneError = phoneTouched && !isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)
+    ? `Enter a valid ${selectedPhoneCountry.name} phone number`
     : undefined;
 
   const additionalAttendeesValid = additionalAttendees.every(
@@ -168,7 +158,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const promoPending = promoCode.trim().length > 0 && !promoApplied;
 
   const buildAttendees = (purchaserName: string, purchaserEmail: string): TicketAttendee[] => [
-    { name: purchaserName, email: purchaserEmail, phone: phoneDigits ? `${selectedCountry.code}${phoneDigits}` : undefined },
+    // buildE164 strips any leading trunk-prefix 0 before prepending the
+    // dial code (e.g. Nigeria's "080..." -> "+23480...", not "+234080...")
+    // — the same shared logic Sign Up uses, so an international buyer's
+    // number is never accidentally mangled into a Nigerian-looking one.
+    { name: purchaserName, email: purchaserEmail, phone: phoneDigits ? buildE164(phone, phoneCountryCode) : undefined },
     ...additionalAttendees.map((a) => ({ name: a.name.trim(), email: a.email.trim(), phone: (a.phone ?? '').trim() || undefined })),
   ];
 
@@ -240,7 +234,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    if (phoneDigits.length < 7) {
+    if (!isPlausibleNationalNumber(phoneDigits, selectedPhoneCountry)) {
       setPayError('A valid phone number is required so the organizer can reach you about your booking.');
       return;
     }
@@ -443,54 +437,22 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               onBlur={() => setEmailTouched(true)}
             />
 
-            {/* Phone with country code */}
+            {/* Phone with country code — same PhoneInput component, country
+                list, formatting, and E.164 handling as Sign Up
+                (AuthScreen.tsx), so an international visitor buying a
+                Nigerian event ticket isn't forced into a +234 number. */}
             <div>
               <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => setShowCountryPicker(true)}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    background: '#090514',
-                    border: '1px solid rgba(255,255,255,0.1)',
-                    borderRadius: '16px',
-                    height: '52px',
-                    padding: '0 10px',
-                    cursor: 'pointer',
-                    flexShrink: 0,
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <span style={{ fontSize: '16px' }}>{selectedCountry.flag}</span>
-                  <span style={{ color: '#FFFFFF', fontSize: '13px', fontWeight: 500 }}>{selectedCountry.code}</span>
-                  <ChevronDown size={12} color="#8B8FA8" />
-                </button>
-                <div
-                  style={{
-                    flex: 1,
-                    minWidth: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    background: '#090514',
-                    border: `1px solid ${phoneError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
-                    borderRadius: '16px',
-                    height: '52px',
-                    padding: '0 14px',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  <input
-                    type="tel"
-                    placeholder={selectedCountry.format}
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
-                    onBlur={() => setPhoneTouched(true)}
-                    style={{ ...INPUT_STYLE, minWidth: 0 }}
-                  />
-                </div>
-              </div>
+              <PhoneInput
+                countryCode={phoneCountryCode}
+                onCountryCodeChange={(code) => { setPhoneCountryCode(code); setPhone(''); }}
+                value={phone}
+                onChange={(digits) => { setPhone(digits); setPhoneTouched(true); }}
+                height={52}
+                background="#090514"
+                borderColor={phoneError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}
+                radius="16px"
+              />
               {phoneError && (
                 <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
               )}
@@ -686,45 +648,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
         </p>
       </div>
-
-      {/* Country picker modal */}
-      {showCountryPicker && (
-        <div onClick={() => setShowCountryPicker(false)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '70%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Select Country</p>
-              <button onClick={() => setShowCountryPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <X size={20} color="#8B8FA8" />
-              </button>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 28px' }}>
-              {COUNTRY_CODES.map((c) => (
-                <button
-                  key={`${c.code}-${c.name}`}
-                  onClick={() => { setSelectedCountry(c); setShowCountryPicker(false); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '100%',
-                    padding: '14px 20px',
-                    background: selectedCountry.name === c.name ? 'rgba(124,58,237,0.1)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <span style={{ fontSize: '22px' }}>{c.flag}</span>
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>{c.name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Format: {c.format}</p>
-                  </div>
-                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{c.code}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

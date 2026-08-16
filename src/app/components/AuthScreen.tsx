@@ -15,7 +15,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
-import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
 
@@ -111,16 +111,6 @@ function formatBytes(bytes: number): string {
 
 function isValidEmail(email: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
-}
-
-// Combines a selected country's dial code with the raw national-number
-// digits into a single E.164 string dispatched to the backend — used
-// everywhere a phone number is collected so a display-formatted value never
-// reaches the DB.
-function buildE164(nationalDigits: string, countryCode: string): string {
-  const digits = nationalDigits.replace(/\D/g, '').replace(/^0+/, '');
-  if (!digits) return '';
-  return countryCode + digits;
 }
 
 function InputRow({

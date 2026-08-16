@@ -291,3 +291,18 @@ export function isPlausibleNationalNumber(digits: string, country: CountryOption
   const min = Math.max(4, max - 2);
   return digits.length >= min && digits.length <= max;
 }
+
+// Combines a selected country's dial code with the raw national-number
+// digits into a single E.164 string — the single shared implementation used
+// everywhere a phone number is collected (signup, profile settings,
+// checkout) so a display-formatted or locally-prefixed value never reaches
+// the backend. Strips any leading zeros from the national number first —
+// critical for countries like Nigeria where the local convention is a
+// leading trunk-prefix 0 (e.g. "080..."), which must NOT be carried into
+// the E.164 form (+234080... is wrong; +23480... is correct). Harmless for
+// countries with no such convention.
+export function buildE164(nationalDigits: string, countryCode: string): string {
+  const digits = nationalDigits.replace(/\D/g, '').replace(/^0+/, '');
+  if (!digits) return '';
+  return countryCode + digits;
+}
