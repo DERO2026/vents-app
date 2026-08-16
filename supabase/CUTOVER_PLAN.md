@@ -905,3 +905,72 @@ what was proven working on Preview, but an actual live-fire
 Production transaction — the only way to observe Production's webhook
 handler process a real event end-to-end — has not happened and was
 explicitly not authorized as part of this step.
+
+## §13. First real Production payment, and a missing-ticket investigation (2026-08-16)
+
+### Payment flow: confirmed working end-to-end in Production
+
+A real ₦100 Live-mode payment for "KARAOKE NIGHT" (Standard ticket,
+`payment_ref VNT-96450b1d35bd46139235f9e4ec93ebd9`) was made against
+Production after the PR #3 merge, using the cheapest live paid ticket
+found via a public (anon-key, RLS-respecting) query. Confirmed via
+Supabase Table Editor: `payment_status = 'paid'`, `status = 'active'`,
+`amount = 100`. This is the first real, successfully-confirmed
+Production payment since the migration — §12's outstanding "no real
+Production payment yet" gap is now closed.
+
+### Missing-ticket investigation: ticket didn't appear in My Tickets
+
+After the payment succeeded, the ticket did not appear in My
+Tickets/Upcoming. A staged, read-only investigation (browser
+DevTools Network tab, Sentry issue/replay search, then temporary
+`console.log` checkpoints deployed to Production across three
+commits — `9f4393a`, `8d60cad`, `807cada`) traced the exact ticket
+(`565dacc9-8c83-495f-bead-a09d678b27cb`) through every layer:
+
+1. Present in the raw `/rest/v1/tickets` response (confirmed directly
+   in DevTools before any logging was added).
+2. Survived `fetchUserTickets`'s `.filter().map()` into `mappedTickets`.
+3. Present in `allTickets` state immediately before `MyTicketsScreen`
+   renders.
+4. Received correctly as a prop by `MyTicketsScreen`.
+5. Correctly classified into the `upcoming` array by the date split.
+6. Present at the correct index in `displayed`, immediately before the
+   final render `.map()`.
+
+An early diagnostic pass gave a false negative — it matched by event
+title instead of the exact `ticketId`, and there are multiple tickets
+for the same event/user, so it silently checked a different ticket.
+Corrected to exact-ID matching before drawing further conclusions.
+
+Sentry showed zero issues or relevant replays for this session — not
+because nothing happened, but because a structural gap was found:
+`fetchUserTickets`'s catch block only calls `console.error(...)`
+(never `Sentry.captureException`), and `sentry.ts`'s `Sentry.init()`
+has no console-capture integration. A caught error here is invisible
+to Sentry by design, not just in this one instance. **Not fixed as
+part of this pass** — flagged as a real gap worth a follow-up.
+
+**Outcome:** after the corrected diagnostics were deployed and
+checked, the ticket was confirmed visibly present and correctly
+rendered in My Tickets, and the detail-screen/QR click-through was
+confirmed working. No code defect was found anywhere in the traced
+path — every stage matched expected behavior once the diagnostic
+itself was corrected. The most plausible explanation is that the
+original symptom was transient (e.g. a stale cached bundle from
+before an interim deploy), not a persistent application bug — this is
+stated as the most likely explanation, not a proven root cause, since
+it could not be directly reproduced once accurate diagnostics were in
+place.
+
+All temporary `[TICKET_DEBUG]` logging has been removed (commit
+`191f74f`) and Production is confirmed serving that clean build.
+
+### Open follow-up (not fixed this pass)
+
+Client-side errors caught internally (e.g. `fetchUserTickets`'s catch
+block) are never sent to Sentry — only logged to the browser console.
+Worth adding `Sentry.captureException()` calls at key catch sites, or
+a console-capture integration in `sentry.ts`, so a real recurrence of
+this class of issue would actually surface in Sentry instead of
+requiring a live diagnostic-logging pass to investigate.
