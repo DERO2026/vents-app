@@ -15,6 +15,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 
 // Best-effort abuse guard for traffic going through this screen — Supabase
@@ -552,12 +553,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (isNigerianPhone && !REGION.phoneRegex.test(normalizedPhone)) {
           throw new Error('Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678');
         }
-        // Non-Nigerian numbers can't be validated/verified end-to-end yet
-        // (SMS + CAC verification are Nigeria-only, see src/lib/regionConfig.ts) —
-        // the selector still lets a user browse/pick their country, but
-        // signup itself is scoped to what the backend can actually support.
+        // Every other country: no hand-authored exact pattern (VENTS
+        // supports all ~195 countries in src/lib/countries.ts, not just
+        // Nigeria — SMS delivery and CAC business verification remain
+        // genuinely Nigeria-only features, but they're best-effort/opt-in,
+        // not signup requirements), so validate against a plausible
+        // digit-count range for the selected country instead.
         if (!isNigerianPhone) {
-          throw new Error('Only Nigerian phone numbers are currently supported for sign-up. Please select 🇳🇬 Nigeria.');
+          const selectedCountry = COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY;
+          if (!isPlausibleNationalNumber(phone.replace(/\D/g, ''), selectedCountry)) {
+            throw new Error(`Please enter a valid ${selectedCountry.name} phone number.`);
+          }
         }
         if (!password) throw new Error('Password is required.');
         if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');

@@ -20,6 +20,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
+import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface SettingsScreenProps {
@@ -803,8 +804,18 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       let cleanPhone = '';
       if (rawDigits) {
         cleanPhone = phoneCountryCode + rawDigits;
-        if (phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(cleanPhone)) {
-          throw new Error("Please enter a valid Nigerian phone number (+234 format).");
+        if (phoneCountryCode === REGION.phoneCountryCode) {
+          if (!REGION.phoneRegex.test(cleanPhone)) {
+            throw new Error("Please enter a valid Nigerian phone number (+234 format).");
+          }
+        } else {
+          // Every other country: same plausible-digit-count check used at
+          // signup (src/lib/countries.ts) — previously this branch did no
+          // validation at all for any non-Nigerian number.
+          const selectedCountry = COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY;
+          if (!isPlausibleNationalNumber(rawDigits, selectedCountry)) {
+            throw new Error(`Please enter a valid ${selectedCountry.name} phone number.`);
+          }
         }
       }
 
@@ -972,6 +983,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 {phone.trim() && phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(phoneCountryCode + phone.replace(/^0+/, '')) && (
                   <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
                     Enter a valid Nigerian number (e.g. 0801 234 5678)
+                  </p>
+                )}
+                {phone.trim() && phoneCountryCode !== REGION.phoneCountryCode && !isPlausibleNationalNumber(phone.replace(/\D/g, ''), COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY) && (
+                  <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
+                    Enter a valid phone number for {(COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).name}
                   </p>
                 )}
               </div>

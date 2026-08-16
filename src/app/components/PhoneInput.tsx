@@ -1,43 +1,28 @@
-import { useState } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { ChevronDown, X, Search } from 'lucide-react';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, CountryOption, maxDigitsFor, formatNationalNumber } from '../../lib/countries';
 
-export interface CountryOption {
-  flag: string;
-  /** ISO 3166-1 alpha-2, used for the badge fallback where flag emoji don't render. */
-  iso: string;
-  code: string;
-  name: string;
-  format: string;
+export type { CountryOption } from '../../lib/countries';
+export { COUNTRY_CODES, DEFAULT_COUNTRY, maxDigitsFor, formatNationalNumber } from '../../lib/countries';
+
+// Flag emoji are a pair of regional-indicator codepoints, mechanically
+// derived from the ISO alpha-2 code (each letter A-Z maps to U+1F1E6..U+1F1FF
+// in order) rather than stored per-country — 195 hand-typed flag emoji is
+// both a lot of data entry and a lot of surface area for typos that are
+// invisible at a glance. iOS and Android ship glyphs for the resulting pair;
+// Windows does not, and instead renders the two indicator letters as pale
+// boxed characters — which read as a stray artifact sitting behind the dial
+// code rather than as a flag. detectFlagEmojiSupport() below measures once
+// whether the platform actually composes the pair into a single glyph.
+function flagEmojiFor(iso: string): string {
+  const codePoints = iso.toUpperCase().split('').map((c) => 127397 + c.charCodeAt(0));
+  return String.fromCodePoint(...codePoints);
 }
 
-// Nigeria first — the app's default region (see src/lib/regionConfig.ts).
-export const COUNTRY_CODES: CountryOption[] = [
-  { flag: '🇳🇬', code: '+234', iso: 'NG', name: 'Nigeria', format: '080 0000 0000' },
-  { flag: '🇬🇧', code: '+44', iso: 'GB', name: 'UK', format: '07700 000000' },
-  { flag: '🇺🇸', code: '+1', iso: 'US', name: 'USA', format: '(000) 000-0000' },
-  { flag: '🇨🇦', code: '+1', iso: 'CA', name: 'Canada', format: '(000) 000-0000' },
-  { flag: '🇬🇭', code: '+233', iso: 'GH', name: 'Ghana', format: '024 000 0000' },
-  { flag: '🇿🇦', code: '+27', iso: 'ZA', name: 'South Africa', format: '071 000 0000' },
-  { flag: '🇰🇪', code: '+254', iso: 'KE', name: 'Kenya', format: '0712 000000' },
-  { flag: '🇫🇷', code: '+33', iso: 'FR', name: 'France', format: '06 00 00 00 00' },
-  { flag: '🇩🇪', code: '+49', iso: 'DE', name: 'Germany', format: '0151 00000000' },
-  { flag: '🇦🇺', code: '+61', iso: 'AU', name: 'Australia', format: '0412 000 000' },
-  { flag: '🇨🇳', code: '+86', iso: 'CN', name: 'China', format: '138 0000 0000' },
-  { flag: '🇮🇳', code: '+91', iso: 'IN', name: 'India', format: '98000 00000' },
-  { flag: '🇦🇪', code: '+971', iso: 'AE', name: 'UAE', format: '050 000 0000' },
-  { flag: '🇸🇳', code: '+221', iso: 'SN', name: 'Senegal', format: '77 000 00 00' },
-  { flag: '🇪🇹', code: '+251', iso: 'ET', name: 'Ethiopia', format: '091 000 0000' },
-];
-
-export const DEFAULT_COUNTRY = COUNTRY_CODES[0];
-
-// Flag emoji are a pair of regional-indicator codepoints. iOS and Android ship
-// glyphs for them; Windows does not, and instead renders the two indicator
-// letters as pale boxed characters — which read as a stray artifact sitting
-// behind the dial code rather than as a flag. Measure once whether the platform
-// actually composes the pair into a single glyph: if it does, the flag is
-// narrower than the two letters drawn separately. Anything unexpected (no
-// canvas, SSR, a thrown error) falls back to the badge, which always renders.
+// Measure once whether the platform actually composes a regional-indicator
+// pair into a single flag glyph: if it does, the flag is narrower than the
+// two letters drawn separately. Anything unexpected (no canvas, SSR, a
+// thrown error) falls back to the ISO badge, which always renders.
 function detectFlagEmojiSupport(): boolean {
   try {
     if (typeof document === 'undefined') return false;
@@ -60,7 +45,7 @@ const SUPPORTS_FLAG_EMOJI = detectFlagEmojiSupport();
 /** A country's flag, or a legible ISO badge on platforms without flag glyphs. */
 function CountryMark({ country, size = 16 }: { country: CountryOption; size?: number }) {
   if (SUPPORTS_FLAG_EMOJI) {
-    return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{country.flag}</span>;
+    return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{flagEmojiFor(country.iso)}</span>;
   }
   return (
     <span
@@ -86,32 +71,6 @@ function CountryMark({ country, size = 16 }: { country: CountryOption; size?: nu
   );
 }
 
-// Format strings like Nigeria's "080 0000 0000" or Kenya's "0712 000000" are
-// human-readable EXAMPLE numbers, not pure templates — the '8', '7', '1', '2'
-// are real example digits, not placeholder characters. Treating only literal
-// '0' as a placeholder (the previous approach) left those example digits
-// hardcoded into the display no matter what the user actually typed, which
-// looked like the input only accepted 0/8/9. Every digit character in the
-// format string is a placeholder position; only non-digits (spaces, dashes,
-// parens) are literal separators.
-
-/** Max raw digits a country's national number holds, derived from its format's digit placeholders. */
-export function maxDigitsFor(country: CountryOption): number {
-  return (country.format.match(/\d/g) || []).length;
-}
-
-/** Groups raw digits into a country's display format, e.g. "0801234567" -> "080 1234 567". */
-export function formatNationalNumber(digits: string, country: CountryOption): string {
-  let out = '';
-  let di = 0;
-  for (let i = 0; i < country.format.length && di < digits.length; i++) {
-    const ch = country.format[i];
-    if (/\d/.test(ch)) { out += digits[di]; di++; }
-    else out += ch;
-  }
-  return out;
-}
-
 interface PhoneInputProps {
   /** Dial code with leading '+', e.g. '+234'. Defaults to Nigeria if not a known code. */
   countryCode: string;
@@ -133,15 +92,16 @@ export function PhoneInput({
   background = '#090514', borderColor = 'rgba(255,255,255,0.08)', radius = '12px',
 }: PhoneInputProps) {
   const [showPicker, setShowPicker] = useState(false);
+  const [search, setSearch] = useState('');
 
   // Some dial codes are shared (+1 is USA and Canada). The parent stores only
   // the dial code — deliberately, since both countries produce the identical
   // E.164 number, so which one is chosen cannot change the value submitted.
   // That makes the distinction purely a display concern, and it lives here:
   // remember the entry the user actually tapped so the chip and the picker
-  // highlight stop snapping back to the first match (USA). If the dial code
-  // later changes to one this pick doesn't belong to, the filter below drops
-  // it and we fall back to the first match for that code.
+  // highlight stop snapping back to the first match. If the dial code later
+  // changes to one this pick doesn't belong to, the filter below drops it
+  // and we fall back to the first match for that code.
   const [pickedIso, setPickedIso] = useState<string | null>(null);
   const matches = COUNTRY_CODES.filter((c) => c.code === countryCode);
   const selected =
@@ -150,6 +110,14 @@ export function PhoneInput({
     DEFAULT_COUNTRY;
   const maxDigits = maxDigitsFor(selected);
   const displayValue = formatNationalNumber(value, selected);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return COUNTRY_CODES;
+    return COUNTRY_CODES.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.code.includes(q) || c.iso.toLowerCase() === q
+    );
+  }, [search]);
 
   return (
     <>
@@ -199,25 +167,39 @@ export function PhoneInput({
 
       {showPicker && (
         <div
-          onClick={() => setShowPicker(false)}
+          onClick={() => { setShowPicker(false); setSearch(''); }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 1000 }}
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '70%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
+            style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
           >
             <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
               <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Select Country</p>
-              <button onClick={() => setShowPicker(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+              <button onClick={() => { setShowPicker(false); setSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
                 <X size={20} color="#8B8FA8" />
               </button>
             </div>
+            <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px' }}>
+                <Search size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
+                <input
+                  autoFocus
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search country or code..."
+                  style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                />
+              </div>
+            </div>
             <div style={{ overflowY: 'auto', padding: '8px 0 28px' }}>
-              {COUNTRY_CODES.map((c) => (
+              {filtered.length === 0 ? (
+                <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 20px' }}>No countries match "{search}".</p>
+              ) : filtered.map((c) => (
                 <button
-                  key={`${c.code}-${c.name}`}
+                  key={`${c.iso}`}
                   type="button"
-                  onClick={() => { setPickedIso(c.iso); onCountryCodeChange(c.code); setShowPicker(false); }}
+                  onClick={() => { setPickedIso(c.iso); onCountryCodeChange(c.code); setShowPicker(false); setSearch(''); }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
@@ -230,11 +212,11 @@ export function PhoneInput({
                   }}
                 >
                   <CountryMark country={c} size={22} />
-                  <div style={{ flex: 1, textAlign: 'left' }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>{c.name}</p>
+                  <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
                     <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Format: {c.format}</p>
                   </div>
-                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{c.code}</span>
+                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600, flexShrink: 0 }}>{c.code}</span>
                 </button>
               ))}
             </div>
