@@ -984,3 +984,68 @@ a sweep of every `console.error` in the codebase. Other similarly
 un-instrumented and would benefit from the same treatment in a future
 pass, but that's a separate, larger piece of work not implied by this
 specific follow-up.
+
+**Update (2026-08-16, later same day):** that broader sweep happened.
+Commit `419c619` extended this to every other silent catch block in
+`src/app` — 78 sites across 24 files — with `Sentry.captureException`
+now alongside every `console.error` that previously had none. Deployed
+and confirmed `READY` on `getvents.com` (`dpl_C3L88KSeK4yVz6Fsq3hNNq9Bh5T4`).
+Still deliberately scoped to `src/app` (client-side React, where
+Sentry's browser SDK runs) — `api/` serverless handlers use a
+different runtime/logging setup and remain out of scope.
+
+## §14. Checkout international phone-number fix + QA pass (2026-08-16)
+
+### Bug found and fixed
+
+`CheckoutScreen.tsx` had its own separate, stale, hardcoded 15-country
+phone implementation (no Qatar; flat "UK"/"USA" labels) instead of
+reusing Sign Up's. Its phone-building logic
+(`` `${selectedCountry.code}${phoneDigits}` ``) never stripped a
+leading trunk-zero — a Nigerian number typed as `080...` would have
+produced the malformed `+234080...`, and every country was validated
+with the same flat "≥7 digits" check regardless of actual country
+format.
+
+### Fix — commit `cd96239`, deployed `dpl_GRNnTXQwRGc9CCZhh4G1ogtHuRzv`
+
+- `buildE164` moved from a private function in `AuthScreen.tsx` into
+  `src/lib/countries.ts` as a shared, exported utility — single source
+  of truth, imported by both screens now. Strips leading zeros before
+  prepending the dial code.
+- `CheckoutScreen.tsx` now renders the same `<PhoneInput>` component
+  Sign Up uses, backed by the same ~195-country `COUNTRY_CODES` list,
+  instead of its own hardcoded array and custom picker modal.
+- Validation uses the same shared `isPlausibleNationalNumber` range
+  check as Sign Up, not a flat digit-count.
+- Switching country clears the typed digits (matches Sign Up), so a
+  half-typed number can't bleed into another country's format.
+- Traced end-to-end: `attendees[0].phone` → `create_pending_purchase`'s
+  `p_attendees` jsonb → `finalize_pending_purchase` stores it verbatim
+  as `tickets.holder_phone`. Confirmed Paystack itself never receives
+  a phone number at all (`PaystackPop.setup()` has no `phone` field) —
+  no second place could reformat or Nigeria-ify the number.
+
+### QA pass (same day, read-only — no further code/deploy)
+
+Live-verified against the actual deployed Production bundle
+(`index-Bh4ss2xx.js`, pulled directly from `getvents.com`) plus a
+numeric re-test of the exact shipped `buildE164` logic. Not a live
+click-through purchase — payment entry is something Claude can never
+perform, regardless of authorization; verification was code + deployed
+bundle + logic-level instead.
+
+**All PASS:**
+- Nigeria `08012345678` → `+2348012345678` (leading zero correctly stripped)
+- USA, UK, Ghana, UAE, Qatar — each produced correct E.164 output, no
+  cross-country contamination
+- Deployed bundle confirmed to contain the full international country
+  list (`Qatar`, `United Arab Emirates`, `United Kingdom`,
+  `United States`, 187 distinct dial codes) — the old hardcoded
+  `"UK"`/`"USA"` short labels are completely absent
+- Country-change clears previously typed digits
+- Validation matches Sign Up exactly (shared `isPlausibleNationalNumber`)
+- Attendee payload carries proper E.164, not a display-formatted value
+- Paystack config and backend/database confirmed untouched by this fix
+
+No defect found. No further changes made as part of this QA pass.
