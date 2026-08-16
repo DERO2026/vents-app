@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, 
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { supabase, getAuthToken } from '../lib/supabase';
+import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
@@ -882,6 +883,7 @@ export default function App() {
       }
     } catch (err) {
       console.error('Failed to fetch user tickets:', err);
+      Sentry.captureException(err, { tags: { area: 'fetchUserTickets' } });
     } finally {
       setTicketsLoading(false);
     }
