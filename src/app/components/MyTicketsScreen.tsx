@@ -14,11 +14,17 @@ interface MyTicketsScreenProps {
   onRefresh?: () => Promise<void>;
 }
 
+// TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
+// Exact ticketId (tickets.id), not payment_ref or event title.
+const TICKET_DEBUG_TARGET_ID = '565dacc9-8c83-495f-bead-a09d678b27cb';
+
 export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh }: MyTicketsScreenProps) {
   // TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
   // First line of the function body: fires on every render, synchronously,
   // even if something further down throws.
-  console.log('[TICKET_DEBUG] MyTicketsScreen function body executing. tickets.length:', tickets.length, 'loading:', loading);
+  const propsIdx = tickets.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+  console.log('[TICKET_DEBUG][4-props] MyTicketsScreen function body executing. tickets.length:', tickets.length, 'loading:', loading);
+  console.log('[TICKET_DEBUG][4-props] target ticket index in props.tickets:', propsIdx, propsIdx >= 0 ? tickets[propsIdx] : 'NOT IN PROPS');
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -75,17 +81,23 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   const displayed = activeTab === 'upcoming' ? upcoming : past;
 
   // TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
-  useEffect(() => {
-    const target = tickets.find((t) => t.ticketId && t.event?.title === 'KARAOKE NIGHT');
-    console.log('[TICKET_DEBUG] MyTicketsScreen received tickets prop, length:', tickets.length);
-    console.log('[TICKET_DEBUG] target ticket in props:', target ? { ticketId: target.ticketId, eventTitle: target.event?.title, eventDate: target.event?.date, eventTime: target.event?.time } : 'NOT IN PROPS');
-    if (target) {
-      const parsed = new Date(`${target.event.date} ${target.event.time}`);
-      console.log('[TICKET_DEBUG] target parsed date:', parsed.toString(), 'isNaN:', isNaN(parsed.getTime()), 'vs now:', new Date().toString());
-      console.log('[TICKET_DEBUG] target is in upcoming[]?', upcoming.some((t) => t.ticketId === target.ticketId));
-      console.log('[TICKET_DEBUG] target is in past[]?', past.some((t) => t.ticketId === target.ticketId));
-    }
-  }, [tickets]);
+  // Checkpoint 5: after the upcoming/past split, exact ticketId match only.
+  const upcomingIdx = upcoming.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+  const pastIdx = past.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+  const displayedIdx = displayed.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+  console.log('[TICKET_DEBUG][5-split] upcoming.length:', upcoming.length, '| past.length:', past.length, '| activeTab:', activeTab);
+  console.log('[TICKET_DEBUG][5-split] target index in upcoming:', upcomingIdx, '| target index in past:', pastIdx);
+  console.log('[TICKET_DEBUG][5-split] target index in displayed (current tab):', displayedIdx);
+  if (propsIdx >= 0 && upcomingIdx < 0 && pastIdx < 0) {
+    const target = tickets[propsIdx];
+    const parsed = new Date(`${target.event.date} ${target.event.time}`);
+    console.log('[TICKET_DEBUG][5-split] target was in props but NOT in upcoming or past — date parse check:', { eventDate: target.event.date, eventTime: target.event.time, parsed: parsed.toString(), isNaN: isNaN(parsed.getTime()), now: new Date().toString() });
+  }
+
+  // TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
+  // Checkpoint 6: immediately before the JSX .map() that renders cards.
+  console.log('[TICKET_DEBUG][6-preMap] about to render', displayed.length, 'cards. target index in displayed:', displayed.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID));
+  console.log('[TICKET_DEBUG][6-preMap] all displayed ticketIds:', displayed.map((t) => t.ticketId));
 
   return (
     <div

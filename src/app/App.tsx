@@ -68,6 +68,11 @@ function isVersionOlder(current: string, minimum: string): boolean {
   return false;
 }
 
+// TEMPORARY DEBUG — remove after root-causing the missing-ticket issue.
+// Exact ticketId (tickets.id), not payment_ref or event title — those
+// produced a false match against a different ticket for the same event.
+const TICKET_DEBUG_TARGET_ID = '565dacc9-8c83-495f-bead-a09d678b27cb';
+
 const TAB_SCREENS: Record<TabId, Screen> = {
   home: 'home',
   explore: 'explore',
@@ -789,9 +794,9 @@ export default function App() {
       // issue. Logs whether the raw response contains the ticket, and
       // whether its embedded `events` join came back populated.
       if (data) {
-        const dbg = data.find((t: any) => t.payment_ref === 'VNT-96450b1d35bd46139235f9e4ec93ebd9');
-        console.log('[TICKET_DEBUG] raw tickets response length:', data.length);
-        console.log('[TICKET_DEBUG] target ticket in raw response:', dbg ? { id: dbg.id, payment_ref: dbg.payment_ref, status: dbg.status, payment_status: dbg.payment_status, hasEvents: !!dbg.events, eventsValue: dbg.events } : 'NOT FOUND IN RAW DATA');
+        const dbg = data.find((t: any) => t.id === TICKET_DEBUG_TARGET_ID);
+        console.log('[TICKET_DEBUG][1-raw] raw tickets response length:', data.length);
+        console.log('[TICKET_DEBUG][1-raw] target ticket (by exact id) in raw response:', dbg ? { id: dbg.id, payment_ref: dbg.payment_ref, status: dbg.status, payment_status: dbg.payment_status, hasEvents: !!dbg.events, eventsValue: dbg.events } : 'NOT FOUND IN RAW DATA');
       }
 
       if (data) {
@@ -884,11 +889,11 @@ export default function App() {
         });
 
         // TEMPORARY DEBUG — remove after root-causing the missing-ticket
-        // issue. Confirms whether the target ticket survived the .filter
-        // and .map above, and what its final mapped shape looks like.
-        const dbgMapped = mappedTickets.find((t) => t.ticketId === (data.find((r: any) => r.payment_ref === 'VNT-96450b1d35bd46139235f9e4ec93ebd9')?.id));
-        console.log('[TICKET_DEBUG] mappedTickets length:', mappedTickets.length, '(raw data length was', data.length, ')');
-        console.log('[TICKET_DEBUG] target ticket after filter+map:', dbgMapped || 'DROPPED — not in mappedTickets');
+        // issue. Confirms whether the exact target ticket (by id) survived
+        // the .filter and .map above.
+        const dbgMappedIdx = mappedTickets.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+        console.log('[TICKET_DEBUG][2-mapped] mappedTickets length:', mappedTickets.length, '(raw data length was', data.length, ')');
+        console.log('[TICKET_DEBUG][2-mapped] target ticket index in mappedTickets:', dbgMappedIdx, dbgMappedIdx >= 0 ? mappedTickets[dbgMappedIdx] : 'DROPPED — not in mappedTickets');
 
         setAllTickets(mappedTickets);
         // Warm the signed-token cache for every ticket as soon as the list is
@@ -2079,8 +2084,12 @@ export default function App() {
             // TEMPORARY DEBUG — remove after root-causing the missing-ticket
             // issue. Fires synchronously right before MyTicketsScreen is
             // rendered, so it can't be missed regardless of effect timing.
-            console.log('[TICKET_DEBUG] About to render MyTicketsScreen. allTickets.length:', allTickets.length, 'screen:', screen);
-            console.log('[TICKET_DEBUG] target ticket in allTickets (by event title match):', allTickets.find((t) => t.event?.title === 'KARAOKE NIGHT') || 'NOT FOUND in allTickets');
+            // Exact ticketId match only — event-title matching previously
+            // returned a different ticket for the same event.
+            const idx = allTickets.findIndex((t) => t.ticketId === TICKET_DEBUG_TARGET_ID);
+            console.log('[TICKET_DEBUG][3-preRender] allTickets.length:', allTickets.length);
+            console.log('[TICKET_DEBUG][3-preRender] allTickets.some(exact id match):', idx >= 0, '| index:', idx);
+            console.log('[TICKET_DEBUG][3-preRender] target ticket object:', idx >= 0 ? allTickets[idx] : 'NOT FOUND in allTickets');
             return null;
           })()}
           {screen === 'my-tickets' && (
