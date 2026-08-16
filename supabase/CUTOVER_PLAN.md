@@ -19,13 +19,17 @@ delta sync, and the rest of the non-code checklist below. This document is the p
 to follow once that remaining work is done — it is deliberately honest about what's
 left rather than assuming today's state is cutover-ready.
 
-**Single biggest concrete blocker, confirmed via a direct read of Vercel's Production
-environment (§3)**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-`PROJECT_ADMIN_DATABASE_URL`, and `SUPABASE_JWT_SECRET` are genuinely absent from
-Production — not masked, not sensitive-and-hidden, just not set. Deploying `main` to
-Production today, as-is, would break immediately on page load (the Supabase client
-can't initialize without a URL/anon key). This has to be fixed as part of §4.4, not
-discovered during it.
+**Update — resolved**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`PROJECT_ADMIN_DATABASE_URL`, and `SUPABASE_JWT_SECRET` have all been added to
+Vercel's **Production** environment (confirmed present by name via `vercel env ls`;
+values never displayed or persisted anywhere outside Vercel itself). This was the
+single biggest concrete blocker found earlier in this document — deploying `main`
+to Production before this would have broken immediately on page load. It no longer
+would, on this specific point. This does **not** mean Production is otherwise ready:
+`PAYSTACK_SECRET_KEY`'s live/test mode is still unverified, the paid Paystack
+purchase → webhook → ticket-confirmation flow still has not actually been run even
+though the credential that unblocks testing it now exists, and everything else
+tracked in §3's checklist and §8's audit remains exactly as stated there.
 
 ---
 
@@ -223,7 +227,8 @@ risk — they're deployment/ops readiness.
 - [~] Full regression pass on Supabase — **run against a real Preview deployment, not just locally**: sign up ✅ (confirmed working against a real domain — see resolved finding below) → verify (unverified, no inbox access to confirm actual OTP-code receipt) → browse ✅ → purchase (free-ticket path ✅; paid/webhook path not exercised, needs `PROJECT_ADMIN_DATABASE_URL`) → check in ✅ (incl. live realtime confirmed) → message ✅ → admin-moderate ✅. Still needs: a real-inbox test to confirm the OTP code actually arrives, the paid/webhook purchase path, and a fresh-device/native-build pass
 - [x] Resolved: "Error sending confirmation email" was `@example.com` having no real mailbox, not a genuine SMTP gap — re-tested clean against a real `getvents.com` address
 - [ ] `VITE_PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` confirmed as **live** keys are what's set in Vercel's production environment (not the test keys used for migration verification) — **cannot be verified programmatically**: both are marked `Sensitive` in Vercel (write-only by design — `vercel env pull` returns them as empty strings even with full project access, confirmed directly against Production; same for `CRON_SECRET`, `ANTHROPIC_API_KEY`, `FCM_SERVICE_ACCOUNT_JSON`, `VITE_GOOGLE_PLACES_API_KEY`, `VITE_POSTHOG_KEY`, `VITE_SENDCHAMP_*`). Whoever originally set these needs to confirm the mode directly, or the values need to be rotated and re-entered with the mode recorded at set-time.
-- [ ] Vercel environment variables added for production: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL` (or equivalent), `SUPABASE_JWT_SECRET` (if still relevant), removing `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` only after confirming nothing reads them — **confirmed via a fresh `vercel env pull --environment=production`: all four are genuinely absent from Production** (not masked/sensitive — they don't appear in the pulled file at all, unlike the write-only vars above). This is the single biggest concrete blocker on this checklist: as of this check, deploying `main` to Production today would break immediately — the Supabase client can't even initialize without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`. `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` are still present and would need removing once the Supabase vars are added and confirmed working.
+- [x] **Vercel environment variables added for Production**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL`, `SUPABASE_JWT_SECRET` — all four created via the Vercel API, scoped to **Production only** (confirmed by name and environment via `vercel env ls`; values were never printed, logged, or committed at any point, and the one-shot script used to set them was deleted immediately after). `PROJECT_ADMIN_DATABASE_URL`/`SUPABASE_JWT_SECRET` were created as `Sensitive` (write-only, matching how `PAYSTACK_SECRET_KEY`/`FCM_SERVICE_ACCOUNT_JSON` are already stored in this project); `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY` as regular `Encrypted`, matching the Preview-scoped copies added earlier this migration. **Not yet done**: removing `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` — deliberately left in place until the new Supabase vars are confirmed working end-to-end against a real Production deploy (out of scope for this step; nothing currently reads them anyway per §2's confirmed-zero `insforge` import grep, so their presence is inert, not risky). **`PAYSTACK_SECRET_KEY` was explicitly not touched** in this step, per instruction — its live/test mode remains unverified (checklist item above).
+- [x] `PROJECT_ADMIN_DATABASE_URL` now present in Production — **this unblocks testing the paid Paystack purchase → webhook → ticket-confirmation flow going forward**, but that test still has not actually been run yet (see §8's still-unverified list). Presence of the credential ≠ the flow having been exercised.
 - [ ] Rollback plan (§5) reviewed and understood by whoever is on call during the cutover window
 
 ---
@@ -348,12 +353,12 @@ preference:
    signup against a real `getvents.com` address completed with no error,
    after an initial false alarm — see §1) — but that only proves single-send
    correctness, not volume. The plan-capacity question is still open.
-5. Who holds the `project_admin` Postgres role's password (set out-of-band
-   per `0021_project_admin_login.sql`, and not recorded anywhere in this
-   repo, `.env.local`, or Vercel's env vars)? This pass could not test the
-   webhook-driven paid-purchase/payout/refund-finalization path at all
-   without it — whoever has it needs to either run that part of the
-   regression pass themselves or share a way to test it before cutover.
+5. **Resolved**: the `project_admin` Postgres role's connection string
+   (`PROJECT_ADMIN_DATABASE_URL`) has been supplied and added to Vercel
+   Production. The webhook-driven paid-purchase/payout/refund-finalization
+   path is no longer blocked on a missing credential — but running that
+   part of the regression pass is still an open action item, not something
+   this resolution did automatically. See §8 blocker #2.
 
 ---
 
@@ -477,16 +482,19 @@ earlier session.
 
 ### Blocking
 
-1. **Production Vercel env vars still absent — re-verified fresh this pass**
-   (not assumed): `vercel env pull --environment=production` again shows
-   zero occurrences of `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
-   `PROJECT_ADMIN_DATABASE_URL`, `SUPABASE_JWT_SECRET`. Unchanged from §1's
-   earlier finding — restated here because this audit's instructions were
-   explicit about not assuming anything still holds. This alone blocks any
-   Production deploy or store submission that expects the live app to work.
+1. **RESOLVED since this audit was written**: `VITE_SUPABASE_URL`,
+   `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL`, and
+   `SUPABASE_JWT_SECRET` have all been added to Vercel's Production
+   environment — confirmed present by name via `vercel env ls`, scoped to
+   Production only, values never displayed/logged/committed. See the
+   top-of-document update note and §3's checklist for the full record.
+   This unblocks item #2 below (the paid purchase flow can now actually be
+   tested) but does not, by itself, mean that test has been run.
 2. **Purchase → Paystack webhook → ticket confirmation remains unverified.**
-   Not tested this pass either — still blocked on `PROJECT_ADMIN_DATABASE_URL`
-   (§6, open question 5). Explicitly not marked verified, per instruction.
+   `PROJECT_ADMIN_DATABASE_URL` now exists in Production (item #1 above),
+   so this is no longer blocked on a missing credential — but the flow
+   itself still has not actually been run against it. Still explicitly not
+   marked verified.
 3. **`LAUNCH_CHECKLIST.md` §9 ("Backend / Infrastructure") is now stale and
    actively misleading.** It describes fixing a "missing `INSFORGE_API_KEY`"
    bug in `api/webhook/paystack.ts` and marks `INSFORGE_API_KEY`/
