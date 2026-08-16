@@ -463,3 +463,170 @@ support, separate from this one.
   number for an obscure country could pass client-side validation; this is
   an accepted tradeoff, not a claim that every country's format was
   hand-verified.
+
+---
+
+## 8. Pre-store launch audit
+
+Full sweep across the areas listed in `LAUNCH_CHECKLIST.md`/`IOS_LAUNCH_CHECKLIST.md`
+plus a fresh code-level check of everything already covered earlier in this
+file, done before starting Google Play/App Store submission work. Every item
+below reflects something actually read, grepped, typechecked, built, or
+(where marked) live-tested this pass — not assumed carried-over from an
+earlier session.
+
+### Blocking
+
+1. **Production Vercel env vars still absent — re-verified fresh this pass**
+   (not assumed): `vercel env pull --environment=production` again shows
+   zero occurrences of `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+   `PROJECT_ADMIN_DATABASE_URL`, `SUPABASE_JWT_SECRET`. Unchanged from §1's
+   earlier finding — restated here because this audit's instructions were
+   explicit about not assuming anything still holds. This alone blocks any
+   Production deploy or store submission that expects the live app to work.
+2. **Purchase → Paystack webhook → ticket confirmation remains unverified.**
+   Not tested this pass either — still blocked on `PROJECT_ADMIN_DATABASE_URL`
+   (§6, open question 5). Explicitly not marked verified, per instruction.
+3. **`LAUNCH_CHECKLIST.md` §9 ("Backend / Infrastructure") is now stale and
+   actively misleading.** It describes fixing a "missing `INSFORGE_API_KEY`"
+   bug in `api/webhook/paystack.ts` and marks `INSFORGE_API_KEY`/
+   `PAYSTACK_SECRET_KEY`/`CRON_SECRET` as "confirmed set in Vercel
+   production" as evidence the backend is launch-ready. That was true for
+   the pre-migration InsForge backend; it says nothing about the current
+   Supabase-backed code (this branch), which needs an entirely different
+   set of env vars (blocker #1 above) that are not present. Anyone reading
+   §9 today without this context could reasonably conclude the backend is
+   production-ready when it is not. **Recommend**: before merging PR #3,
+   rewrite `LAUNCH_CHECKLIST.md` §9 against the current Supabase
+   architecture, or add a prominent note at its top pointing here. Not done
+   in this pass — the instruction was to update `CUTOVER_PLAN.md`, and
+   editing a second document unprompted risked exactly the kind of
+   unrelated change this pass was told to avoid; flagging it instead.
+4. **`android/keystore.properties` still doesn't exist** — confirmed absent
+   again this pass. No release `.aab` can be built without it, and it can
+   only be created with the real keystore credentials, which this
+   environment doesn't have and shouldn't be asked to hold.
+5. **`android/app/google-services.json` still doesn't exist** — confirmed
+   absent again this pass (see the Firebase audit two turns ago). Native
+   push registration on Android won't work without it; the file is a
+   Firebase Console download only you can perform.
+6. **Play Store submission assets are still not produced**: screenshots,
+   feature graphic (1024×500), 512×512 store icon, Data Safety form,
+   content-rating questionnaire. Confirmed still absent by re-reading
+   `LAUNCH_CHECKLIST.md` §4 — none of this is something to fabricate, and
+   none of it exists in this repo to check off.
+
+### Important
+
+7. **Signup's account "State" field is still hard-locked to
+   `NIGERIA_STATES`** regardless of the phone country chosen (flagged in §7
+   above, not fixed this pass either — still a materially bigger change
+   than phone/country handling). A non-Nigerian user can now complete
+   signup, but is still forced into a Nigerian state for their profile.
+8. **`RECORD_AUDIO` permission is declared but the voice-notes feature is
+   disabled** behind a feature flag — confirmed still true by re-reading
+   `migrations/20260710185537_media-feature-toggles.sql` and
+   `AndroidManifest.xml`. Google's automated review sometimes flags
+   declared-but-unused permissions. Either justify it in Play Console's
+   permissions declaration or strip it until voice notes ship.
+9. **`versionCode`/`versionName` are still at Gradle-template defaults**
+   (`1`/`"1.0"`, confirmed by re-reading `android/app/build.gradle`) — must
+   be bumped before the first real Play Store upload; trivial but a real
+   blocker for that specific step if forgotten.
+10. **Every on-device item in `LAUNCH_CHECKLIST.md` §10 remains unverified**
+    (splash-screen white-flash fix, native Save/Share Ticket, push
+    tap-to-navigate routing, camera/QR scanner, back-button/edge-swipe) —
+    this environment has no physical device or emulator to test any of
+    these on. All were previously confirmed to *compile* correctly in a
+    real Gradle build, which is a different and weaker claim than "works
+    on a device," and the checklist itself is honest about that distinction.
+
+### Minor — fixed this pass
+
+11. **Two genuinely dead, unimported files removed**: `src/lib/insforge.ts`
+    and `src/test-insforge.ts`. Confirmed zero importers anywhere in `src/`
+    or `api/` via a repo-wide import-statement grep (not just a usage
+    grep) before deleting — `test-insforge.ts` additionally referenced
+    `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`, env vars this app no
+    longer reads anywhere.
+12. **Two stale, misleading comments fixed** (documentation-only, zero
+    functional change): `middleware.ts` claimed rate limiting was "enforced
+    by InsForge backend" — this file is genuinely inert at runtime for a
+    Vite SPA (confirmed by its own first-line comment), and real rate
+    limiting is actually enforced via `check_auth_rate_limit()`/
+    `check_rate_limit()` Supabase RPCs elsewhere; the comment now says so.
+    `sanitize.ts`'s `validatePassword` attributed the password policy to
+    `insforge.toml [auth.password]`, which is no longer the enforcement
+    path — repointed to `schemas.ts`'s `signupSchema.password`.
+
+### Re-confirmed this pass (not new work — checked, not just carried over)
+
+- **RLS is enabled** on every critical table (`users`, `tickets`, `events`,
+  `direct_messages`, `organizer_bank_accounts`, `organizer_wallets`,
+  `vents_wallets`, `vc_transactions`, `blocked_users`, `saved_events`) —
+  confirmed by grepping `supabase/migrations/0008_rls_and_policies.sql`
+  directly for `ENABLE ROW LEVEL SECURITY` against each, not assumed.
+- **Zero remaining `insforge` imports repo-wide** — re-ran the import-grep
+  (not just a usage-grep) across all of `src/` and `api/`; the only
+  remaining hits are historical comments and the two dead files removed
+  above (now zero).
+- **Get Directions and Add to Calendar are both implemented**
+  (`EventDetailsScreen.tsx`): Get Directions opens a real Google Maps
+  search URL; Add to Calendar generates a real `.ics` blob via native
+  share/download. Structurally present and typechecked; not re-clicked
+  live this pass specifically (both were visibly present and functional
+  during the earlier regression pass's live event-details page load).
+- **Flyer/cover-image upload and crop** — live-verified in the earlier
+  regression pass (real Supabase Storage upload via `CreateEventScreen`'s
+  multi-step form), unaffected by this pass's changes.
+- **Free-ticket checkout, check-in (incl. live realtime), organizer event
+  creation, sales stats, admin moderation, messaging** — all live-verified
+  in the earlier regression pass (§1) and untouched by anything in this
+  pass; re-stating here only to confirm nothing in this audit found a
+  regression in those areas, not re-testing them from scratch.
+
+### Explicitly unverified (not tested this pass, listed honestly rather than omitted)
+
+- Paid Paystack purchase → webhook → ticket confirmation (blocker #2).
+- Real-inbox OTP-code receipt (no test inbox access, unchanged from §1).
+- Refund flow's UI click-through (`AttendeeListScreen`'s refund dialog) —
+  the migrated RPC path was code-reviewed and typechecks, but not driven
+  live through the UI in any pass so far.
+- `SalesAnalyticsScreen.tsx` specifically — migrated and typechecks;
+  `OrganizerDashboard.tsx` (a different screen) was live-verified, this one
+  was not clicked into directly.
+- Per-country phone format precision for the ~189 non-Nigerian countries
+  individually (§7 — accepted generic-range tradeoff, not a claim of
+  per-country accuracy).
+- Everything iOS — deliberately out of scope this pass, per your own
+  launch sequencing (Capacitor iOS wrapper is a separate later step).
+- All native/on-device testing (important #10) — no device/emulator
+  available in this environment.
+
+### Verification run this pass
+- `npx tsc --noEmit` — clean.
+- `npx vitest run` — 10/10 existing tests pass, no regressions.
+- `npm run build` — succeeds (same pre-existing >500kB chunk-size warning
+  as every prior build this session, unrelated to this pass's changes).
+
+### Recommended next steps, in order
+1. You: supply real keystore credentials (`android/keystore.properties`)
+   and Firebase's `google-services.json` — both are hard blockers only you
+   can unblock (blockers #4, #5).
+2. You: add the missing Supabase env vars to Production, and confirm
+   `PAYSTACK_SECRET_KEY` is live-mode (blockers #1, and the still-open
+   Paystack-live-key checklist item from §3) — I've deliberately not done
+   this myself since it's a real Production config change.
+3. Decide on `LAUNCH_CHECKLIST.md` §9's staleness (blocker #3) — either ask
+   me to rewrite it against the current Supabase architecture, or handle
+   it yourself before anyone uses that file to judge launch-readiness.
+4. Bump `versionCode`/`versionName` (important #9) immediately before the
+   first real build — easy to forget, cheap to do right before upload.
+5. Resolve the `RECORD_AUDIO` permission question (important #8) — declare
+   it in Play Console or strip it, whichever matches the actual current
+   feature state.
+6. Once the above are done: a real device/emulator pass through
+   `LAUNCH_CHECKLIST.md` §10 — nothing in that list can be verified from
+   this environment.
+7. Only after 1–6: proceed to Play Store submission, then the Capacitor iOS
+   steps already sequenced after it.
