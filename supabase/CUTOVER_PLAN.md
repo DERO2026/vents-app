@@ -19,6 +19,14 @@ delta sync, and the rest of the non-code checklist below. This document is the p
 to follow once that remaining work is done — it is deliberately honest about what's
 left rather than assuming today's state is cutover-ready.
 
+**Single biggest concrete blocker, confirmed via a direct read of Vercel's Production
+environment (§3)**: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`,
+`PROJECT_ADMIN_DATABASE_URL`, and `SUPABASE_JWT_SECRET` are genuinely absent from
+Production — not masked, not sensitive-and-hidden, just not set. Deploying `main` to
+Production today, as-is, would break immediately on page load (the Supabase client
+can't initialize without a URL/anon key). This has to be fixed as part of §4.4, not
+discovered during it.
+
 ---
 
 ## 1. What's already migrated and verified
@@ -214,8 +222,8 @@ risk — they're deployment/ops readiness.
 - [ ] Native email/OTP flows tested on a real iOS and Android build
 - [~] Full regression pass on Supabase — **run against a real Preview deployment, not just locally**: sign up ✅ (confirmed working against a real domain — see resolved finding below) → verify (unverified, no inbox access to confirm actual OTP-code receipt) → browse ✅ → purchase (free-ticket path ✅; paid/webhook path not exercised, needs `PROJECT_ADMIN_DATABASE_URL`) → check in ✅ (incl. live realtime confirmed) → message ✅ → admin-moderate ✅. Still needs: a real-inbox test to confirm the OTP code actually arrives, the paid/webhook purchase path, and a fresh-device/native-build pass
 - [x] Resolved: "Error sending confirmation email" was `@example.com` having no real mailbox, not a genuine SMTP gap — re-tested clean against a real `getvents.com` address
-- [ ] `VITE_PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` confirmed as **live** keys are what's set in Vercel's production environment (not the test keys used for migration verification)
-- [ ] Vercel environment variables added for production: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL` (or equivalent), `SUPABASE_JWT_SECRET` (if still relevant), removing `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` only after confirming nothing reads them
+- [ ] `VITE_PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` confirmed as **live** keys are what's set in Vercel's production environment (not the test keys used for migration verification) — **cannot be verified programmatically**: both are marked `Sensitive` in Vercel (write-only by design — `vercel env pull` returns them as empty strings even with full project access, confirmed directly against Production; same for `CRON_SECRET`, `ANTHROPIC_API_KEY`, `FCM_SERVICE_ACCOUNT_JSON`, `VITE_GOOGLE_PLACES_API_KEY`, `VITE_POSTHOG_KEY`, `VITE_SENDCHAMP_*`). Whoever originally set these needs to confirm the mode directly, or the values need to be rotated and re-entered with the mode recorded at set-time.
+- [ ] Vercel environment variables added for production: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `PROJECT_ADMIN_DATABASE_URL` (or equivalent), `SUPABASE_JWT_SECRET` (if still relevant), removing `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` only after confirming nothing reads them — **confirmed via a fresh `vercel env pull --environment=production`: all four are genuinely absent from Production** (not masked/sensitive — they don't appear in the pulled file at all, unlike the write-only vars above). This is the single biggest concrete blocker on this checklist: as of this check, deploying `main` to Production today would break immediately — the Supabase client can't even initialize without `VITE_SUPABASE_URL`/`VITE_SUPABASE_ANON_KEY`. `VITE_INSFORGE_URL`/`VITE_INSFORGE_ANON_KEY`/`INSFORGE_API_KEY` are still present and would need removing once the Supabase vars are added and confirmed working.
 - [ ] Rollback plan (§5) reviewed and understood by whoever is on call during the cutover window
 
 ---
