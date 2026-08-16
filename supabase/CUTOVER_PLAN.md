@@ -966,11 +966,21 @@ place.
 All temporary `[TICKET_DEBUG]` logging has been removed (commit
 `191f74f`) and Production is confirmed serving that clean build.
 
-### Open follow-up (not fixed this pass)
+### Follow-up: fetchUserTickets now reports to Sentry (2026-08-16, closed)
 
-Client-side errors caught internally (e.g. `fetchUserTickets`'s catch
-block) are never sent to Sentry — only logged to the browser console.
-Worth adding `Sentry.captureException()` calls at key catch sites, or
-a console-capture integration in `sentry.ts`, so a real recurrence of
-this class of issue would actually surface in Sentry instead of
-requiring a live diagnostic-logging pass to investigate.
+`fetchUserTickets`'s catch block (`src/app/App.tsx`) previously only
+called `console.error` — invisible to Sentry, since `Sentry.init()`
+has no console-capture integration. Fixed in commit `264a22d`:
+imports `Sentry` from `src/lib/sentry.ts` and calls
+`Sentry.captureException(err, { tags: { area: 'fetchUserTickets' } })`
+alongside the existing `console.error`, tagged for easy filtering in
+Sentry's issue list. Typecheck and production build both clean.
+Deployed and confirmed `READY` on `getvents.com`
+(`dpl_BWdyX87bTVqQGMWx2r3sfXVDsNdS`).
+
+Scope was deliberately narrow — only this one flagged catch block, not
+a sweep of every `console.error` in the codebase. Other similarly
+"caught-and-only-logged" error sites elsewhere in the app remain
+un-instrumented and would benefit from the same treatment in a future
+pass, but that's a separate, larger piece of work not implied by this
+specific follow-up.
