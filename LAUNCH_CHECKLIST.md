@@ -141,15 +141,86 @@ against this codebase.*
 
 ## 9. Backend / Infrastructure
 
-*Verified this session via direct production database checks and a real Vercel deployment.*
+**Superseded — rewritten to reflect the current Supabase backend.** The
+previous version of this section described fixing bugs in an
+InsForge-backed `api/webhook/paystack.ts` and cited `INSFORGE_API_KEY`
+being set in Vercel as evidence of launch-readiness. That was accurate for
+the pre-migration backend at the time it was written; it is **not**
+accurate for the current codebase, which has since been fully migrated to
+Supabase (`claude/jolly-moser-bee77b`, PR #3, not yet merged to `main`).
+Anyone using the old wording to judge launch-readiness would be checking
+the wrong backend entirely. See `supabase/CUTOVER_PLAN.md` for the full
+migration history and audit trail this section summarizes.
 
-- [x] Payment webhook (`api/webhook/paystack.ts`) confirmed working end-to-end — found and fixed two real production bugs this session: a missing `INSFORGE_API_KEY` causing every real payment to silently fail to confirm since July 31, and an overly-strict amount-equality check rejecting legitimate payments once Paystack's own transaction fee was added on top. Both fixed and verified live with a real test purchase.
-- [x] `INSFORGE_API_KEY`, `PAYSTACK_SECRET_KEY`, `CRON_SECRET` all confirmed set in Vercel production
-- [x] Two stuck real-money tickets from before the fix were manually recovered and independently verified against Paystack's own transaction records (not just trusted blindly)
-- [x] Bank account management (add/remove/set-default, max 3 accounts) — fixed a real FK-violation bug this session (hard-delete → soft-delete), verified against the live database with a reproduced failure scenario
-- [ ] **Vercel plan**: currently on Hobby — push/reminder crons run once daily (not near-real-time) and serverless functions are capped at 12 (already consolidated to exactly 12). Upgrade to Pro if faster notification delivery or more functions are needed post-launch.
-- [ ] Confirm `PAYSTACK_SECRET_KEY` is production/live mode, not test mode, before public launch
-- [ ] Set up basic uptime/error monitoring alerting (Sentry is integrated — confirm alert rules are actually configured, not just SDK-installed)
+*Status below reflects what has actually been checked directly this
+migration (real Vercel API calls, a real Preview deployment, a real
+Postgres connection) — not assumed. `[x]` = verified directly. `[ ]` =
+still missing or genuinely unverified, stated explicitly either way.*
+
+- [x] **All backend Vercel functions and all frontend files converted to
+  Supabase** — confirmed by a repo-wide grep for any import from
+  `lib/insforge` (not just usage of `.database`/`.auth`/`.realtime`);
+  zero matches remain anywhere in `src/` or `api/`. The two files that
+  made up that module (`src/lib/insforge.ts`, `src/test-insforge.ts`) have
+  been deleted outright — they were dead code with zero importers.
+- [x] **Full regression pass run against a real Vercel Preview deployment**
+  of this branch (not just local typecheck): sign up, browse, purchase
+  (free-ticket path), organizer event creation, check-in (including a
+  **live** realtime confirmation — the Door Manager UI updated with zero
+  manual refresh off a real check-in), messaging, and admin moderation all
+  verified with real data against the live Supabase project. Full
+  step-by-step results in `supabase/CUTOVER_PLAN.md` §1.
+- [x] **RLS confirmed enabled** on every critical table (`users`,
+  `tickets`, `events`, `direct_messages`, `organizer_bank_accounts`,
+  `organizer_wallets`, `vents_wallets`, `vc_transactions`,
+  `blocked_users`, `saved_events`) — checked directly against
+  `supabase/migrations/0008_rls_and_policies.sql`, not assumed.
+- [ ] **`VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are NOT set in
+  Vercel's Production environment.** Confirmed by directly pulling
+  Production's actual env vars (`vercel env pull --environment=production`)
+  twice, in two separate sessions — both times these came back completely
+  absent, not masked or encrypted-but-present. **The Supabase client
+  cannot even initialize without these.** Deploying `main` (or merging
+  PR #3 and deploying it) to Production today would break the app
+  immediately on load. This is the single biggest concrete blocker to
+  cutover.
+- [ ] **`PROJECT_ADMIN_DATABASE_URL` is NOT set anywhere** — not in
+  Production, Preview, or `.env.local`. This is the direct-Postgres
+  connection the webhook uses to finalize ticket payments, organizer
+  payouts, and refunds (`api/_lib/projectAdminDb.ts`). Its password was
+  deliberately set out-of-band per
+  `supabase/migrations/0021_project_admin_login.sql` and isn't recorded
+  anywhere in this repo. Without it, **the entire
+  purchase → Paystack webhook → ticket-confirmation flow has never been
+  tested against this backend** — not once, in any session. This is not
+  "probably fine" — it is genuinely unverified and must not be treated as
+  working until someone with that credential runs it for real.
+- [ ] **`SUPABASE_JWT_SECRET` is NOT set** — confirmed absent alongside the
+  above. Only relevant if anything ends up needing to verify Supabase JWTs
+  outside Supabase's own client libraries; flagged for completeness since
+  it was part of the original planned env-var set.
+- [ ] **`PAYSTACK_SECRET_KEY` / `VITE_PAYSTACK_PUBLIC_KEY` live-vs-test mode
+  cannot be verified from a development environment.** Both are marked
+  `Sensitive` in Vercel — write-only by design, unreadable by any method
+  (CLI, API, or `vercel env pull`) even with full project access. Whoever
+  originally set these needs to confirm the mode directly, or they need to
+  be rotated and re-entered with the mode recorded at set-time.
+- [ ] **`CRON_SECRET` and `FCM_SERVICE_ACCOUNT_JSON` are present in Vercel**
+  (confirmed via `vercel env ls` — both exist) but are also `Sensitive`,
+  so their actual values can't be confirmed correct from here, only that
+  something is set under those names.
+- [ ] **Vercel plan**: still on Hobby — push/reminder crons run once daily
+  (not near-real-time) and serverless functions are capped at 12 (already
+  consolidated to exactly 12, confirmed this migration; adding one more
+  endpoint without removing another will break every deployment). Upgrade
+  to Pro if faster notification delivery or more functions are needed
+  post-launch.
+- [ ] Set up basic uptime/error monitoring alerting (Sentry is integrated —
+  confirm alert rules are actually configured, not just SDK-installed).
+- [ ] Bank account management (add/remove/set-default) — was fixed and
+  verified against the InsForge backend in an earlier session; **not
+  re-verified against Supabase** in this migration's regression pass.
+  Should be included in the next full regression run.
 
 ## 10. On-Device Testing (do this on a real device, not just emulator — camera/push/Paystack popups are unreliable in emulators)
 

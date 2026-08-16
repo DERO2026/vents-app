@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { insforge } from './insforge';
+import { supabase } from './supabase';
 import { OrganizerEventOverview, OrganizerEventDisplayStatus } from '../app/components/types';
 
 // ─── Organizer Hub → "My Created Events" real-time data layer ────────────────
@@ -59,7 +59,7 @@ export function useOrganizerEvents(organizerId: string | undefined) {
     if (!silent) setLoading(true);
     setError(null);
     try {
-      const { data, error: err } = await insforge.database.rpc('get_organizer_events_overview' as any, {});
+      const { data, error: err } = await supabase.rpc('get_organizer_events_overview' as any, {});
       if (err) throw err;
       if (!mountedRef.current) return;
       setEvents(Array.isArray(data) ? data.map(mapRow) : []);
@@ -74,29 +74,26 @@ export function useOrganizerEvents(organizerId: string | undefined) {
   useEffect(() => { refresh(false); }, [refresh]);
 
   // ── Realtime: refetch on any ticket/check-in/event change for this organizer ──
+  // Server-side triggers (0004_functions.sql) broadcast 'event_changed' /
+  // 'tickets_changed' on the 'organizer-events:<id>' topic — same
+  // realtime.send() + supabase.channel() broadcast convention as
+  // NotificationsScreen.tsx's 'user:<id>' channel.
   useEffect(() => {
     if (!organizerId) return;
-    const channel = `organizer-events:${organizerId}`;
-    let subscribed = false;
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
       if (debounce) clearTimeout(debounce);
       debounce = setTimeout(() => refresh(true), 350);
     };
 
-    insforge.realtime.connect()
-      .then(() => insforge.realtime.subscribe(channel))
-      .then(() => { subscribed = true; setLive(true); })
-      .catch(() => setLive(false));
-
-    insforge.realtime.on('tickets_changed', bump);
-    insforge.realtime.on('event_changed', bump);
+    const channel = supabase.channel(`organizer-events:${organizerId}`, { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'tickets_changed' }, bump);
+    channel.on('broadcast', { event: 'event_changed' }, bump);
+    channel.subscribe((status) => setLive(status === 'SUBSCRIBED'));
 
     return () => {
       if (debounce) clearTimeout(debounce);
-      insforge.realtime.off?.('tickets_changed', bump);
-      insforge.realtime.off?.('event_changed', bump);
-      if (subscribed) insforge.realtime.unsubscribe(channel);
+      supabase.removeChannel(channel);
       setLive(false);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps

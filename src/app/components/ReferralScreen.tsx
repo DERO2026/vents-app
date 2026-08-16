@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 import { haptics } from '../../lib/haptics';
 
@@ -63,10 +63,10 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       setLoading(true);
       try {
         const [refsRes, walletResult, userRes, bonusRes] = await Promise.all([
-          insforge.database.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
+          supabase.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
           getVcBalance(currentUser!.id),
-          insforge.database.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
-          insforge.database.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
+          supabase.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
+          supabase.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
         ]);
         if (refsRes.data) setReferrals(refsRes.data);
         setBalance(walletResult?.spendable ?? 0);
@@ -89,7 +89,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   async function handleCancelInvite(id: string) {
     setCancellingId(id);
     try {
-      await insforge.database.from('referrals').delete().eq('id', id);
+      await supabase.from('referrals').delete().eq('id', id);
       setReferrals((prev) => prev.filter((r) => r.id !== id));
     } catch (err: any) {
       console.error('Could not cancel invite:', err?.message || err);
@@ -103,7 +103,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   async function handlePurchaseBadge(type: BadgeTier, cost: number) {
     setBadgeBusy(true); setBadgeMsg(null);
     try {
-      const { error } = await insforge.database.rpc('purchase_badge' as any, { p_badge_type: type });
+      const { error } = await supabase.rpc('purchase_badge' as any, { p_badge_type: type });
       if (error) throw error;
       invalidateVcBalanceCache();
       setCurrentBadge(type);
@@ -117,7 +117,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   async function handleClaimProfileBonus() {
     setProfileBonusBusy(true); setProfileBonusMsg(null);
     try {
-      const { data, error } = await insforge.database.rpc('claim_profile_bonus' as any);
+      const { data, error } = await supabase.rpc('claim_profile_bonus' as any);
       if (error) throw error;
       if ((data as any)?.success) {
         invalidateVcBalanceCache();
@@ -135,7 +135,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   async function handleFeaturedInPeople() {
     setFeaturedBusy(true); setFeaturedMsg(null);
     try {
-      const { error } = await insforge.database.rpc('feature_in_people_vc' as any);
+      const { error } = await supabase.rpc('feature_in_people_vc' as any);
       if (error) throw error;
       invalidateVcBalanceCache();
       setBalance((prev) => prev - 150);

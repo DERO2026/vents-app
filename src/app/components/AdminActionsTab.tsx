@@ -7,7 +7,7 @@
 // admin_list_action_requests, admin_pending_request_count, admin_mark_*_seen).
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { CheckCircle2, XCircle, Clock, ChevronRight, Eye, Check, X, CheckCheck } from 'lucide-react';
 
 type Status = 'pending' | 'approved' | 'rejected';
@@ -79,14 +79,14 @@ export function AdminActionsTab({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await insforge.database.rpc('admin_list_action_requests' as any, {
+      const { data, error } = await supabase.rpc('admin_list_action_requests' as any, {
         p_status: filter === 'all' ? null : filter,
       });
       if (error) throw error;
       setRows((data as ActionRequest[]) || []);
       // Mark the loaded pending items as seen (notification read) for admins.
       if (isSuperAdmin && filter === 'pending') {
-        try { await insforge.database.rpc('admin_mark_all_requests_seen' as any, {}); } catch { /* ignore */ }
+        try { await supabase.rpc('admin_mark_all_requests_seen' as any, {}); } catch { /* ignore */ }
         onCountChange?.();
       }
     } catch (e: any) {
@@ -101,7 +101,7 @@ export function AdminActionsTab({
   const approve = async (r: ActionRequest) => {
     setBusyId(r.id);
     try {
-      const { error } = await insforge.database.rpc('approve_admin_action' as any, { p_request_id: r.id });
+      const { error } = await supabase.rpc('approve_admin_action' as any, { p_request_id: r.id });
       if (error) throw error;
       flash(true, 'Request approved — action executed.');
       setSelected(null);
@@ -118,7 +118,7 @@ export function AdminActionsTab({
     if (!rejectFor) return;
     setBusyId(rejectFor.id);
     try {
-      const { error } = await insforge.database.rpc('reject_admin_action' as any, {
+      const { error } = await supabase.rpc('reject_admin_action' as any, {
         p_request_id: rejectFor.id,
         p_reason: rejectReason.trim() || null,
       });
@@ -157,7 +157,7 @@ export function AdminActionsTab({
           </button>
         ))}
         {isSuperAdmin && (
-          <button onClick={async () => { try { await insforge.database.rpc('admin_mark_all_requests_seen' as any, {}); } catch { /* ignore */ } onCountChange?.(); flash(true, 'All marked read.'); }}
+          <button onClick={async () => { try { await supabase.rpc('admin_mark_all_requests_seen' as any, {}); } catch { /* ignore */ } onCountChange?.(); flash(true, 'All marked read.'); }}
             style={{ marginLeft: 'auto', padding: '6px 12px', borderRadius: '100px', fontSize: '12px', fontWeight: 700, cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', color: '#8B8FA8', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
             <CheckCheck size={13} /> Mark all read
           </button>

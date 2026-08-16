@@ -34,13 +34,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: `A ${action === 'reject' ? 'rejection' : 'cancellation'} reason is required` });
   }
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!baseUrl || !anonKey) {
     return res.status(500).json({ error: 'Payout system not configured' });
   }
 
-  const insforgeHeaders = {
+  // admin_reject_organizer_payout/admin_cancel_processing_payout are both
+  // EXECUTE-granted to `authenticated` (is_admin() checked internally) —
+  // forwarding the caller's own Supabase session token.
+  const supabaseHeaders = {
     'Content-Type': 'application/json',
     Authorization: authHeader,
     apikey: anonKey,
@@ -61,9 +64,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // (claimed === true) proceeds to fire a real transfer. A second,
       // concurrent/duplicate call for the same request_id gets
       // claimed === false and stops here.
-      const fetchRes = await fetch(`${baseUrl}/api/database/rpc/admin_claim_payout_for_processing`, {
+      const fetchRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_claim_payout_for_processing`, {
         method: 'POST',
-        headers: insforgeHeaders,
+        headers: supabaseHeaders,
         body: JSON.stringify({ p_request_id: request_id }),
       });
       if (!fetchRes.ok) {
@@ -80,9 +83,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // We already claimed (flipped to 'processing') above — release it
         // back to 'pending' rather than leaving it stuck with no transfer
         // in flight.
-        await fetch(`${baseUrl}/api/database/rpc/admin_release_payout_claim`, {
+        await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
           method: 'POST',
-          headers: insforgeHeaders,
+          headers: supabaseHeaders,
           body: JSON.stringify({ p_request_id: request_id, p_reason: 'No verified bank account on file' }),
         }).catch(() => {});
         return res.status(422).json({ error: 'Organizer has no verified bank account on file' });
@@ -112,9 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Paystack rejected the transfer outright — release the claim back
         // to 'pending' (guarded server-side to only work when no
         // transfer_code was ever attached) so the admin can safely retry.
-        await fetch(`${baseUrl}/api/database/rpc/admin_release_payout_claim`, {
+        await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
           method: 'POST',
-          headers: insforgeHeaders,
+          headers: supabaseHeaders,
           body: JSON.stringify({ p_request_id: request_id, p_reason: 'Paystack transfer initiation failed: ' + (transferJson.message || `HTTP ${transferRes.status}`) }),
         }).catch(() => {});
         return res.status(502).json({ error: transferJson.message || 'Paystack transfer initiation failed' });
@@ -126,9 +129,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // finalization on Paystack's side — transfer.success / transfer.failed
       // webhooks are the authoritative completion signal (see
       // api/webhook/paystack.ts), not this response.
-      await fetch(`${baseUrl}/api/database/rpc/admin_mark_payout_processing`, {
+      await fetch(`${baseUrl}/rest/v1/rpc/admin_mark_payout_processing`, {
         method: 'POST',
-        headers: insforgeHeaders,
+        headers: supabaseHeaders,
         body: JSON.stringify({
           p_request_id: request_id,
           p_paystack_reference: reference,
@@ -143,9 +146,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // is_admin() + funds rollback (pending_kobo -> balance_kobo) both
       // happen atomically inside this RPC. Reject is for a still-pending
       // request; the client fires its own decision email separately.
-      const rpcRes = await fetch(`${baseUrl}/api/database/rpc/admin_reject_organizer_payout`, {
+      const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_reject_organizer_payout`, {
         method: 'POST',
-        headers: insforgeHeaders,
+        headers: supabaseHeaders,
         body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
       });
       if (!rpcRes.ok) {
@@ -164,9 +167,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // is_admin() check, the 'processing'-only guard, the status flip, the
     // wallet refund, and the organizer_transactions audit row all happen
     // atomically inside this single RPC call.
-    const rpcRes = await fetch(`${baseUrl}/api/database/rpc/admin_cancel_processing_payout`, {
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_cancel_processing_payout`, {
       method: 'POST',
-      headers: insforgeHeaders,
+      headers: supabaseHeaders,
       body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
     });
     if (!rpcRes.ok) {

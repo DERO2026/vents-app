@@ -1,21 +1,29 @@
-// Validates a bearer token against InsForge's own session endpoint before an
+// Validates a bearer token against Supabase's own auth endpoint before an
 // endpoint does any real work (spending a paid third-party API call,
 // resolving bank details, etc). Checking that an Authorization header is
-// merely *present* proves nothing — this actually round-trips to InsForge
+// merely *present* proves nothing — this actually round-trips to Supabase
 // and only succeeds if the token is a currently-valid, live session.
+//
+// Function names kept as-is (verifyInsforgeSession, etc.) rather than
+// renamed to avoid touching every caller's import line for a pure rename —
+// the 7 call sites (api/extract-events.ts, api/notify/status-email.ts,
+// api/promotions/activate.ts, api/push/send.ts, api/wallet/banks.ts,
+// api/wallet/resolve-account.ts, api/wallet/save-bank.ts) only care about
+// behavior, not the name. Worth a follow-up rename pass for clarity.
 
 export async function verifyInsforgeSession(authHeader: string | undefined): Promise<{ userId: string; email: string | null } | null> {
   if (!authHeader) return null;
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  if (!baseUrl) return null;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!baseUrl || !anonKey) return null;
   try {
-    const res = await fetch(`${baseUrl}/api/auth/sessions/current`, {
-      headers: { Authorization: authHeader },
+    const token = authHeader.replace(/^Bearer\s+/i, '');
+    const res = await fetch(`${baseUrl}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${token}`, apikey: anonKey },
     });
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
-    const userId = data?.user?.id;
-    return userId ? { userId, email: data?.user?.email ?? null } : null;
+    return data?.id ? { userId: data.id as string, email: (data.email as string) ?? null } : null;
   } catch {
     return null;
   }
@@ -23,8 +31,8 @@ export async function verifyInsforgeSession(authHeader: string | undefined): Pro
 
 // Server-side re-confirmation of the caller's password for sensitive
 // mutations (changing where money is paid out). We deliberately re-verify
-// against InsForge's own sign-in endpoint rather than trusting any
-// client-side "I entered my password" flag — a fresh sign-in with the
+// against Supabase's own password-grant token endpoint rather than trusting
+// any client-side "I entered my password" flag — a fresh sign-in with the
 // supplied password is the only thing that proves the human is present.
 // Biometric (Face ID / Touch ID) is offered client-side as an accelerator
 // that unlocks this same confirmation; the server gate is always the password.
@@ -34,17 +42,18 @@ export async function verifyInsforgeSession(authHeader: string | undefined): Pro
 // — so the gate cannot be bypassed by replaying an older session token.
 export async function confirmPassword(email: string | null, password: string | undefined): Promise<string | null> {
   if (!email || !password || typeof password !== 'string') return null;
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  if (!baseUrl) return null;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!baseUrl || !anonKey) return null;
   try {
-    const res = await fetch(`${baseUrl}/api/auth/sessions`, {
+    const res = await fetch(`${baseUrl}/auth/v1/token?grant_type=password`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', apikey: anonKey },
       body: JSON.stringify({ email, password }),
     });
     if (!res.ok) return null;
     const data = await res.json().catch(() => null);
-    return typeof data?.accessToken === 'string' ? data.accessToken : null;
+    return typeof data?.access_token === 'string' ? data.access_token : null;
   } catch {
     return null;
   }
@@ -55,11 +64,11 @@ export async function confirmPassword(email: string | null, password: string | u
 // off the string we pass. Returns false when the window is exceeded (the RPC
 // raises), which callers turn into HTTP 429.
 export async function enforceRateLimit(authHeader: string, key: string, maxAttempts: number, windowSeconds: number): Promise<boolean> {
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   if (!baseUrl || !anonKey) return true; // fail-open only if misconfigured; endpoints still gate on password
   try {
-    const res = await fetch(`${baseUrl}/api/database/rpc/check_rate_limit`, {
+    const res = await fetch(`${baseUrl}/rest/v1/rpc/check_rate_limit`, {
       method: 'POST',
       headers: { Authorization: authHeader, apikey: anonKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_key: key, p_max_attempts: maxAttempts, p_window_seconds: windowSeconds }),

@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, X } from 'lucide-react';
 import { OrganizerEvent } from './types';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { sanitize } from '../../lib/sanitize';
 import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
@@ -151,7 +151,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     let cancelled = false;
     (async () => {
       try {
-        const { data } = await insforge.database
+        const { data } = await supabase
           .from('organizer_bank_accounts')
           .select('id, bank_name, account_number, is_default')
           .eq('organizer_id', currentUser.id)
@@ -189,7 +189,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         // "Loading event…" spinner forever.
         const { data, error } = await withTimeoutFallback(
           Promise.resolve(
-            insforge.database
+            supabase
               .from('events')
               .select('*')
               .eq('id', editEventId)
@@ -239,6 +239,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           : [{ name: '', price: row.price != null ? String(row.price) : '', quantity: row.ticket_goal != null ? String(row.ticket_goal) : '', description: '' }];
         setTicketTypes(tts);
         setIs18Plus(!!row.is_18_plus);
+        setShowPhone(!!row.show_phone);
+        setContactPhone(row.show_phone && row.contact_phone ? row.contact_phone : '');
         originalStatusRef.current = row.status || 'live';
         originalCreatedAtRef.current = row.created_at ? new Date(row.created_at).getTime() : Date.now();
       } catch (err: any) {
@@ -485,8 +487,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ? new Date(`${endDate}T${endTime || startTime}:00${REGION.timezoneOffset}`).toISOString()
         : null;
 
-      // Ensure hc.userToken is set so auth.uid() resolves in RLS policies
-      await getAuthToken();
+      // No manual token rehydration needed here (unlike the old InsForge
+      // path) — the Supabase client attaches the current session to every
+      // request automatically, so auth.uid() resolves in RLS as soon as
+      // the user is signed in.
 
       // withTimeoutFallback below only abandons the WAIT, not the underlying
       // request — a genuinely slow insert can still land server-side after
@@ -498,7 +502,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       // title/date/venue in the last 2 minutes — if the earlier "failed"
       // attempt actually went through, treat it as the successful publish
       // rather than inserting again.
-      const { data: recentDupe } = await insforge.database
+      const { data: recentDupe } = await supabase
         .from('events')
         .select('id')
         .eq('organizer_id', currentUser.id)
@@ -543,7 +547,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       // user stuck on the publish button forever.
       const { data, error } = await withTimeoutFallback(
         Promise.resolve(
-          insforge.database
+          supabase
             .from('events')
             .insert([{
               title: sanitize(title),
@@ -567,6 +571,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               payout_account_id: payoutAccountId || null,
               status: eventStatus,
               is_18_plus: is18Plus,
+              contact_phone: showPhone ? contactPhone : null,
+              show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
                 name: t.name.trim(),
@@ -650,13 +656,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ? new Date(`${endDate}T${endTime || startTime}:00${REGION.timezoneOffset}`).toISOString()
         : null;
 
-      await getAuthToken();
-
       // Failsafe: a hung update must never leave the user stuck on "Save
       // Changes" forever.
       const { error } = await withTimeoutFallback(
         Promise.resolve(
-          insforge.database
+          supabase
             .from('events')
             .update({
               title: sanitize(title),
@@ -676,6 +680,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               categories: selectedCategories,
               ...(payoutAccountId ? { payout_account_id: payoutAccountId } : {}),
               is_18_plus: is18Plus,
+              contact_phone: showPhone ? contactPhone : null,
+              show_phone: showPhone,
               ticket_types: ticketTypes.map((t, idx) => ({
                 id: `t_${idx}`,
                 name: t.name.trim(),

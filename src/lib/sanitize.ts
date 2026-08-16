@@ -32,8 +32,9 @@ export function validateUsername(username: string): boolean {
   return /^[a-zA-Z0-9_]{3,30}$/.test(username.trim());
 }
 
-// Mirrors the backend password policy (insforge.toml [auth.password]) so
-// users get an immediate, specific error instead of a late server rejection.
+// Mirrors the backend password policy enforced in schemas.ts's
+// signupSchema.password (Supabase-side) so users get an immediate, specific
+// error instead of a late server rejection.
 export function validatePassword(password: string): boolean {
   return password.length >= 10 && /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password);
 }

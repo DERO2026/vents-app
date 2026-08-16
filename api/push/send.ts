@@ -60,8 +60,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
-  const baseUrl = process.env.VITE_INSFORGE_URL;
-  const anonKey = process.env.VITE_INSFORGE_ANON_KEY;
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!baseUrl || !anonKey) return res.status(500).json({ error: 'Backend not configured' });
   if (!saJson) return res.status(503).json({ error: 'Push not configured (FCM_SERVICE_ACCOUNT_JSON missing)' });
@@ -79,7 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!userId || !title) return res.status(400).json({ error: 'userId and title are required' });
 
   const rpc = (fn: string, args: unknown, useCallerToken = false) =>
-    fetch(`${baseUrl}/api/database/rpc/${fn}`, {
+    fetch(`${baseUrl}/rest/v1/rpc/${fn}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

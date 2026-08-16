@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X, Check } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { shareLink } from '../../lib/shareLink';
 
@@ -44,17 +44,17 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     if (!currentUser?.id) return;
     try {
       const [{ data: msgs }, { data: clears }, { data: pendingReqs }] = await Promise.all([
-        insforge.database
+        supabase
           .from('direct_messages')
           .select('id, sender_id, recipient_id, body, created_at, read_at')
           .or(`sender_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`)
           .order('created_at', { ascending: false })
           .limit(50),
-        insforge.database
+        supabase
           .from('conversation_clears')
           .select('other_user_id, cleared_at')
           .eq('user_id', currentUser.id),
-        insforge.database
+        supabase
           .from('conversation_requests')
           .select('requester_id, recipient_id, status, created_at')
           .or(`requester_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`),
@@ -79,7 +79,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       ])];
 
       const { data: profiles } = otherIds.length
-        ? await insforge.database.from('public_profiles').select('id, full_name, username, avatar_url, last_active_at').in('id', otherIds as string[])
+        ? await supabase.from('public_profiles').select('id, full_name, username, avatar_url, last_active_at').in('id', otherIds as string[])
         : { data: [] as any[] };
 
       const profileMap: Record<string, any> = {};
@@ -148,7 +148,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     setRespondingId(req.requesterId);
     haptics.light();
     try {
-      const { error } = await insforge.database.rpc('respond_to_message_request', { p_requester_id: req.requesterId, p_action: action });
+      const { error } = await supabase.rpc('respond_to_message_request', { p_requester_id: req.requesterId, p_action: action });
       if (error) throw error;
       setRequests((prev) => prev.filter((r) => r.requesterId !== req.requesterId));
       if (action === 'accept') {
@@ -169,12 +169,12 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     setActionBusy(true);
     try {
       if (confirmAction === 'clear' || confirmAction === 'delete') {
-        const { error } = await insforge.database.rpc('clear_conversation', { p_other_user_id: menuThread.otherUserId });
+        const { error } = await supabase.rpc('clear_conversation', { p_other_user_id: menuThread.otherUserId });
         if (error) throw error;
         setThreads((prev) => prev.filter((t) => t.otherUserId !== menuThread.otherUserId));
         flash(confirmAction === 'clear' ? 'Chat cleared.' : 'Chat deleted.');
       } else if (confirmAction === 'block') {
-        const { error } = await insforge.database.rpc('block_user', { p_blocked_id: menuThread.otherUserId });
+        const { error } = await supabase.rpc('block_user', { p_blocked_id: menuThread.otherUserId });
         if (error) throw error;
         setThreads((prev) => prev.filter((t) => t.otherUserId !== menuThread.otherUserId));
         flash(`${menuThread.otherUserName} blocked.`);

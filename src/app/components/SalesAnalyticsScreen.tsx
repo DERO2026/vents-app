@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { formatPrice } from './data';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 
 interface SalesAnalyticsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -245,7 +245,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
           // Per-event mode — scope straight to the one event, no portfolio query.
           eventIds = [eventId];
         } else {
-          const { data: myEvents, error: eventsError } = await insforge.database
+          const { data: myEvents, error: eventsError } = await supabase
             .from('events')
             .select('id')
             .eq('organizer_id', currentUser.id)
@@ -268,7 +268,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         // must apply the same filter or "Total Revenue"/"Tickets Sold"
         // here would silently include pending/unpaid checkouts that
         // OrganizerDashboard and AdminDashboard correctly exclude.
-        const { data: tickets, error: ticketsError } = await insforge.database
+        const { data: tickets, error: ticketsError } = await supabase
           .from('tickets')
           .select('*')
           .in('event_id', eventIds)

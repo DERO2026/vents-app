@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Shield, Eye, MessageCircle, Search, CheckCircle, AlertCircle } from 'lucide-react';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface Props {
@@ -35,7 +35,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
 
   useEffect(() => {
     if (!currentUser?.id) return;
-    insforge.database
+    supabase
       .from('user_privacy_settings')
       .select('profile_visible, can_message, show_in_search, show_attended_events')
       .eq('user_id', currentUser.id)
@@ -51,7 +51,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
     setSaving(true);
     setMsg(null);
     try {
-      const { error } = await (insforge.database as any).rpc('upsert_privacy_settings', {
+      const { error } = await supabase.rpc('upsert_privacy_settings', {
         p_profile_visible: settings.profile_visible,
         p_can_message: settings.can_message,
         p_show_in_search: settings.show_in_search,

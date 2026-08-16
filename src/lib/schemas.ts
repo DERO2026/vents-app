@@ -1,5 +1,15 @@
 import { z } from 'zod';
-import { REGION } from './regionConfig';
+
+// Generic E.164-shaped check — '+' followed by 7 to 15 digits (ITU E.164's
+// max total length, country code included). This is intentionally
+// country-agnostic: VENTS launches Nigeria-first for currency/SMS/CAC
+// verification (see src/lib/regionConfig.ts), but phone-number entry itself
+// must accept any real country's number, not just Nigeria's. Precise
+// per-country format/length checks happen earlier in the UI (PhoneInput +
+// src/lib/countries.ts's isPlausibleNationalNumber) using the country the
+// user actually picked; this is just the last-line defense-in-depth guard
+// against an obviously malformed payload reaching the DB.
+const E164_PATTERN = /^\+[1-9]\d{6,14}$/;
 
 /**
  * Boundary-layer validation. These run before any DB call — a rejection here
@@ -25,7 +35,7 @@ export const signupSchema = z.object({
   name: safeText(1, 100),
   username: z.string().trim().regex(/^[a-zA-Z0-9_]{3,30}$/, 'Username must be 3-30 characters, letters, numbers, and underscores only'),
   email: z.string().trim().email().max(254),
-  phone: z.string().trim().regex(REGION.phoneRegex, 'Phone number must be in +234XXXXXXXXXX format, e.g., +2348012345678'),
+  phone: z.string().trim().regex(E164_PATTERN, 'Please enter a valid phone number.'),
   password: z.string().min(10).max(128)
     .regex(/[a-z]/, 'Password must include a lowercase letter')
     .regex(/[A-Z]/, 'Password must include an uppercase letter')

@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { getVcBalance } from '../../lib/vcBalanceCache';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -118,7 +118,7 @@ export function ProfileScreen({
     (async () => {
       try {
         await getAuthToken();
-        const { data } = await insforge.database
+        const { data } = await supabase
           .from('users')
           .select('cover_url')
           .eq('id', currentUser.id)
@@ -151,7 +151,7 @@ export function ProfileScreen({
       if (!currentUser?.id) return;
       try {
         // 1. Events created count
-        const { count: eCount } = await insforge.database
+        const { count: eCount } = await supabase
           .from('events')
           .select('id', { count: 'exact', head: true })
           .eq('organizer_id', currentUser.id)
@@ -159,7 +159,7 @@ export function ProfileScreen({
         setEventsCreated(eCount || 0);
 
         // 2. Attendees count (sum of active tickets sold for their created events)
-        const { data: userEvents } = await insforge.database
+        const { data: userEvents } = await supabase
           .from('events')
           .select('id')
           .eq('organizer_id', currentUser.id)
@@ -167,7 +167,7 @@ export function ProfileScreen({
 
         if (userEvents && userEvents.length > 0) {
           const eventIds = userEvents.map((e: any) => e.id);
-          const { count: tCount } = await insforge.database
+          const { count: tCount } = await supabase
             .from('tickets')
             .select('id', { count: 'exact', head: true })
             .in('event_id', eventIds)
@@ -186,7 +186,7 @@ export function ProfileScreen({
   useEffect(() => {
     async function checkOrgRequest() {
       if (!currentUser?.id) return;
-      const { data } = await insforge.database
+      const { data } = await supabase
         .from('organizer_requests')
         .select('status')
         .eq('user_id', currentUser.id)
@@ -203,7 +203,7 @@ export function ProfileScreen({
     setOrgRequestStatus('sending');
     setOrgRequestError('');
     try {
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('organizer_requests')
         .insert([{ user_id: currentUser.id, reason: orgRequestReason.trim() || null }]);
       if (error) throw error;

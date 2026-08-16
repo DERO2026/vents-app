@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide-react';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 
 interface AttendeeListScreenProps {
@@ -76,7 +76,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         let offset = 0;
         const allRows: any[] = [];
         for (;;) {
-          const { data, error } = await insforge.database.rpc('get_event_attendees' as any, {
+          const { data, error } = await supabase.rpc('get_event_attendees' as any, {
             p_event_id: eventId,
             p_search: null,
             p_filter: 'all',

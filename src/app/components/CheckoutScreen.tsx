@@ -4,7 +4,7 @@ import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 
@@ -178,7 +178,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     setPromoChecking(true);
     setPromoError(null);
     try {
-      const { data, error } = await insforge.database.rpc('validate_promo_code' as any, { p_code: code });
+      const { data, error } = await supabase.rpc('validate_promo_code' as any, { p_code: code });
       if (error) throw error;
       const result = data as any;
       if (result?.valid) {
@@ -293,7 +293,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     let reference: string;
     let amountKobo: number;
     try {
-      const { data, error } = await insforge.database.rpc('create_pending_purchase', {
+      const { data, error } = await supabase.rpc('create_pending_purchase', {
         p_event_id: event.id,
         p_ticket_type: ticketType.name,
         p_attendees: attendees,

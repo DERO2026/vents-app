@@ -4,6 +4,7 @@
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
+import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 import crypto from 'crypto';
 
 function fmtNaira(kobo) {
@@ -50,21 +51,6 @@ export default async function handler(req, res) {
     }
 
     try {
-      const baseUrl = process.env.VITE_INSFORGE_URL;
-      // confirm_ticket_payment has no internal auth check of its own (it
-      // trusts this webhook's HMAC verification above, not RLS) — calling
-      // it with the anon key meant any signed-in user could hit the same
-      // RPC directly over the InsForge REST surface with a self-chosen
-      // reference/amount and mark their own tickets paid. Requires the
-      // admin-only API_KEY secret now that EXECUTE has been revoked from
-      // anon/authenticated in
-      // migrations/20260731194723_lockdown-ticket-payment-confirm-refund-rpcs.sql.
-      const adminKey = process.env.INSFORGE_API_KEY;
-      if (!baseUrl || !adminKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
-        return res.status(200).json({ received: true });
-      }
-
       // Recovery path: if the client was killed/crashed/lost network between
       // Paystack charging the card and its own finalize_pending_purchase
       // call, confirm_ticket_payment below would find no ticket row at all
@@ -77,48 +63,23 @@ export default async function handler(req, res) {
       // not the client already got to it. A reference that never went
       // through create_pending_purchase (e.g. a free ticket, which never
       // touches Paystack or this webhook, or some other legacy path) simply
-      // has no pending_purchases row — this throws "not found", which is
-      // expected and non-fatal; confirm_ticket_payment below still runs.
+      // has no pending_purchases row — this RAISEs "not found" (confirmed
+      // live), caught and logged as the expected, non-fatal no-op below;
+      // confirm_ticket_payment still runs regardless.
       try {
-        const finalizeRes = await fetch(`${baseUrl}/api/database/rpc/finalize_pending_purchase`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${adminKey}`,
-            apikey: adminKey,
-          },
-          body: JSON.stringify({ p_payment_ref: reference }),
-        });
-        if (!finalizeRes.ok) {
-          const finalizeErr = await finalizeRes.json().catch(() => null);
-          console.warn('[Paystack webhook] finalize_pending_purchase no-op/failed for', reference, '-', finalizeErr?.message || finalizeRes.status);
-        } else {
-          console.log('[Paystack webhook] finalize_pending_purchase ran for reference', reference);
-        }
+        await callProjectAdminRpc('finalize_pending_purchase', [reference]);
+        console.log('[Paystack webhook] finalize_pending_purchase ran for reference', reference);
       } catch (finalizeErr: any) {
-        console.error('[Paystack webhook] Error calling finalize_pending_purchase:', finalizeErr?.message || finalizeErr);
+        console.warn('[Paystack webhook] finalize_pending_purchase no-op/failed for', reference, '-', finalizeErr?.message || finalizeErr);
       }
 
       // confirm_ticket_payment is SECURITY DEFINER and does the whole thing
       // atomically: look up the ticket by payment_ref, verify the webhook's
       // amount (kobo) exactly matches the ticket's stored amount, no-op if
       // already paid, otherwise mark paid + credit organizer wallet + notify.
-      const rpcRes = await fetch(`${baseUrl}/api/database/rpc/confirm_ticket_payment`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminKey}`,
-          apikey: adminKey,
-        },
-        body: JSON.stringify({ p_reference: reference, p_amount_kobo: amountKobo }),
-      });
+      const status = await callProjectAdminRpc<string>('confirm_ticket_payment', [reference, amountKobo]);
 
-      const result = await rpcRes.json().catch(() => null);
-      const status = typeof result === 'string' ? result : result?.data ?? result;
-
-      if (!rpcRes.ok) {
-        console.error('[Paystack webhook] confirm_ticket_payment call failed', rpcRes.status, result);
-      } else if (typeof status === 'string' && status.startsWith('amount_mismatch')) {
+      if (typeof status === 'string' && status.startsWith('amount_mismatch')) {
         console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', status);
       } else if (status === 'not_found') {
         console.warn('[Paystack webhook] No ticket found for reference', reference);
@@ -127,7 +88,7 @@ export default async function handler(req, res) {
       } else if (status === 'confirmed') {
         console.log('[Paystack webhook] Ticket confirmed for reference', reference);
       } else {
-        console.warn('[Paystack webhook] Unexpected confirm_ticket_payment result', result);
+        console.warn('[Paystack webhook] Unexpected confirm_ticket_payment result', status);
       }
     } catch (err: any) {
       console.error('[Paystack webhook] Error calling confirm_ticket_payment:', err?.message || err);
@@ -149,39 +110,17 @@ export default async function handler(req, res) {
     }
 
     try {
-      const baseUrl = process.env.VITE_INSFORGE_URL;
       // complete_organizer_payout/fail_organizer_payout have no internal
       // auth check of their own (they trust this webhook's HMAC verification
-      // above, not RLS) — calling them with the anon key meant ANY signed-in
-      // user could hit the same RPC directly over the InsForge REST surface
-      // and finalize/reverse their own payout early. Requires the admin-only
-      // API_KEY secret (never the client-exposed VITE_ anon key) now that
-      // EXECUTE has been revoked from anon/authenticated in
-      // migrations/20260731070000_lockdown-payout-completion-rpcs.sql.
-      const adminKey = process.env.INSFORGE_API_KEY;
-      if (!baseUrl || !adminKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
-        return res.status(200).json({ received: true });
-      }
-
+      // above, not RLS) and are project_admin-only (no anon/authenticated/
+      // service_role EXECUTE grant) — called via the direct project_admin
+      // Postgres connection, same as the ticket-confirmation block above
+      // (see api/_lib/projectAdminDb.ts).
       const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
-      const body = event.event === 'transfer.success'
-        ? { p_request_id: lookupKey }
-        : { p_request_id: lookupKey, p_reason: event.data?.reason || event.event };
-
-      const rpcRes = await fetch(`${baseUrl}/api/database/rpc/${rpcName}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${adminKey}`,
-          apikey: adminKey,
-        },
-        body: JSON.stringify(body),
-      });
-
-      const result = await rpcRes.json().catch(() => null);
-      const rows = Array.isArray(result) ? result : result?.data ?? result;
-      const row = Array.isArray(rows) ? rows[0] : rows;
+      const rows = event.event === 'transfer.success'
+        ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
+        : await callProjectAdminTableRpc<any>('fail_organizer_payout', [lookupKey, event.data?.reason || event.event]);
+      const row = rows[0];
       console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
 
       // Fire the payout email only on a genuine, first-time state change —
@@ -214,34 +153,16 @@ export default async function handler(req, res) {
     }
 
     try {
-      const baseUrl = process.env.VITE_INSFORGE_URL;
       // finalize_ticket_refund / fail_ticket_refund are keyed only on
       // Paystack's own numeric refund id (short, sequential, enumerable)
-      // with no internal auth check — calling them with the anon key meant
-      // that id alone was enough to revert someone else's in-flight refund
-      // over the InsForge REST surface. Requires the admin-only API_KEY
-      // secret now that EXECUTE has been revoked from anon/authenticated in
-      // migrations/20260731194723_lockdown-ticket-payment-confirm-refund-rpcs.sql.
-      const adminKey = process.env.INSFORGE_API_KEY;
-      if (!baseUrl || !adminKey) {
-        console.error('[Paystack webhook] VITE_INSFORGE_URL or INSFORGE_API_KEY not set');
-        return res.status(200).json({ received: true });
-      }
-
-      const insforgeHeaders = {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${adminKey}`,
-        apikey: adminKey,
-      };
-
+      // with no internal auth check — that id alone would be enough to
+      // revert someone else's in-flight refund if these were reachable over
+      // the normal REST surface, so (like the transfer.* handlers above)
+      // EXECUTE is revoked from anon/authenticated/service_role and they're
+      // only callable via the direct project_admin Postgres connection.
       if (event.event === 'refund.processed') {
-        const rpcRes = await fetch(`${baseUrl}/api/database/rpc/finalize_ticket_refund`, {
-          method: 'POST',
-          headers: insforgeHeaders,
-          body: JSON.stringify({ p_refund_id: refundId }),
-        });
-        const rows = await rpcRes.json().catch(() => null);
-        const row = Array.isArray(rows) ? rows[0] : rows?.data ?? rows;
+        const rows = await callProjectAdminTableRpc<any>('finalize_ticket_refund', [refundId]);
+        const row = rows[0];
         console.log('[Paystack webhook] refund.processed -> finalize_ticket_refund result:', row?.status, 'for', refundId);
 
         if (row?.status === 'finalized' && row?.buyer_email) {
@@ -255,13 +176,8 @@ export default async function handler(req, res) {
           }).catch((e) => console.error('[Paystack webhook] refund email failed:', e?.message || e));
         }
       } else {
-        const rpcRes = await fetch(`${baseUrl}/api/database/rpc/fail_ticket_refund`, {
-          method: 'POST',
-          headers: insforgeHeaders,
-          body: JSON.stringify({ p_refund_id: refundId, p_reason: event.data?.message || event.event }),
-        });
-        const rows = await rpcRes.json().catch(() => null);
-        const row = Array.isArray(rows) ? rows[0] : rows?.data ?? rows;
+        const rows = await callProjectAdminTableRpc<any>('fail_ticket_refund', [refundId, event.data?.message || event.event]);
+        const row = rows[0];
         console.log('[Paystack webhook] refund.failed -> fail_ticket_refund result:', row?.status, 'for', refundId);
       }
     } catch (err: any) {

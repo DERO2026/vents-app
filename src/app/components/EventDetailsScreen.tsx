@@ -28,7 +28,7 @@ import {
 import { Event, TicketType } from './types';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
 import { haptics } from '../../lib/haptics';
 import { downloadBlob } from '../../lib/ticketImage';
@@ -305,7 +305,7 @@ export function EventDetailsScreen({
     const fetchOrganizerProfile = async () => {
       if (!event.organizer_id) return;
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, is_verified, state, vc_badge')
           .eq('id', event.organizer_id)
@@ -323,7 +323,7 @@ export function EventDetailsScreen({
     const fetchRelatedEvents = async () => {
       setLoadingRelated(true);
       try {
-        let relatedQuery = insforge.database
+        let relatedQuery = supabase
           .from('events')
           .select('*')
           .eq('category', event.category)
@@ -371,7 +371,7 @@ export function EventDetailsScreen({
     let cancelled = false;
     const fetchAttendeeCount = async () => {
       try {
-        const { data, error } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
+        const { data, error } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: [event.id] });
         if (error) throw error;
         if (!cancelled) setRealAttendeeCount(data?.[0]?.sold_count ?? 0);
       } catch (err) {

@@ -6,7 +6,7 @@ import {
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
 } from 'lucide-react';
 import { Event } from './types';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -178,6 +178,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     latitude: dbEvent.latitude != null ? Number(dbEvent.latitude) : null,
     longitude: dbEvent.longitude != null ? Number(dbEvent.longitude) : null,
     placeId: dbEvent.place_id || null,
+    contactPhone: dbEvent.show_phone && dbEvent.contact_phone ? dbEvent.contact_phone : '',
   };
 }
 
@@ -871,7 +872,7 @@ export function HomeScreen({
         const userAgeYears = userDob
           ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 99;
-        const { data, error } = await insforge.database.rpc('search_events_fuzzy', {
+        const { data, error } = await supabase.rpc('search_events_fuzzy', {
           p_query: q,
           p_limit: 40,
           p_exclude_18_plus: userAgeYears < 18,
@@ -883,7 +884,7 @@ export function HomeScreen({
         const eventIds = rows.map((r) => r.id);
         let bookingsMap: Record<string, number> = {};
         if (eventIds.length > 0) {
-          const { data: statsRes } = await insforge.database.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
+          const { data: statsRes } = await supabase.rpc('get_event_ticket_stats', { p_event_ids: eventIds });
           (statsRes || []).forEach((t: any) => { bookingsMap[t.event_id] = t.sold_count || 0; });
         }
         // search_events_fuzzy has no knowledge of this specific viewer's
@@ -923,7 +924,7 @@ export function HomeScreen({
   const [suggestedPeople, setSuggestedPeople] = useState<any[]>([]);
 
   useEffect(() => {
-    insforge.database
+    supabase
       .from('public_profiles')
       .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
       .eq('is_verified', true)
@@ -938,7 +939,7 @@ export function HomeScreen({
     const t = setTimeout(async () => {
       try {
         const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
-        const { data } = await insforge.database
+        const { data } = await supabase
           .from('public_profiles')
           .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
@@ -986,7 +987,7 @@ export function HomeScreen({
           ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 99;
 
-        let query = insforge.database
+        let query = supabase
           .from('events')
           .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
           .eq('hidden_by_admin', false)

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { pickImage } from '../../lib/pickImage';
 import { openExternalUrl } from '../../lib/externalLink';
 import { analytics } from '../../lib/analyticsEvents';
@@ -20,6 +20,7 @@ import { ImageCropperModal } from './ImageCropperModal';
 import { ConfirmDialog } from './ConfirmDialog';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
+import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 interface SettingsScreenProps {
@@ -191,30 +192,36 @@ function validateCacFile(file: File): string | null {
 }
 
 // Real byte-level upload progress via XHR (fetch has no upload progress
-// event). Uploads straight to the verification-docs bucket's storage
-// endpoint; the RLS policy on storage.objects (bucket='verification-docs')
-// is what actually authorizes this write for the signed-in user.
+// event). Uploads straight to Supabase Storage's REST endpoint for the
+// verification-docs bucket; the storage.objects RLS policy (see
+// supabase/migrations/0019_verification_docs_storage_policies.sql) is what
+// actually authorizes this write for the signed-in user. Resolves with the
+// bucket-relative object key (not a full URL) — matching the format
+// document_url already stores for previously-migrated rows, since this
+// private bucket is read back via a signed URL generated from that key
+// (see handlePreviewCacDocument in AdminDashboardScreen.tsx), not a
+// directly-fetchable public URL.
 function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {
+    const key = `${crypto.randomUUID()}-${file.name}`;
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/verification-docs/objects`);
+    xhr.open('POST', `${import.meta.env.VITE_SUPABASE_URL}/storage/v1/object/verification-docs/${encodeURIComponent(key)}`);
     xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.setRequestHeader('apikey', import.meta.env.VITE_SUPABASE_ANON_KEY);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
     xhr.onload = () => {
-      let data: any = null;
-      try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
-      if (xhr.status >= 200 && xhr.status < 300 && data?.url) {
-        resolve(data.url as string);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(`verification-docs/${key}`);
       } else {
+        let data: any = null;
+        try { data = JSON.parse(xhr.responseText); } catch { /* non-JSON error body */ }
         reject(new Error(`verification_upload_failed:${xhr.status}:${data?.error || data?.message || 'unknown'}`));
       }
     };
     xhr.onerror = () => reject(new Error('verification_upload_failed:network'));
-    const fd = new FormData();
-    fd.append('file', file);
-    xhr.send(fd);
+    xhr.send(file);
   });
 }
 
@@ -336,8 +343,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const loadLatest = useCallback(async () => {
     if (!currentUser?.id) return;
     try {
-      await getAuthToken();
-      const { data } = await insforge.database.rpc('my_latest_organizer_verification' as any);
+      const { data } = await supabase.rpc('my_latest_organizer_verification' as any);
       const row = Array.isArray(data) ? data[0] : data;
       if (row?.status === 'pending' || row?.status === 'rejected') {
         setVerification(row as VerificationRow);
@@ -367,10 +373,12 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
     setSubmitting(true);
     try {
-      const token = await getAuthToken();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Session expired. Please sign out and back in.');
 
       // 2. Upload the certificate (real progress shown throughout) → get
-      // back its secure storage URL. Upload failures are never shown raw.
+      // back its secure storage key. Upload failures are never shown raw.
       setUploading(true);
       setUploadProgress(0);
       let documentUrl: string;
@@ -390,7 +398,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
       // 3. Save that URL directly into the organizer's verification record
       // (status defaults to 'pending'; the RPC also blocks duplicate
       // pending submissions server-side).
-      const { error: rpcError } = await insforge.database.rpc('submit_organizer_verification' as any, {
+      const { error: rpcError } = await supabase.rpc('submit_organizer_verification' as any, {
         p_company_name: companyName.trim(),
         p_cac_number: cacNumber.trim(),
         p_business_address: businessAddress.trim(),
@@ -603,7 +611,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setUsernameChecking(true);
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('users')
           .select('id')
           .eq('username', cleanUsername)
@@ -629,7 +637,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     async function loadProfile() {
       if (!currentUser?.id) return;
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('users')
           .select('*')
           .eq('id', currentUser.id)
@@ -698,29 +706,21 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const token = await getAuthToken();
+      await getAuthToken();
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
-      const formData = new FormData();
-      formData.append('file', croppedFile);
+      const key = `${crypto.randomUUID()}.${extension}`;
       // Failsafe: a hung upload must never leave the profile photo picker stuck.
-      const res = await withTimeoutFallback(
-        fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-        ),
+      const { error: uploadError } = await withTimeoutFallback(
+        supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
         { timeoutMs: 8000, timeoutMessage: 'Photo upload is taking too long. Please check your connection and try again.' }
       );
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
-        throw new Error(`Upload failed (${res.status}). Please try again.`);
-      }
-      const data = await res.json();
-      const key: string | null = data?.key ?? null;
-      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
+      const url: string | null = urlData?.publicUrl ?? null;
       if (url) {
         setAvatarUrl(url);
-        const { error: updateError } = await insforge.database
+        const { error: updateError } = await supabase
           .from('users')
           .update({ avatar_url: url })
           .eq('id', currentUser.id);
@@ -759,29 +759,21 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     setSaving(true);
     setErrorMessage(null);
     try {
-      const token = await getAuthToken();
+      await getAuthToken();
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
-      const formData = new FormData();
-      formData.append('file', croppedFile);
+      const key = `${crypto.randomUUID()}.${extension}`;
       // Failsafe: a hung upload must never leave the cover photo picker stuck.
-      const res = await withTimeoutFallback(
-        fetch(
-          `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects`,
-          { method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: formData }
-        ),
+      const { error: uploadError } = await withTimeoutFallback(
+        supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
         { timeoutMs: 8000, timeoutMessage: 'Cover photo upload is taking too long. Please check your connection and try again.' }
       );
-      if (!res.ok) {
-        if (res.status === 401 || res.status === 403) throw new Error('Session expired. Please sign out and sign back in.');
-        throw new Error(`Upload failed (${res.status}). Please try again.`);
-      }
-      const data = await res.json();
-      const key: string | null = data?.key ?? null;
-      const url: string | null = data?.url ?? (key ? `${import.meta.env.VITE_INSFORGE_URL}/api/storage/buckets/avatars/objects/${encodeURIComponent(key)}` : null);
+      if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
+      const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
+      const url: string | null = urlData?.publicUrl ?? null;
       if (url) {
         setCoverUrl(url);
-        const { error: updateError } = await insforge.database
+        const { error: updateError } = await supabase
           .from('users')
           .update({ cover_url: url })
           .eq('id', currentUser.id);
@@ -812,12 +804,22 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       let cleanPhone = '';
       if (rawDigits) {
         cleanPhone = phoneCountryCode + rawDigits;
-        if (phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(cleanPhone)) {
-          throw new Error("Please enter a valid Nigerian phone number (+234 format).");
+        if (phoneCountryCode === REGION.phoneCountryCode) {
+          if (!REGION.phoneRegex.test(cleanPhone)) {
+            throw new Error("Please enter a valid Nigerian phone number (+234 format).");
+          }
+        } else {
+          // Every other country: same plausible-digit-count check used at
+          // signup (src/lib/countries.ts) — previously this branch did no
+          // validation at all for any non-Nigerian number.
+          const selectedCountry = COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY;
+          if (!isPlausibleNationalNumber(rawDigits, selectedCountry)) {
+            throw new Error(`Please enter a valid ${selectedCountry.name} phone number.`);
+          }
         }
       }
 
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('users')
         .update({
           full_name: sanitize(name),
@@ -981,6 +983,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 {phone.trim() && phoneCountryCode === REGION.phoneCountryCode && !REGION.phoneRegex.test(phoneCountryCode + phone.replace(/^0+/, '')) && (
                   <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
                     Enter a valid Nigerian number (e.g. 0801 234 5678)
+                  </p>
+                )}
+                {phone.trim() && phoneCountryCode !== REGION.phoneCountryCode && !isPlausibleNationalNumber(phone.replace(/\D/g, ''), COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY) && (
+                  <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px' }}>
+                    Enter a valid phone number for {(COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).name}
                   </p>
                 )}
               </div>
@@ -1258,10 +1265,10 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
     setLoading(true);
     try {
       // Verify old password via a real sign-in call — never compare against anything cached
-      const { error: verifyErr } = await insforge.auth.signInWithPassword({ email: currentUser.email, password: oldPassword });
+      const { error: verifyErr } = await supabase.auth.signInWithPassword({ email: currentUser.email, password: oldPassword });
       if (verifyErr) { setError('Current password is incorrect.'); return; }
       // Send OTP to user's email for the reset step
-      const { error: sendErr } = await insforge.auth.sendResetPasswordEmail({ email: currentUser.email });
+      const { error: sendErr } = await supabase.auth.resetPasswordForEmail(currentUser.email);
       if (sendErr) throw sendErr;
       setStep('otp');
     } catch (err: any) {
@@ -1277,7 +1284,20 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
     if (!otp.trim()) { setError('Please enter the OTP from your email.'); return; }
     setLoading(true);
     try {
-      const { error: updateErr } = await insforge.auth.resetPassword({ newPassword, otp: otp.trim() });
+      // verifyOtp establishes a fresh session for this same user (there's no
+      // separate "exchange code for reset token" step like InsForge had —
+      // see AuthScreen.tsx's forgot-password rewrite for the same pattern),
+      // then updateUser sets the new password on that session. The user
+      // stays signed in as themselves throughout — no explicit sign-out
+      // needed, unlike the AuthScreen recovery flow where the user wasn't
+      // signed in to begin with.
+      const { error: verifyErr } = await supabase.auth.verifyOtp({
+        email: currentUser?.email || '',
+        token: otp.trim(),
+        type: 'recovery',
+      });
+      if (verifyErr) throw verifyErr;
+      const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
       if (updateErr) throw updateErr;
       setSuccess(true);
     } catch (err: any) {
@@ -1445,8 +1465,7 @@ export function SettingsScreen({
     setShowClearNotifsConfirm(false);
     setClearingNotifs(true);
     try {
-      await getAuthToken();
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('notifications')
         .delete()
         .eq('user_id', currentUser.id);
@@ -1463,7 +1482,7 @@ export function SettingsScreen({
   // Load promotions_enabled from DB on mount
   useEffect(() => {
     if (!currentUser?.id) return;
-    insforge.database
+    supabase
       .from('users')
       .select('promotions_enabled')
       .eq('id', currentUser.id)
@@ -1478,7 +1497,7 @@ export function SettingsScreen({
   const handlePromoToggle = async (val: boolean) => {
     setPromoNotifs(val);
     if (!currentUser?.id) return;
-    await insforge.database
+    await supabase
       .from('users')
       .update({ promotions_enabled: val })
       .eq('id', currentUser.id);
@@ -1656,7 +1675,7 @@ function DeleteAccountScreen({
       // function see auth.uid() as null and fail with "Not authenticated"
       // even though the user is genuinely signed in.
       await getAuthToken();
-      const { error: rpcErr } = await insforge.database.rpc('delete_own_account' as any);
+      const { error: rpcErr } = await supabase.rpc('delete_own_account' as any);
       if (rpcErr) throw rpcErr;
       setStep('done');
       setTimeout(() => onDeleted(), 3000);

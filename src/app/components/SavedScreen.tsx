@@ -3,7 +3,7 @@ import { Bookmark, MapPin, Calendar, ArrowLeft } from 'lucide-react';
 import { Event } from './types';
 import { formatPriceRange } from './data';
 import { mapDbEventToFrontend } from './HomeScreen';
-import { insforge } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 
 interface SavedScreenProps {
   savedEventIds: string[];
@@ -34,7 +34,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
       }
       setLoading(true);
       try {
-        const { data, error } = await insforge.database
+        const { data, error } = await supabase
           .from('events')
           .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
           .in('id', savedEventIds)

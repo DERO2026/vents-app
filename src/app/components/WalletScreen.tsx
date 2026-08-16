@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 
@@ -121,10 +121,10 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setLoading(true);
     try {
       const [wRes, tRes, bRes, vRes] = await Promise.all([
-        insforge.database.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
-        insforge.database.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
-        insforge.database.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
-        insforge.database.rpc('is_email_verified'),
+        supabase.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
+        supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
+        supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
+        supabase.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
       setTxns(tRes.data || []);
@@ -294,8 +294,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
     setWithdrawing(true);
     try {
-      await getAuthToken();
-      const { error } = await insforge.database.rpc('request_organizer_payout', {
+      const { error } = await supabase.rpc('request_organizer_payout', {
         p_amount_kobo: kobo,
         p_bank_account_id: payoutAccountId,
       });

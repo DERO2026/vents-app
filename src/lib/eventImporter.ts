@@ -1,4 +1,4 @@
-import { getAuthToken } from './insforge';
+import { getAuthToken } from './supabase';
 import { REGION } from './regionConfig';
 import { withTimeoutFallback } from './withTimeoutFallback';
 import { isKnownState, isKnownCity, matchNigeriaState } from './nigeriaLocations';

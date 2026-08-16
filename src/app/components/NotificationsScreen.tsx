@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Bell, Loader, Trash2, CheckCheck } from 'lucide-react';
 import { Notification } from './types';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { ConfirmDialog } from './ConfirmDialog';
 
@@ -59,7 +59,7 @@ export function NotificationsScreen({
     if (!currentUser?.id) return;
     setLoading(true);
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', currentUser.id)
@@ -83,7 +83,7 @@ export function NotificationsScreen({
     if (!currentUser?.id || loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
-      const { data, error } = await insforge.database
+      const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', currentUser.id)
@@ -111,21 +111,15 @@ export function NotificationsScreen({
   // while it was open never appeared until the user backed out and back in.
   useEffect(() => {
     if (!currentUser?.id) return;
-    const channel = `user:${currentUser.id}`;
-    let subscribed = false;
-    let torn = false;
-    insforge.realtime.connect().then(() => {
-      insforge.realtime.subscribe(channel).then(() => {
-        if (torn) { insforge.realtime.unsubscribe(channel); return; }
-        subscribed = true;
-      });
-    }).catch(() => {});
-    const onNotif = () => fetchNotifications();
-    insforge.realtime.on('new_notification', onNotif);
+    // Same topic-naming convention as ConversationScreen.tsx's messaging
+    // realtime — the server-side notify_new_notification() trigger
+    // broadcasts here (realtime.send(..., 'new_notification',
+    // 'user:'||user_id, false)).
+    const channel = supabase.channel(`user:${currentUser.id}`, { config: { broadcast: { self: false } } });
+    channel.on('broadcast', { event: 'new_notification' }, () => fetchNotifications());
+    channel.subscribe();
     return () => {
-      torn = true;
-      insforge.realtime.off?.('new_notification', onNotif);
-      if (subscribed) insforge.realtime.unsubscribe(channel);
+      supabase.removeChannel(channel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser?.id]);
@@ -136,7 +130,7 @@ export function NotificationsScreen({
     if (!currentUser?.id) return;
     try {
       setItems((prev) => prev.map((n) => ({ ...n, read: true })));
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('notifications')
         .update({ read: true })
         .eq('user_id', currentUser.id)
@@ -154,7 +148,7 @@ export function NotificationsScreen({
       const opened = items.find((n) => n.id === id);
       if (opened && !opened.read) analytics.notificationOpened((opened as any).type);
       setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
-      const { error } = await insforge.database
+      const { error } = await supabase
         .from('notifications')
         .update({ read: true })
         .eq('id', id);
@@ -171,8 +165,7 @@ export function NotificationsScreen({
     setItems((prev) => prev.filter((n) => n.id !== id));
     setSwipe(null);
     try {
-      await getAuthToken();
-      const { error } = await insforge.database.from('notifications').delete().eq('id', id);
+      const { error } = await supabase.from('notifications').delete().eq('id', id);
       if (error) throw error;
       onRefreshUnread?.();
     } catch (err) {
@@ -188,8 +181,7 @@ export function NotificationsScreen({
     const prevItems = items;
     setItems([]);
     try {
-      await getAuthToken();
-      const { error } = await insforge.database.from('notifications').delete().eq('user_id', currentUser.id);
+      const { error } = await supabase.from('notifications').delete().eq('user_id', currentUser.id);
       if (error) throw error;
       onRefreshUnread?.();
     } catch (err) {

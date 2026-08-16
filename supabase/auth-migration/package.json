@@ -1,0 +1,15 @@
+{
+  "name": "vents-auth-migration",
+  "private": true,
+  "version": "1.0.0",
+  "description": "One-time InsForge -> Supabase Auth user migration. Isolated from the main app's dependency tree on purpose - this is an operator-run tool, not app runtime code.",
+  "type": "commonjs",
+  "main": "migrate-auth-users.js",
+  "scripts": {
+    "dry-run": "node migrate-auth-users.js --dry-run",
+    "apply": "node migrate-auth-users.js --apply"
+  },
+  "dependencies": {
+    "pg": "^8.13.0"
+  }
+}

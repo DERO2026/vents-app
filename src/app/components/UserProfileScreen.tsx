@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
 import { UserProfile } from './types';
-import { insforge, getAuthToken } from '../../lib/insforge';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { shareLink } from '../../lib/shareLink';
 
@@ -53,7 +53,7 @@ export function UserProfileScreen({
 
   useEffect(() => {
     if (!currentUserId || isOwnProfile || !user?.id) return;
-    insforge.database
+    supabase
       .from('blocked_users')
       .select('id')
       .eq('blocker_id', currentUserId)
@@ -68,8 +68,8 @@ export function UserProfileScreen({
     try {
       await getAuthToken();
       const { error } = isBlocked
-        ? await insforge.database.rpc('unblock_user' as any, { p_blocked_id: user.id })
-        : await insforge.database.rpc('block_user' as any, { p_blocked_id: user.id });
+        ? await supabase.rpc('unblock_user' as any, { p_blocked_id: user.id })
+        : await supabase.rpc('block_user' as any, { p_blocked_id: user.id });
       if (error) throw error;
       setIsBlocked(!isBlocked);
     } catch (err: any) {
@@ -98,7 +98,7 @@ export function UserProfileScreen({
       if (!user?.id) return;
       try {
         // 1. Events created count
-        const { count: eCount } = await insforge.database
+        const { count: eCount } = await supabase
           .from('events')
           .select('id', { count: 'exact', head: true })
           .eq('organizer_id', user.id)
@@ -106,7 +106,7 @@ export function UserProfileScreen({
         setEventsCreated(eCount || 0);
 
         // 2. Attendees count
-        const { data: userEvents } = await insforge.database
+        const { data: userEvents } = await supabase
           .from('events')
           .select('id')
           .eq('organizer_id', user.id)
@@ -114,7 +114,7 @@ export function UserProfileScreen({
 
         if (userEvents && userEvents.length > 0) {
           const eventIds = userEvents.map((e: any) => e.id);
-          const { count: tCount } = await insforge.database
+          const { count: tCount } = await supabase
             .from('tickets')
             .select('id', { count: 'exact', head: true })
             .in('event_id', eventIds)
@@ -125,7 +125,7 @@ export function UserProfileScreen({
         }
 
         // 4. Events this user attended (distinct events from their tickets)
-        const { data: attendedTickets } = await insforge.database
+        const { data: attendedTickets } = await supabase
           .from('tickets')
           .select('event_id')
           .eq('user_id', user.id)

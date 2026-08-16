@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { insforge } from './insforge';
+import { supabase } from './supabase';
 
 // ─── Offline-first signed v2 pass token ──────────────────────────────────────
 // A v2 pass is "<base64url(payload)>.<hmacSha256(payload)>", binding ticketId,
@@ -41,7 +41,7 @@ export function getCachedTicketToken(ticketId: string | null | undefined): strin
 async function mintToken(ticketId: string, attempts = 3): Promise<string | null> {
   for (let i = 0; i < attempts; i++) {
     try {
-      const { data, error } = await insforge.database.rpc('generate_ticket_token' as any, { p_ticket_id: ticketId });
+      const { data, error } = await supabase.rpc('generate_ticket_token' as any, { p_ticket_id: ticketId });
       if (!error && data) return data as string;
       if (error) console.warn('[ticketToken] mint error', { ticketId, attempt: i + 1, error });
     } catch (e) {

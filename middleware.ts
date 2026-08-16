@@ -1,7 +1,9 @@
 // NOTE: Vercel Edge Middleware only runs for Next.js projects.
-// This file is a placeholder documenting the rate-limiting intent.
-// For this Vite SPA, rate limiting is enforced by InsForge backend
-// (the InsForge API already has built-in rate limiting on auth endpoints).
+// This file is a placeholder documenting the rate-limiting intent — it is
+// NOT executed at runtime for this Vite SPA. Real rate limiting is enforced
+// server-side via Supabase RPCs (check_auth_rate_limit(), called from
+// AuthScreen.tsx's checkAuthRateLimit(); check_rate_limit(), called from
+// api/_lib/verifyAuth.ts's enforceRateLimit()), not by this file.
 // When migrating to Next.js, implement this middleware:
 //
 // import { NextRequest, NextResponse } from 'next/server';
