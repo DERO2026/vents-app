@@ -354,3 +354,112 @@ preference:
    webhook-driven paid-purchase/payout/refund-finalization path at all
    without it — whoever has it needs to either run that part of the
    regression pass themselves or share a way to test it before cutover.
+
+---
+
+## 7. Country-code / phone-number system (launch item, independent of the
+   Supabase migration itself — tracked here since this file is the shared
+   source of truth for pre-launch state)
+
+**Audit findings**: VENTS explicitly rejected signup for every non-Nigerian
+phone number, at three separate layers:
+
+1. `AuthScreen.tsx`'s signup submit handler had a deliberate, hard block:
+   `if (!isNigerianPhone) throw new Error('Only Nigerian phone numbers are
+   currently supported for sign-up. Please select 🇳🇬 Nigeria.')` — a user
+   who picked any other country in the phone selector could not create an
+   account at all, regardless of how valid their real number was.
+2. `src/lib/schemas.ts`'s `signupSchema.phone` used
+   `REGION.phoneRegex` (Nigeria's exact `+234[789][01]\d{8}` pattern)
+   unconditionally — even if the hard block above hadn't existed, this
+   boundary-layer validation would have rejected every non-Nigerian number
+   on its own.
+3. `PhoneInput.tsx`'s country list covered only 15 countries with no search
+   — Qatar, Rwanda, and most of the world weren't even selectable.
+
+`SettingsScreen.tsx`'s profile-edit phone field was not part of the
+rejection bug (it never hard-blocked), but had the opposite gap: it only
+validated Nigerian numbers and silently accepted anything for every other
+country with zero format checking.
+
+**What was changed** (frontend-only — confirmed via `supabase/migrations`
+that there is no DB-level format constraint on `users.phone_number`, only a
+uniqueness constraint, so no schema change was needed):
+
+- New `src/lib/countries.ts`: the single source of truth for the country
+  list, moved out of `PhoneInput.tsx` so validation code can import it
+  without pulling in React. Expanded from 15 to ~190 countries (every
+  ITU-T-assigned calling code with a real ISO 3166-1 entry), including
+  Qatar (+974), Rwanda (+250), and both North American +1 countries.
+  Flags are now derived mechanically from each ISO code at render time
+  (`flagEmojiFor` in `PhoneInput.tsx`) instead of ~190 hand-typed emoji —
+  removes a large, error-prone data-entry surface and makes the flag
+  rendering itself impossible to get wrong per-country.
+- `PhoneInput.tsx`'s country picker now has a search box (filters by
+  country name, dial code, or ISO code) — necessary once the list grew
+  past a hand-scrollable size. Re-exports the old names
+  (`COUNTRY_CODES`/`DEFAULT_COUNTRY`/`maxDigitsFor`/`formatNationalNumber`)
+  from `countries.ts` so `SettingsScreen.tsx`/`CreateEventScreen.tsx`'s
+  existing imports didn't need touching.
+- New `isPlausibleNationalNumber(digits, country)` in `countries.ts`: a
+  generic digit-count-range check (not a hand-authored exact pattern per
+  country — no verified format template exists here for all ~190
+  countries) used everywhere a non-Nigerian number needs *some* real
+  validation instead of none. Nigeria keeps its existing exact, stricter
+  regex unchanged.
+- `schemas.ts`: `signupSchema.phone` changed from Nigeria's exact regex to
+  a generic E.164-shaped pattern (`+` then 7–15 digits) — country-agnostic
+  defense-in-depth, not the primary validation (that's the UI-layer check
+  against the actually-selected country).
+- `AuthScreen.tsx`: removed the hard "Only Nigerian phone numbers" block
+  entirely. Non-Nigerian signups now validate via
+  `isPlausibleNationalNumber` against whichever country the user picked.
+- `SettingsScreen.tsx`: the profile-edit phone field now runs the same
+  `isPlausibleNationalNumber` check for non-Nigerian numbers (previously:
+  no check at all) — both in the save handler and the inline error message
+  under the field.
+
+**Deliberately left alone (already correct / out of scope for this pass)**:
+
+- SMS delivery (Sendchamp) and CAC business verification remain genuinely
+  Nigeria-only features — they degrade gracefully already (best-effort,
+  non-blocking) rather than rejecting anything, so they didn't need a
+  change to stop blocking signup.
+- `CreateEventScreen.tsx`'s event contact-phone field was already
+  country-agnostic (no Nigeria-only gate existed there) — confirmed, not
+  modified.
+- The account **country** (phone) and an event's **location** (state/city
+  of the venue) were confirmed structurally separate already — event
+  creation uses its own Nigerian-states venue picker, never reads
+  `phoneCountryCode`, and vice versa. No coupling existed to fix.
+
+**Found but NOT fixed this pass (flagging, not scope creep)**: the signup
+form's account **"State"** field (`AuthScreen.tsx`, `signupState`) is
+hard-locked to `NIGERIA_STATES` regardless of the phone country chosen —
+a Qatar-based signup can now complete, but is still forced to pick a
+Nigerian state for their profile's `state` field. This is a real gap for
+full non-Nigeria support, but it's a materially bigger change (needs
+either a free-text fallback or per-country administrative-division data)
+than phone/country-code handling, and was out of the scope given for this
+pass. Recommend a follow-up item before claiming full multi-country
+support, separate from this one.
+
+**Verification**:
+- `npx tsc --noEmit` — clean.
+- `npm run build` — succeeds (pre-existing >500kB chunk-size warning,
+  unrelated).
+- `npx vitest run` — 10/10 existing tests pass (none cover phone/country
+  logic directly; no regressions).
+- **Live browser test**: signed up a real test account with Qatar (+974)
+  selected as the country — previously hard-rejected, now completes
+  cleanly through to the OTP-verification screen exactly like a Nigerian
+  signup does. Country search tested (typing "Qatar" filters the ~190-item
+  list down to exactly one match). Test account deleted afterward via the
+  Supabase Admin API.
+- **Not verified**: the exact digit-count/format correctness for the
+  majority of the ~190 countries individually — `isPlausibleNationalNumber`
+  is a deliberately generic range check, not a verified-per-country exact
+  pattern (see "What was changed" above). A wrong-but-plausible-length
+  number for an obscure country could pass client-side validation; this is
+  an accepted tradeoff, not a claim that every country's format was
+  hand-verified.
