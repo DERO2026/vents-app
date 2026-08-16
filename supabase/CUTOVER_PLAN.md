@@ -638,3 +638,12 @@ earlier session.
    this environment.
 7. Only after 1–6: proceed to Play Store submission, then the Capacitor iOS
    steps already sequenced after it.
+
+## §9. Preview deploy note (2026-08-16)
+
+Vercel CLI deploys of this branch from the `vents@insforge.app` git author
+were rejected with `Not authorized` (`readyState: BLOCKED`) — Vercel's
+Git-connected deploy protection ties CLI deploys to a recognized GitHub
+account. Repo-local git author switched to the verified `DERO2026` GitHub
+account email to unblock the Preview deployment; no application code,
+Vercel env vars, or Paystack keys were touched.
