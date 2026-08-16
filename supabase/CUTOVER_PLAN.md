@@ -647,3 +647,100 @@ Git-connected deploy protection ties CLI deploys to a recognized GitHub
 account. Repo-local git author switched to the verified `DERO2026` GitHub
 account email to unblock the Preview deployment; no application code,
 Vercel env vars, or Paystack keys were touched.
+
+## §10. Preview Paystack payment flow — verified working (2026-08-16)
+
+A live-fire regression test of the paid-purchase → webhook → ticket-
+confirmation flow on the Preview deployment surfaced and resolved two
+real, distinct bugs, and the flow is now confirmed end-to-end working
+for new Test-mode transactions. Documented here factually, with
+historical artifacts kept clearly separate from current verified state.
+
+### What was found and fixed
+
+1. **Preview was accidentally charging real money in Live mode.**
+   `.env.production` (a committed file, loaded by Vite for any
+   production-mode build regardless of which Vercel target is building —
+   Preview deployments are still production-mode builds) held a real
+   `pk_live_...` Paystack public key. `VITE_PAYSTACK_PUBLIC_KEY` was
+   scoped to Production only in Vercel's env store, so every Preview
+   build fell through to this file's Live key. Two real ₦100 charges
+   were made against a live card as a direct result before this was
+   caught. Fixed by swapping the committed fallback to a `pk_test_` key
+   (not deleting it — this file is also what a local Capacitor native
+   build reads, with no access to Vercel's env store, so removing the
+   line would silently break native checkout) and adding a
+   branch-scoped `pk_test_` `VITE_PAYSTACK_PUBLIC_KEY` to Vercel's
+   Preview environment for `claude/jolly-moser-bee77b` only. Verified
+   directly against the deployed JS bundles: Preview's bundle contains
+   `pk_test_` and zero occurrences of `pk_live_`; Production's bundle
+   still contains `pk_live_` and zero occurrences of `pk_test_` —
+   Production was not affected by this change.
+
+2. **Preview's `PAYSTACK_SECRET_KEY` was still the Live secret,
+   causing webhook signature verification to fail.** After the public
+   key fix corrected checkout to initialize in Test mode, and after the
+   Test-mode Paystack webhook was pointed at the Preview branch URL,
+   webhook deliveries correctly reached the Preview deployment for the
+   first time — but were rejected with `401` / `Paystack webhook
+   signature mismatch`, because Preview's `PAYSTACK_SECRET_KEY` was
+   still the shared Live secret (never previously scoped separately for
+   Preview). Fixed by adding a branch-scoped Test-mode
+   `PAYSTACK_SECRET_KEY` to Vercel's Preview environment for this
+   branch only, then redeploying so the running function picked up the
+   new secret. No secret values are recorded here or anywhere in this
+   document.
+
+### Current verified state (Preview)
+
+- Preview Paystack Test-mode configuration (public key + secret key)
+  is correctly scoped to the `claude/jolly-moser-bee77b` Preview
+  environment only, confirmed by `vercel env ls` (names/scope only)
+  and by direct bundle inspection.
+- Paystack's Test-mode webhook correctly reaches the Preview
+  deployment (confirmed via Vercel runtime logs — `dep=` matches the
+  current Preview deployment ID, not Production).
+- Test-mode webhook HMAC signature verification passes (confirmed —
+  `Paystack webhook event: charge.success` is only logged after
+  signature verification succeeds; no mismatch warnings on the three
+  successful transactions below).
+- `finalize_pending_purchase` and `confirm_ticket_payment` both run
+  and complete successfully against Supabase for Test-mode
+  transactions, confirmed via runtime log output (`finalize_pending_
+  purchase ran for reference ...` / `Ticket confirmed for reference
+  ...`) for three separate payment references.
+- Two of those three were Paystack's own automatic retries of
+  transactions that had originally failed with a signature mismatch
+  (`VNT-c16f53f59ed344a9924ac70800049f04`,
+  `VNT-c5d7d7ff98f843f9b07c964071225e69`) — both retried automatically
+  by Paystack after the corrected Preview deployment went `READY`, and
+  both succeeded without any new payment being made.
+- A fresh ₦5,000 Early Bird Test-mode transaction
+  (`VNT-112abd413a1f4e99b81177b6afd09396`) completed the entire flow
+  end-to-end successfully on the first attempt, no retry required:
+  Paystack Test-mode charge → webhook reaches Preview → signature
+  verified → `finalize_pending_purchase` → `confirm_ticket_payment` →
+  `payment_status = 'paid'`.
+- **Conclusion: the Preview payment flow is verified working for new
+  Test-mode transactions.**
+
+### Historical artifacts — not evidence of an ongoing Preview problem
+
+Two `tickets` rows remain `payment_status = 'pending'`:
+`VNT-d6781717a0b945fb910f6715143602e2` and
+`VNT-cfc5cf3fdfe143b398ec9e14c6df38f5`. These are the two real
+**Live**-mode charges made before the public-key fix (bug #1 above).
+Their webhooks were delivered to **Production**, whose current
+(pre-migration) handler always returns `200` regardless of outcome —
+so Paystack considers delivery complete and will never retry them.
+These two rows are permanently stuck as-is and will not self-resolve;
+they require a separate, deliberate reconciliation decision. They were
+deliberately left untouched during this investigation and this
+documentation pass — not modified, deleted, reconciled, or refunded.
+
+### Explicitly not touched by this work
+
+No Production code, no Production environment variables, no Live
+Paystack webhook configuration, and no Supabase database functions
+were modified. The two historical pending records were left exactly
+as found.
