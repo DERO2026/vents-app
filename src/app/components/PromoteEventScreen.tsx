@@ -18,15 +18,11 @@ interface PromoteEventScreenProps {
 type Plan = 'spotlight' | 'featured' | 'trending';
 type Duration = 3 | 7 | 14 | 30;
 
-const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[] }[] = [
-  {
-    id: 'spotlight',
-    label: 'Spotlight Boost',
-    icon: Zap,
-    color: '#3B82F6',
-    price: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
-    perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
-  },
+// Featured Campaign is the premium/highest-visibility tier and must be
+// listed first — order here drives display order directly below.
+// Pricing/perks/ids unchanged; only the array order (Featured before
+// Spotlight) and Featured's "premium" framing perk changed.
+const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[]; ctaVerb: string }[] = [
   {
     id: 'featured',
     label: 'Featured Campaign',
@@ -34,6 +30,16 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     color: '#A855F7',
     price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
     perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
+    ctaVerb: 'Feature',
+  },
+  {
+    id: 'spotlight',
+    label: 'Spotlight Boost',
+    icon: Zap,
+    color: '#3B82F6',
+    price: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
+    perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
+    ctaVerb: 'Boost',
   },
   {
     id: 'trending',
@@ -42,6 +48,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     color: '#FFB830',
     price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
     perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
+    ctaVerb: 'Boost',
   },
 ];
 
@@ -204,7 +211,12 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         </div>
       </div>
 
-      <div style={{ flex: 1, padding: '4px 16px 120px' }}>
+      {/* Bottom padding is generous on purpose: the fixed CTA footer below
+          (button + skip link + optional error banner) can exceed 120px on
+          its own once an activation error is showing, which previously let
+          it silently cover the tail of the price summary / secured-payment
+          note instead of just sitting below it. */}
+      <div style={{ flex: 1, padding: '4px 16px calc(220px + env(safe-area-inset-bottom))' }}>
         {/* Hero */}
         <div style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.2) 0%, rgba(79,70,229,0.15) 100%)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '20px', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -341,7 +353,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       </div>
 
       {/* CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px calc(24px + env(safe-area-inset-bottom))' }}>
         {activationError && (
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '10px 12px', color: '#EF4444', fontSize: '12px', marginBottom: '10px', lineHeight: 1.5 }}>
             {activationError}
@@ -376,7 +388,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           ) : (
             <>
               <TrendingUp size={16} color="#fff" />
-              Boost Event for {formatPrice(price)}
+              {plan.ctaVerb} Event for {formatPrice(price)}
             </>
           )}
         </button>
