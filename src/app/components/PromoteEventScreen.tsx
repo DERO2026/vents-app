@@ -18,20 +18,11 @@ interface PromoteEventScreenProps {
 type Plan = 'spotlight' | 'featured' | 'trending';
 type Duration = 3 | 7 | 14 | 30;
 
-// Featured Campaign is the premium/highest-visibility tier and must be
-// listed first — order here drives display order directly below.
-// Pricing/perks/ids unchanged; only the array order (Featured before
-// Spotlight) and Featured's "premium" framing perk changed.
+// Featured Campaign remains the premium/highest tier conceptually, but the
+// requested display order for this screen is Spotlight -> Trending ->
+// Featured. Featured and Trending's prices were swapped (Spotlight's price
+// is untouched); perks/ids/ctaVerb unchanged.
 const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[]; ctaVerb: string }[] = [
-  {
-    id: 'featured',
-    label: 'Featured Campaign',
-    icon: Star,
-    color: '#A855F7',
-    price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
-    perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
-    ctaVerb: 'Feature',
-  },
   {
     id: 'spotlight',
     label: 'Spotlight Boost',
@@ -46,9 +37,18 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     label: 'Trending Boost',
     icon: Crown,
     color: '#FFB830',
-    price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
+    price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
     perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
     ctaVerb: 'Boost',
+  },
+  {
+    id: 'featured',
+    label: 'Featured Campaign',
+    icon: Star,
+    color: '#A855F7',
+    price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
+    perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
+    ctaVerb: 'Feature',
   },
 ];
 
