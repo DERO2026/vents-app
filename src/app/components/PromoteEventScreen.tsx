@@ -190,7 +190,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
   }
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Header */}
