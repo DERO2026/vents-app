@@ -197,26 +197,27 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
   }
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', position: 'relative', display: 'flex', flexDirection: 'column', overflowY: 'auto', scrollbarWidth: 'none' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
-        </button>
-        <div>
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Promote Your Event</h1>
-          <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Get more visibility on VENTS</p>
+      {/* Scroll region: header + content only. The CTA footer below is a
+          separate flex sibling, not part of this scrolling box, so it can
+          never be dragged along with scroll position or covered/hidden by
+          content — flexbox reserves exactly the space it needs, no fixed
+          padding guess required. */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+          <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ArrowLeft size={16} color="#C4C9E0" />
+          </button>
+          <div>
+            <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Promote Your Event</h1>
+            <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Get more visibility on VENTS</p>
+          </div>
         </div>
-      </div>
 
-      {/* Bottom padding is generous on purpose: the fixed CTA footer below
-          (button + skip link + optional error banner) can exceed 120px on
-          its own once an activation error is showing, which previously let
-          it silently cover the tail of the price summary / secured-payment
-          note instead of just sitting below it. */}
-      <div style={{ flex: 1, padding: '4px 16px calc(220px + env(safe-area-inset-bottom))' }}>
+      <div style={{ padding: '4px 16px 24px' }}>
         {/* Hero */}
         <div style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.2) 0%, rgba(79,70,229,0.15) 100%)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '20px', padding: '20px', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '16px' }}>
           <div style={{ width: '52px', height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -351,9 +352,13 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Secured payment · Cancel anytime</span>
         </div>
       </div>
+      </div>
 
-      {/* CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px calc(24px + env(safe-area-inset-bottom))' }}>
+      {/* CTA: a normal flex sibling of the scroll region above, not an
+          absolutely-positioned overlay inside it — it can never scroll out
+          of place or be painted under content. Background is fully opaque
+          (no alpha) so scrolled content can't show through underneath it. */}
+      <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, background: '#060A12', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px calc(24px + env(safe-area-inset-bottom))' }}>
         {activationError && (
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '10px 12px', color: '#EF4444', fontSize: '12px', marginBottom: '10px', lineHeight: 1.5 }}>
             {activationError}

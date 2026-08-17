@@ -24,15 +24,12 @@ android {
         applicationId "com.getvents.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        // versionCode starts at 1 for this app's first-ever Play Store
-        // upload (must strictly increase on every future upload; no build
-        // has been submitted yet, so 1 is correct here, not a leftover
-        // default). versionName aligned with the app's actual in-app
-        // version string (APP_VERSION in App.tsx, and the "VENTS v1.1.0"
-        // footer shown in ProfileScreen/SettingsScreen/WelcomeScreen/
-        // AdminDashboardScreen) — it was still the Gradle template's "1.0",
-        // a real mismatch from what the app already presents itself as.
-        versionCode 1
+        // versionCode must strictly increase on every Play Store upload.
+        // Bumped from 1 to 2 because versionCode 1 is already published.
+        // versionName aligned with the app's actual in-app version string
+        // (APP_VERSION in App.tsx, and the "VENTS v1.1.0" footer shown in
+        // ProfileScreen/SettingsScreen/WelcomeScreen/AdminDashboardScreen).
+        versionCode 2
         versionName "1.1.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
