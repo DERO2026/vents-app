@@ -62,9 +62,15 @@ function imageDimensions(blob: Blob): Promise<{ width: number; height: number }>
 // (already unique per file: "<base>-<timestamp>[-thumb|-poster].<ext>") is
 // used directly as that key.
 async function uploadBlob(bucket: string, blob: Blob, filename: string, mimeType: string): Promise<{ url: string; key: string | null }> {
+  // 30s, not 12s -- this is a real network upload, and compressImage()
+  // (used by every caller of uploadImage below) can legitimately fall back
+  // to the original, uncompressed blob if canvas compression itself times
+  // out, so a large source image can still mean a multi-MB upload here.
+  // 12s was tight enough to false-timeout that case on a slow connection
+  // even though the upload was still genuinely in flight.
   const res = await withTimeoutFallback(
     supabase.storage.from(bucket).upload(filename, blob, { contentType: mimeType, upsert: false }),
-    { timeoutMs: 12000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
+    { timeoutMs: 30000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
   );
   if (res.error) {
     const msg = res.error.message || '';

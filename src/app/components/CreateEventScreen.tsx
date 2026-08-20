@@ -105,6 +105,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [uploadingImage, setUploadingImage] = useState(false);
   const [cropSrc, setCropSrc] = useState<string | null>(null);
   const [cropTarget, setCropTarget] = useState<'cover' | 'gallery'>('cover');
+  // Holds the already-cropped blob after a failed upload so "Retry" can
+  // re-attempt the same processed image instead of forcing the organizer
+  // back through picking and cropping from scratch.
+  const [pendingFlierUpload, setPendingFlierUpload] = useState<{ blob: Blob; target: 'cover' | 'gallery' } | null>(null);
   // Additional fliers beyond the primary cover (see migrations/20260713160000_event-gallery-urls.sql)
   const [galleryUrls, setGalleryUrls] = useState<string[]>([]);
   const [uploadingGallery, setUploadingGallery] = useState(false);
@@ -373,9 +377,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     return { url: asset.url, key: asset.storageKey };
   }, [currentUser?.id, editEventId]);
 
-  const handleCroppedFlier = useCallback(async (croppedBlob: Blob) => {
-    closeCropper();
+  const handleCroppedFlier = useCallback(async (croppedBlob: Blob, isRetry = false) => {
+    if (!isRetry) closeCropper();
     const target = cropTarget;
+    // Kept for the duration of the attempt so a failure can offer "Retry"
+    // against this exact already-cropped image instead of forcing the
+    // organizer back through picking and cropping again.
+    setPendingFlierUpload({ blob: croppedBlob, target });
     if (target === 'cover') setUploadingImage(true); else setUploadingGallery(true);
     setErrorMessage(null);
     try {
@@ -386,6 +394,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       } else {
         setGalleryUrls((prev) => [...prev, url]);
       }
+      setPendingFlierUpload(null);
     } catch (err: any) {
       setErrorMessage(err.message || 'Image upload failed. Please try again.');
     } finally {
@@ -1000,7 +1009,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             style={{
               display: 'flex',
               alignItems: 'center',
-              gap: '8px',
+              gap: '10px',
               background: 'rgba(239, 68, 68, 0.1)',
               border: '1px solid rgba(239, 68, 68, 0.25)',
               borderRadius: '12px',
@@ -1009,7 +1018,16 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             }}
           >
             <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+            <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4, flex: 1 }}>{errorMessage}</span>
+            {pendingFlierUpload && (
+              <button
+                onClick={() => handleCroppedFlier(pendingFlierUpload.blob, true)}
+                disabled={uploadingImage || uploadingGallery}
+                style={{ flexShrink: 0, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '6px 14px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: (uploadingImage || uploadingGallery) ? 'not-allowed' : 'pointer' }}
+              >
+                {(uploadingImage || uploadingGallery) ? 'Retrying…' : 'Retry'}
+              </button>
+            )}
           </div>
         )}
 

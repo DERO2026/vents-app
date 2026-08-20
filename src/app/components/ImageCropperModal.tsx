@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import Cropper from 'react-easy-crop';
-import { X, Check, Crop as CropIcon, RotateCcw, Sparkles, HelpCircle } from 'lucide-react';
+import { X, Check, RotateCcw, Sparkles, HelpCircle } from 'lucide-react';
 import { EVENT_CARD_ASPECT, EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
 import { computeSmartCropCached, cropFromFocus, type AreaPct } from '../../lib/smartCrop';
 import { fetchVisionFocus, type VisionFocus } from '../../lib/visionCrop';
@@ -127,13 +127,22 @@ export function ImageCropperModal({
 }: ImageCropperModalProps) {
   const isFlyer = variant === 'flyer';
 
-  const RATIOS = [
-    { key: 'card', label: 'Portrait', value: EVENT_CARD_ASPECT },
-    { key: 'square', label: 'Square', value: 1 },
-    { key: 'wide', label: 'Wide', value: 4 / 3 },
-    { key: 'original', label: 'Original', value: 0 },
-  ];
-  const [ratioKey, setRatioKey] = useState('card');
+  // Flyer crops are ALWAYS EVENT_CARD_ASPECT (4:5) -- every card placement
+  // across the app (Explore, Trending, Featured, Details, ...) renders its
+  // image box at exactly that ratio, so it's not a style choice, it's a
+  // requirement. This used to offer Square/Wide/Original alternatives too,
+  // but renderMaster()/drawMaster() below always force-export at 4:5
+  // regardless of which one was selected (outH is hardcoded to outW*5/4,
+  // and the foreground draw uses a single uniform scale derived only from
+  // the crop's width) -- so picking anything other than the default
+  // silently appended unrelated image content below whatever region the
+  // organizer had actually framed, since the export ratio and the crop
+  // ratio no longer matched. Most likely to be hit by exactly the case in
+  // the bug report: an organizer with a landscape or square source photo
+  // reaching for "Wide"/"Square" to match it. Removed rather than made to
+  // support arbitrary ratios, since every downstream placement needs 4:5
+  // specifically -- the pan/zoom/smart-crop/background-fill flow already
+  // handles composing any source orientation into that fixed frame.
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   // Start deliberately far BELOW any real fit value (never 1 = react-easy-
@@ -172,13 +181,9 @@ export function ImageCropperModal({
   // the crop canvas stays unobstructed at rest.
   const [interacting, setInteracting] = useState(false);
   const interactingHideTimer = useRef<number | null>(null);
-  const [showAspectMenu, setShowAspectMenu] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
 
-  const aspect = isFlyer
-    ? (ratioKey === 'original' ? (naturalAspect ?? EVENT_CARD_ASPECT)
-       : RATIOS.find((r) => r.key === ratioKey)?.value || EVENT_CARD_ASPECT)
-    : (aspectProp ?? 1);
+  const aspect = isFlyer ? EVENT_CARD_ASPECT : (aspectProp ?? 1);
 
   // Decode once for the flyer path — reused for the live preview (every drag)
   // and the final export, so the image is never re-decoded per frame.
@@ -321,8 +326,6 @@ export function ImageCropperModal({
     }
   };
 
-  const selectRatio = (key: string) => { setRatioKey(key); haptic(6); setShowAspectMenu(false); };
-
   // Rule-of-thirds grid: fades in only while actively dragging/pinching (matches
   // Apple Photos), so the flyer is unobstructed the rest of the time. A short
   // delay on release keeps the fade from feeling abrupt at the end of a gesture.
@@ -446,39 +449,17 @@ export function ImageCropperModal({
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, padding: '8px 16px calc(10px + env(safe-area-inset-bottom, 8px))', background: 'linear-gradient(to top, rgba(2,0,5,0.92) 45%, transparent)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
           {error && <div style={{ color: '#EF4444', fontSize: '12px', fontWeight: 600, textAlign: 'center' }}>{error}</div>}
 
-          {/* Aspect popover — appears only when requested, instead of a
-              permanent row, so it never competes with the image for attention. */}
-          {showAspectMenu && (
-            <div style={{ display: 'flex', gap: '7px', justifyContent: 'center', paddingBottom: '4px' }}>
-              {RATIOS.map((r) => {
-                const active = ratioKey === r.key;
-                return (
-                  <button key={r.key} onClick={() => selectRatio(r.key)} style={{
-                    background: active ? 'rgba(167,139,250,0.22)' : 'rgba(255,255,255,0.08)',
-                    border: `1px solid ${active ? 'rgba(167,139,250,0.7)' : 'rgba(255,255,255,0.14)'}`,
-                    borderRadius: '999px', padding: '7px 13px', color: active ? '#DDD3FF' : '#B9BED6',
-                    fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-                  }}>
-                    {r.label}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           {/* Slim zoom fallback — pinch is the primary gesture; this covers
               one-handed and non-touch use without adding a label row. */}
           <input type="range" value={zoom} min={minZoom} max={5} step={0.01} aria-label="Zoom"
             onChange={(e) => { setZoom(Number(e.target.value)); setDirty(true); }} onPointerUp={() => haptic(4)}
             style={{ width: '100%', height: '3px', borderRadius: '3px', outline: 'none', accentColor: '#A78BFA', cursor: 'pointer' }} />
 
-          {/* Essential toolbar only: aspect, auto-frame/reset, guide. Evenly
-              spaced across the full width for easy one-handed thumb reach. */}
+          {/* Essential toolbar only: auto-frame/reset, guide -- no aspect
+              choice, the crop is always the required 4:5 (see the isFlyer
+              comment above). Evenly spaced across the full width for easy
+              one-handed thumb reach. */}
           <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', paddingTop: '2px' }}>
-            <button onClick={() => setShowAspectMenu((v) => !v)} style={iconBtn(showAspectMenu)} aria-label="Aspect ratio">
-              <CropIcon size={19} />
-              <span style={iconBtnLabel}>Aspect</span>
-            </button>
             {(framed || dirty) ? (
               <button onClick={showFullFlyer} style={iconBtn(false)} aria-label="Reset to full flyer">
                 <RotateCcw size={19} />
