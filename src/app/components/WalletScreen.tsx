@@ -199,18 +199,61 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     setConfirmError('');
     try {
       if (Capacitor.isNativePlatform()) {
-        const { NativeBiometric } = await import('@capgo/capacitor-native-biometric');
+        const { NativeBiometric, BiometricAuthError } = await import('@capgo/capacitor-native-biometric');
         await NativeBiometric.verifyIdentity({
           reason: 'Confirm this wallet action',
           title: 'Biometric Confirmation',
-        }).catch(() => { throw new Error('Biometric check was cancelled.'); });
+        }).catch((err: any) => {
+          // The plugin rejects with a numeric `code` (as a string) identifying
+          // exactly why — previously every rejection here was flattened to
+          // "cancelled", which mislabeled real failures (wrong face/fingerprint,
+          // lockout, no biometrics enrolled) as a user cancel.
+          const code = Number(err?.code);
+          if (
+            code === BiometricAuthError.USER_CANCEL ||
+            code === BiometricAuthError.APP_CANCEL ||
+            code === BiometricAuthError.SYSTEM_CANCEL ||
+            code === BiometricAuthError.USER_FALLBACK
+          ) {
+            // User dismissed the prompt themselves (Cancel, app switch, device
+            // lock, "use password" fallback) — not a failure, stays silent.
+            const cancelled = new Error('');
+            (cancelled as any).cancelled = true;
+            throw cancelled;
+          }
+          if (code === BiometricAuthError.USER_LOCKOUT || code === BiometricAuthError.USER_TEMPORARY_LOCKOUT) {
+            throw new Error('Too many failed attempts. Please use your password.');
+          }
+          if (
+            code === BiometricAuthError.BIOMETRICS_UNAVAILABLE ||
+            code === BiometricAuthError.BIOMETRICS_NOT_ENROLLED ||
+            code === BiometricAuthError.PASSCODE_NOT_SET
+          ) {
+            throw new Error('Biometrics are unavailable on this device. Please use your password.');
+          }
+          if (code === BiometricAuthError.AUTHENTICATION_FAILED) {
+            throw new Error('Biometric check failed. Please try again or use your password.');
+          }
+          throw new Error('Biometric confirmation is unavailable — please use your password.');
+        });
       } else {
         const anyWin = window as any;
         if (anyWin.PublicKeyCredential?.isUserVerifyingPlatformAuthenticatorAvailable) {
           const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
           await navigator.credentials.get({
             publicKey: { challenge, timeout: 60000, userVerification: 'required', rpId: window.location.hostname },
-          } as any).catch(() => { throw new Error('Biometric check was cancelled.'); });
+          } as any).catch((err: any) => {
+            // WebAuthn rejects NotAllowedError for both an explicit user
+            // cancel and a plain timeout — no reliable way to split those,
+            // so both stay silent rather than showing a scary error for a
+            // timeout the user didn't cause.
+            if (err?.name === 'NotAllowedError') {
+              const cancelled = new Error('');
+              (cancelled as any).cancelled = true;
+              throw cancelled;
+            }
+            throw new Error('Biometric confirmation is unavailable — please use your password.');
+          });
         }
       }
       if (!cachedPassword.current) {
@@ -219,6 +262,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       }
       await runConfirm(cachedPassword.current);
     } catch (e: any) {
+      if (e?.cancelled) return;
       setConfirmError(e?.message || 'Biometric confirmation is unavailable — please use your password.');
     }
   };
