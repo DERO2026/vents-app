@@ -242,13 +242,21 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
       }
       try {
         let eventIds: string[];
+        let totalCapacity = 0;
         if (eventId) {
           // Per-event mode — scope straight to the one event, no portfolio query.
           eventIds = [eventId];
+          const { data: ev, error: evError } = await supabase
+            .from('events')
+            .select('ticket_goal')
+            .eq('id', eventId)
+            .maybeSingle();
+          if (evError) throw evError;
+          totalCapacity = ev?.ticket_goal || 0;
         } else {
           const { data: myEvents, error: eventsError } = await supabase
             .from('events')
-            .select('id')
+            .select('id, ticket_goal')
             .eq('organizer_id', currentUser.id)
             .is('deleted_at', null);
 
@@ -259,6 +267,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
             return;
           }
           eventIds = myEvents.map((e: any) => e.id);
+          totalCapacity = myEvents.reduce((sum: number, e: any) => sum + (e.ticket_goal || 0), 0);
         }
 
         // Matches the canonical "sold" definition used everywhere else
@@ -332,9 +341,18 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
         daily.sort((a, b) => order.indexOf(a.day) - order.indexOf(b.day));
 
+        // Previously divided by a hardcoded 120 regardless of the event's
+        // actual capacity, so "Conversion Rate" was fabricated for any
+        // event whose ticket_goal wasn't ~120. Uses the real capacity
+        // (single event's ticket_goal, or the summed ticket_goal across
+        // the organizer's events in portfolio mode) as the denominator;
+        // renders 0 rather than a division-by-zero/fake rate when no
+        // capacity is set anywhere in scope.
         const conversion = order.map(day => ({
           day,
-          rate: dailyRevenue[day] > 0 ? Number(((dailySales[day] / 120) * 100).toFixed(1)) : 0
+          rate: dailyRevenue[day] > 0 && totalCapacity > 0
+            ? Number(((dailySales[day] / totalCapacity) * 100).toFixed(1))
+            : 0
         }));
 
         setAnalytics({

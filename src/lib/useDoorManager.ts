@@ -227,7 +227,19 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     channel.on('broadcast', { event: 'checkin' }, bump);
     channel.on('broadcast', { event: 'ticket' }, bump);
     channel.on('broadcast', { event: 'scan_attempt' }, bump);
-    channel.subscribe((status) => setLive(status === 'SUBSCRIBED'));
+    // Track whether we were previously live so a reconnect (status flips
+    // back to SUBSCRIBED after a CLOSED/CHANNEL_ERROR/TIMED_OUT drop) forces
+    // a refresh — the Supabase client auto-reconnects the socket, but any
+    // check-in broadcasts that happened during the outage are gone forever
+    // otherwise, silently leaving stats/feed stale until the next organic
+    // scan or a manual pull-to-refresh.
+    let wasLive = false;
+    channel.subscribe((status) => {
+      const nowLive = status === 'SUBSCRIBED';
+      if (nowLive && !wasLive) { refreshStats(); loadList(true); loadScanLog(true); }
+      wasLive = nowLive;
+      setLive(nowLive);
+    });
 
     return () => {
       if (debounce) clearTimeout(debounce);

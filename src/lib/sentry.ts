@@ -8,9 +8,16 @@ export function initSentry() {
     replaysOnErrorSampleRate: 1.0,
     replaysSessionSampleRate: 0.1,
     integrations: [
+      // Sentry's recommended defaults for Session Replay: mask all on-screen
+      // text and block all media (images/video) by default. The app renders
+      // chat messages, auth forms, and payment/checkout UI as plain text and
+      // images, so leaving these off (as before) let Replay capture that
+      // content verbatim. Crash/performance monitoring (tracesSampleRate,
+      // replaysOnErrorSampleRate/replaysSessionSampleRate above) is
+      // untouched — this only changes what a captured replay shows.
       Sentry.replayIntegration({
-        maskAllText: false,
-        blockAllMedia: false,
+        maskAllText: true,
+        blockAllMedia: true,
       }),
     ],
     dataCollection: {},

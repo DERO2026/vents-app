@@ -1651,14 +1651,28 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          const { error } = await supabase.from('users')
-            .update({ status: 'suspended' })
+          // Was a single direct UPDATE on users.status — bypassed
+          // admin_suspend_user() entirely, so these suspensions never got
+          // the per-user 'suspend_user' admin_logs entry that every other
+          // suspend path (single-user, via submitOrExecute above) produces.
+          // Routes through the same RPC per target instead, so bulk
+          // suspends are indistinguishable from individual ones in the
+          // audit trail — same trigger-compliant write path, same log.
+          const { data: targets, error: fetchErr } = await supabase
+            .from('users')
+            .select('id')
             .eq('is_verified', false)
             .eq('status', 'active')
             .neq('id', ROOT_UID);
-          if (error) throw error;
-          await writeAuditLog(currentUser,'ROOT_bulk_suspend_unverified', null, {});
-          flash(true, 'Unverified accounts suspended.');
+          if (fetchErr) throw fetchErr;
+
+          let failed = 0;
+          for (const t of targets || []) {
+            const { error } = await supabase.rpc('admin_suspend_user', { p_user_id: t.id, p_banned_until: null, p_reason: 'Bulk suspend: unverified account' });
+            if (error) failed++;
+          }
+          await writeAuditLog(currentUser, 'ROOT_bulk_suspend_unverified', null, { count: (targets || []).length, failed });
+          flash(failed === 0, failed === 0 ? `${(targets || []).length} unverified account(s) suspended.` : `${failed} of ${(targets || []).length} failed — see individual admin_logs entries.`);
           loadUsers();
         } catch (err: any) { flash(false, err?.message || 'Bulk suspend failed.'); }
       },
@@ -2668,12 +2682,17 @@ export function AdminDashboardScreen({
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
                   onClick={async () => {
-                    const { error } = await supabase.from('users').update({ is_verified: true }).eq('id', u.id);
-                    if (!error) {
-                      await writeAuditLog(currentUser,'verify_organizer', u.id, { username: u.username, email: u.email });
-                      setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
-                      flash(true, `@${u.username} verified ✓`);
-                    } else flash(false, error.message);
+                    setBusyId(u.id);
+                    await submitOrExecute('toggle_user_verified',
+                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { verified: true }, previous: { is_verified: u.is_verified }, changes: { is_verified: true } },
+                      async () => {
+                        const { error } = await supabase.rpc('admin_toggle_user_verified', { p_user_id: u.id, p_verified: true, p_reason: null });
+                        if (error) throw error;
+                        await writeAuditLog(currentUser, 'verify_organizer', u.id, { username: u.username, email: u.email });
+                        setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
+                        flash(true, `@${u.username} verified ✓`);
+                      });
+                    setBusyId(null);
                   }}
                   style={{ flex: 1, background: 'rgba(59,130,246,0.12)', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '10px', padding: '8px', color: '#3B82F6', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                 >
@@ -2681,12 +2700,17 @@ export function AdminDashboardScreen({
                 </button>
                 <button
                   onClick={async () => {
-                    const { error } = await supabase.from('users').update({ role: 'attendee' }).eq('id', u.id);
-                    if (!error) {
-                      await writeAuditLog(currentUser,'reject_organizer', u.id, { username: u.username });
-                      setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
-                      flash(false, `@${u.username} demoted to attendee.`);
-                    } else flash(false, error.message);
+                    setBusyId(u.id);
+                    await submitOrExecute('set_user_role',
+                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { new_role: 'attendee' }, previous: { role: 'organizer' }, changes: { role: 'attendee' } },
+                      async () => {
+                        const { error } = await supabase.rpc('admin_set_user_role', { p_user_id: u.id, p_new_role: 'attendee' });
+                        if (error) throw error;
+                        await writeAuditLog(currentUser, 'reject_organizer', u.id, { username: u.username });
+                        setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
+                        flash(false, `@${u.username} demoted to attendee.`);
+                      });
+                    setBusyId(null);
                   }}
                   style={{ flex: 1, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}
                 >

@@ -649,6 +649,40 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       });
       if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
 
+      // A lowered ticket-type quantity or event capacity must never drop
+      // below what's already sold -- the server (purchase_ticket) only
+      // blocks *future* oversell against whatever cap is in place at
+      // purchase time; it has no way to know tickets already existed
+      // before this edit. Checked here, not just relying on a DB
+      // constraint, so the organizer gets a clear error instead of a
+      // silently-inconsistent progress bar (sold > capacity) afterward.
+      const newCapacity = Number(capacity) || 0;
+      if (newCapacity > 0) {
+        const { count: totalSold, error: soldErr } = await supabase
+          .from('tickets')
+          .select('id', { count: 'exact', head: true })
+          .eq('event_id', editEventId)
+          .eq('status', 'active');
+        if (soldErr) throw soldErr;
+        if ((totalSold || 0) > newCapacity) {
+          throw new Error(`Capacity can't be set below ${totalSold} -- that many tickets are already sold.`);
+        }
+      }
+      for (const t of ticketTypes) {
+        const newQty = Number(t.quantity) || 0;
+        if (newQty <= 0) continue;
+        const { count: typeSold, error: typeSoldErr } = await supabase
+          .from('tickets')
+          .select('id', { count: 'exact', head: true })
+          .eq('event_id', editEventId)
+          .eq('ticket_type', t.name.trim())
+          .eq('status', 'active');
+        if (typeSoldErr) throw typeSoldErr;
+        if ((typeSold || 0) > newQty) {
+          throw new Error(`"${t.name.trim()}" quantity can't be set below ${typeSold} -- that many are already sold.`);
+        }
+      }
+
       const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
       // Optional — only present for a multi-day event. Falls back to the
@@ -773,6 +807,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       }
       if (!city.trim()) {
         setErrorMessage('Please enter the city.');
+        return;
+      }
+      // Field is marked required (label has a *) but was never actually
+      // checked -- an empty/non-numeric value silently coerced to 0 on
+      // save, which purchase_ticket treats as "unlimited capacity"
+      // (ticket_goal > 0 gate), disabling the sold-out check entirely.
+      if (!capacity || Number(capacity) <= 0) {
+        setErrorMessage('Please enter a valid total capacity.');
         return;
       }
       setStep(3);

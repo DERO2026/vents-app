@@ -27,6 +27,7 @@ Open `ios/App/App/Info.plist` in Xcode (or as source code) and add:
 | `NSMicrophoneUsageDescription` | "VENTS needs microphone access to record voice messages in chat." | Voice notes in Messages |
 | `NSLocationWhenInUseUsageDescription` | "VENTS needs your location to share it in chat and show nearby events." | Location share |
 | `NSPhotoLibraryUsageDescription` | "VENTS needs photo library access to upload event flyers and your profile picture." | Flyer/avatar picker |
+| `ITSAppUsesNonExemptEncryption` | `Boolean` → **NO** | Export compliance — skips the encryption question on every App Store Connect upload. Verified: the app only uses exempt encryption — standard TLS/HTTPS (fetch, Supabase client, Firebase SDK), OS-provided Keychain storage (`@aparajita/capacitor-secure-storage`, `@capgo/capacitor-native-biometric`), and HMAC-SHA256 for ticket QR signing, which is authentication/integrity only, not confidentiality (exempt under Category 5, Part 2 of the EAR). No custom/proprietary encryption anywhere in the dependency tree. Add this as a Boolean key set to NO directly in Xcode's Info.plist editor (or as `<key>ITSAppUsesNonExemptEncryption</key><false/>` in source view) — it is a plain Info.plist entry, so it is untouched by `npx cap sync` (sync only copies web assets and updates native plugin manifests, never rewrites Info.plist) and persists across every future build without re-answering Apple's encryption prompt. |
 
 Also add a `CFBundleURLTypes` entry for the custom scheme (mirrors the
 Android intent-filter already in `AndroidManifest.xml`):

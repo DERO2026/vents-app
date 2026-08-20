@@ -45,6 +45,13 @@ export function NotificationsScreen({
   const swipeStartX = useRef<number | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const pullStartY = useRef<number | null>(null);
+  // Guards fetchNotifications against out-of-order responses: the initial
+  // mount fetch and the realtime broadcast handler can both call it, and
+  // aren't sequenced against each other or against an in-flight
+  // markRead/markAllRead's own optimistic update — without this, a slower
+  // response landing after a faster/newer one can silently revert read
+  // state the user just saw change (e.g. re-show a badge as unread).
+  const reqIdRef = useRef(0);
 
   const mapRow = (n: any): Notification => ({
     id: n.id,
@@ -58,6 +65,7 @@ export function NotificationsScreen({
 
   const fetchNotifications = async () => {
     if (!currentUser?.id) return;
+    const myReq = ++reqIdRef.current;
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -68,6 +76,7 @@ export function NotificationsScreen({
         .limit(PAGE_SIZE);
 
       if (error) throw error;
+      if (myReq !== reqIdRef.current) return; // a newer fetch superseded this one
       if (data) {
         setHasMore(data.length === PAGE_SIZE);
         setItems(data.map(mapRow));
@@ -76,7 +85,7 @@ export function NotificationsScreen({
       console.error("Failed to fetch notifications:", err);
       Sentry.captureException(err);
     } finally {
-      setLoading(false);
+      if (myReq === reqIdRef.current) setLoading(false);
     }
   };
 

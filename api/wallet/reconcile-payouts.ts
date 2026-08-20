@@ -60,7 +60,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const errJson = await listRes.json().catch(() => null);
       return res.status(listRes.status).json({ error: errJson?.message || 'Admin access required' });
     }
-    const rows: any[] = await listRes.json();
+    // PostgREST returns a bare object instead of a single-element array for
+    // a TABLE-returning RPC under some conditions — same defensive
+    // normalization already used in admin-payout-action.ts. Without this,
+    // `for...of` on a non-array throws and aborts the entire reconciliation
+    // batch instead of processing any rows.
+    const listJson = await listRes.json();
+    const rows: any[] = Array.isArray(listJson) ? listJson : listJson ? [listJson] : [];
 
     const results: any[] = [];
     for (const row of rows) {
