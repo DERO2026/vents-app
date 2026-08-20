@@ -17,6 +17,7 @@ import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -808,7 +809,36 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (error) throw error;
 
         if (data?.user) {
-          const { data: profile } = await supabase.from('users').select('*').eq('id', data.user.id).maybeSingle();
+          // Explicit column list, NOT select('*') -- deliberately excludes
+          // totp_secret. The TOTP 2FA prompt below used to read the raw
+          // secret straight into client state and verify it entirely
+          // client-side (src/lib/totp.ts's verifyTOTP()), which means the
+          // permanent secret was shipped to the browser on every login for
+          // any 2FA-enabled account, before the 2FA challenge was even
+          // shown -- password alone would have been enough to also receive
+          // the secret. No account currently has totp_enabled=true (no
+          // enrollment UI exists to turn it on), so this had zero live
+          // exposure, but it's a real defect if the column is ever set.
+          // Fixed at the source: the secret is never fetched here at all.
+          // A safe re-enable of 2FA needs a SECURITY DEFINER RPC that
+          // verifies the code server-side and returns only a boolean --
+          // not attempted here since shipping unverified crypto is worse
+          // than leaving the feature (currently unused by anyone) inert.
+          //
+          // Also wrapped in withTimeoutFallback, matching every other
+          // network call in this file -- previously the only one that
+          // could hang the "Signing in..." button forever on a stalled
+          // connection, with no timeout to recover from it.
+          const { data: profile } = await withTimeoutFallback(
+            Promise.resolve(
+              supabase
+                .from('users')
+                .select('status, banned_until, full_name, username, phone_number, state, avatar_url, cover_url, role, is_verified, vc_badge')
+                .eq('id', data.user.id)
+                .maybeSingle()
+            ),
+            { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+          );
 
           // 3.5: Block banned / deleted accounts immediately after auth
           if (profile?.status === 'suspended' || profile?.status === 'deleted') {
@@ -838,13 +868,19 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             vc_badge: profile?.vc_badge,
           };
 
-          // 3.1: If TOTP is enabled, show the 2FA prompt before completing login
-          if (profile?.totp_enabled && profile?.totp_secret) {
-            setTotpPending({ secret: profile.totp_secret, profilePayload });
-            setTimeout(() => totpInputRef.current?.focus(), 100);
-            setLoading(false);
-            return;
-          }
+          // 3.1: TOTP 2FA prompt removed from here -- it used to read
+          // profile.totp_secret straight into client state and verify it
+          // entirely client-side (src/lib/totp.ts's verifyTOTP()), meaning
+          // the permanent secret was shipped to the browser on every login
+          // for any 2FA-enabled account, before the challenge was even
+          // shown. The users.select() above deliberately no longer fetches
+          // totp_secret at all, closing that leak at the source. No
+          // account currently has totp_enabled=true (there's no enrollment
+          // UI to turn it on), so this had zero live exposure -- but
+          // re-enabling 2FA needs a SECURITY DEFINER RPC that verifies the
+          // code server-side and returns only a boolean, not a client-side
+          // secret round-trip. See totpPending/verifyTOTP/generateTOTPSecret
+          // in src/lib/totp.ts, still present but now unused from here.
 
           localStorage.removeItem('auth_attempts');
           analytics.loggedIn('password');
@@ -896,6 +932,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       // On login failure, check if the account is suspended/deleted so we can
       // show the ban screen instead of a generic "Invalid credentials" message.
       if (mode === 'login') {
+        // checkAuthRateLimit() (called before signInWithPassword above)
+        // throws its own clear "Too many attempts" message on an actual
+        // rate-limit hit -- previously that was unconditionally discarded
+        // below in favor of "Incorrect email or password", which could
+        // make a correctly-rate-limited user think their password was
+        // wrong and keep retrying (or reset a password that was never the
+        // problem) instead of just waiting.
+        if (msgL.includes('too many attempts')) {
+          setErrorMessage(msg.trim());
+          return;
+        }
         try {
           let checkEmail = email.trim();
           if (!isValidEmail(checkEmail)) {
