@@ -5,7 +5,6 @@ import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
-import { apiUrl } from '../../lib/apiBase';
 import { NIGERIA_STATES } from './StateSelectScreen';
 import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
@@ -18,6 +17,12 @@ import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
+
+// Must match Supabase Auth's mailer_otp_length project setting (currently 8,
+// not the library default of 6) -- confirmed via the Management API before
+// this change. A mismatch here means the email always shows more digits
+// than the input can ever hold, so verification can never succeed.
+const EMAIL_OTP_LENGTH = 8;
 
 // Best-effort abuse guard for traffic going through this screen — Supabase
 // Auth's own endpoints run outside our schema, so this can't stop a scripted
@@ -217,11 +222,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   // visit (app closed/backgrounded before the OTP was entered).
   useEffect(() => {
     if (isVerifying) return;
-    const resumeEmail = pendingVerificationEmail || getPendingVerification()?.email;
+    const existingPending = getPendingVerification();
+    const resumeEmail = pendingVerificationEmail || existingPending?.email;
     if (resumeEmail) {
       setEmail(resumeEmail);
       setIsVerifying(true);
-      if (pendingVerificationEmail) savePendingVerification(pendingVerificationEmail);
+      // Carries the existing `profile` payload forward instead of dropping
+      // it — this exact re-save (triggered by arriving via the "Verify
+      // Account" email link) used to call savePendingVerification with only
+      // the email, which wiped the signup form data this same resume path
+      // depends on to complete the profile once verification succeeds.
+      if (pendingVerificationEmail) savePendingVerification(pendingVerificationEmail, existingPending?.profile);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingVerificationEmail]);
@@ -444,16 +455,36 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         const { error: roleError } = await supabase.rpc('set_signup_role' as any, { p_role: strictRole });
         if (roleError) console.error('Signup Failure Trace — role set:', roleError);
 
+        // Component state (name/username/phone/dob/signupState) is blank
+        // whenever this screen was reached via a fresh mount rather than a
+        // continuous fill-form-then-verify session — e.g. the user resumed
+        // from the "Verify Account" email link (?verify_email=...), which
+        // only pre-fills the email. Fall back to what was persisted at
+        // signup time so a fresh mount doesn't overwrite already-entered
+        // data with blanks.
+        const pending = getPendingVerification();
+        const pendingProfile = pending?.email === userEmail.toLowerCase() ? pending.profile : undefined;
         const payload: Record<string, any> = {
-          full_name: name.trim(),
-          username: username.trim().toLowerCase(),
-          phone_number: buildE164(phone, phoneCountryCode),
-          state: (signupState || selectedState || '').trim(),
-          avatar_url: avatarUrl || signupAvatarUrl
+          full_name: name.trim() || pendingProfile?.full_name || '',
+          username: (username.trim() || pendingProfile?.username || '').toLowerCase(),
+          phone_number: phone ? buildE164(phone, phoneCountryCode) : (pendingProfile?.phone_number || ''),
+          state: (signupState || selectedState || pendingProfile?.state || '').trim(),
+          avatar_url: avatarUrl || signupAvatarUrl || pendingProfile?.avatar_url,
         };
-        if (dob) payload.date_of_birth = dob;
+        const effectiveDob = dob || pendingProfile?.date_of_birth;
+        if (effectiveDob) payload.date_of_birth = effectiveDob;
 
-        await supabase.from('users').update(payload).eq('id', userId);
+        // Only write fields that actually have a value — an update payload
+        // of all-blank strings (e.g. this ran with neither live state nor a
+        // pending fallback available) would clobber a profile that a prior,
+        // successful write already completed correctly.
+        const writablePayload = Object.fromEntries(
+          Object.entries(payload).filter(([, v]) => v !== '' && v != null)
+        );
+        if (Object.keys(writablePayload).length > 0) {
+          const { error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId);
+          if (updateError) { console.error('Signup Failure Trace — profile completion update:', updateError); Sentry.captureException(updateError); }
+        }
 
         const { data: verifiedProfile } = await supabase
           .from('users')
@@ -658,7 +689,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (flagError && String((flagError as any)?.message || flagError).includes('signups_disabled')) {
           throw new Error('New sign-ups are temporarily paused. Please check back shortly.');
         }
-        const { data, error } = await supabase.auth.signUp({ email: normalizedEmail, password });
+        // Passed as signUp()'s own options.data (-> auth.users.raw_user_meta_data)
+        // rather than relying solely on the follow-up client-side write
+        // below: this is captured atomically as part of signUp() itself,
+        // before any session exists and regardless of which browser/device
+        // the user later confirms their email in. handle_new_user() (the
+        // auth.users insert trigger, supabase/migrations/0025) reads this
+        // to populate the profile row at creation time, so the data isn't
+        // lost even if a confirmation link is opened somewhere the original
+        // signup form's state/localStorage was never present.
+        const { data, error } = await supabase.auth.signUp({
+          email: normalizedEmail,
+          password,
+          options: {
+            data: {
+              full_name: userMetaPayload.full_name,
+              username: userMetaPayload.username,
+              phone_number: userMetaPayload.phone_number,
+              state: userMetaPayload.state,
+              date_of_birth: dob || undefined,
+            },
+          },
+        });
         if (error) throw error;
 
         // No manual token rehydration needed here (unlike the old InsForge
@@ -699,8 +751,26 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (data?.user && !data.session) {
           analytics.signedUp(strictRole);
           setIsVerifying(true);
-          savePendingVerification(normalizedEmail);
-          sendVerifyAccountEmail(normalizedEmail);
+          // Persist the full form, not just the email — the immediate
+          // upsert above has no session yet (email confirmation pending)
+          // and is RLS-rejected, so this is the only place this data
+          // survives a reload or a fresh page load reached via the
+          // confirmation link, for the completion write in
+          // fetchProfileAndSucceed / hydrateAuth to pick back up.
+          savePendingVerification(normalizedEmail, {
+            full_name: userMetaPayload.full_name,
+            username: userMetaPayload.username,
+            phone_number: userMetaPayload.phone_number,
+            state: userMetaPayload.state,
+            date_of_birth: dob || undefined,
+            avatar_url: userMetaPayload.avatar_url || undefined,
+          });
+          // Supabase's own "Confirm signup" email (mailer_templates_confirmation_content)
+          // is now the single, fully VENTS-branded email for this step -- it
+          // already contains both the OTP code and a "Verify Account" button
+          // pointing back at this app. sendVerifyAccountEmail() used to send
+          // a second, separate email here with no code at all, which is what
+          // caused the "two emails" / "where's my code" confusion.
         } else if (data?.session && data?.user) {
           analytics.signedUp(strictRole);
           const avatarUrl = await uploadAvatarIfPending();
@@ -861,7 +931,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   };
 
   const handleVerifyOtp = async () => {
-    if (verificationCode.length !== 6) return;
+    if (verificationCode.length !== EMAIL_OTP_LENGTH) return;
     setLoading(true);
     setErrorMessage(null);
     try {
@@ -873,9 +943,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (error) throw error;
 
       if (data?.user) {
-        clearPendingVerification();
+        // Cleared AFTER fetchProfileAndSucceed, not before — it reads the
+        // persisted signup payload as a fallback when this screen's own
+        // component state is blank (a fresh mount reached via the
+        // "Verify Account" email link). Clearing first would erase that
+        // fallback before it could ever be used.
         const avatarUrl = await uploadAvatarIfPending();
         await fetchProfileAndSucceed(data.user.id, data.user.email!, avatarUrl);
+        clearPendingVerification();
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Verification failed. Please check the code and try again.');
@@ -896,7 +971,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         options: { emailRedirectTo: `${window.location.origin}/` },
       });
       if (resendError) throw resendError;
-      sendVerifyAccountEmail(email.trim().toLowerCase());
       setSuccessMessage('A new code is on its way — check your inbox.');
       setResendCooldown(30);
     } catch (err: any) {
@@ -914,22 +988,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setSuccessMessage(null);
     // Leave name/username/phone/etc. filled in — only the email needs to change.
     setEmail('');
-  };
-
-  // Best-effort branded companion email with a one-tap "Verify Account"
-  // button that lands the user straight back on this OTP screen (email
-  // pre-filled) instead of making them re-navigate the app from scratch.
-  // The 6-digit code itself is still delivered separately by Supabase Auth's
-  // own verification email — this repo has no access to that code's value,
-  // so it can't be embedded here. Never blocks or fails the signup flow.
-  // Merged into status-email.ts's request_type dispatch (rather than its
-  // own endpoint) to stay under Vercel Hobby's 12-serverless-function cap.
-  const sendVerifyAccountEmail = (toEmail: string) => {
-    fetch(apiUrl('/api/notify/status-email'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ request_type: 'verify_account', email: toEmail }),
-    }).catch((err: any) => console.warn('Verify-account email failed to send (non-blocking):', err));
   };
 
   // 3.5: Ban screen
@@ -1139,37 +1197,47 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               </div>
             )}
 
-            <div
-              onClick={() => forgotOtpRef.current?.focus()}
-              style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '20px', cursor: 'text' }}
-            >
-              {Array.from({ length: 6 }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: '42px', height: '52px', background: FIELD_BG,
-                    border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
-                    borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>{forgotOtpCode[i] ?? ''}</span>
-                </div>
-              ))}
+            {/* Overlay input at inset:0 over the full box row (same pattern as
+                the signup OTP screen below) rather than a 1px pointer-events:none
+                field relying solely on the wrapper's onClick -- makes every box,
+                including the first, directly tappable/focusable, and lets native
+                typing/paste/backspace work without any manual per-box logic. */}
+            <div style={{ position: 'relative', marginBottom: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}>
+                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: '32px', height: '52px', background: FIELD_BG,
+                      border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
+                      borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>{forgotOtpCode[i] ?? ''}</span>
+                  </div>
+                ))}
+              </div>
+              <input
+                ref={forgotOtpRef}
+                type="text"
+                inputMode="numeric"
+                pattern="\d*"
+                autoComplete="one-time-code"
+                maxLength={EMAIL_OTP_LENGTH}
+                value={forgotOtpCode}
+                onChange={(e) => setForgotOtpCode(e.target.value.replace(/\D/g, '').slice(0, EMAIL_OTP_LENGTH))}
+                style={{
+                  position: 'absolute', inset: 0, width: '100%', height: '100%',
+                  opacity: 0, background: 'transparent', border: 'none', outline: 'none',
+                  fontSize: '16px', cursor: 'text', caretColor: 'transparent',
+                }}
+                autoFocus
+              />
             </div>
-            <input
-              ref={forgotOtpRef}
-              type="text"
-              pattern="\d*"
-              maxLength={6}
-              value={forgotOtpCode}
-              onChange={(e) => setForgotOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              style={{ position: 'absolute', opacity: 0, width: '1px', height: '1px', pointerEvents: 'none' }}
-              autoFocus
-            />
 
             <button
               onClick={async () => {
-                if (forgotOtpCode.length !== 6) { setErrorMessage('Please enter the 6-digit code.'); return; }
+                if (forgotOtpCode.length !== EMAIL_OTP_LENGTH) { setErrorMessage(`Please enter the ${EMAIL_OTP_LENGTH}-digit code.`); return; }
                 setForgotVerifying(true);
                 setErrorMessage(null);
                 try {
@@ -1195,11 +1263,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   setForgotVerifying(false);
                 }
               }}
-              disabled={forgotVerifying || forgotOtpCode.length !== 6}
+              disabled={forgotVerifying || forgotOtpCode.length !== EMAIL_OTP_LENGTH}
               style={{
                 ...BTN_PRIMARY,
-                opacity: (forgotVerifying || forgotOtpCode.length !== 6) ? 0.6 : 1,
-                cursor: (forgotVerifying || forgotOtpCode.length !== 6) ? 'not-allowed' : 'pointer',
+                opacity: (forgotVerifying || forgotOtpCode.length !== EMAIL_OTP_LENGTH) ? 0.6 : 1,
+                cursor: (forgotVerifying || forgotOtpCode.length !== EMAIL_OTP_LENGTH) ? 'not-allowed' : 'pointer',
                 marginBottom: '16px',
               }}
             >
@@ -1325,7 +1393,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               Verify your email
             </h2>
             <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65, marginBottom: '24px' }}>
-              We've sent a 6-digit verification code to<br />
+              We've sent a {EMAIL_OTP_LENGTH}-digit verification code to<br />
               <span style={{ color: '#A78BFA', fontWeight: 600 }}>{email}</span>
             </p>
 
@@ -1376,13 +1444,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               style={{ position: 'relative', marginBottom: '24px' }}
             >
             <div
-              style={{ display: 'flex', justifyContent: 'center', gap: '8px', cursor: 'text' }}
+              style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}
             >
-              {Array.from({ length: 6 }).map((_, i) => (
+              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
                 <div
                   key={i}
                   style={{
-                    width: '42px',
+                    width: '32px',
                     height: '52px',
                     background: FIELD_BG,
                     border: `1.5px solid ${
@@ -1398,7 +1466,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     justifyContent: 'center',
                   }}
                 >
-                  <span style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>
+                  <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>
                     {verificationCode[i] ?? ''}
                   </span>
                 </div>
@@ -1411,14 +1479,14 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               inputMode="numeric"
               pattern="\d*"
               autoComplete="one-time-code"
-              maxLength={6}
+              maxLength={EMAIL_OTP_LENGTH}
               value={verificationCode}
               onChange={(e) => {
                 const val = e.target.value.replace(/\D/g, '');
-                setVerificationCode(val.slice(0, 6));
+                setVerificationCode(val.slice(0, EMAIL_OTP_LENGTH));
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && verificationCode.length === 6) handleVerifyOtp();
+                if (e.key === 'Enter' && verificationCode.length === EMAIL_OTP_LENGTH) handleVerifyOtp();
               }}
               style={{
                 position: 'absolute',
@@ -1441,11 +1509,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
 
             <button
               onClick={handleVerifyOtp}
-              disabled={loading || verificationCode.length !== 6}
+              disabled={loading || verificationCode.length !== EMAIL_OTP_LENGTH}
               style={{
                 ...BTN_PRIMARY,
-                opacity: (loading || verificationCode.length !== 6) ? 0.6 : 1,
-                cursor: loading || verificationCode.length !== 6 ? 'not-allowed' : 'pointer',
+                opacity: (loading || verificationCode.length !== EMAIL_OTP_LENGTH) ? 0.6 : 1,
+                cursor: loading || verificationCode.length !== EMAIL_OTP_LENGTH ? 'not-allowed' : 'pointer',
                 marginBottom: '20px',
               }}
             >

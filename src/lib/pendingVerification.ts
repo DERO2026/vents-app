@@ -8,14 +8,33 @@ const KEY = 'vents_pending_verification';
 // stale entry doesn't haunt the browser forever if the user never comes back.
 const MAX_AGE_MS = 48 * 60 * 60 * 1000;
 
+// The rest of the signup form (name/username/phone/state/etc.) — persisted
+// alongside the email so it survives a reload, tab close, or a fresh page
+// load reached via the confirmation link, none of which preserve React
+// component state. Without this, a user who leaves the OTP screen (or
+// authenticates via the raw magic-link URL instead of the in-app OTP flow)
+// can land back in the app with an authenticated Supabase session but a
+// VENTS profile row containing only id/email/role — the DB trigger that
+// creates that row on signup has no access to the rest of the form, and the
+// client-side write of the rest only happens once a session exists.
+export interface PendingSignupProfile {
+  full_name: string;
+  username: string;
+  phone_number: string;
+  state: string;
+  date_of_birth?: string;
+  avatar_url?: string;
+}
+
 export interface PendingVerification {
   email: string;
   savedAt: number;
+  profile?: PendingSignupProfile;
 }
 
-export function savePendingVerification(email: string): void {
+export function savePendingVerification(email: string, profile?: PendingSignupProfile): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify({ email, savedAt: Date.now() }));
+    localStorage.setItem(KEY, JSON.stringify({ email, savedAt: Date.now(), profile }));
   } catch { /* storage unavailable — verification still works, just won't survive a reload */ }
 }
 

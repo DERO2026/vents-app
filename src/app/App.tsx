@@ -6,7 +6,7 @@ import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
-import { getPendingVerification } from '../lib/pendingVerification';
+import { getPendingVerification, clearPendingVerification } from '../lib/pendingVerification';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
@@ -365,6 +365,23 @@ export default function App() {
           setAuthError(decodeURIComponent(urlError));
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
+        } else if (window.location.hash.includes('error=')) {
+          // Supabase's own /auth/v1/verify redirect (an expired or already-
+          // used email confirmation link) appends error info as a URL
+          // FRAGMENT, not a query param — the check above alone misses it
+          // entirely, so a user hitting a dead link previously just landed
+          // silently on the welcome screen with zero explanation.
+          const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+          const hashErrorCode = hashParams.get('error_code');
+          const hashErrorDescription = hashParams.get('error_description');
+          if (hashParams.get('error')) {
+            setAuthError(
+              hashErrorCode === 'otp_expired'
+                ? 'This confirmation link has expired. Please sign up again or request a new code.'
+                : (hashErrorDescription ? decodeURIComponent(hashErrorDescription.replace(/\+/g, ' ')) : 'This confirmation link is invalid or has already been used.')
+            );
+            window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
+          }
         }
 
         // Intercept password reset tokens
@@ -560,6 +577,43 @@ export default function App() {
           setAuthError('Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.');
           setAuthLoading(false);
           return;
+        }
+
+        // Closes the historical bug where clicking the raw email
+        // confirmation link (rather than entering the OTP in-app) lands a
+        // user here authenticated but with a bare profile row: the
+        // handle_new_user() DB trigger only ever inserts id/email/role (it
+        // has no access to the rest of the signup form), and the
+        // AuthScreen.tsx completion write only runs from within the in-app
+        // OTP flow — a path the magic link skips entirely. hydrateAuth is
+        // the one code path that always runs on session restore regardless
+        // of how the session was established, so it's the right place to
+        // catch this: if the profile looks freshly-created (no username —
+        // the field every real profile ends up with, since it's required
+        // at signup) and a matching pending-signup payload is still in
+        // localStorage, complete the profile here before the user ever
+        // sees themselves as "done" onboarding.
+        if (profile && !profile.username) {
+          const pending = getPendingVerification();
+          if (pending?.email?.toLowerCase() === (sessionUserEmail || '').toLowerCase() && pending.profile) {
+            const completion = Object.fromEntries(
+              Object.entries(pending.profile).filter(([, v]) => v != null && v !== '')
+            );
+            if (Object.keys(completion).length > 0) {
+              const { data: completedProfile, error: completeError } = await supabase
+                .from('users')
+                .update(completion)
+                .eq('id', sessionUserId)
+                .select('*')
+                .maybeSingle();
+              if (completeError) {
+                console.warn('Profile completion on session restore failed:', completeError.message);
+              } else if (completedProfile) {
+                profile = completedProfile;
+                clearPendingVerification();
+              }
+            }
+          }
         }
 
         setCurrentUser({
