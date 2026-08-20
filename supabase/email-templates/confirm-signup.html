@@ -1,0 +1,58 @@
+<div style="background:#020005;padding:32px 16px;font-family:'Space Grotesk',Arial,sans-serif;">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="max-width:420px;margin:0 auto;">
+<tr><td align="center" style="padding-bottom:28px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="background:#000000;border-radius:16px;padding:12px 18px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="font-family:Arial,sans-serif;font-weight:800;font-size:22px;color:#FFFFFF;letter-spacing:-1px;">V</td>
+<td style="padding:0 5px;">
+<!-- Each bar sits in its own independent nested table so the browser's
+     table auto-layout can't normalize column width across rows -- without
+     this, a plain single table with differing per-row td widths renders
+     every row at the widest row's width, so the "shorter middle bar" never
+     actually appeared shorter. -->
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:15px;height:4px;background:#A855F7;border-radius:2px;font-size:1px;line-height:4px;box-shadow:0 0 6px rgba(168,85,247,0.9);">&nbsp;</td></tr></table>
+</td></tr>
+<tr><td style="height:3px;font-size:1px;line-height:3px;">&nbsp;</td></tr>
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:11px;height:4px;background:#A855F7;border-radius:2px;font-size:1px;line-height:4px;box-shadow:0 0 6px rgba(168,85,247,0.9);">&nbsp;</td></tr></table>
+</td></tr>
+<tr><td style="height:3px;font-size:1px;line-height:3px;">&nbsp;</td></tr>
+<tr><td>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr><td style="width:15px;height:4px;background:#A855F7;border-radius:2px;font-size:1px;line-height:4px;box-shadow:0 0 6px rgba(168,85,247,0.9);">&nbsp;</td></tr></table>
+</td></tr>
+</table>
+</td>
+<td style="font-family:Arial,sans-serif;font-weight:800;font-size:22px;color:#FFFFFF;letter-spacing:-1px;">NTS</td>
+</tr></table>
+</td>
+</tr></table>
+</td></tr>
+
+<tr><td align="center">
+<h2 style="color:#F0F0FF;font-size:20px;font-weight:700;margin:0 0 10px;">Confirm your email address</h2>
+<p style="color:#B8BCD4;font-size:14px;line-height:1.6;margin:0 0 24px;">Enter this code in the app to finish signing up, or tap the button below to jump straight back in.</p>
+</td></tr>
+
+<tr><td align="center" style="padding-bottom:24px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="background:#0D0518;border:1px solid rgba(168,85,247,0.35);border-radius:14px;padding:16px 28px;">
+<span style="font-family:Arial,sans-serif;font-size:28px;font-weight:800;letter-spacing:6px;color:#F0F0FF;">{{ .Token }}</span>
+</td>
+</tr></table>
+</td></tr>
+
+<tr><td align="center" style="padding-bottom:24px;">
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="background:#7B2FBE;border-radius:12px;">
+<a href="{{ .SiteURL }}/?verify_email={{ .Email }}" style="display:inline-block;padding:14px 32px;color:#FFFFFF;font-family:Arial,sans-serif;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">Verify Account</a>
+</td>
+</tr></table>
+</td></tr>
+
+<tr><td align="center">
+<p style="color:#6B7094;font-size:12px;line-height:1.6;margin:0;">This code expires in 60 minutes. If you didn't request this, you can safely ignore this email.</p>
+</td></tr>
+</table>
+</div>
