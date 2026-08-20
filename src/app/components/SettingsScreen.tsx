@@ -594,6 +594,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
   const [cropImageSrc, setCropImageSrc] = useState<string | null>(null);
   const [coverCropSrc, setCoverCropSrc] = useState<string | null>(null);
+  // Holds the already-cropped blob after a failed upload so "Retry" can
+  // re-attempt the same processed image instead of forcing the user back
+  // through picking and cropping from scratch.
+  const [pendingAvatarBlob, setPendingAvatarBlob] = useState<Blob | null>(null);
+  const [pendingCoverBlob, setPendingCoverBlob] = useState<Blob | null>(null);
   const [usernameChecking, setUsernameChecking] = useState(false);
   const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
 
@@ -689,6 +694,10 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
 
   const processAvatarFile = (file: File) => {
     if (!currentUser?.id) return;
+    // Cover photos already had this guard (below); avatars didn't, so an
+    // extreme-size original (some phone cameras produce 20-50MB raw
+    // photos) could reach the cropper/canvas compression step uncapped.
+    if (file.size > 15 * 1024 * 1024) { setErrorMessage('Photo must be under 15MB.'); return; }
     setErrorMessage(null);
     setCropImageSrc(URL.createObjectURL(file));
   };
@@ -702,9 +711,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     fileInputRef.current?.click();
   };
 
-  const handleCropComplete = async (croppedBlob: Blob) => {
+  const handleCropComplete = async (croppedBlob: Blob, isRetry = false) => {
     if (!currentUser?.id) return;
-    closeCropper();
+    if (!isRetry) closeCropper();
+    // Kept for the duration of the attempt so a failure can offer "Retry"
+    // against this exact already-cropped image instead of forcing the user
+    // back through picking and cropping again.
+    setPendingAvatarBlob(croppedBlob);
     setSaving(true);
     setErrorMessage(null);
     try {
@@ -712,10 +725,14 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
-      // Failsafe: a hung upload must never leave the profile photo picker stuck.
+      // 30s, not the 8s default -- this is a real network upload (not a
+      // quick RPC/canvas op), and compressImage can fall back to the
+      // original, uncompressed file (several MB from a phone camera) if
+      // canvas compression itself times out or fails, so this needs
+      // headroom for a slow connection carrying a genuinely large file.
       const { error: uploadError } = await withTimeoutFallback(
         supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
-        { timeoutMs: 8000, timeoutMessage: 'Photo upload is taking too long. Please check your connection and try again.' }
+        { timeoutMs: 30000, timeoutMessage: 'Photo upload is taking too long. Please check your connection and try again.' }
       );
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
@@ -733,6 +750,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
       }
+      setPendingAvatarBlob(null);
     } catch (err: any) {
       setErrorMessage(err.message || "Failed to upload photo");
     } finally {
@@ -755,9 +773,10 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     coverInputRef.current?.click();
   };
 
-  const handleCoverCropComplete = async (croppedBlob: Blob) => {
+  const handleCoverCropComplete = async (croppedBlob: Blob, isRetry = false) => {
     if (!currentUser?.id) return;
-    closeCoverCropper();
+    if (!isRetry) closeCoverCropper();
+    setPendingCoverBlob(croppedBlob);
     setSaving(true);
     setErrorMessage(null);
     try {
@@ -765,10 +784,10 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
-      // Failsafe: a hung upload must never leave the cover photo picker stuck.
+      // 30s, not the 8s default -- same reasoning as the avatar path above.
       const { error: uploadError } = await withTimeoutFallback(
         supabase.storage.from('avatars').upload(key, croppedFile, { contentType: mimeType, upsert: false }),
-        { timeoutMs: 8000, timeoutMessage: 'Cover photo upload is taking too long. Please check your connection and try again.' }
+        { timeoutMs: 30000, timeoutMessage: 'Cover photo upload is taking too long. Please check your connection and try again.' }
       );
       if (uploadError) throw new Error(`Upload failed: ${uploadError.message}`);
       const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(key);
@@ -783,6 +802,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         setSaved(true);
         setTimeout(() => setSaved(false), 2500);
       }
+      setPendingCoverBlob(null);
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to upload cover photo');
     } finally {
@@ -803,7 +823,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
       }
 
       const rawDigits = phone.replace(/\D/g, '').replace(/^0+/, '');
-      let cleanPhone = '';
+      // null, not '' -- phone_number is UNIQUE-constrained, and Postgres
+      // treats an empty string as a real, comparable value (unlike NULL,
+      // which is exempt from uniqueness checks). Two different users who
+      // both leave their phone blank previously collided on that shared
+      // '' value, surfacing a raw "duplicate key" error to the second one
+      // to save, even though neither was actually claiming a phone number.
+      let cleanPhone: string | null = null;
       if (rawDigits) {
         cleanPhone = phoneCountryCode + rawDigits;
         if (phoneCountryCode === REGION.phoneCountryCode) {
@@ -832,14 +858,29 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         })
         .eq('id', currentUser.id);
 
-      if (error) throw error;
+      if (error) {
+        // A real, meaningful message instead of the raw Postgres driver
+        // string ("duplicate key value violates unique constraint
+        // \"users_phone_number_key\"") -- still an accurate reflection of
+        // what actually happened, not a generic catch-all or a silently
+        // swallowed failure.
+        if (error.code === '23505') {
+          if (error.message?.includes('phone_number')) {
+            throw new Error('This phone number is already linked to another account.');
+          }
+          if (error.message?.includes('username')) {
+            throw new Error('This username was just taken by someone else. Please choose another.');
+          }
+        }
+        throw error;
+      }
       analytics.profileUpdated();
       if (onProfileUpdated) {
         onProfileUpdated({
           full_name: sanitize(name),
           username: sanitize(username).toLowerCase(),
           bio: sanitize(bio),
-          phone_number: cleanPhone,
+          phone_number: cleanPhone || undefined,
           state: stateValue || undefined,
         });
       }
@@ -930,8 +971,20 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
             </div>
 
             {errorMessage && (
-              <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '12px', padding: '12px', marginBottom: '16px', color: '#EF4444', fontSize: '13px' }}>
-                {errorMessage}
+              <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.25)', borderRadius: '12px', padding: '12px', marginBottom: '16px', color: '#EF4444', fontSize: '13px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <span>{errorMessage}</span>
+                {(pendingAvatarBlob || pendingCoverBlob) && (
+                  <button
+                    onClick={() => {
+                      if (pendingAvatarBlob) handleCropComplete(pendingAvatarBlob, true);
+                      else if (pendingCoverBlob) handleCoverCropComplete(pendingCoverBlob, true);
+                    }}
+                    disabled={saving}
+                    style={{ alignSelf: 'flex-start', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '6px 14px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: saving ? 'not-allowed' : 'pointer' }}
+                  >
+                    {saving ? 'Retrying…' : 'Retry Upload'}
+                  </button>
+                )}
               </div>
             )}
 
