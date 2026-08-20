@@ -3,13 +3,63 @@ import { Capacitor } from '@capacitor/core';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
 
-function loadImage(src: string): Promise<HTMLImageElement> {
+function loadImage(src: string, crossOrigin?: 'anonymous'): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
+    if (crossOrigin) img.crossOrigin = crossOrigin;
     img.onload = () => resolve(img);
     img.onerror = reject;
     img.src = src;
   });
+}
+
+// Draws the VENTS wordmark (V + three purple bars for "E" + NTS) using pure
+// canvas primitives — matches VentsLogo.tsx's proportions/colors. Canvas
+// text, not an image asset, so it never depends on a network fetch.
+function drawVentsWordmark(ctx: CanvasRenderingContext2D, x: number, y: number, size: number) {
+  ctx.save();
+  ctx.textBaseline = 'alphabetic';
+  ctx.font = `800 ${size}px Space Grotesk, Inter, sans-serif`;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('V', x, y);
+  const vWidth = ctx.measureText('V').width;
+
+  const barX = x + vWidth + size * 0.08;
+  const barW = size * 0.5;
+  const midBarW = size * 0.37;
+  const barH = Math.max(3, size * 0.13);
+  const gap = Math.max(2, size * 0.09);
+  const barsTop = y - size * 0.72;
+  ctx.fillStyle = '#A855F7';
+  roundRect(ctx, barX, barsTop, barW, barH, barH / 2);
+  ctx.fill();
+  roundRect(ctx, barX, barsTop + barH + gap, midBarW, barH, barH / 2);
+  ctx.fill();
+  roundRect(ctx, barX, barsTop + (barH + gap) * 2, barW, barH, barH / 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.fillText('NTS', barX + barW + size * 0.08, y);
+  ctx.restore();
+}
+
+// Dashed perforation line with two circular cutout notches at the edges —
+// the classic "tear here" ticket-stub divider between the event details and
+// the QR code section.
+function drawPerforation(ctx: CanvasRenderingContext2D, y: number, width: number, cardBg: string) {
+  ctx.save();
+  ctx.fillStyle = cardBg === 'transparent' ? '#07030F' : cardBg;
+  ctx.beginPath(); ctx.arc(0, y, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(width, y, 14, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([8, 8]);
+  ctx.beginPath();
+  ctx.moveTo(30, y);
+  ctx.lineTo(width - 30, y);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
@@ -48,43 +98,114 @@ export interface TicketImageParams {
   referenceNumber: string;
   /** Signed v2 pass token — only ever rendered as the QR image, never as text. */
   signedToken: string | null;
+  /** Event flyer/cover image URL, if available — purely decorative (a banner
+   *  strip at the top). Best-effort: a failed load never blocks the rest of
+   *  the ticket from rendering. */
+  eventImage?: string | null;
+  /** Organizer display name — shown as "Hosted by {organizer}" if present. */
+  organizer?: string | null;
 }
 
-// Renders a real, self-contained ticket image (title, date/venue, ticket
-// type, and the actual scannable QR) as a PNG blob — shared by every
-// "Save Ticket" entry point so the download is always a usable image, never
-// a bare text/receipt file.
+// Renders a real, self-contained VENTS-branded ticket image (wordmark, event
+// flyer banner, organizer, date/venue, ticket type, holder, and the actual
+// scannable QR behind a ticket-stub perforation) as a PNG blob — shared by
+// every "Save Ticket" entry point so the download is always a proper ticket,
+// never a bare QR/text receipt.
+//
+// Security boundary, unchanged: the QR is the ONLY thing derived from
+// params.signedToken. Every other field here (title, holder name, reference
+// number, organizer, etc.) is display-only, sourced from the same data
+// already shown on-screen -- none of it is read back by verify_entry_pass()
+// server-side, which only ever trusts the signed token it decodes from the
+// scanned QR. Nothing added here changes that: the visible fields still
+// can't become a credential, and the signed token is still never rendered
+// as text anywhere on the image.
 export async function renderTicketImage(params: TicketImageParams): Promise<Blob | null> {
   const width = 600;
-  const height = 900;
+  const BANNER_H = 170;
+  const height = 1050;
   const canvas = document.createElement('canvas');
   canvas.width = width;
   canvas.height = height;
   const ctx = canvas.getContext('2d')!;
 
-  const bg = ctx.createLinearGradient(0, 0, width, height);
-  bg.addColorStop(0, '#07030F');
+  const cardGradientTop = '#07030F';
+  const bg = ctx.createLinearGradient(0, BANNER_H, width, height);
+  bg.addColorStop(0, cardGradientTop);
   bg.addColorStop(1, '#0C0616');
   ctx.fillStyle = bg;
-  ctx.fillRect(0, 0, width, height);
+  ctx.fillRect(0, BANNER_H, width, height - BANNER_H);
 
+  // Event flyer banner, purely decorative -- a failed/slow load (CORS,
+  // network) must never block the rest of the ticket, which is why this is
+  // wrapped separately and falls back to a plain brand-gradient strip.
+  let bannerDrawn = false;
+  if (params.eventImage) {
+    try {
+      const bannerImg = await loadImage(params.eventImage, 'anonymous');
+      const scale = Math.max(width / bannerImg.width, BANNER_H / bannerImg.height);
+      const sw = width / scale, sh = BANNER_H / scale;
+      const sx = (bannerImg.width - sw) / 2, sy = (bannerImg.height - sh) / 2;
+      ctx.drawImage(bannerImg, sx, sy, sw, sh, 0, 0, width, BANNER_H);
+      const shade = ctx.createLinearGradient(0, 0, 0, BANNER_H);
+      shade.addColorStop(0, 'rgba(0,0,0,0.15)');
+      shade.addColorStop(1, 'rgba(7,3,15,0.95)');
+      ctx.fillStyle = shade;
+      ctx.fillRect(0, 0, width, BANNER_H);
+      bannerDrawn = true;
+    } catch (err) {
+      console.warn('[VENTS] renderTicketImage: event banner failed to load — using fallback', err);
+    }
+  }
+  if (!bannerDrawn) {
+    const bannerBg = ctx.createLinearGradient(0, 0, width, BANNER_H);
+    bannerBg.addColorStop(0, '#3B1466');
+    bannerBg.addColorStop(1, '#0C0616');
+    ctx.fillStyle = bannerBg;
+    ctx.fillRect(0, 0, width, BANNER_H);
+  }
+
+  // VENTS wordmark, top-left, over the banner -- small dark badge behind it
+  // so it stays legible over any flyer image.
+  ctx.fillStyle = 'rgba(0,0,0,0.4)';
+  roundRect(ctx, 20, 18, 108, 40, 10);
+  ctx.fill();
+  drawVentsWordmark(ctx, 32, 44, 24);
+
+  let y = BANNER_H + 55;
   ctx.fillStyle = '#F0F0FF';
   ctx.font = 'bold 28px Inter, sans-serif';
-  wrapText(ctx, params.title, 40, 70, width - 80, 34);
+  wrapText(ctx, params.title, 40, y, width - 80, 34);
+  y += params.title.length > 34 ? 68 : 34; // room for a second wrapped line on long titles
 
+  if (params.organizer) {
+    y += 34;
+    ctx.fillStyle = '#A855F7';
+    ctx.font = '600 13px Inter, sans-serif';
+    ctx.fillText(`Hosted by ${params.organizer}`, 40, y);
+  }
+
+  y += 34;
   ctx.fillStyle = '#8B8FA8';
   ctx.font = '16px Inter, sans-serif';
-  ctx.fillText(params.dateTimeLabel, 40, 150);
-  ctx.fillText(params.venue, 40, 178);
+  ctx.fillText(params.dateTimeLabel, 40, y);
+  y += 28;
+  ctx.fillText(params.venue, 40, y);
 
+  y += 38;
   ctx.fillStyle = '#FFB830';
   ctx.font = 'bold 14px Inter, sans-serif';
-  ctx.fillText(params.ticketTypeLabel.toUpperCase(), 40, 216);
+  ctx.fillText(params.ticketTypeLabel.toUpperCase(), 40, y);
 
+  y += 34;
   ctx.fillStyle = '#8B8FA8';
   ctx.font = '13px Inter, sans-serif';
-  ctx.fillText(`Holder: ${params.holderName}`, 40, 250);
-  ctx.fillText(`Ticket Reference No.: ${params.referenceNumber}`, 40, 272);
+  ctx.fillText(`Holder: ${params.holderName}`, 40, y);
+  y += 22;
+  ctx.fillText(`Ticket Reference No.: ${params.referenceNumber}`, 40, y);
+
+  y += 38;
+  drawPerforation(ctx, y, width, cardGradientTop);
 
   if (params.signedToken) {
     const qrDataUrl = await QRCode.toDataURL(params.signedToken, {
@@ -95,7 +216,7 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
     });
     const qrImg = await loadImage(qrDataUrl);
     const qrX = (width - 440) / 2;
-    const qrY = 300;
+    const qrY = y + 40;
     ctx.fillStyle = '#ffffff';
     roundRect(ctx, qrX - 16, qrY - 16, 440 + 32, 440 + 32, 16);
     ctx.fill();
@@ -105,11 +226,14 @@ export async function renderTicketImage(params: TicketImageParams): Promise<Blob
     ctx.font = '13px Inter, sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText('Show this QR code at the entrance', width / 2, qrY + 440 + 40);
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = '#555C7A';
+    ctx.fillText('VENTS · getvents.com', width / 2, qrY + 440 + 66);
     ctx.textAlign = 'left';
   } else {
     ctx.fillStyle = '#8B8FA8';
     ctx.font = '14px Inter, sans-serif';
-    ctx.fillText('Connect to the internet once to activate this ticket.', 40, 320);
+    ctx.fillText('Connect to the internet once to activate this ticket.', 40, y + 60);
   }
 
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));

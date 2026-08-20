@@ -73,6 +73,8 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
         holderName: ticket.holderName,
         referenceNumber: ticketDisplayCode(ticket.ticketId),
         signedToken,
+        eventImage: ticket.event.image,
+        organizer: ticket.event.organizer,
       });
       if (!blob) throw new Error('Failed to render ticket image');
       const result = await saveTicketToGallery(blob, `vents-ticket-${ticket.ticketId}.png`);

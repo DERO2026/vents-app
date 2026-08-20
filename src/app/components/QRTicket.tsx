@@ -102,6 +102,8 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
       holderName: ticket.holderName,
       referenceNumber: ticketDisplayCode(ticket.ticketId),
       signedToken,
+      eventImage: ticket.event.image,
+      organizer: ticket.event.organizer,
     });
 
   const [sharing, setSharing] = useState(false);
