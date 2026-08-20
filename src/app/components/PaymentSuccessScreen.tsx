@@ -10,6 +10,7 @@ import { renderTicketImage, saveTicketToGallery } from '../../lib/ticketImage';
 import { Capacitor } from '@capacitor/core';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
+import { TOAST_TOP_POSITION } from './shared/toastPosition';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -335,19 +336,19 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
       {/* Toast notifications */}
       {saveToast && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#10B981', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: '#10B981', borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
             ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
         </div>
       )}
       {saveError && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#EF4444', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: '#EF4444', borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {shareToast && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#7B2FBE', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: '#7B2FBE', borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Copied to clipboard!</span>
         </div>
       )}

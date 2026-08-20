@@ -9,6 +9,7 @@ import { renderTicketImage, downloadBlob, saveTicketToGallery } from '../../lib/
 import { Capacitor } from '@capacitor/core';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { Sentry } from '../../lib/sentry';
+import { TOAST_TOP_POSITION } from './shared/toastPosition';
 
 interface QRTicketProps {
   ticket: PurchasedTicket;
@@ -174,12 +175,12 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   return (
     <div className="flex flex-col h-full" style={{ background: '#020005' }}>
       {saveError && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: '#EF4444', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: '#EF4444', borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {saveToast && (
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '12px', padding: '10px 18px', zIndex: 99, whiteSpace: 'nowrap' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#4ADE80', fontSize: '13px', fontWeight: 600 }}>
             {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
