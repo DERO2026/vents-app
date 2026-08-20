@@ -15,13 +15,18 @@ const config: CapacitorConfig = {
   },
   plugins: {
     SplashScreen: {
-      // Keeps the native launch splash (drawable/splash.png, matching
-      // SplashScreen.tsx's own #020005 background) visible through the gap
-      // between "native activity drawn" and "JS bundle loaded and the
-      // custom animated splash mounted" — without this, that gap shows as
-      // a blank white/black flash before the JS splash ever appears.
-      // main.tsx calls SplashScreen.hide() once the app has actually mounted.
-      launchAutoHide: false,
+      // launchAutoHide:false (the previous setting) made the native launch
+      // screen depend entirely on a JS-side SplashScreen.hide() call to ever
+      // disappear — if that call was ever missed, delayed, or silently
+      // failed (plugin not synced into the native project, an error before
+      // the call ran, etc.) the launch screen hung indefinitely with no
+      // fallback. The app no longer shows a branded JS splash at all, so
+      // there is nothing to hand off to: let the OS auto-hide the native
+      // launch screen itself, immediately, with zero dependency on JS.
+      // (main.tsx still calls hideNativeSplash() as a best-effort early
+      // hide, but correctness no longer relies on it.)
+      launchAutoHide: true,
+      launchShowDuration: 0,
       backgroundColor: '#020005',
       androidSplashResourceName: 'splash',
       androidScaleType: 'CENTER_CROP',

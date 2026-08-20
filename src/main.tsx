@@ -9,9 +9,15 @@ import { DeleteAccountScreen } from './app/components/DeleteAccountScreen';
 import './styles/index.css';
 import { initSentry } from './lib/sentry';
 import { initAnalytics } from './lib/analytics';
+import { hideNativeSplash } from './lib/native';
 
 initSentry();
 initAnalytics(import.meta.env.VITE_POSTHOG_KEY || '');
+// Best-effort early hide of the native launch screen (no-ops on web) — the
+// guaranteed dismissal now comes from capacitor.config.ts's launchAutoHide,
+// this just makes the handoff to the WebView as fast as possible when it
+// succeeds.
+hideNativeSplash();
 
 // Public legal pages are served without the app shell (and without ever
 // mounting App at all) -- this used to be a conditional early-return inside

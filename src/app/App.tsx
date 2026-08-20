@@ -15,7 +15,6 @@ import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID }
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
 
-import { SplashScreen } from './components/SplashScreen';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RoleSelectScreen } from './components/RoleSelectScreen';
 import { AuthScreen } from './components/AuthScreen';
@@ -185,7 +184,6 @@ export default function App() {
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
-  const [splashMinTimePassed, setSplashMinTimePassed] = useState(false);
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
   // that's harmless on its own (the deep link's setScreen call still wins,
@@ -274,10 +272,6 @@ export default function App() {
   // as the hardware back-button listener above, so both paths agree on when
   // a swipe/press should pop the stack vs. do nothing.
   const swipeBack = useSwipeBack(screenStack.length > 0 || screen === 'event-details', goBack);
-
-  const handleSplashComplete = useCallback(() => {
-    setSplashMinTimePassed(true);
-  }, []);
 
   // Forced-update gate + maintenance-mode gate: both read from the same
   // app_config singleton an admin can flip. Polled (not just fetched once)
@@ -705,7 +699,7 @@ export default function App() {
     // Waits for any in-flight ?event=/?user= deep link fetch — otherwise
     // this could route to home/welcome while the fetch is still running,
     // and if it later fails, the URL is already cleaned with no way back.
-    if (screen === 'splash' && splashMinTimePassed && !authLoading && !deepLinkPending) {
+    if (screen === 'splash' && !authLoading && !deepLinkPending) {
       if (currentUser) {
         if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
           setUserRole('attendee');
@@ -731,7 +725,7 @@ export default function App() {
         }
       }
     }
-  }, [screen, splashMinTimePassed, authLoading, currentUser, deepLinkPending]);
+  }, [screen, authLoading, currentUser, deepLinkPending]);
 
   useEffect(() => {
     if (!appToastError) return;
@@ -1876,13 +1870,8 @@ export default function App() {
           )}
           <div className="absolute inset-0" style={swipeBack.style} {...swipeBack.handlers}>
             {/* ── AUTH FLOW ── */}
-            {authLoading ? (
-              <SplashScreen onComplete={handleSplashComplete} />
-            ) : (
+            {authLoading || screen === 'splash' ? null : (
               <>
-                {screen === 'splash' && (
-                  <SplashScreen onComplete={handleSplashComplete} />
-                )}
                 {screen === 'welcome' && (
             <WelcomeScreen
               onGetStarted={() => {
