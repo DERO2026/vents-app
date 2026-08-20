@@ -221,6 +221,23 @@ still missing or genuinely unverified, stated explicitly either way.*
   verified against the InsForge backend in an earlier session; **not
   re-verified against Supabase** in this migration's regression pass.
   Should be included in the next full regression run.
+- [ ] **SPF record missing on `getvents.com`** — confirmed via live DNS
+  check, no `v=spf1` TXT record exists at all. Needed value (covers both
+  Resend, which relays through AWS SES, and Google Workspace, which the
+  domain's MX already points to — confirmed via DNS):
+  `v=spf1 include:amazonses.com include:_spf.google.com ~all` as a TXT
+  record at host `@`.
+- [ ] **DMARC record missing on `getvents.com`** — confirmed via live DNS
+  check, `_dmarc.getvents.com` doesn't resolve at all. Start monitor-only,
+  not enforcing, as a TXT record at host `_dmarc`:
+  `v=DMARC1; p=none; rua=mailto:support@getvents.com; fo=1`. After a
+  couple weeks of clean SPF/DKIM reports, tighten to `p=quarantine` then
+  `p=reject`.
+- [ ] **BIMI (sender logo in Gmail/Yahoo inbox) blocked on the above** —
+  requires DMARC at `p=quarantine`/`p=reject` (not just present) before a
+  BIMI record does anything. Gmail additionally requires a paid VMC
+  certificate; Yahoo does not. Do this after DMARC is enforcing, not
+  before.
 
 ## 10. On-Device Testing (do this on a real device, not just emulator — camera/push/Paystack popups are unreliable in emulators)
 
