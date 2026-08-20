@@ -462,6 +462,11 @@ export function EventDetailsScreen({
           const [h, m] = ((event as any).end_time as string).split(':').map(Number);
           const d = new Date(dtStart);
           d.setHours(h, m || 0, 0, 0);
+          // An overnight event (e.g. 22:00 -> 02:00) has an end_time clock
+          // value earlier than the start, which without adjustment lands
+          // dtEnd BEFORE dtStart on the same calendar day -- a negative-
+          // duration VEVENT that calendar apps render incorrectly (or reject).
+          if (d.getTime() <= dtStart.getTime()) d.setDate(d.getDate() + 1);
           return d;
         })()
       : new Date(dtStart.getTime() + 2 * 60 * 60 * 1000);
@@ -484,8 +489,10 @@ export function EventDetailsScreen({
     setAddingToCalendar(true);
     try {
       const blob = new Blob([icsContent], { type: 'text/calendar' });
-      const ok = await downloadBlob(blob, `${event.title || 'event'}.ics`);
-      if (!ok) {
+      const result = await downloadBlob(blob, `${event.title || 'event'}.ics`);
+      // 'cancelled' means the organizer deliberately dismissed the OS share
+      // sheet without picking anything -- not a failure, so no error toast.
+      if (result === 'failed') {
         setCalendarError(true);
         setTimeout(() => setCalendarError(false), 2500);
       }

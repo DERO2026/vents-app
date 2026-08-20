@@ -341,9 +341,16 @@ export async function saveTicketToGallery(blob: Blob, filename: string): Promise
 // (the standard way an installed app lets a user save-to-Photos or share
 // a generated file, since neither platform allows a WebView to write
 // straight into the system Photos/Downloads location on its own).
-// Returns whether the save/share genuinely happened — callers should only
-// show a success message when this resolves true.
-export async function downloadBlob(blob: Blob, filename: string): Promise<boolean> {
+export type ShareResult = 'shared' | 'cancelled' | 'failed';
+
+// Returns whether the save/share genuinely happened, was cancelled by the
+// user, or failed — callers should only show an error message on 'failed'.
+// Both @capacitor/share's Android and iOS native code reject with the exact
+// message "Share canceled" when the user dismisses the OS share sheet
+// without picking anything (see node_modules/@capacitor/share/{android,ios}
+// SharePlugin) — treating that the same as a real failure showed a
+// misleading "Couldn't open calendar" error for a deliberate cancel.
+export async function downloadBlob(blob: Blob, filename: string): Promise<ShareResult> {
   if (Capacitor.isNativePlatform()) {
     try {
       const base64Data = await blobToBase64(blob);
@@ -357,10 +364,11 @@ export async function downloadBlob(blob: Blob, filename: string): Promise<boolea
         url: written.uri,
         dialogTitle: 'Save or share your ticket',
       });
-      return true;
-    } catch (err) {
+      return 'shared';
+    } catch (err: any) {
+      if (err?.message === 'Share canceled') return 'cancelled';
       console.error('Native ticket save/share failed:', err);
-      return false;
+      return 'failed';
     }
   }
 
@@ -373,9 +381,9 @@ export async function downloadBlob(blob: Blob, filename: string): Promise<boolea
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    return true;
+    return 'shared';
   } catch (err) {
     console.error('Ticket download failed:', err);
-    return false;
+    return 'failed';
   }
 }
