@@ -2115,7 +2115,7 @@ export function AdminDashboardScreen({
                       <span style={{ color: ev.hidden_by_admin ? '#EF4444' : '#10B981', fontWeight: 600 }}>
                         {ev.hidden_by_admin ? 'Hidden' : 'Visible'}
                       </span>
-                      · {organizer?.username ? `@${organizer.username}` : 'Unknown organizer'}
+                      · {organizer?.username ? `@${organizer.username}` : organizer?.full_name || 'Unknown organizer'}
                       {organizer?.is_verified && <BadgeCheck size={12} color="#3B82F6" />}
                     </span>
                     <span style={{ color: '#555C7A', fontSize: '10px', display: 'block', marginTop: '2px' }}>
