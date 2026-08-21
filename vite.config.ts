@@ -15,9 +15,17 @@ export default defineConfig(({ mode }) => {
   if (mode === 'production') {
     const env = loadEnv(mode, process.cwd(), '');
     const paystackKey = env.VITE_PAYSTACK_PUBLIC_KEY || '';
-    if (paystackKey.startsWith('pk_test_')) {
+    // Catches both the original failure (a committed pk_test_ value) and the
+    // gap that opened once .env.production's key was cleared to close that
+    // hole: an empty/missing key doesn't start with 'pk_test_', so it would
+    // otherwise sail through this guard and build "successfully" -- just
+    // with Paystack's popup silently refusing to open at runtime instead
+    // (openPaystackPopup()'s own !publicKey guard is a console.error + a
+    // quiet onClose(), not a build-time failure). Either case means the same
+    // thing: no real key was supplied for this build.
+    if (!paystackKey.startsWith('pk_live_')) {
       throw new Error(
-        '[build guard] VITE_PAYSTACK_PUBLIC_KEY is a pk_test_ key in a production build. ' +
+        `[build guard] VITE_PAYSTACK_PUBLIC_KEY is ${paystackKey ? 'a pk_test_ key' : 'missing'} in a production build. ` +
         'Set the real pk_live_ key as an actual environment variable (export it in your ' +
         'shell, or via your CI secrets) before building for iOS/Android/TestFlight -- ' +
         'never put a live key in a committed .env file. Vercel\'s web deploy is unaffected: ' +
