@@ -18,6 +18,15 @@ function isAllowedOrigin(origin: string | undefined): boolean {
   if (/^https:\/\/vents(-[a-z0-9-]+)?\.vercel\.app$/.test(origin)) return true;
   // Local dev
   if (/^https?:\/\/localhost(:\d+)?$/.test(origin)) return true;
+  // The native Capacitor app itself. Android's WebView origin is
+  // https://localhost (capacitor.config.ts androidScheme: 'https'), already
+  // covered by the regex above. iOS uses Capacitor's default scheme,
+  // capacitor://localhost, which that regex never matches (different URL
+  // scheme, not http/https) -- every fetch() the iOS app made to any /api/*
+  // endpoint was silently CORS-blocked, surfacing to users as a generic
+  // "TypeError: Load failed" with zero further detail (WKWebView's wording
+  // for a blocked/failed fetch), e.g. wallet bank-list/resolve/save calls.
+  if (origin === 'capacitor://localhost') return true;
   return false;
 }
 
