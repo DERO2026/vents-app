@@ -32,6 +32,46 @@ export default defineConfig(({ mode }) => {
         'its own Production environment variable already overrides the committed value.'
       );
     }
+
+    // Same failure shape, same fix: .env.production's VITE_SUPABASE_URL/
+    // VITE_SUPABASE_ANON_KEY are intentionally left empty (never commit the
+    // anon key here, even though it's not secret in the service-role sense --
+    // see .env.production's own comment). Without a guard, a native build run
+    // without these exported would build "successfully" and just silently
+    // ship with a non-functional Supabase client at runtime -- no build-time
+    // signal at all. Presence + format only (never logs the values): a real
+    // project URL and a real JWT anon key look structurally distinct from
+    // empty/placeholder ones, without needing to know what live values are.
+    const supabaseUrl = env.VITE_SUPABASE_URL || '';
+    const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || '';
+    const validSupabaseUrl = /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(supabaseUrl);
+    // A JWT is three base64url segments joined by dots; Supabase anon keys
+    // always decode to a payload containing "role":"anon". The literal text
+    // "anon" only survives base64 encoding by coincidence, so this decodes
+    // the middle (payload) segment and checks the actual JSON -- still never
+    // logs anything, just inspects the decoded structure in memory.
+    const validSupabaseKey = (() => {
+      const parts = supabaseAnonKey.split('.');
+      if (parts.length !== 3 || parts.some((p) => !p)) return false;
+      try {
+        const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf8'));
+        return payload.role === 'anon';
+      } catch {
+        return false;
+      }
+    })();
+    if (!validSupabaseUrl || !validSupabaseKey) {
+      const problems = [
+        !validSupabaseUrl && `VITE_SUPABASE_URL is ${supabaseUrl ? 'not a valid https://<project>.supabase.co URL' : 'missing'}`,
+        !validSupabaseKey && `VITE_SUPABASE_ANON_KEY is ${supabaseAnonKey ? 'not a valid Supabase anon JWT' : 'missing'}`,
+      ].filter(Boolean).join('; ');
+      throw new Error(
+        `[build guard] ${problems} in a production build. ` +
+        'Export the real values as actual environment variables (never in a committed ' +
+        '.env file) before building for iOS/Android/TestFlight. Vercel\'s web deploy is ' +
+        'unaffected: its own Production environment variables already override the committed values.'
+      );
+    }
   }
   return {
   plugins: [
