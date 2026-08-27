@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession, confirmPassword, enforceRateLimit } from '../_lib/verifyAuth.js';
+import { verifyInsforgeSession, confirmPassword, enforceWalletRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 
 // Organizer bank-account mutations — add/edit (default action), set_default,
@@ -29,7 +29,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!baseUrl || !anonKey) return res.status(500).json({ error: 'Payout system not configured' });
 
   // ── Rate limit (strict): ≤ 8 bank mutations / 10 min / user ─────────────
-  const okRate = await enforceRateLimit(authHeader!, `bank_mut:${session.userId}`, 8, 600);
+  const okRate = await enforceWalletRateLimit(authHeader!, session.userId);
   if (!okRate) return res.status(429).json({ error: 'Too many attempts. Please wait a few minutes and try again.' });
 
   // ── Security gate: re-confirm the organizer's password server-side. The

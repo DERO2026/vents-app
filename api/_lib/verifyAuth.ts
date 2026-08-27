@@ -73,7 +73,43 @@ export async function enforceRateLimit(authHeader: string, key: string, maxAttem
       headers: { Authorization: authHeader, apikey: anonKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_key: key, p_max_attempts: maxAttempts, p_window_seconds: windowSeconds }),
     });
-    return res.ok; // false → limit exceeded (RPC raised)
+    return res.ok; // false → limit exceeded (RPC raises)
+  } catch {
+    return true;
+  }
+}
+
+// Wallet bank-account mutation rate limiting. Calls check_wallet_mutation_
+// rate_limit (migration 0030), a SECURITY DEFINER wrapper, instead of
+// check_rate_limit() directly the way enforceRateLimit() above does --
+// migration 0026 revoked `authenticated`'s EXECUTE on check_rate_limit()
+// (a real fix for an anon/authenticated Data API exposure on the
+// rate_limits table), which broke this endpoint's direct call to it: every
+// attempt got a permission-denied response that got misread as "rate
+// limited" purely because it wasn't a 2xx. This version inspects the
+// actual error instead of assuming any non-2xx means the limit was hit, so
+// a genuine rate_limited response (ERRCODE P0429) still blocks the
+// request, while any other failure (permissions, network, etc.) fails
+// open and gets logged — the same fail-open-on-non-rate-limit-errors
+// principle AuthScreen.tsx's checkAuthRateLimit already applies to
+// login/signup.
+export async function enforceWalletRateLimit(authHeader: string, userId: string): Promise<boolean> {
+  const baseUrl = process.env.VITE_SUPABASE_URL;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+  if (!baseUrl || !anonKey) return true; // fail-open only if misconfigured; endpoint still gates on password
+  try {
+    const res = await fetch(`${baseUrl}/rest/v1/rpc/check_wallet_mutation_rate_limit`, {
+      method: 'POST',
+      headers: { Authorization: authHeader, apikey: anonKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ p_user_id: userId }),
+    });
+    if (res.ok) return true;
+    const body = await res.json().catch(() => null);
+    const isRateLimited = body?.code === 'P0429' || /rate_limited/i.test(body?.message || '');
+    if (!isRateLimited) {
+      console.error('check_wallet_mutation_rate_limit failed for a non-rate-limit reason:', body);
+    }
+    return !isRateLimited;
   } catch {
     return true;
   }
