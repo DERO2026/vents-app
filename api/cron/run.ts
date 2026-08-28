@@ -161,9 +161,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     if (resp.ok) { sent++; toMark.add(row.notification_id); return; }
 
+    // Parsed once, for every non-OK status — previously only 404/400 ever
+    // inspected the body, so nothing about a 401/403/5xx failure was ever
+    // visible anywhere. Never includes the token or the request itself.
+    const errJson = await resp.json().catch(() => null);
+    const code = errJson?.error?.details?.[0]?.errorCode || errJson?.error?.status;
+
     if (resp.status === 404 || resp.status === 400) {
-      const errJson = await resp.json().catch(() => null);
-      const code = errJson?.error?.details?.[0]?.errorCode || errJson?.error?.status;
       if (code === 'UNREGISTERED' || code === 'INVALID_ARGUMENT') {
         // Permanently dead token — nothing will ever make this send
         // succeed, so mark it sent (there's no point retrying) and prune
@@ -177,6 +181,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Any other failure (rate limit, transient 5xx) — deliberately NOT
     // added to toMark, so push_sent stays false and the next sweep retries
     // it. The notification itself still shows in the in-app bell either way.
+    // TEMP DIAGNOSTIC — remove once real iOS delivery is confirmed working.
+    // Logs only the HTTP status and FCM's own error status/message (with the
+    // device token stripped out of the message on the off chance FCM ever
+    // echoes it back) — never the token, the Authorization header, the FCM
+    // access token, or any other credential.
+    const fcmMessage = typeof errJson?.error?.message === 'string'
+      ? errJson.error.message.split(row.token).join('[token redacted]')
+      : null;
+    console.error('[cron:push] FCM send failed', {
+      httpStatus: resp.status,
+      fcmStatus: errJson?.error?.status ?? null,
+      fcmErrorCode: code ?? null,
+      fcmMessage,
+    });
   }));
 
   if (toMark.size > 0) {
