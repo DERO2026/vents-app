@@ -95,6 +95,16 @@ export default defineConfig(({ mode }) => {
   assetsInclude: ['**/*.svg', '**/*.csv'],
   build: {
     rollupOptions: {
+      // Second entry point: the iOS-only Google Maps iframe embed
+      // (embed/map.html — see src/lib/mapEmbed.ts for why it exists).
+      // Vite's HTML env substitution (%VITE_..%) applies to any HTML entry
+      // point listed here, not just the root index.html, so the same
+      // build-time key injection index.html already relies on works for
+      // this page too — no separate mechanism needed.
+      input: {
+        main: path.resolve(__dirname, 'index.html'),
+        mapEmbed: path.resolve(__dirname, 'embed/map.html'),
+      },
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom'],
