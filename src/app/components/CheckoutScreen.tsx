@@ -264,8 +264,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    const PaystackPop = (window as any).PaystackPop;
-    if (!PaystackPop) {
+    // Checked here (before create_pending_purchase) rather than left solely
+    // to openPaystackPopup's own guard, so a missing/unloaded Paystack
+    // script fails fast without first creating a server-side pending
+    // purchase row for a payment that was never going to open.
+    if (!window.PaystackPop) {
       setPayError('Payment system not loaded. Please refresh the page and try again.');
       return;
     }
@@ -304,18 +307,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    const rawPublicKey = import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || '';
-    const publicKey = rawPublicKey.replace(new RegExp('^\\uFEFF'), '').trim();
-
     try {
-      const handler = PaystackPop.setup({
-        key: publicKey,
+      openPaystackPopup({
         email: payerEmail,
-        amount: amountKobo,
-        currency: 'NGN',
+        amountKobo,
         ref: reference,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
-        channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
         metadata: {
           event_id: event.id,
           event_title: event.title,
@@ -327,7 +324,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             { display_name: 'Tickets', variable_name: 'ticket_quantity', value: String(quantity) },
           ],
         },
-        callback: (response: { reference: string }) => {
+        onSuccess: (response) => {
           const ticket: PurchasedTicket = {
             event,
             ticketType,
@@ -349,9 +346,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           payingRef.current = false;
           setPaymentLoading(false);
         },
+        onError: (message) => {
+          payingRef.current = false;
+          setPaymentLoading(false);
+          setPayError(message);
+        },
       });
-
-      handler.openIframe();
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
