@@ -169,6 +169,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
   const [pendingResetEmail, setPendingResetEmail] = useState<string | undefined>(undefined);
+  const [pendingPaymentRef, setPendingPaymentRef] = useState<string | undefined>(undefined);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -201,6 +202,7 @@ export default function App() {
   // alone can't trigger.
   const [deepLinkPending, setDeepLinkPending] = useState(false);
   const [appToastError, setAppToastError] = useState<string | null>(null);
+  const [appToastSuccess, setAppToastSuccess] = useState<string | null>(null);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   // Kill switch flags (Block 17) — scoped feature disables, distinct from
@@ -436,6 +438,28 @@ export default function App() {
           setPendingResetEmail(resetEmailParam);
           setAuthMode('forgot');
           setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Paystack's own post-payment redirect for channels that leave the
+        // in-app iframe entirely (bank transfer/ussd/mobile money — these
+        // don't reliably reach the JS `callback` CheckoutScreen.tsx's popup
+        // otherwise relies on, especially if the app was backgrounded while
+        // the user completed the payment in their banking app). Paystack
+        // appends `?reference=...&trxref=...` to whatever callback_url was
+        // configured (CheckoutScreen.tsx) — same param either way, checked
+        // in preference order. This is only ever a signal to go verify;
+        // resolvePendingPayment (below) is what actually confirms it
+        // server-side before showing any success state.
+        const paystackRef = params.get('reference') || params.get('trxref');
+        if (paystackRef) {
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://payment?ref=${encodeURIComponent(paystackRef)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
+          setPendingPaymentRef(paystackRef);
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
         }
@@ -769,6 +793,12 @@ export default function App() {
     const t = setTimeout(() => setAppToastError(null), 5000);
     return () => clearTimeout(t);
   }, [appToastError]);
+
+  useEffect(() => {
+    if (!appToastSuccess) return;
+    const t = setTimeout(() => setAppToastSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [appToastSuccess]);
 
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
@@ -1337,32 +1367,67 @@ export default function App() {
       // go straight through purchase_ticket_with_tokens with a client-side
       // reference, unchanged from before.
       const isFree = (ticket.totalAmount ?? 0) === 0;
-      // Both RPCs now on Supabase, as one unit with CheckoutScreen.tsx's
-      // create_pending_purchase and api/webhook/paystack.ts's charge.success
-      // handler — finalize_pending_purchase reads a pending_purchases row
-      // written by create_pending_purchase, and the webhook calls it too as
-      // a fallback finalizer if this client dies after Paystack charges the
-      // card but before this call runs; all three had to move together so
-      // the webhook looks for the row in the same database it was written
-      // to. The webhook now calls Supabase directly via a project_admin
-      // Postgres connection (api/_lib/projectAdminDb.ts) — see
-      // supabase/migrations/0021_project_admin_login.sql for why (this
-      // project's asymmetric JWT signing keys rule out the usual
-      // PostgREST-role-switching approach).
-      const { data: tokenRows, error: insertError } = isFree
-        ? await supabase.rpc('purchase_ticket_with_tokens', {
-            p_event_id: ticket.event.id,
-            p_ticket_type: ticket.ticketType?.name ?? 'General',
-            p_attendees: attendees,
-            p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
-            p_promo_code: ticket.promoCode || null,
-          })
-        : await supabase.rpc('finalize_pending_purchase', {
-            p_payment_ref: ticket.ticketId,
-          });
-      if (insertError) throw insertError;
 
-      const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
+      let rows: Array<{ ticket_id: string; token: string }>;
+
+      if (isFree) {
+        const { data: tokenRows, error: insertError } = await supabase.rpc('purchase_ticket_with_tokens', {
+          p_event_id: ticket.event.id,
+          p_ticket_type: ticket.ticketType?.name ?? 'General',
+          p_attendees: attendees,
+          p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+          p_promo_code: ticket.promoCode || null,
+        });
+        if (insertError) throw insertError;
+        rows = Array.isArray(tokenRows) ? tokenRows : [];
+      } else {
+        // Paid purchases: NEVER treat "the Paystack popup called back" as
+        // proof of payment — that's just the client's own JS reporting
+        // success, which is nothing a scripted caller couldn't fake, and
+        // some channels (bank transfer/ussd/mobile money) don't even call
+        // this reliably at all. api/payments/verify.ts is the actual
+        // server-side check: it calls Paystack's own GET /transaction/
+        // verify/:reference with the secret key before finalizing anything.
+        // finalize_pending_purchase/confirm_ticket_payment (real ticket
+        // creation + payment_status='paid') are project_admin-only now
+        // (supabase/migrations/0031_restrict_finalize_pending_purchase.sql)
+        // — this endpoint and the webhook are the only two ways in, so a
+        // client can no longer manufacture a working ticket by calling the
+        // old RPC directly without ever paying.
+        const token = await getAuthToken();
+        const verifyRes = await fetch(apiUrl('/api/payments/verify'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reference: ticket.ticketId }),
+        });
+        const verifyJson = await verifyRes.json().catch(() => null);
+
+        if (!verifyRes.ok || verifyJson?.status !== 'success') {
+          const reason = verifyJson?.status === 'abandoned'
+            ? 'Payment was not completed. If you were charged, contact support with your reference.'
+            : verifyJson?.status === 'failed'
+            ? 'Payment failed. You have not been charged for this order.'
+            : (verifyJson?.error || 'Could not verify this payment. If you were charged, contact support with your reference.');
+          throw new Error(reason);
+        }
+
+        const ticketIds: string[] = Array.isArray(verifyJson.ticketIds) ? verifyJson.ticketIds : [];
+        if (ticketIds.length === 0) {
+          throw new Error('Payment verified, but no ticket was found for this order. Contact support with your reference.');
+        }
+
+        // generate_ticket_token requires auth.uid() = the ticket's owner
+        // (0004_functions.sql) — called here, under the buyer's own
+        // session, rather than from api/payments/verify.ts's project_admin
+        // connection, which has no user JWT/RLS context to satisfy that
+        // check with.
+        rows = await Promise.all(ticketIds.map(async (id) => {
+          const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
+          if (tokErr) throw tokErr;
+          return { ticket_id: id, token: tok as string };
+        }));
+      }
+
       if (rows.length === 0) {
         throw new Error('No ticket was returned by the server.');
       }
@@ -1401,18 +1466,25 @@ export default function App() {
         reference: ticket.ticketId ?? undefined,
       });
 
-      // 3.6: Ticket confirmation notification
-      supabase.from('notifications').insert([{
-        user_id: currentUser.id,
-        type: 'booking',
-        title: 'Ticket confirmed! 🎉',
-        body: attendees.length > 1
-          ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
-          : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
-        icon: '🎟️',
-      }]).then(({ error: notifyErr }: any) => {
-        if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
-      });
+      // 3.6: Ticket confirmation notification. Paid purchases only — for
+      // those, confirm_ticket_payment (0004_functions.sql, run server-side
+      // by finalizeAndConfirmPurchase above) already inserts this exact
+      // notification itself once payment is confirmed. Free tickets never
+      // touch confirm_ticket_payment at all (purchase_ticket_with_tokens
+      // has no notification of its own), so this remains their only source.
+      if (isFree) {
+        supabase.from('notifications').insert([{
+          user_id: currentUser.id,
+          type: 'booking',
+          title: 'Ticket confirmed! 🎉',
+          body: attendees.length > 1
+            ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
+            : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
+          icon: '🎟️',
+        }]).then(({ error: notifyErr }: any) => {
+          if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
+        });
+      }
 
       // Wait for tickets and events list refresh
       await fetchUserTickets(currentUser.id);
@@ -1440,6 +1512,58 @@ export default function App() {
       setScreen('payment-failed');
     }
   }, [currentUser, fetchEvents, fetchUserTickets]);
+
+  // Resolves a payment reference that arrived via Paystack's own post-
+  // payment redirect (?reference=/?trxref= on web, vents://payment?ref= on
+  // native — see the URL/deep-link handling above) rather than through
+  // CheckoutScreen's in-iframe JS callback. This is the recovery path for
+  // channels (bank transfer/ussd/mobile money) that leave the iframe
+  // entirely and don't reliably fire that callback, or for a card payment
+  // completed after the app was backgrounded/killed. There's no live
+  // CheckoutScreen state to resume across that gap (event/ticketType/
+  // attendees are gone), so unlike handleCheckoutSuccess this doesn't try
+  // to rebuild a PurchasedTicket for the success screen — it verifies,
+  // waits for the same fetchUserTickets/fetchEvents refresh, and surfaces
+  // the result as a toast; the new ticket then shows up in Wallet like any
+  // other, which is where a user who left the app mid-payment naturally
+  // looks for it. Requires currentUser because create_pending_purchase
+  // itself requires auth.uid() — there is no guest-checkout paid path for
+  // this to apply to.
+  useEffect(() => {
+    if (!pendingPaymentRef || !currentUser) return;
+    const reference = pendingPaymentRef;
+    setPendingPaymentRef(undefined);
+
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        const verifyRes = await fetch(apiUrl('/api/payments/verify'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reference }),
+        });
+        const verifyJson = await verifyRes.json().catch(() => null);
+
+        if (!verifyRes.ok || verifyJson?.status !== 'success') {
+          const message = verifyJson?.status === 'abandoned'
+            ? 'Payment was not completed. If you were charged, contact support with your reference.'
+            : verifyJson?.status === 'failed'
+            ? 'Payment failed. You have not been charged for this order.'
+            : (verifyJson?.error || 'Could not verify a recent payment. If you were charged, contact support with your reference.');
+          setAppToastError(message);
+          return;
+        }
+
+        await fetchUserTickets(currentUser.id);
+        await fetchEvents(true);
+        setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+      } catch (err: any) {
+        console.error('Failed to resolve pending payment reference:', err);
+        Sentry.captureException(err);
+        setAppToastError('Could not verify a recent payment. If you were charged, contact support with your reference.');
+      }
+    })();
+  }, [pendingPaymentRef, currentUser, fetchEvents, fetchUserTickets]);
 
   const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
     if (!currentUser) {
@@ -1677,6 +1801,10 @@ export default function App() {
           // (App.tsx's reset_email query-param handling). Jumps straight to
           // the forgot-password OTP screen; does NOT re-request a code.
           const resetEmail = parsed.hostname === 'reset' ? parsed.searchParams.get('email') : null;
+          // vents://payment?ref=... — same round trip, for Paystack's own
+          // post-payment redirect (App.tsx's ?reference=/?trxref= handling
+          // above) on channels that leave the iframe entirely.
+          const paymentRef = parsed.hostname === 'payment' ? parsed.searchParams.get('ref') : null;
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
           const screen = parsed.searchParams.get('screen');
@@ -1689,6 +1817,9 @@ export default function App() {
             setPendingResetEmail(resetEmail);
             setAuthMode('forgot');
             setScreen('auth');
+          }
+          else if (paymentRef) {
+            setPendingPaymentRef(paymentRef);
           }
           else if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
           else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
@@ -1844,6 +1975,24 @@ export default function App() {
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{appToastError}</span>
           <button
             onClick={() => setAppToastError(null)}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, lineHeight: 1, padding: 0 }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {appToastSuccess && (
+        <div
+          style={{
+            position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 10000, background: '#22C55E', borderRadius: '12px', padding: '10px 18px',
+            display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          }}
+        >
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{appToastSuccess}</span>
+          <button
+            onClick={() => setAppToastSuccess(null)}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, lineHeight: 1, padding: 0 }}
             aria-label="Dismiss"
           >

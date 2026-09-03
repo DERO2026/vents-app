@@ -9,6 +9,8 @@ import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
+import { Capacitor } from '@capacitor/core';
+import { apiUrl } from '../../lib/apiBase';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -316,6 +318,20 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         ref: reference,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
         channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        // bank_transfer/ussd/mobile_money don't complete inside the iframe
+        // — Paystack shows its own full-page instructions and, once the
+        // user completes the transfer/dial in their banking app, redirects
+        // here instead of ever calling the JS `callback` below (that only
+        // fires reliably for card payments completed within the iframe).
+        // Without this, those channels leave the user stranded on
+        // Paystack's own page with no way back into VENTS. On native this
+        // must be a real https URL, not the WebView's local
+        // capacitor://localhost origin Paystack could never redirect a
+        // real browser session back to — App.tsx's ?reference=/?trxref=
+        // handling (with a best-effort vents:// native handoff) is what
+        // actually resumes the app from there; api/payments/verify.ts is
+        // what actually confirms the payment, never this redirect alone.
+        callback_url: Capacitor.isNativePlatform() ? apiUrl('/') : `${window.location.origin}/`,
         metadata: {
           event_id: event.id,
           event_title: event.title,

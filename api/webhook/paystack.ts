@@ -4,7 +4,8 @@
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
-import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { finalizeAndConfirmPurchase } from '../_lib/finalizePaystackPayment.js';
 import crypto from 'crypto';
 
 function fmtNaira(kobo) {
@@ -52,43 +53,24 @@ export default async function handler(req, res) {
 
     try {
       // Recovery path: if the client was killed/crashed/lost network between
-      // Paystack charging the card and its own finalize_pending_purchase
-      // call, confirm_ticket_payment below would find no ticket row at all
-      // (it only ever UPDATEs existing rows) and the buyer would be charged
-      // with no way to get a ticket. finalize_pending_purchase creates the
-      // ticket from the payment intent persisted by create_pending_purchase
-      // BEFORE the Paystack popup ever opened (CheckoutScreen.tsx) — it's
-      // idempotent (locks the pending_purchases row FOR UPDATE, no-ops if
-      // already completed), so calling it here is always safe whether or
-      // not the client already got to it. A reference that never went
-      // through create_pending_purchase (e.g. a free ticket, which never
-      // touches Paystack or this webhook, or some other legacy path) simply
-      // has no pending_purchases row — this RAISEs "not found" (confirmed
-      // live), caught and logged as the expected, non-fatal no-op below;
-      // confirm_ticket_payment still runs regardless.
-      try {
-        await callProjectAdminRpc('finalize_pending_purchase', [reference]);
-        console.log('[Paystack webhook] finalize_pending_purchase ran for reference', reference);
-      } catch (finalizeErr: any) {
-        console.warn('[Paystack webhook] finalize_pending_purchase no-op/failed for', reference, '-', finalizeErr?.message || finalizeErr);
-      }
+      // Paystack charging the card and its own verify call (api/payments/
+      // verify.ts), this is what still gets the buyer a ticket — this is
+      // the authoritative confirmation path (Paystack's own signed webhook
+      // event, HMAC-verified above), not a fallback to it. Shared with
+      // api/payments/verify.ts's client-triggered path via
+      // finalizeAndConfirmPurchase so the two can never drift out of sync;
+      // whichever runs first wins, the other no-ops against the same
+      // locked rows.
+      const result = await finalizeAndConfirmPurchase(reference, amountKobo);
 
-      // confirm_ticket_payment is SECURITY DEFINER and does the whole thing
-      // atomically: look up the ticket by payment_ref, verify the webhook's
-      // amount (kobo) exactly matches the ticket's stored amount, no-op if
-      // already paid, otherwise mark paid + credit organizer wallet + notify.
-      const status = await callProjectAdminRpc<string>('confirm_ticket_payment', [reference, amountKobo]);
-
-      if (typeof status === 'string' && status.startsWith('amount_mismatch')) {
-        console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', status);
-      } else if (status === 'not_found') {
+      if (result.status === 'amount_mismatch') {
+        console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
+      } else if (result.status === 'not_found') {
         console.warn('[Paystack webhook] No ticket found for reference', reference);
-      } else if (status === 'already_paid') {
+      } else if (result.status === 'already_paid') {
         console.log('[Paystack webhook] Ticket already paid, no-op for reference', reference);
-      } else if (status === 'confirmed') {
+      } else if (result.status === 'confirmed') {
         console.log('[Paystack webhook] Ticket confirmed for reference', reference);
-      } else {
-        console.warn('[Paystack webhook] Unexpected confirm_ticket_payment result', status);
       }
     } catch (err: any) {
       console.error('[Paystack webhook] Error calling confirm_ticket_payment:', err?.message || err);
