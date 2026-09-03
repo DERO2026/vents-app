@@ -168,6 +168,7 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
+  const [pendingResetEmail, setPendingResetEmail] = useState<string | undefined>(undefined);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -412,6 +413,28 @@ export default function App() {
           }
           setPendingVerificationEmail(verifyEmailParam);
           setAuthMode('signup');
+          setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Same handoff pattern as verify_email above, for the "Reset
+        // Password" link in the recovery email: ?reset_email=<email> — jump
+        // straight to the forgot-password OTP screen with the email
+        // pre-filled, instead of dropping the user on the welcome page. The
+        // code itself was already sent by the email that carries this link,
+        // so this only resumes the in-app OTP step — it must NOT call
+        // resetPasswordForEmail again (that would silently invalidate the
+        // very code the user is holding).
+        const resetEmailParam = params.get('reset_email');
+        if (resetEmailParam) {
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://reset?email=${encodeURIComponent(resetEmailParam)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
+          setPendingResetEmail(resetEmailParam);
+          setAuthMode('forgot');
           setScreen('auth');
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
@@ -1649,12 +1672,22 @@ export default function App() {
           // pre-fill-the-OTP-screen behavior as the web ?verify_email= path,
           // just reached via the custom scheme instead of a query param.
           const verifyEmail = parsed.hostname === 'verify' ? parsed.searchParams.get('email') : null;
+          // vents://reset?email=... — same round trip as verify above, for
+          // the "Reset Password" email link's best-effort native redirect
+          // (App.tsx's reset_email query-param handling). Jumps straight to
+          // the forgot-password OTP screen; does NOT re-request a code.
+          const resetEmail = parsed.hostname === 'reset' ? parsed.searchParams.get('email') : null;
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
           const screen = parsed.searchParams.get('screen');
           if (verifyEmail) {
             setPendingVerificationEmail(verifyEmail);
             setAuthMode('signup');
+            setScreen('auth');
+          }
+          else if (resetEmail) {
+            setPendingResetEmail(resetEmail);
+            setAuthMode('forgot');
             setScreen('auth');
           }
           else if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
@@ -1964,6 +1997,7 @@ export default function App() {
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
               pendingVerificationEmail={pendingVerificationEmail}
+              pendingResetEmail={pendingResetEmail}
               signupsDisabled={featureFlags.disableSignups}
             />
           )}

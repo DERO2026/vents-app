@@ -17,7 +17,7 @@ import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
-import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
+import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -55,6 +55,12 @@ interface AuthScreenProps {
   // left mid-verification on a previous visit — jumps straight to the OTP
   // screen instead of the sign-up form.
   pendingVerificationEmail?: string;
+  // Same idea as pendingVerificationEmail, for the "Reset Password" link in
+  // the recovery email (?reset_email=) — jumps straight to the forgot-
+  // password OTP screen with the email pre-filled. Never triggers a new
+  // resetPasswordForEmail call itself; the code was already sent by the
+  // email carrying this link.
+  pendingResetEmail?: string;
   // Kill switch (app_config.disable_signups) — the server-side signup path
   // itself can't be gated (Supabase Auth's own signup endpoint runs outside
   // our schema), so this blocks the client's own signup attempt and the
@@ -175,7 +181,7 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, signupsDisabled = false }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, pendingResetEmail, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -283,7 +289,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [forgotNewPassword, setForgotNewPassword] = useState('');
   const [forgotConfirmPassword, setForgotConfirmPassword] = useState('');
   const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotResending, setForgotResending] = useState(false);
+  const [forgotResendCooldown, setForgotResendCooldown] = useState(0);
   const forgotOtpRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (forgotResendCooldown <= 0) return;
+    const t = setInterval(() => setForgotResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [forgotResendCooldown]);
 
   const resetForgotFlow = () => {
     setForgotSent(false);
@@ -295,6 +309,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setForgotConfirmPassword('');
     setErrorMessage(null);
   };
+
+  // Resume the forgot-password flow straight to Step 1 (OTP entry) when the
+  // user arrived via the "Reset Password" email link (?reset_email= on web,
+  // vents://reset?email= on native) — mirrors the signup pendingVerification
+  // resume effect above, but deliberately does NOT call
+  // resetPasswordForEmail: the code was already sent by the email carrying
+  // this link, and requesting a new one here would silently invalidate it
+  // out from under the user before they even get to type it in.
+  useEffect(() => {
+    if (!pendingResetEmail) return;
+    setEmail(pendingResetEmail);
+    setMode('forgot');
+    setForgotSent(true);
+    setForgotOtpStep(true);
+    setForgotPasswordStep(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingResetEmail]);
 
   // TOTP 2FA prompt (shown after successful password auth when totp_enabled=true)
   const [totpPending, setTotpPending] = useState<null | { secret: string; profilePayload: Parameters<typeof onSuccess>[0] }>(null);
@@ -595,8 +626,19 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     try {
       if (mode === 'forgot') {
         if (!email.trim() || !isValidEmail(email)) throw new Error('Please enter a valid email address.');
-        await checkAuthRateLimit('password_reset', email.trim().toLowerCase());
-        const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase());
+        // Wrapped in withTimeoutFallback (same as the login profile fetch)
+        // so a stalled connection throws a friendly, catchable error instead
+        // of leaving the "Sending..." spinner stuck forever with no way
+        // out — this try block's finally still always runs, but without a
+        // timeout the awaited call itself could simply never resolve.
+        await withTimeoutFallback(
+          checkAuthRateLimit('password_reset', email.trim().toLowerCase()),
+          { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+        );
+        const { error } = await withTimeoutFallback(
+          supabase.auth.resetPasswordForEmail(email.trim().toLowerCase()),
+          { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+        );
         if (error) throw error;
         analytics.passwordResetRequested();
         setForgotSent(true);
@@ -1013,14 +1055,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         setErrorMessage('Incorrect email or password.');
         return;
       }
-      // Specific, user-friendly error messages for forgot/reset
-      const safe = msgL.includes('email not confirmed') || msgL.includes('not confirmed')
-        ? 'Please verify your email before logging in.'
+      // Specific, user-friendly error messages for the forgot-password
+      // request step (mode 'forgot': checkAuthRateLimit + resetPasswordForEmail
+      // above). This used to fall back to 'Incorrect email/username or
+      // password.' — a login-flow message that made no sense here, since
+      // there's no password being checked at this step at all.
+      const safe = err instanceof TimeoutFallbackError
+        ? msg.trim()
+        : msgL.includes('email not confirmed') || msgL.includes('not confirmed')
+        ? 'Please verify your email address first, then request a password reset.'
         : msgL.includes('rate limit') || msgL.includes('too many')
         ? 'Too many attempts. Please wait a few minutes and try again.'
         : msgL.includes('network') || msgL.includes('fetch')
         ? 'Network error. Check your connection and try again.'
-        : 'Incorrect email/username or password.';
+        // Never show a raw Supabase/Postgres error (constraint names, column
+        // names, SQL keywords) straight to the user — still fully captured
+        // above via Sentry for diagnosis.
+        : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
+        ? 'Could not process your request. Please try again.'
+        : (msg.trim() || 'Could not send the reset email. Please try again.');
       setErrorMessage(safe);
     } finally {
       setLoading(false);
@@ -1379,17 +1432,38 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   // short-lived recovery session on the client directly, and
                   // Step 2's updateUser() call below uses that session
                   // rather than needing an explicit token argument.
-                  const { data: verifyData, error: exchangeErr } = await supabase.auth.verifyOtp({
-                    email: email.trim().toLowerCase(),
-                    token: forgotOtpCode,
-                    type: 'recovery',
-                  });
+                  const { data: verifyData, error: exchangeErr } = await withTimeoutFallback(
+                    supabase.auth.verifyOtp({
+                      email: email.trim().toLowerCase(),
+                      token: forgotOtpCode,
+                      type: 'recovery',
+                    }),
+                    { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+                  );
                   if (exchangeErr) throw exchangeErr;
                   if (!verifyData?.session) throw new Error('Incorrect or expired code. Please try again.');
                   setForgotExchangedToken('verified');
                   setForgotPasswordStep(true);
                 } catch (err: any) {
-                  setErrorMessage(err.message || 'Incorrect or expired code. Please try again.');
+                  const msg = String(err?.message || '');
+                  const msgL = msg.toLowerCase();
+                  // Same sanitization as handleVerifyOtp's signup-OTP catch
+                  // block — never show a raw Supabase/Postgres error, and
+                  // give an honest message for the expired/invalid case that
+                  // a stale or already-superseded code (e.g. after Resend)
+                  // actually produces.
+                  const safe = err instanceof TimeoutFallbackError
+                    ? msg.trim()
+                    : msgL.includes('expired') || msgL.includes('invalid')
+                    ? 'That code is incorrect or has expired. Please check the code or request a new one.'
+                    : msgL.includes('rate limit') || msgL.includes('too many')
+                    ? 'Too many attempts. Please wait a few minutes and try again.'
+                    : msgL.includes('network') || msgL.includes('fetch')
+                    ? 'Network error. Check your connection and try again.'
+                    : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
+                    ? 'Verification failed. Please try again, or request a new code.'
+                    : (msg.trim() || 'Incorrect or expired code. Please try again.');
+                  setErrorMessage(safe);
                 } finally {
                   setForgotVerifying(false);
                 }
@@ -1403,6 +1477,47 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               }}
             >
               {forgotVerifying ? 'Verifying...' : 'Verify Code'}
+            </button>
+            <button
+              onClick={async () => {
+                if (forgotResending || forgotResendCooldown > 0) return;
+                setForgotResending(true);
+                setErrorMessage(null);
+                setSuccessMessage(null);
+                try {
+                  await withTimeoutFallback(
+                    checkAuthRateLimit('password_reset', email.trim().toLowerCase()),
+                    { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+                  );
+                  const { error: resendErr } = await withTimeoutFallback(
+                    supabase.auth.resetPasswordForEmail(email.trim().toLowerCase()),
+                    { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+                  );
+                  if (resendErr) throw resendErr;
+                  // The old code is invalidated server-side the instant a new
+                  // one is issued — same reasoning as signup's Resend Code:
+                  // clear it here and require the new one before Verify is
+                  // enabled again, rather than leaving a dead code sitting in
+                  // the input for the user to resubmit and hit "expired".
+                  setForgotOtpCode('');
+                  setSuccessMessage('Your previous code no longer works. A new code is on its way — check your inbox.');
+                  setForgotResendCooldown(30);
+                } catch (err: any) {
+                  const msg = String(err?.message || '');
+                  setErrorMessage(err instanceof TimeoutFallbackError ? msg.trim() : (msg.trim() || 'Could not resend the code. Please try again shortly.'));
+                } finally {
+                  setForgotResending(false);
+                }
+              }}
+              disabled={forgotResending || forgotResendCooldown > 0}
+              style={{
+                background: 'none', border: 'none',
+                color: (forgotResending || forgotResendCooldown > 0) ? '#555C7A' : '#A78BFA',
+                fontSize: '14px', cursor: (forgotResending || forgotResendCooldown > 0) ? 'not-allowed' : 'pointer',
+                display: 'block', margin: '0 auto 12px',
+              }}
+            >
+              {forgotResending ? 'Sending…' : forgotResendCooldown > 0 ? `Resend Code (${forgotResendCooldown}s)` : 'Resend Code'}
             </button>
             <button
               onClick={() => { setMode('login'); resetForgotFlow(); }}
@@ -1474,20 +1589,43 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   // Uses the recovery session verifyOtp() established in Step
                   // 1 — no explicit token needed, unlike InsForge's
                   // token-carrying resetPassword() call.
-                  const { error } = await supabase.auth.updateUser({ password: forgotNewPassword });
+                  const { error } = await withTimeoutFallback(
+                    supabase.auth.updateUser({ password: forgotNewPassword }),
+                    { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+                  );
                   if (error) throw error;
                   // The recovery session must not linger as a "signed in"
                   // state after a password reset — the user is about to be
                   // sent to the normal login screen and should authenticate
                   // there like anyone else, not be silently left signed in
-                  // under the temporary recovery session.
+                  // under the temporary recovery session. (Deliberately not
+                  // weakened to auto-sign-in: that would mean staying
+                  // authenticated under a short-lived recovery session
+                  // instead of a real login.)
                   await supabase.auth.signOut().catch(() => {});
                   setSuccessMessage('Password reset successfully! Please sign in.');
                   setMode('login');
                   resetForgotFlow();
                   setPassword('');
                 } catch (err: any) {
-                  setErrorMessage(err.message || 'Reset failed. Please try again.');
+                  const msg = String(err?.message || '');
+                  const msgL = msg.toLowerCase();
+                  // Same sanitization pattern as the rest of this file's auth
+                  // catch blocks — never show a raw Supabase/Postgres error.
+                  const safe = err instanceof TimeoutFallbackError
+                    ? msg.trim()
+                    : msgL.includes('expired') || msgL.includes('invalid') || msgL.includes('session')
+                    ? 'Your session expired. Please request a new code.'
+                    : msgL.includes('rate limit') || msgL.includes('too many')
+                    ? 'Too many attempts. Please wait a few minutes and try again.'
+                    : msgL.includes('network') || msgL.includes('fetch')
+                    ? 'Network error. Check your connection and try again.'
+                    : msgL.includes('password') && (msgL.includes('weak') || msgL.includes('short') || msgL.includes('simple') || msgL.includes('strength'))
+                    ? 'Password is too weak. Use at least 10 characters with uppercase, lowercase, and a number.'
+                    : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
+                    ? 'Could not reset your password. Please try again.'
+                    : (msg.trim() || 'Reset failed. Please try again.');
+                  setErrorMessage(safe);
                 } finally {
                   setLoading(false);
                 }
