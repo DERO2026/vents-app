@@ -396,6 +396,20 @@ export default function App() {
         // email pre-filled instead of dropping the user on the welcome page.
         const verifyEmailParam = params.get('verify_email');
         if (verifyEmailParam) {
+          // Best-effort handoff to the native app when this link is opened
+          // in a mobile browser (i.e. we're NOT already running inside the
+          // Capacitor WebView — Capacitor.isNativePlatform() is false there,
+          // same as everywhere else this distinction is made in this file).
+          // vents:// is already handled by the appUrlOpen listener below.
+          // If the app isn't installed, or the OS/browser can't resolve the
+          // custom scheme, this silently no-ops and the code below still
+          // runs, keeping the existing web OTP screen as the fallback —
+          // never a dead end either way.
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://verify?email=${encodeURIComponent(verifyEmailParam)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
           setPendingVerificationEmail(verifyEmailParam);
           setAuthMode('signup');
           setScreen('auth');
@@ -1629,10 +1643,21 @@ export default function App() {
       const sub = await CapacitorApp.addListener('appUrlOpen', ({ url }) => {
         try {
           const parsed = new URL(url);
+          // vents://verify?email=... — completes the handoff started by the
+          // "Verify Account" email button's best-effort vents:// redirect
+          // (App.tsx's verify_email query-param handling above). Same
+          // pre-fill-the-OTP-screen behavior as the web ?verify_email= path,
+          // just reached via the custom scheme instead of a query param.
+          const verifyEmail = parsed.hostname === 'verify' ? parsed.searchParams.get('email') : null;
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
           const screen = parsed.searchParams.get('screen');
-          if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
+          if (verifyEmail) {
+            setPendingVerificationEmail(verifyEmail);
+            setAuthMode('signup');
+            setScreen('auth');
+          }
+          else if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
           else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
           else if (screen) pushActionRef.current({ screen });
         } catch (err) {

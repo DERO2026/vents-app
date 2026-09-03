@@ -15,7 +15,7 @@ import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
-import { savePendingVerification, getPendingVerification, clearPendingVerification } from '../../lib/pendingVerification';
+import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
@@ -225,7 +225,35 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     if (isVerifying) return;
     const existingPending = getPendingVerification();
     const resumeEmail = pendingVerificationEmail || existingPending?.email;
-    if (resumeEmail) {
+    if (!resumeEmail) return;
+
+    // Safety net for a pendingVerification flag left stale by a pre-fix
+    // build (see handleVerifyOtp: this used to be cleared only after
+    // profile-completion steps that could fail/be interrupted, leaving an
+    // already-verified user's flag set forever). Before forcing this
+    // already-confirmed user back onto a code-entry screen for a code
+    // that's long since been consumed, confirm with the server whether the
+    // account is actually still unverified. check_user_exists only ever
+    // flags a CONFIRMED account, so email_taken === true here means
+    // verification already succeeded — clear the stale flag and send them
+    // to login instead of trapping them on a dead-end OTP screen.
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('check_user_exists', { p_email: resumeEmail });
+        if (cancelled) return;
+        if (data?.email_taken) {
+          clearPendingVerification();
+          setSuccessMessage('Your email is already verified — please sign in.');
+          setMode('login');
+          return;
+        }
+      } catch {
+        // Lookup failure isn't proof either way — fall through to the
+        // normal resume behavior rather than silently dropping the user's
+        // in-progress verification on a transient network hiccup.
+      }
+      if (cancelled) return;
       setEmail(resumeEmail);
       setIsVerifying(true);
       // Carries the existing `profile` payload forward instead of dropping
@@ -234,7 +262,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       // the email, which wiped the signup form data this same resume path
       // depends on to complete the profile once verification succeeds.
       if (pendingVerificationEmail) savePendingVerification(pendingVerificationEmail, existingPending?.profile);
-    }
+    })();
+    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingVerificationEmail]);
 
@@ -437,7 +466,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     handleSubmit();
   };
 
-  const fetchProfileAndSucceed = async (userId: string, userEmail: string, avatarUrl?: string) => {
+  const fetchProfileAndSucceed = async (userId: string, userEmail: string, avatarUrl?: string, pendingProfileOverride?: PendingSignupProfile) => {
     for (let i = 0; i < 20; i++) {
       const { data: profile } = await supabase
         .from('users')
@@ -463,8 +492,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // only pre-fills the email. Fall back to what was persisted at
         // signup time so a fresh mount doesn't overwrite already-entered
         // data with blanks.
-        const pending = getPendingVerification();
-        const pendingProfile = pending?.email === userEmail.toLowerCase() ? pending.profile : undefined;
+        // pendingProfileOverride (captured by the caller before it cleared
+        // pendingVerification) takes precedence when supplied — falls back to
+        // reading it live for call sites (e.g. the non-OTP signup path) that
+        // haven't already consumed/cleared it.
+        const pending = pendingProfileOverride ? undefined : getPendingVerification();
+        const pendingProfile = pendingProfileOverride
+          ?? (pending?.email === userEmail.toLowerCase() ? pending.profile : undefined);
         const payload: Record<string, any> = {
           full_name: name.trim() || pendingProfile?.full_name || '',
           username: (username.trim() || pendingProfile?.username || '').toLowerCase(),
@@ -1006,17 +1040,45 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       if (error) throw error;
 
       if (data?.user) {
-        // Cleared AFTER fetchProfileAndSucceed, not before — it reads the
-        // persisted signup payload as a fallback when this screen's own
-        // component state is blank (a fresh mount reached via the
-        // "Verify Account" email link). Clearing first would erase that
-        // fallback before it could ever be used.
-        const avatarUrl = await uploadAvatarIfPending();
-        await fetchProfileAndSucceed(data.user.id, data.user.email!, avatarUrl);
+        // Captured before clearing — fetchProfileAndSucceed below still
+        // needs this as a fallback when this screen's own component state is
+        // blank (a fresh mount reached via the "Verify Account" email link).
+        const pending = getPendingVerification();
+        const pendingProfile = pending?.email === data.user.email!.toLowerCase() ? pending.profile : undefined;
+
+        // Cleared immediately once verifyOtp() succeeds — the account IS
+        // verified at this point regardless of what happens in the
+        // profile-completion steps below. Clearing only after those steps
+        // used to leave this flag set if avatar upload or profile fetch
+        // failed/was interrupted (app backgrounded, network drop), which
+        // trapped an already-verified user back on the OTP screen on next
+        // launch — re-entering a code that had already been consumed and
+        // was now "expired or invalid".
         clearPendingVerification();
+
+        const avatarUrl = await uploadAvatarIfPending();
+        await fetchProfileAndSucceed(data.user.id, data.user.email!, avatarUrl, pendingProfile);
       }
     } catch (err: any) {
-      setErrorMessage(err.message || 'Verification failed. Please check the code and try again.');
+      const msg = String(err?.message || '');
+      const msgL = msg.toLowerCase();
+      // Never show a raw Supabase/Postgres error (constraint names, column
+      // names, SQL keywords) straight to the user — those still reach
+      // Sentry/console via fetchProfileAndSucceed's own internal error
+      // handling for diagnosis. The user just needs an honest, actionable
+      // message: expired/invalid code, rate limit, network, or a safe
+      // generic fallback — same pattern already used in the signup catch
+      // block above.
+      const safe = msgL.includes('expired') || msgL.includes('invalid')
+        ? 'That code is incorrect or has expired. Please check the code or request a new one.'
+        : msgL.includes('rate limit') || msgL.includes('too many')
+        ? 'Too many attempts. Please wait a few minutes and try again.'
+        : msgL.includes('network') || msgL.includes('fetch')
+        ? 'Network error. Check your connection and try again.'
+        : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
+        ? 'Verification failed. Please try again, or request a new code.'
+        : (msg.trim() || 'Verification failed. Please check the code and try again.');
+      setErrorMessage(safe);
     } finally {
       setLoading(false);
     }
@@ -1034,7 +1096,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         options: { emailRedirectTo: `${window.location.origin}/` },
       });
       if (resendError) throw resendError;
-      setSuccessMessage('A new code is on its way — check your inbox.');
+      // The old code is invalidated server-side the moment a new one is
+      // issued — clearing it here (rather than leaving a stale value the
+      // user might re-submit) makes that visible instead of surprising:
+      // Verify stays disabled (it requires EMAIL_OTP_LENGTH digits) until
+      // the newly received code is actually typed in.
+      setVerificationCode('');
+      setSuccessMessage('Your previous code no longer works. A new code is on its way — check your inbox.');
       setResendCooldown(30);
     } catch (err: any) {
       setErrorMessage(err.message || 'Could not resend the code. Please try again shortly.');
