@@ -6,6 +6,7 @@ import {
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
   Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
+  Briefcase,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -45,7 +46,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'import-events' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -716,6 +717,13 @@ export function AdminDashboardScreen({
   const [orgRequests, setOrgRequests] = useState<any[]>([]);
   const [orgRequestsLoading, setOrgRequestsLoading] = useState(false);
 
+  // Service Provider Requests tab state -- deliberately its own state block
+  // (not shared with orgRequests above), same reasoning as the client-side
+  // request flow in ProfileScreen.tsx: keeps this fully independent of the
+  // Organizer review flow so neither can ever affect the other.
+  const [spRequests, setSpRequests] = useState<any[]>([]);
+  const [spRequestsLoading, setSpRequestsLoading] = useState(false);
+
   // Import Events tab state
   const [importText, setImportText] = useState('');
   const [importLoading, setImportLoading] = useState(false);
@@ -1224,6 +1232,61 @@ export function AdminDashboardScreen({
       // (api/notify/status-email.ts) — it looks up the phone number itself and
       // sends with the same text, no client-held Sendchamp key required.
       notifyByEmail('organizer', id, status, adminNote);
+    }
+  };
+
+  // Service Provider requests -- own fetch effect and review function,
+  // deliberately mirroring the org-requests pair above rather than sharing
+  // code with it, so the Organizer flow is never touched by this addition.
+  useEffect(() => {
+    if (tab !== 'sp-requests') return;
+    if (!isAdminOrSubAdmin) return;
+    setSpRequestsLoading(true);
+    (async () => {
+      try {
+        const { data: reqs, error } = await supabase
+          .from('service_provider_requests')
+          .select('id, user_id, reason, status, admin_note, created_at')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const rows = reqs || [];
+        const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
+        let usersMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: users } = await supabase
+            .from('users')
+            .select('id, username, full_name, email, phone_number, state')
+            .in('id', userIds);
+          (users || []).forEach((u: any) => { usersMap[u.id] = u; });
+        }
+        setSpRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
+      } catch (error: any) {
+        console.error('Service provider requests fetch error:', error);
+        Sentry.captureException(error);
+        flash(false, 'Failed to load requests: ' + (error?.message || JSON.stringify(error)));
+      } finally {
+        setSpRequestsLoading(false);
+      }
+    })();
+  }, [tab, currentUser?.id, isRoot]);
+
+  const reviewSpRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
+    const { error } = await supabase
+      .from('service_provider_requests')
+      .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+      .eq('id', id);
+    if (!error) {
+      setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+      const req = spRequests.find((r) => r.id === id);
+      // Approving grants the capability via the secure admin-only RPC.
+      // Rejecting only updates the request row above -- no RPC call, no
+      // capability change.
+      if (status === 'approved') {
+        if (req?.user_id) {
+          await supabase.rpc('admin_set_service_provider_capability', { p_user_id: req.user_id, p_enabled: true });
+        }
+      }
     }
   };
 
@@ -1742,6 +1805,7 @@ export function AdminDashboardScreen({
     // approval dispatcher, so there is no safe maker-checker path for them.
     ...(isSuperAdmin ? [{ key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> }] : []),
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
+    { key: 'sp-requests' as Tab, label: 'SP Reqs', icon: <Briefcase size={14} /> },
     { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
@@ -2755,6 +2819,45 @@ export function AdminDashboardScreen({
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => reviewOrgRequest(req.id, 'approved')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Approve</button>
                       <button onClick={() => reviewOrgRequest(req.id, 'rejected')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Reject</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {tab === 'sp-requests' && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Service Provider Requests</p>
+          {spRequestsLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : spRequests.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No requests yet.</p>
+          ) : (
+            spRequests.map((req: any) => {
+              const user = req.users;
+              const name = user?.full_name || user?.username || user?.email || req.user_id;
+              return (
+                <div key={req.id} style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{name}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: req.status === 'pending' ? 'rgba(245,158,11,0.15)' : req.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: req.status === 'pending' ? '#F59E0B' : req.status === 'approved' ? '#10B981' : '#EF4444', textTransform: 'uppercase' as const }}>
+                      {req.status}
+                    </span>
+                  </div>
+                  {(user?.email || user?.phone_number || user?.state) && (
+                    <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 8px' }}>
+                      {[user?.email, user?.phone_number, user?.state].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {req.reason && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px', lineHeight: 1.4 }}>{req.reason}</p>}
+                  <p style={{ color: '#555C7A', fontSize: '11px', margin: '0 0 10px' }}>{new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  {req.status === 'pending' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => reviewSpRequest(req.id, 'approved')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                      <button onClick={() => reviewSpRequest(req.id, 'rejected')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Reject</button>
                     </div>
                   )}
                 </div>
