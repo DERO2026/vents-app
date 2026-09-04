@@ -21,6 +21,7 @@ import { CountrySelectScreen } from './components/CountrySelectScreen';
 import { ServicesHomeScreen } from './components/ServicesHomeScreen';
 import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
 import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
+import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -186,7 +187,7 @@ export default function App() {
   const screenRef = useRef(screen);
   const screenStackRef = useRef(screenStack);
   const goBackRef = useRef<() => void>(() => {});
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean; country?: string } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   // Set when the 15s hydration safety timeout fires — lets the Splash
@@ -702,6 +703,7 @@ export default function App() {
           vc_badge: profile?.vc_badge,
           is_verified: profile?.is_verified === true,
           is_service_provider: profile?.is_service_provider === true,
+          country: profile?.country || undefined,
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
@@ -2018,7 +2020,7 @@ export default function App() {
     return () => removeListener?.();
   }, [hydrateAuth]);
 
-  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string }) => {
     const enriched = {
       ...userProfile,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
@@ -2312,6 +2314,13 @@ export default function App() {
               providerId={selectedServiceProvider.id}
               initialProvider={selectedServiceProvider}
               onBack={goBack}
+            />
+          )}
+          {screen === 'service-provider-setup' && currentUser && (
+            <ServiceProviderSetupScreen
+              currentUser={{ id: currentUser.id, country: currentUser.country }}
+              onBack={goBack}
+              onSaved={() => goBack()}
             />
           )}
           {screen === 'role-select' && (

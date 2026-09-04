@@ -275,6 +275,27 @@ export function ProfileScreen({
     checkSpRequest();
   }, [currentUser?.id]);
 
+  // Stage 3: does the capability holder already have a service_providers
+  // listing? Drives the "Set Up Your Service Profile" vs "Edit Service
+  // Profile" label -- independent of the capability-request status above
+  // (spRequestStatus governs the request card, hasProviderProfile governs
+  // the setup/edit card that only appears once the capability is granted).
+  const [hasProviderProfile, setHasProviderProfile] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!currentUser?.id || !currentUser.is_service_provider) { setHasProviderProfile(null); return; }
+    let cancelled = false;
+    Promise.resolve(
+      supabase
+        .from('service_providers')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+    )
+      .then(({ data }: any) => { if (!cancelled) setHasProviderProfile(!!data); })
+      .catch(() => { if (!cancelled) setHasProviderProfile(false); });
+    return () => { cancelled = true; };
+  }, [currentUser?.id, currentUser?.is_service_provider, profileRefreshKey]);
+
   const submitSpRequest = async () => {
     if (!currentUser?.id || spRequestStatus === 'sending') return;
     setSpRequestStatus('sending');
@@ -737,17 +758,21 @@ export function ProfileScreen({
             gates this. */}
         {currentUser.is_service_provider ? (
           <div className="px-4 mb-3">
-            <div
+            <button
+              onClick={() => onNavigate('service-provider-setup')}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'rgba(34,211,238,0.08)',
                 borderRadius: '14px',
                 border: '1px solid rgba(34,211,238,0.25)',
+                cursor: 'pointer',
               }}
             >
               <Briefcase size={16} color="#22D3EE" />
-              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 700 }}>Service Provider</span>
-            </div>
+              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 700 }}>
+                {hasProviderProfile ? 'Edit Service Profile' : 'Set Up Your Service Profile'}
+              </span>
+            </button>
           </div>
         ) : (
           <div className="px-4 mb-3">

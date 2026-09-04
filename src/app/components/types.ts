@@ -191,7 +191,8 @@ export type Screen =
   | 'wallet'
   | 'services-home'
   | 'services-category'
-  | 'service-provider-profile';
+  | 'service-provider-profile'
+  | 'service-provider-setup';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

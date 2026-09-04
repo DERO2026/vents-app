@@ -74,3 +74,66 @@ export async function fetchServiceProviderById(id: string): Promise<ServiceProvi
   if (error) throw error;
   return data ? mapDbServiceProviderToFrontend(data) : null;
 }
+
+// The signed-in user's own listing, regardless of status -- used by
+// ProfileScreen (to decide "Set Up" vs "Edit") and the setup screen (to
+// prefill an edit). Relies on service_providers_select_own (0034); RLS
+// already restricts this to the caller's own row.
+export async function fetchOwnServiceProvider(userId: string): Promise<ServiceProvider | null> {
+  const { data, error } = await supabase
+    .from('service_providers')
+    .select(SERVICE_PROVIDER_COLUMNS)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapDbServiceProviderToFrontend(data) : null;
+}
+
+export interface ServiceProviderInput {
+  businessName: string;
+  category: string;
+  description: string;
+  location: string;
+  country: string;
+  photoUrls: string[];
+  startingPrice: number | null;
+  startingPriceCurrency: string | null;
+  servicesOffered: string[];
+  offersHomeService: boolean;
+  offersDelivery: boolean;
+  offersSameDay: boolean;
+}
+
+// Create-or-update the caller's own listing and publish it directly
+// (status='approved') -- per the approved v1 decision, there is no
+// separate admin listing-review queue; the capability gate
+// (users.is_service_provider, enforced by RLS on this table) is the only
+// approval step. Relies on the UNIQUE(user_id) constraint (0034) for the
+// upsert's conflict target -- one listing per account.
+export async function saveAndPublishServiceProvider(userId: string, input: ServiceProviderInput): Promise<ServiceProvider> {
+  const { data, error } = await supabase
+    .from('service_providers')
+    .upsert(
+      {
+        user_id: userId,
+        business_name: input.businessName,
+        category: input.category,
+        description: input.description || null,
+        location: input.location || null,
+        country: input.country,
+        photo_urls: input.photoUrls,
+        starting_price: input.startingPrice,
+        starting_price_currency: input.startingPriceCurrency,
+        services_offered: input.servicesOffered,
+        offers_home_service: input.offersHomeService,
+        offers_delivery: input.offersDelivery,
+        offers_same_day: input.offersSameDay,
+        status: 'approved',
+      },
+      { onConflict: 'user_id' }
+    )
+    .select(SERVICE_PROVIDER_COLUMNS)
+    .single();
+  if (error) throw error;
+  return mapDbServiceProviderToFrontend(data);
+}
