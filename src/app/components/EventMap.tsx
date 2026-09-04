@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { MapPin, Navigation } from 'lucide-react';
 import { loadGoogleMaps } from '../../lib/googleMaps';
 import { SecondaryButton } from './shared/Button';
 import { Sentry } from '../../lib/sentry';
+import { buildMapEmbedUrl, listenToMapEmbed, shouldUseMapEmbed } from '../../lib/mapEmbed';
 
 interface EventMapProps {
   latitude: number | null | undefined;
@@ -36,8 +37,13 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
   const mapRef = useRef<any>(null);
   const [status, setStatus] = useState<'loading' | 'ready' | 'unavailable'>('loading');
   const hasCoords = isValidCoordinate(latitude, longitude);
+  // iOS-only: render the real-origin HTTPS iframe embed instead of calling
+  // loadGoogleMaps() directly — see src/lib/mapEmbed.ts. Android and web are
+  // completely unaffected; both branches below only ever run on iOS native.
+  const useEmbed = shouldUseMapEmbed();
 
   useEffect(() => {
+    if (useEmbed) return; // handled by the postMessage listener effect below
     if (!hasCoords) return; // nothing to load a map for — fallback UI handles this
     let cancelled = false;
     loadGoogleMaps()
@@ -48,9 +54,31 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
         if (!cancelled) setStatus('unavailable');
       });
     return () => { cancelled = true; };
-  }, [hasCoords]);
+  }, [hasCoords, useEmbed]);
+
+  // iOS embed path: the map itself is rendered by embed/map.html inside the
+  // iframe below (see the return block) — this effect only listens for its
+  // ready/error signal to drive the exact same `status` state machine the
+  // direct-Maps-JS path above uses, so the loading/ready/unavailable UI
+  // stays identical regardless of platform.
+  useEffect(() => {
+    if (!useEmbed || !hasCoords) return;
+    return listenToMapEmbed((msg) => {
+      if (msg.type === 'vents:ready') {
+        setStatus('ready');
+      } else if (msg.type === 'vents:authFailure' || msg.type === 'vents:error') {
+        const err = new Error(msg.type === 'vents:authFailure'
+          ? 'Google Maps authentication failed inside the iOS map embed.'
+          : msg.message);
+        console.error('Event map unavailable (iOS embed):', err);
+        Sentry.captureException(err);
+        setStatus('unavailable');
+      }
+    });
+  }, [useEmbed, hasCoords]);
 
   useEffect(() => {
+    if (useEmbed) return; // iframe renders its own map — see embed/map.html
     if (status !== 'ready' || !mapDivRef.current || !hasCoords || mapRef.current) return;
     const google = (window as any).google;
     const pos = { lat: latitude as number, lng: longitude as number };
@@ -119,19 +147,32 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
     );
   }
 
+  const mapBoxStyle: CSSProperties = {
+    height: '160px',
+    borderRadius: '14px',
+    overflow: 'hidden',
+    border: '1px solid rgba(255,255,255,0.08)',
+    background: '#0B0B14',
+  };
+
   return (
     <div>
       <div style={{ position: 'relative' }}>
-        <div
-          ref={mapDivRef}
-          style={{
-            height: '160px',
-            borderRadius: '14px',
-            overflow: 'hidden',
-            border: '1px solid rgba(255,255,255,0.08)',
-            background: '#0B0B14',
-          }}
-        />
+        {useEmbed ? (
+          <iframe
+            title="Event location map"
+            src={buildMapEmbedUrl({ mode: 'display', lat: latitude, lng: longitude, venue, address })}
+            style={{ ...mapBoxStyle, width: '100%', border: 'none' }}
+            // Least privilege: this frame never needs script-triggered
+            // downloads, popups, top-level navigation, or forms — only the
+            // ability to run its own scripts (to load Maps JS) and make
+            // same-origin requests.
+            sandbox="allow-scripts allow-same-origin"
+            referrerPolicy="strict-origin-when-cross-origin"
+          />
+        ) : (
+          <div ref={mapDivRef} style={mapBoxStyle} />
+        )}
         {status !== 'ready' && (
           <div
             style={{

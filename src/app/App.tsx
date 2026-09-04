@@ -168,6 +168,8 @@ export default function App() {
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
+  const [pendingResetEmail, setPendingResetEmail] = useState<string | undefined>(undefined);
+  const [pendingPaymentRef, setPendingPaymentRef] = useState<string | undefined>(undefined);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -183,6 +185,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  // Set when the 15s hydration safety timeout fires — lets the Splash
+  // Routing Effect below still route a currentUser that arrives late (after
+  // Welcome was already shown as a fallback) into the app, instead of
+  // stranding a genuinely-logged-in user on the sign-in screen.
+  const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
@@ -200,6 +207,7 @@ export default function App() {
   // alone can't trigger.
   const [deepLinkPending, setDeepLinkPending] = useState(false);
   const [appToastError, setAppToastError] = useState<string | null>(null);
+  const [appToastSuccess, setAppToastSuccess] = useState<string | null>(null);
   const [updateRequired, setUpdateRequired] = useState(false);
   const [maintenanceMode, setMaintenanceMode] = useState(false);
   // Kill switch flags (Block 17) — scoped feature disables, distinct from
@@ -217,6 +225,9 @@ export default function App() {
   const eventsPageRef = useRef(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  // Bumped on every Home-tab tap so HomeScreen can scroll itself back to
+  // top -- see handleTabChange below.
+  const [homeScrollSignal, setHomeScrollSignal] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -396,9 +407,72 @@ export default function App() {
         // email pre-filled instead of dropping the user on the welcome page.
         const verifyEmailParam = params.get('verify_email');
         if (verifyEmailParam) {
+          // Best-effort handoff to the native app when this link is opened
+          // in a mobile browser (i.e. we're NOT already running inside the
+          // Capacitor WebView — Capacitor.isNativePlatform() is false there,
+          // same as everywhere else this distinction is made in this file).
+          // vents:// is already handled by the appUrlOpen listener below.
+          // If the app isn't installed, or the OS/browser can't resolve the
+          // custom scheme, this silently no-ops and the code below still
+          // runs, keeping the existing web OTP screen as the fallback —
+          // never a dead end either way.
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://verify?email=${encodeURIComponent(verifyEmailParam)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
           setPendingVerificationEmail(verifyEmailParam);
           setAuthMode('signup');
           setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Same handoff pattern as verify_email above, for the "Reset
+        // Password" link in the recovery email: ?reset_email=<email> — jump
+        // straight to the forgot-password OTP screen with the email
+        // pre-filled, instead of dropping the user on the welcome page. The
+        // code itself was already sent by the email that carries this link,
+        // so this only resumes the in-app OTP step — it must NOT call
+        // resetPasswordForEmail again (that would silently invalidate the
+        // very code the user is holding).
+        const resetEmailParam = params.get('reset_email');
+        if (resetEmailParam) {
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://reset?email=${encodeURIComponent(resetEmailParam)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
+          setPendingResetEmail(resetEmailParam);
+          setAuthMode('forgot');
+          setScreen('auth');
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // Recovery path for a Paystack redirect this code doesn't itself
+        // trigger — CheckoutScreen.tsx's PaystackPop.setup() call has no
+        // callback_url of its own (confirmed against Paystack's docs: the
+        // Inline/popup method it uses doesn't support that option; the
+        // JS `callback` is the only completion signal for every channel,
+        // unchanged). This only fires if the Paystack MERCHANT DASHBOARD's
+        // own default callback URL (Settings → Preferences → Payment) is
+        // separately configured to point at this app's origin — Paystack
+        // appends `?reference=...&trxref=...` when it uses that. Not yet
+        // confirmed whether that dashboard setting is configured for this
+        // account; harmless either way (a no-op if it never fires) and left
+        // in place as a safety net for any channel/challenge flow that
+        // leaves the iframe. This is only ever a signal to go verify; the
+        // pendingPaymentRef resolver effect is what actually confirms it
+        // server-side before showing any success state.
+        const paystackRef = params.get('reference') || params.get('trxref');
+        if (paystackRef) {
+          if (!Capacitor.isNativePlatform()) {
+            try {
+              window.location.href = `vents://payment?ref=${encodeURIComponent(paystackRef)}`;
+            } catch { /* unsupported scheme handling — web fallback below still runs */ }
+          }
+          setPendingPaymentRef(paystackRef);
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
         }
@@ -665,14 +739,32 @@ export default function App() {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, [hydrateAuth]);
 
-  // Safety Timeout to prevent stuck splash screen on network/auth hang
+  // Safety Timeout to prevent stuck splash screen on network/auth hang.
+  //
+  // Used to also force setCurrentUser(null) + setScreen('welcome') directly
+  // here -- which meant a hydrateAuth() call that was merely slow (not
+  // actually logged-out: a retried profile fetch, a slow network refresh of
+  // an expired-but-still-valid session) got permanently treated as a
+  // sign-out. Worse, since the Splash Routing Effect below only ever routes
+  // on `screen === 'splash'`, once this handler force-set screen to
+  // 'welcome' that effect could never fire again for this mount -- so even
+  // when hydrateAuth() went on to complete successfully in the background
+  // moments later and called setCurrentUser() with a fully valid, restored
+  // session, nothing was left to route the user back into the app. A
+  // real user with a real session could get stuck on the sign-in screen
+  // permanently, purely because hydration took a few seconds too long.
+  //
+  // Now this only stops BLOCKING (authLoading=false) so the splash isn't
+  // frozen forever -- it never touches currentUser or screen itself.
+  // hydrationTimedOut records that this happened, so the Splash Routing
+  // Effect below can still route a late-arriving currentUser into the app
+  // even after it's already shown Welcome once as a result.
   useEffect(() => {
     const safetyTimeout = setTimeout(() => {
       if (authLoading) {
-        console.warn("Auth hydration safety timeout (15s) triggered. Forcing welcome screen. Check network or InsForge backend latency.");
-        setCurrentUser(null);
+        console.warn("Auth hydration safety timeout (15s) triggered — no longer blocking, but hydrateAuth() keeps running in the background so a valid session can still restore.");
+        setHydrationTimedOut(true);
         setAuthLoading(false);
-        setScreen('welcome');
       }
     }, 15000);
     return () => clearTimeout(safetyTimeout);
@@ -699,8 +791,22 @@ export default function App() {
     // Waits for any in-flight ?event=/?user= deep link fetch — otherwise
     // this could route to home/welcome while the fetch is still running,
     // and if it later fails, the URL is already cleaned with no way back.
-    if (screen === 'splash' && !authLoading && !deepLinkPending) {
+    //
+    // Also fires when hydrationTimedOut is set and screen is still
+    // 'welcome' -- that's the fallback the 15s safety timeout landed the
+    // user on before hydrateAuth() finished. Without this second
+    // condition, a currentUser that arrives after the timeout (a real,
+    // valid, just-slow-to-restore session) would have nothing left to
+    // route it anywhere: this effect used to only ever fire on
+    // `screen === 'splash'`, and the timeout used to move screen straight
+    // to 'welcome' itself, permanently skipping this effect for the rest
+    // of the mount. Scoped to `screen === 'welcome'` specifically (not
+    // any later screen) so it can't yank a user out of something they've
+    // since started doing on purpose, like filling in the signup form.
+    const shouldRoute = (screen === 'splash' || (hydrationTimedOut && screen === 'welcome')) && !authLoading && !deepLinkPending;
+    if (shouldRoute) {
       if (currentUser) {
+        setHydrationTimedOut(false);
         if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
           setUserRole('attendee');
           setScreen('home');
@@ -711,7 +817,7 @@ export default function App() {
           setScreen('home');
           setActiveTab('home');
         }
-      } else {
+      } else if (screen === 'splash') {
         // A signup left mid-verification (app closed/backgrounded before the
         // OTP was entered) resumes straight into the OTP screen instead of
         // dropping the user on the welcome page and losing their place.
@@ -724,14 +830,47 @@ export default function App() {
           setScreen('welcome');
         }
       }
+      // else: screen is already 'welcome' (the timeout's fallback) and
+      // currentUser is still null — nothing to do, already showing the
+      // right thing.
     }
-  }, [screen, authLoading, currentUser, deepLinkPending]);
+  }, [screen, authLoading, currentUser, deepLinkPending, hydrationTimedOut]);
+
+  // Routes to Welcome if currentUser disappears while the user is already
+  // deep in the app (not on splash/welcome/auth, which handle a null
+  // currentUser themselves). Nothing else in this file does this generically
+  // -- every other place that nulls currentUser (handleSignOut, the
+  // suspended-account branch in hydrateAuth) also explicitly manages screen
+  // itself, which was fine while hydrateAuth only ever ran before the app
+  // was shown (mount) or while backgrounded (pageshow/bfcache). Now that it
+  // also re-runs on native resume/foreground while the user may be actively
+  // using an authenticated screen, a session that turns out to have been
+  // genuinely revoked/expired needs somewhere to send the user other than
+  // silently leaving them on a now-unauthenticated version of whatever
+  // screen they were already on.
+  const prevUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const hadUser = prevUserIdRef.current !== null;
+    prevUserIdRef.current = currentUser?.id ?? null;
+    if (hadUser && !currentUser && screen !== 'splash' && screen !== 'welcome' && screen !== 'auth') {
+      setUserRole('attendee');
+      setScreen('welcome');
+      setScreenStack([]);
+      setActiveTab('home');
+    }
+  }, [currentUser, screen]);
 
   useEffect(() => {
     if (!appToastError) return;
     const t = setTimeout(() => setAppToastError(null), 5000);
     return () => clearTimeout(t);
   }, [appToastError]);
+
+  useEffect(() => {
+    if (!appToastSuccess) return;
+    const t = setTimeout(() => setAppToastSuccess(null), 5000);
+    return () => clearTimeout(t);
+  }, [appToastSuccess]);
 
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
@@ -1234,7 +1373,26 @@ export default function App() {
     setActiveTab(tab);
     setScreen(TAB_SCREENS[tab]);
     setScreenStack([]);
-  }, []);
+    // Revalidate Home's event list on every tap of the Home tab — not just
+    // when navigating to Home from elsewhere. The existing "fetch on
+    // screen === 'home'" effect below only fires when `screen` actually
+    // changes value, so tapping Home while already on Home (the common
+    // "tap the active tab to refresh/scroll-to-top" gesture) previously did
+    // nothing — newly published/updated events wouldn't appear without a
+    // full app restart. force=true bypasses fetchEvents' own 5s debounce
+    // (a deliberate tap should always refresh, not be silently skipped),
+    // and running it here means the 5s debounce it also shares with that
+    // other effect naturally prevents a duplicate second query when this
+    // same tap also causes `screen` to change to 'home'.
+    if (tab === 'home') {
+      fetchEvents(true);
+      // Bumping this on every Home tap (not just re-taps) is deliberate:
+      // switching in from another tab always lands scrolled to top anyway
+      // (HomeScreen remounts fresh dbEvents), so this only has a visible
+      // effect exactly when it matters -- tapping Home while already on it.
+      setHomeScrollSignal(s => s + 1);
+    }
+  }, [fetchEvents]);
 
   const handleOrgTabChange = useCallback((tab: OrgTab) => {
     setOrgTab(tab);
@@ -1300,32 +1458,86 @@ export default function App() {
       // go straight through purchase_ticket_with_tokens with a client-side
       // reference, unchanged from before.
       const isFree = (ticket.totalAmount ?? 0) === 0;
-      // Both RPCs now on Supabase, as one unit with CheckoutScreen.tsx's
-      // create_pending_purchase and api/webhook/paystack.ts's charge.success
-      // handler — finalize_pending_purchase reads a pending_purchases row
-      // written by create_pending_purchase, and the webhook calls it too as
-      // a fallback finalizer if this client dies after Paystack charges the
-      // card but before this call runs; all three had to move together so
-      // the webhook looks for the row in the same database it was written
-      // to. The webhook now calls Supabase directly via a project_admin
-      // Postgres connection (api/_lib/projectAdminDb.ts) — see
-      // supabase/migrations/0021_project_admin_login.sql for why (this
-      // project's asymmetric JWT signing keys rule out the usual
-      // PostgREST-role-switching approach).
-      const { data: tokenRows, error: insertError } = isFree
-        ? await supabase.rpc('purchase_ticket_with_tokens', {
-            p_event_id: ticket.event.id,
-            p_ticket_type: ticket.ticketType?.name ?? 'General',
-            p_attendees: attendees,
-            p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
-            p_promo_code: ticket.promoCode || null,
-          })
-        : await supabase.rpc('finalize_pending_purchase', {
-            p_payment_ref: ticket.ticketId,
-          });
-      if (insertError) throw insertError;
 
-      const rows: Array<{ ticket_id: string; token: string }> = Array.isArray(tokenRows) ? tokenRows : [];
+      let rows: Array<{ ticket_id: string; token: string }>;
+
+      if (isFree) {
+        const { data: tokenRows, error: insertError } = await supabase.rpc('purchase_ticket_with_tokens', {
+          p_event_id: ticket.event.id,
+          p_ticket_type: ticket.ticketType?.name ?? 'General',
+          p_attendees: attendees,
+          p_payment_ref: ticket.ticketId ?? `VNT-${Date.now()}`,
+          p_promo_code: ticket.promoCode || null,
+        });
+        if (insertError) throw insertError;
+        rows = Array.isArray(tokenRows) ? tokenRows : [];
+      } else {
+        // Paid purchases: NEVER treat "the Paystack popup called back" as
+        // proof of payment — that's just the client's own JS reporting
+        // success, which is nothing a scripted caller couldn't fake, and
+        // some channels (bank transfer/ussd/mobile money) don't even call
+        // this reliably at all. api/webhook/paystack.ts (?action=verify) is the actual
+        // server-side check: it calls Paystack's own GET /transaction/
+        // verify/:reference with the secret key before finalizing anything.
+        // finalize_pending_purchase/confirm_ticket_payment (real ticket
+        // creation + payment_status='paid') are project_admin-only now
+        // (supabase/migrations/0031_restrict_finalize_pending_purchase.sql)
+        // — this endpoint and the webhook are the only two ways in, so a
+        // client can no longer manufacture a working ticket by calling the
+        // old RPC directly without ever paying.
+        const token = await getAuthToken();
+        const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reference: ticket.ticketId }),
+        });
+        const verifyJson = await verifyRes.json().catch(() => null);
+
+        if (!verifyRes.ok || verifyJson?.status !== 'success') {
+          const reason = verifyJson?.status === 'abandoned'
+            ? 'Payment was not completed. If you were charged, contact support with your reference.'
+            : verifyJson?.status === 'failed'
+            ? 'Payment failed. You have not been charged for this order.'
+            : (verifyJson?.error || 'Could not verify this payment. If you were charged, contact support with your reference.');
+          throw new Error(reason);
+        }
+
+        const ticketIds: string[] = Array.isArray(verifyJson.ticketIds) ? verifyJson.ticketIds : [];
+
+        if (ticketIds.length === 0 && verifyJson.ticketLookupPending) {
+          // Payment IS confirmed at this point (api/webhook/paystack.ts (?action=verify) only
+          // ever sets this flag after confirm_ticket_payment already
+          // succeeded) — a transient failure reading the ticket ids back is
+          // not a payment failure and must never be shown as one. Fall back
+          // to the same recovery UX as the redirect/deep-link path below:
+          // refresh from the buyer's own authenticated connection (which
+          // may well succeed even though the project_admin-side lookup
+          // didn't) and surface success via toast + Wallet rather than the
+          // rich instant-QR success screen this path has no data left for.
+          await fetchUserTickets(currentUser.id);
+          await fetchEvents(true);
+          setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+          setScreenStack([]);
+          setScreen('wallet');
+          return;
+        }
+
+        if (ticketIds.length === 0) {
+          throw new Error('Payment verified, but no ticket was found for this order. Contact support with your reference.');
+        }
+
+        // generate_ticket_token requires auth.uid() = the ticket's owner
+        // (0004_functions.sql) — called here, under the buyer's own
+        // session, rather than from api/webhook/paystack.ts (?action=verify)'s project_admin
+        // connection, which has no user JWT/RLS context to satisfy that
+        // check with.
+        rows = await Promise.all(ticketIds.map(async (id) => {
+          const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
+          if (tokErr) throw tokErr;
+          return { ticket_id: id, token: tok as string };
+        }));
+      }
+
       if (rows.length === 0) {
         throw new Error('No ticket was returned by the server.');
       }
@@ -1364,18 +1576,25 @@ export default function App() {
         reference: ticket.ticketId ?? undefined,
       });
 
-      // 3.6: Ticket confirmation notification
-      supabase.from('notifications').insert([{
-        user_id: currentUser.id,
-        type: 'booking',
-        title: 'Ticket confirmed! 🎉',
-        body: attendees.length > 1
-          ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
-          : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
-        icon: '🎟️',
-      }]).then(({ error: notifyErr }: any) => {
-        if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
-      });
+      // 3.6: Ticket confirmation notification. Paid purchases only — for
+      // those, confirm_ticket_payment (0004_functions.sql, run server-side
+      // by finalizeAndConfirmPurchase above) already inserts this exact
+      // notification itself once payment is confirmed. Free tickets never
+      // touch confirm_ticket_payment at all (purchase_ticket_with_tokens
+      // has no notification of its own), so this remains their only source.
+      if (isFree) {
+        supabase.from('notifications').insert([{
+          user_id: currentUser.id,
+          type: 'booking',
+          title: 'Ticket confirmed! 🎉',
+          body: attendees.length > 1
+            ? `Your ${attendees.length} ${ticket.ticketType?.name ?? 'General'} tickets for ${ticket.event.title} are confirmed.`
+            : `Your ${ticket.ticketType?.name ?? 'General'} ticket for ${ticket.event.title} is confirmed.`,
+          icon: '🎟️',
+        }]).then(({ error: notifyErr }: any) => {
+          if (notifyErr) console.warn('Ticket notify failed:', notifyErr.message);
+        });
+      }
 
       // Wait for tickets and events list refresh
       await fetchUserTickets(currentUser.id);
@@ -1403,6 +1622,58 @@ export default function App() {
       setScreen('payment-failed');
     }
   }, [currentUser, fetchEvents, fetchUserTickets]);
+
+  // Resolves a payment reference that arrived via Paystack's own post-
+  // payment redirect (?reference=/?trxref= on web, vents://payment?ref= on
+  // native — see the URL/deep-link handling above) rather than through
+  // CheckoutScreen's in-iframe JS callback. This is the recovery path for
+  // channels (bank transfer/ussd/mobile money) that leave the iframe
+  // entirely and don't reliably fire that callback, or for a card payment
+  // completed after the app was backgrounded/killed. There's no live
+  // CheckoutScreen state to resume across that gap (event/ticketType/
+  // attendees are gone), so unlike handleCheckoutSuccess this doesn't try
+  // to rebuild a PurchasedTicket for the success screen — it verifies,
+  // waits for the same fetchUserTickets/fetchEvents refresh, and surfaces
+  // the result as a toast; the new ticket then shows up in Wallet like any
+  // other, which is where a user who left the app mid-payment naturally
+  // looks for it. Requires currentUser because create_pending_purchase
+  // itself requires auth.uid() — there is no guest-checkout paid path for
+  // this to apply to.
+  useEffect(() => {
+    if (!pendingPaymentRef || !currentUser) return;
+    const reference = pendingPaymentRef;
+    setPendingPaymentRef(undefined);
+
+    (async () => {
+      try {
+        const token = await getAuthToken();
+        const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ reference }),
+        });
+        const verifyJson = await verifyRes.json().catch(() => null);
+
+        if (!verifyRes.ok || verifyJson?.status !== 'success') {
+          const message = verifyJson?.status === 'abandoned'
+            ? 'Payment was not completed. If you were charged, contact support with your reference.'
+            : verifyJson?.status === 'failed'
+            ? 'Payment failed. You have not been charged for this order.'
+            : (verifyJson?.error || 'Could not verify a recent payment. If you were charged, contact support with your reference.');
+          setAppToastError(message);
+          return;
+        }
+
+        await fetchUserTickets(currentUser.id);
+        await fetchEvents(true);
+        setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+      } catch (err: any) {
+        console.error('Failed to resolve pending payment reference:', err);
+        Sentry.captureException(err);
+        setAppToastError('Could not verify a recent payment. If you were charged, contact support with your reference.');
+      }
+    })();
+  }, [pendingPaymentRef, currentUser, fetchEvents, fetchUserTickets]);
 
   const handleTicketContinue = useCallback((ticketType: TicketType, qty: number) => {
     if (!currentUser) {
@@ -1629,10 +1900,38 @@ export default function App() {
       const sub = await CapacitorApp.addListener('appUrlOpen', ({ url }) => {
         try {
           const parsed = new URL(url);
+          // vents://verify?email=... — completes the handoff started by the
+          // "Verify Account" email button's best-effort vents:// redirect
+          // (App.tsx's verify_email query-param handling above). Same
+          // pre-fill-the-OTP-screen behavior as the web ?verify_email= path,
+          // just reached via the custom scheme instead of a query param.
+          const verifyEmail = parsed.hostname === 'verify' ? parsed.searchParams.get('email') : null;
+          // vents://reset?email=... — same round trip as verify above, for
+          // the "Reset Password" email link's best-effort native redirect
+          // (App.tsx's reset_email query-param handling). Jumps straight to
+          // the forgot-password OTP screen; does NOT re-request a code.
+          const resetEmail = parsed.hostname === 'reset' ? parsed.searchParams.get('email') : null;
+          // vents://payment?ref=... — same round trip, for Paystack's own
+          // post-payment redirect (App.tsx's ?reference=/?trxref= handling
+          // above) on channels that leave the iframe entirely.
+          const paymentRef = parsed.hostname === 'payment' ? parsed.searchParams.get('ref') : null;
           const eventId = parsed.searchParams.get('event');
           const userId = parsed.searchParams.get('user');
           const screen = parsed.searchParams.get('screen');
-          if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
+          if (verifyEmail) {
+            setPendingVerificationEmail(verifyEmail);
+            setAuthMode('signup');
+            setScreen('auth');
+          }
+          else if (resetEmail) {
+            setPendingResetEmail(resetEmail);
+            setAuthMode('forgot');
+            setScreen('auth');
+          }
+          else if (paymentRef) {
+            setPendingPaymentRef(paymentRef);
+          }
+          else if (eventId) pushActionRef.current({ eventId, screen: screen || undefined });
           else if (userId) pushActionRef.current({ userId, screen: screen || undefined });
           else if (screen) pushActionRef.current({ screen });
         } catch (err) {
@@ -1666,6 +1965,32 @@ export default function App() {
     })();
     return () => removeListener?.();
   }, []);
+
+  // Re-validate the session on native resume/foreground. The existing
+  // pageshow/bfcache listener above only covers the web case (a browser tab
+  // actually being frozen and restored) -- a Capacitor WebView backgrounded
+  // by the OS is usually never actually unloaded, so pageshow rarely or
+  // never fires there. Meanwhile Supabase's autoRefreshToken relies on a
+  // JS timer that mobile OSes throttle or pause entirely while the app is
+  // backgrounded, so a session's access token can genuinely go stale during
+  // a long background period with nothing to notice or fix it until some
+  // API call eventually fails. Calling hydrateAuth() again here (it already
+  // safely no-ops into "preserve known-good state" on any transient
+  // failure, per its own getSession()-error handling above) gives the
+  // client a chance to refresh proactively right as the user returns,
+  // instead of only reactively after something breaks.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let removeListener: (() => void) | undefined;
+    (async () => {
+      const { App: CapacitorApp } = await import('@capacitor/app');
+      const sub = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) hydrateAuth();
+      });
+      removeListener = () => sub.remove();
+    })();
+    return () => removeListener?.();
+  }, [hydrateAuth]);
 
   const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
     const enriched = {
@@ -1786,6 +2111,24 @@ export default function App() {
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{appToastError}</span>
           <button
             onClick={() => setAppToastError(null)}
+            style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, lineHeight: 1, padding: 0 }}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
+      {appToastSuccess && (
+        <div
+          style={{
+            position: 'fixed', top: 'calc(16px + env(safe-area-inset-top))', left: '50%', transform: 'translateX(-50%)',
+            zIndex: 10000, background: '#22C55E', borderRadius: '12px', padding: '10px 18px',
+            display: 'flex', alignItems: 'center', gap: '10px', maxWidth: '90vw', boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+          }}
+        >
+          <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>{appToastSuccess}</span>
+          <button
+            onClick={() => setAppToastSuccess(null)}
             style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '15px', fontWeight: 700, lineHeight: 1, padding: 0 }}
             aria-label="Dismiss"
           >
@@ -1939,6 +2282,9 @@ export default function App() {
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
               pendingVerificationEmail={pendingVerificationEmail}
+              onPendingVerificationConsumed={() => setPendingVerificationEmail(undefined)}
+              pendingResetEmail={pendingResetEmail}
+              onPendingResetConsumed={() => setPendingResetEmail(undefined)}
               signupsDisabled={featureFlags.disableSignups}
             />
           )}
@@ -1982,6 +2328,7 @@ export default function App() {
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
               blockedUserIds={[...blockedIds]}
+              scrollToTopSignal={homeScrollSignal}
             />
           )}
           {screen === 'explore' && (

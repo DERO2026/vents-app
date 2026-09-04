@@ -313,6 +313,35 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         amountKobo,
         ref: reference,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
+        channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        // NOT setting callback_url here — confirmed against Paystack's own
+        // documentation (PaystackHQ/documentation, using-popup.md) that
+        // PaystackPop.setup() (the Inline/popup method used here) has no
+        // callback_url parameter at all; that option belongs to a
+        // completely separate, redirect-based ("Standard") integration this
+        // app doesn't use. An earlier version of this code set it anyway,
+        // on the unverified assumption that it would redirect
+        // bank_transfer/ussd/mobile_money back into the app after they
+        // leave the iframe -- Paystack's popup SDK simply ignores unknown
+        // setup() fields, so that never did anything (harmless, but dead
+        // code asserting a behavior that isn't real). The `callback` below
+        // remains the ONLY completion signal this code relies on, exactly
+        // as documented, for every channel -- unchanged from before that
+        // assumption was ever introduced, so the existing web card-payment
+        // flow is untouched.
+        //
+        // The real mechanism for a channel that leaves the iframe (a 3DS
+        // bank challenge page, for example) is Paystack's own MERCHANT
+        // DASHBOARD default callback URL (Settings → Preferences → Payment)
+        // -- separate from anything this code can set, and not yet
+        // confirmed configured for this account. If it's set to
+        // https://getvents.com/, Paystack will redirect there on its own
+        // for scenarios the popup can't call back from, and App.tsx's
+        // ?reference=/?trxref= handling (with its vents:// native handoff)
+        // already resolves that through api/webhook/paystack.ts (?action=verify). That
+        // recovery path is left in place because it's harmless and
+        // correctly does nothing when unreached, not because this code
+        // triggers it directly.
         metadata: {
           event_id: event.id,
           event_title: event.title,
