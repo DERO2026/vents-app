@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<meta name="robots" content="noindex, nofollow" />
+<title>VENTS map embed</title>
+<style>
+  html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; background: #0B0B14; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+// --------------------------------------------------------------------
+// iOS-only Google Maps embed, served from the real https://getvents.com
+// origin so the Maps JS API sees a real HTTPS referrer instead of the
+// Capacitor WKWebView's capacitor://localhost -- see src/lib/mapEmbed.ts
+// and src/lib/googleMaps.ts for the full explanation. This page is loaded
+// ONLY inside an <iframe> from the native iOS app; Android and web never
+// reference it.
+//
+// Deliberately plain, dependency-free JS (no framework, no bundler-managed
+// imports) -- it's a single small static page, and pulling in the app's
+// React/Sentry stack here would mean initializing a second, separate Sentry
+// session inside the iframe for no real benefit. Errors are instead
+// reported back to the parent via postMessage and logged through the
+// app's *existing* Sentry integration (see EventMap.tsx / LocationPicker.tsx).
+//
+// %VITE_GOOGLE_PLACES_API_KEY% is replaced at build time by Vite's HTML env
+// substitution (see vite.config.ts's multi-entry build) -- the exact same
+// mechanism and the exact same public, referrer-restricted browser key
+// already shipped in the main app bundle. Never transmitted via postMessage
+// or exposed in a network request from the *parent* app -- it only ever
+// leaves this frame in the same way it already does today for the web app:
+// as part of the Maps JS API's own outbound request.
+const API_KEY = '%VITE_GOOGLE_PLACES_API_KEY%';
+
+// Hardcoded, not read from document.referrer or any other runtime value --
+// the Capacitor iOS WebView's origin is a fixed platform constant.
+const PARENT_ORIGIN = 'capacitor://localhost';
+
+const params = new URLSearchParams(location.search);
+const mode = params.get('mode') === 'picker' ? 'picker' : 'display';
+const initialLat = params.has('lat') ? Number(params.get('lat')) : null;
+const initialLng = params.has('lng') ? Number(params.get('lng')) : null;
+const initialVenue = params.get('venue') || '';
+const initialAddress = params.get('address') || '';
+
+function postToParent(message) {
+  // Only ever targets the exact known parent origin -- never '*' -- so a
+  // hijacked/misdirected frame can't leak location data anywhere else.
+  if (window.parent !== window) window.parent.postMessage(message, PARENT_ORIGIN);
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// Same gm_authFailure hook as src/lib/googleMaps.ts, adapted to report
+// through postMessage instead of importing the app's Sentry module
+// directly (this page has no bundler/module graph of its own).
+window.gm_authFailure = function () {
+  postToParent({ type: 'vents:authFailure' });
+};
+
+if (!API_KEY || API_KEY.charAt(0) === '%') {
+  // The build-time placeholder was never substituted (e.g. this file was
+  // opened directly, bypassing the Vite build) -- fail loudly to the
+  // parent instead of silently rendering a broken map.
+  postToParent({ type: 'vents:error', message: 'Map embed is missing its API key (build-time substitution did not run).' });
+} else {
+  loadGoogleMaps()
+    .then(initMap)
+    .catch((err) => {
+      postToParent({ type: 'vents:error', message: (err && err.message) || 'Failed to load Google Maps.' });
+    });
+}
+
+// Google's official inline bootstrap snippet (https://goo.gle/js-api-loading),
+// identical in behavior to the one in src/lib/googleMaps.ts -- duplicated
+// here rather than shared, since this page isn't part of the app's JS
+// module graph.
+function loadGoogleMaps() {
+  (function (g) {
+    let h, a, k;
+    const p = 'The Google Maps JavaScript API';
+    const c = 'google', l = 'importLibrary', q = '__ib__';
+    const m = document;
+    let b = window;
+    b = b[c] || (b[c] = {});
+    const d = b.maps || (b.maps = {});
+    const r = new Set();
+    const e = new URLSearchParams();
+    const u = () => h || (h = new Promise(async (f, n) => {
+      a = m.createElement('script');
+      e.set('libraries', [...r] + '');
+      for (k in g) e.set(k.replace(/[A-Z]/g, (t) => '_' + t[0].toLowerCase()), g[k]);
+      e.set('callback', c + '.maps.' + q);
+      a.src = `https://maps.${c}apis.com/maps/api/js?${e}`;
+      d[q] = f;
+      a.onerror = () => (h = n(Error(p + ' could not load.')));
+      m.head.append(a);
+    }));
+    d[l] ? console.warn(p + ' only loads once. Ignoring:', g) : (d[l] = (f, ...n) => r.add(f) && u().then(() => d[l](f, ...n)));
+  })({ key: API_KEY, v: 'weekly' });
+
+  return Promise.race([
+    (async () => {
+      await Promise.all([
+        google.maps.importLibrary('places'),
+        google.maps.importLibrary('geocoding'),
+        google.maps.importLibrary('maps'),
+        google.maps.importLibrary('marker'),
+      ]);
+    })(),
+    new Promise((_, reject) => { window.__ventsAuthReject = reject; }),
+  ]);
+}
+
+let map, marker, geocoder, sessionToken;
+let lastSuggestions = []; // holds the actual prediction objects; parent only ever references these by index
+
+function initMap() {
+  const startLat = initialLat != null ? initialLat : 6.5244;
+  const startLng = initialLng != null ? initialLng : 3.3792; // Lagos default, matches LocationPicker.tsx
+  const hasStart = initialLat != null && initialLng != null;
+
+  map = new google.maps.Map(document.getElementById('map'), {
+    center: { lat: startLat, lng: startLng },
+    zoom: hasStart ? 15 : 6,
+    zoomControl: true,
+    streetViewControl: false,
+    mapTypeControl: false,
+    fullscreenControl: false,
+    disableDefaultUI: mode === 'picker',
+    gestureHandling: mode === 'display' ? 'cooperative' : 'greedy',
+  });
+
+  if (hasStart) placeMarker(startLat, startLng, /* draggable */ mode === 'picker');
+
+  if (mode === 'display' && (initialVenue || initialAddress)) {
+    const info = new google.maps.InfoWindow({
+      content: `<div style="font-family:Inter,sans-serif;font-size:13px;max-width:200px;">
+        ${initialVenue ? `<strong>${escapeHtml(initialVenue)}</strong><br/>` : ''}
+        ${initialAddress ? `<span style="color:#555">${escapeHtml(initialAddress)}</span>` : ''}
+      </div>`,
+    });
+    marker.addListener('click', () => info.open({ map, anchor: marker }));
+    info.open({ map, anchor: marker });
+  }
+
+  if (mode === 'picker') {
+    geocoder = new google.maps.Geocoder();
+    sessionToken = new google.maps.places.AutocompleteSessionToken();
+    map.addListener('click', (e) => {
+      const lat = e.latLng.lat(), lng = e.latLng.lng();
+      placeMarker(lat, lng, true);
+      reverseGeocode(lat, lng);
+    });
+  }
+
+  postToParent({ type: 'vents:ready' });
+}
+
+function placeMarker(lat, lng, draggable) {
+  const pos = { lat, lng };
+  map.panTo(pos);
+  map.setZoom(Math.max(map.getZoom(), 15));
+  if (marker) {
+    marker.setPosition(pos);
+  } else {
+    marker = new google.maps.Marker({ position: pos, map, draggable: !!draggable });
+    if (draggable) {
+      marker.addListener('dragend', () => {
+        const p = marker.getPosition();
+        reverseGeocode(p.lat(), p.lng());
+      });
+    }
+  }
+}
+
+function parseAddressComponents(components) {
+  const byType = (type) => (components || []).find((c) => c.types && c.types.includes(type));
+  const get = (type) => { const c = byType(type); return (c && (c.longText || c.long_name)) || ''; };
+  return {
+    city: get('locality') || get('administrative_area_level_2') || '',
+    state: get('administrative_area_level_1') || '',
+    country: get('country') || '',
+  };
+}
+
+function reverseGeocode(lat, lng) {
+  if (!geocoder) return;
+  geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+    const result = status === 'OK' ? results && results[0] : null;
+    const address = result ? result.formatted_address : '';
+    const { city, state, country } = parseAddressComponents(result && result.address_components);
+    postToParent({ type: 'vents:locationChanged', lat, lng, address, city, state, country });
+  });
+}
+
+async function runSearch(query, requestId) {
+  try {
+    if (typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions !== 'function') return;
+    const response = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+      input: query,
+      includedRegionCodes: ['ng'],
+      sessionToken,
+    });
+    const raw = (response && response.suggestions) || [];
+    lastSuggestions = raw.filter((s) => s.placePrediction).map((s) => s.placePrediction);
+    postToParent({
+      type: 'vents:suggestions',
+      requestId,
+      suggestions: lastSuggestions.map((p, index) => ({
+        index,
+        mainText: (p.mainText && p.mainText.text) || (p.text && p.text.text) || '',
+        secondaryText: (p.secondaryText && p.secondaryText.text) || '',
+      })),
+    });
+  } catch (err) {
+    postToParent({ type: 'vents:error', message: (err && err.message) || 'Search failed.' });
+  }
+}
+
+async function runSelect(index) {
+  const prediction = lastSuggestions[index];
+  if (!prediction) return;
+  try {
+    const place = prediction.toPlace();
+    await place.fetchFields({ fields: ['displayName', 'formattedAddress', 'location', 'addressComponents', 'id'] });
+    const loc = place.location;
+    const lat = loc ? loc.lat() : null;
+    const lng = loc ? loc.lng() : null;
+    const { city, state, country } = parseAddressComponents(place.addressComponents);
+    if (lat != null && lng != null) placeMarker(lat, lng, true);
+    postToParent({
+      type: 'vents:placeSelected',
+      lat, lng,
+      address: place.formattedAddress || place.displayName || '',
+      venue: place.displayName || '',
+      city, state, country,
+      placeId: place.id || '',
+    });
+    sessionToken = new google.maps.places.AutocompleteSessionToken();
+  } catch (err) {
+    postToParent({ type: 'vents:error', message: (err && err.message) || 'Failed to resolve selected place.' });
+  }
+}
+
+// Origin-validated inbound command handler -- refuses any message whose
+// sender isn't exactly the known Capacitor app origin. This is the only
+// thing standing between "the VENTS app" and "any other page/extension
+// that happens to call postMessage on this frame."
+window.addEventListener('message', (event) => {
+  if (event.origin !== PARENT_ORIGIN) return;
+  const data = event.data;
+  if (!data || typeof data.type !== 'string') return;
+  if (data.type === 'vents:search' && typeof data.query === 'string') {
+    runSearch(data.query, data.requestId);
+  } else if (data.type === 'vents:select' && typeof data.index === 'number') {
+    runSelect(data.index);
+  }
+});
+</script>
+</body>
+</html>

@@ -5,6 +5,7 @@ import { loadGoogleMaps } from '../../lib/googleMaps';
 import { matchNigeriaState } from '../../lib/nigeriaLocations';
 import { isOnline } from '../../lib/isOnline';
 import { Sentry } from '../../lib/sentry';
+import { buildMapEmbedUrl, listenToMapEmbed, postToMapEmbed, shouldUseMapEmbed } from '../../lib/mapEmbed';
 
 export interface LocationValue {
   address: string;
@@ -50,7 +51,13 @@ interface Suggestion {
   key: string;
   mainText: string;
   secondaryText: string;
-  prediction: any;
+  // Populated on the direct-Maps-JS path (web/Android) — resolved locally
+  // via prediction.toPlace(). On the iOS embed path this is undefined and
+  // `index` is populated instead, referencing the prediction object that
+  // stays inside embed/map.html's own memory (place predictions aren't
+  // JSON-serializable, so they never cross the postMessage boundary).
+  prediction?: any;
+  index?: number;
 }
 
 // Searchable address/venue picker for Nigerian locations.
@@ -82,6 +89,11 @@ export function LocationPicker({
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
   const geocoderRef = useRef<any>(null);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  // iOS-only: render the real-origin HTTPS iframe embed instead of calling
+  // loadGoogleMaps() directly — see src/lib/mapEmbed.ts. Android and web are
+  // completely unaffected; every branch below only ever runs on iOS native.
+  const useEmbed = shouldUseMapEmbed();
   // Groups requests from the same search into one Google billing session —
   // reset after a selection (or on mount) per Google's session-token
   // guidance, so a whole "type → pick a result" flow bills as one session
@@ -157,6 +169,7 @@ export function LocationPicker({
   // googleMaps.ts). Only flips `status`; the map effect below waits for
   // 'ready' before touching the DOM.
   useEffect(() => {
+    if (useEmbed) return; // handled by the postMessage listener effect below
     let cancelled = false;
     isOnline().then((online) => {
       if (cancelled) return;
@@ -178,9 +191,79 @@ export function LocationPicker({
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [retryKey]);
+  }, [retryKey, useEmbed]);
+
+  // iOS embed path: the map, marker, click/drag handling, autocomplete
+  // search and place-resolution all run inside embed/map.html — this effect
+  // wires its postMessage events onto the exact same state this component
+  // already exposes (status, suggestions, dropdownOpen, onChange), so the
+  // UI below stays identical to the direct-Maps-JS path.
+  useEffect(() => {
+    if (!useEmbed) return;
+    let cancelled = false;
+    isOnline().then((online) => {
+      if (!cancelled) setStatus((s) => (online ? (s === 'offline' ? 'loading' : s) : 'offline'));
+    });
+    const unsubscribe = listenToMapEmbed((msg) => {
+      if (cancelled) return;
+      switch (msg.type) {
+        case 'vents:ready':
+          setStatus('ready');
+          break;
+        case 'vents:authFailure':
+        case 'vents:error': {
+          const err = new Error(msg.type === 'vents:authFailure'
+            ? 'Google Maps authentication failed inside the iOS map embed.'
+            : msg.message);
+          console.error('Location search unavailable (iOS embed):', err);
+          Sentry.captureException(err);
+          isOnline().then((online) => { if (!cancelled) setStatus(online ? 'unavailable' : 'offline'); });
+          setSearching(false);
+          break;
+        }
+        case 'vents:locationChanged': {
+          const { lat, lng, address, city, state, country } = msg;
+          setText(address);
+          onChange({
+            address, lat, lng,
+            city: city || undefined,
+            state: matchNigeriaState(state) || state || undefined,
+            country: country || undefined,
+          });
+          break;
+        }
+        case 'vents:suggestions': {
+          if (msg.requestId !== requestSeqRef.current) return; // stale reply — a newer search already superseded it
+          setSearching(false);
+          if (!isMountedRef.current) return;
+          const mapped: Suggestion[] = msg.suggestions.map((s) => ({
+            key: String(s.index), mainText: s.mainText, secondaryText: s.secondaryText, index: s.index,
+          }));
+          setSuggestions(mapped);
+          setDropdownOpen(mapped.length > 0);
+          break;
+        }
+        case 'vents:placeSelected': {
+          const { lat, lng, address, venue, city, state, country, placeId } = msg;
+          setText(address);
+          onChange({
+            address, lat, lng,
+            venue: venue || undefined,
+            city: city || undefined,
+            state: matchNigeriaState(state) || state || undefined,
+            country: country || undefined,
+            placeId: placeId || undefined,
+          });
+          break;
+        }
+      }
+    });
+    return () => { cancelled = true; unsubscribe(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useEmbed]);
 
   useEffect(() => {
+    if (useEmbed) return; // iframe renders its own map — see embed/map.html
     if (status !== 'ready' || !mapDivRef.current || mapRef.current) return;
     const google = (window as any).google;
     const start = value.lat != null && value.lng != null
@@ -266,9 +349,18 @@ export function LocationPicker({
   // The actual Autocomplete service call. Debounced 300ms from onChange
   // below (step 1 of the requested fix: confirm this is really firing).
   async function fetchSuggestions(query: string) {
-    try {
-      if (status !== 'ready') return;
+    if (status !== 'ready') return;
 
+    if (useEmbed) {
+      // Result arrives asynchronously via the 'vents:suggestions' postMessage
+      // handled in the listener effect above (matched by requestId there).
+      const requestId = ++requestSeqRef.current;
+      setSearching(true);
+      postToMapEmbed(iframeRef.current, { type: 'vents:search', query, requestId });
+      return;
+    }
+
+    try {
       const google = (window as any).google;
       if (typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions !== 'function') {
         return;
@@ -332,6 +424,14 @@ export function LocationPicker({
   async function handleSelect(s: Suggestion) {
     setDropdownOpen(false);
     setSuggestions([]);
+
+    if (useEmbed) {
+      // Result arrives asynchronously via the 'vents:placeSelected'
+      // postMessage handled in the listener effect above.
+      if (s.index != null) postToMapEmbed(iframeRef.current, { type: 'vents:select', index: s.index });
+      return;
+    }
+
     try {
       const place = s.prediction.toPlace();
       await place.fetchFields({
@@ -448,7 +548,25 @@ export function LocationPicker({
         </p>
       )}
 
-      {status === 'ready' && (
+      {useEmbed ? (
+        <iframe
+          ref={iframeRef}
+          title="Location picker map"
+          src={buildMapEmbedUrl({ mode: 'picker', lat: value.lat, lng: value.lng })}
+          style={{
+            width: '100%',
+            height: '160px',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            marginTop: '10px',
+            border: '1px solid rgba(255,255,255,0.08)',
+            display: status === 'ready' ? 'block' : 'none',
+          }}
+          // Least privilege — see EventMap.tsx for the same rationale.
+          sandbox="allow-scripts allow-same-origin"
+          referrerPolicy="strict-origin-when-cross-origin"
+        />
+      ) : status === 'ready' && (
         <div
           ref={mapDivRef}
           style={{
