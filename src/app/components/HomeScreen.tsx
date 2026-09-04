@@ -4,7 +4,7 @@ import {
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
-  ChevronRight, ChevronDown,
+  ChevronDown,
 } from 'lucide-react';
 import { Event } from './types';
 import { supabase } from '../../lib/supabase';
@@ -1433,6 +1433,20 @@ export function HomeScreen({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Services entry point (Stage C) -- moved here from a banner
+              below the event feed. Same premium, low-noise treatment as
+              the other header icon buttons (36x36 circle) rather than a
+              second, competing full-width surface -- Services is one tap
+              away without taking any space from the event grid. */}
+          {onServicesPress && (
+            <button
+              onClick={onServicesPress}
+              aria-label="Services"
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Sparkles size={15} color="#C4C9E0" />
+            </button>
+          )}
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
@@ -1770,31 +1784,6 @@ export function HomeScreen({
                 </div>
               )}
             </div>
-
-            {/* Discover Services -- a small, secondary entry point below the
-                event feed rather than a full-width banner competing with
-                Featured/Trending/the grid for top-of-fold attention.
-                Events stay the clear primary purpose of Home; Services
-                remains one tap away without narrowing the space events get. */}
-            {onServicesPress && (
-              <div className="px-4 mt-2">
-                <button
-                  onClick={onServicesPress}
-                  className="active:opacity-70"
-                  style={{
-                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                    padding: '12px 14px', borderRadius: '14px',
-                    background: 'rgba(255,255,255,0.02)',
-                    border: '1px solid rgba(255,255,255,0.05)',
-                    cursor: 'pointer', textAlign: 'left',
-                  }}
-                >
-                  <Sparkles size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
-                  <span style={{ flex: 1, color: '#8B8FA8', fontSize: '12.5px', fontWeight: 600 }}>Also on VENTS: Services — beauty, fashion &amp; more</span>
-                  <ChevronRight size={14} color="#5A5A7A" style={{ flexShrink: 0 }} />
-                </button>
-              </div>
-            )}
           </>
         )}
       </div>
