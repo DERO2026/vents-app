@@ -15,6 +15,7 @@ export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
     category: row.category,
     description: row.description ?? null,
     location: row.location ?? null,
+    country: row.country || '',
     photoUrls: row.photo_urls || [],
     startingPrice: row.starting_price ?? null,
     startingPriceCurrency: row.starting_price_currency ?? null,
@@ -29,15 +30,23 @@ export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
 }
 
 const SERVICE_PROVIDER_COLUMNS =
-  'id, user_id, business_name, category, description, location, photo_urls, starting_price, starting_price_currency, services_offered, offers_home_service, offers_delivery, offers_same_day, status, created_at, updated_at';
+  'id, user_id, business_name, category, description, location, country, photo_urls, starting_price, starting_price_currency, services_offered, offers_home_service, offers_delivery, offers_same_day, status, created_at, updated_at';
 
 // "Providers near you" / category browsing: public discovery, RLS already
 // restricts this to status='approved' rows for anon/authenticated (see
 // service_providers_public_select_approved, 0034). Ordered by created_at
 // DESC -- v1 has no real ranking signal, per the approved decision to not
 // imply paid/algorithmic featuring.
+//
+// `country` filters on the structured ISO 3166-1 alpha-2 column
+// (0036_service_providers_country.sql), not the free-text `location`
+// field. A listing saved with country = '' (predates the column, or
+// onboarding hasn't set it yet) never matches a real ISO code, so it's
+// naturally excluded from a country-scoped query -- not shown with a
+// guessed country.
 export async function fetchApprovedServiceProviders(opts: {
   category?: string;
+  country?: string;
   limit?: number;
 } = {}): Promise<ServiceProvider[]> {
   let query = supabase
@@ -47,6 +56,7 @@ export async function fetchApprovedServiceProviders(opts: {
     .order('created_at', { ascending: false });
 
   if (opts.category) query = query.eq('category', opts.category);
+  if (opts.country) query = query.eq('country', opts.country);
   if (opts.limit) query = query.limit(opts.limit);
 
   const { data, error } = await query;
@@ -63,18 +73,4 @@ export async function fetchServiceProviderById(id: string): Promise<ServiceProvi
     .maybeSingle();
   if (error) throw error;
   return data ? mapDbServiceProviderToFrontend(data) : null;
-}
-
-// Best-effort discovery-country filter. service_providers has no
-// structured country column in the v1 schema (0034_service_providers.sql
-// only has a free-text `location`) -- adding one is schema work, out of
-// scope for the discovery-UI-only stage this function belongs to. Until a
-// structured field exists, this does a simple case-insensitive substring
-// match against `location`, which will legitimately return zero results
-// for most (provider, country) pairs -- that's expected and handled by
-// the "no providers in this country yet" empty state, not a bug to hide.
-export function filterProvidersByCountryName(providers: ServiceProvider[], countryName: string): ServiceProvider[] {
-  const q = countryName.trim().toLowerCase();
-  if (!q) return providers;
-  return providers.filter((p) => (p.location || '').toLowerCase().includes(q));
 }

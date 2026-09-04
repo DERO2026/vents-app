@@ -4,7 +4,7 @@ import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
-import { fetchApprovedServiceProviders, filterProvidersByCountryName } from '../../lib/serviceProviders';
+import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
@@ -107,22 +107,18 @@ export function ServicesHomeScreen({
     let cancelled = false;
     setProviders(null);
     setLoadError(false);
-    fetchApprovedServiceProviders({ limit: 20 })
+    fetchApprovedServiceProviders({ limit: 20, country: activeIso })
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };
-  }, []);
-
-  const nearYou = useMemo(() => {
-    if (!providers) return [];
-    return activeCountry ? filterProvidersByCountryName(providers, activeCountry.name) : providers;
-  }, [providers, activeCountry]);
+  }, [activeIso]);
 
   const filteredNearYou = useMemo(() => {
+    if (!providers) return [];
     const q = search.trim().toLowerCase();
-    if (!q) return nearYou;
-    return nearYou.filter((p) => p.businessName.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
-  }, [nearYou, search]);
+    if (!q) return providers;
+    return providers.filter((p) => p.businessName.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
+  }, [providers, search]);
 
   return (
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>

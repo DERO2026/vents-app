@@ -134,6 +134,11 @@ export interface ServiceProvider {
   category: string;
   description?: string | null;
   location?: string | null;
+  // ISO 3166-1 alpha-2 code (e.g. 'NG', 'QA', 'US'), or '' for a listing
+  // saved before this field existed / before onboarding sets it -- the
+  // structured field discovery filters on (see 0036_service_providers_
+  // country.sql). Never derived from `location` (free text, display only).
+  country: string;
   photoUrls: string[];
   startingPrice?: number | null;
   startingPriceCurrency?: string | null;
