@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
-import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { supabase, getAuthToken } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
@@ -1374,8 +1373,17 @@ export default function App() {
   const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
   const [exploreTab, setExploreTab] = useState<'people' | 'chats'>('people');
 
+  // Legacy relic of the pre-country-select signup flow (see AuthScreen's
+  // signupState, which is now what actually drives the signup form's own
+  // state field) -- nothing live ever calls setSelectedState anymore
+  // (HomeScreen's selectedState/onStateChange props are unread), so this
+  // was previously just a silent fallback that could inject a hardcoded
+  // Nigerian state ('Abia', NIGERIA_STATES[0]) into a non-Nigerian
+  // signup's `state` field if signupState was ever empty (AuthScreen.tsx:
+  // `state: signupState || selectedState || ...`). Defaulting to '' means
+  // that fallback can never silently supply the wrong country's state.
   const [selectedState, setSelectedState] = useState<string>(() => {
-    return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
+    return localStorage.getItem('selected_state_preference') || '';
   });
 
   // Account/home country chosen via CountrySelectScreen (ISO 3166-1 alpha-2,
@@ -2039,7 +2047,14 @@ export default function App() {
     } catch { /* ignore — don't block login on interests check failure */ }
   }, []);
 
-  const handleSignOut = useCallback(async () => {
+  // toForgotPassword: used by ChangePasswordScreen's "I don't remember my
+  // current password" link -- signs out (a user who doesn't know their
+  // current password can't safely stay in an authenticated Change Password
+  // flow anyway) and lands directly on the login screen with the existing
+  // forgot-password flow pre-selected, instead of just Welcome. Does not
+  // change what that flow itself requires (still email OTP-gated) -- this
+  // only saves the extra "tap Sign In, then tap Forgot Password" steps.
+  const handleSignOut = useCallback(async (toForgotPassword?: boolean) => {
     setAuthLoading(true);
     analytics.loggedOut();
     // Drop this device's push token so a signed-out user stops receiving pushes.
@@ -2052,9 +2067,14 @@ export default function App() {
     }
     setCurrentUser(null);
     setUserRole('attendee');
-    setScreen('welcome');
     setScreenStack([]);
     setActiveTab('home');
+    if (toForgotPassword) {
+      setAuthMode('forgot');
+      setScreen('auth');
+    } else {
+      setScreen('welcome');
+    }
     setAuthLoading(false);
   }, [currentUser?.id]);
 
@@ -2564,6 +2584,7 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onSignOut={handleSignOut}
+              onForgotPassword={() => handleSignOut(true)}
               onNavigate={navigateTo}
               isDark={true}
               onToggleDark={() => {}}

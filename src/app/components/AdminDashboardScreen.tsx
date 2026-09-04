@@ -16,6 +16,7 @@ import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as p
 import { AdminActionsTab } from './AdminActionsTab';
 import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
+import { appVersionLabel } from '../../lib/appVersion';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -3426,7 +3427,7 @@ export function AdminDashboardScreen({
 
           {/* Footer */}
           <p style={{ color: '#333', fontSize: '10px', textAlign: 'center', marginTop: '4px' }}>
-            VENTS v1.1.0 | © VENTS LTD · All root actions are immutably logged.
+            {appVersionLabel()} · All root actions are immutably logged.
           </p>
         </div>
       )}

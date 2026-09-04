@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Zap, Ticket, Globe } from 'lucide-react';
 import { VentsLogo } from './VentsLogo';
+import { appVersionLabel } from '../../lib/appVersion';
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;
@@ -237,7 +238,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
 
         {/* Footer */}
         <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px', marginBottom: 0, flexShrink: 0 }}>
-          VENTS v1.1.0 | © VENTS LTD
+          {appVersionLabel()}
         </p>
       </div>
     </div>

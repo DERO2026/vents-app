@@ -7,7 +7,6 @@ import {
   Ticket,
   ChevronRight,
   Star,
-  LogOut,
   Shield,
   MapPin,
   Users,
@@ -22,11 +21,13 @@ import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { getVcBalance } from '../../lib/vcBalanceCache';
+import { COUNTRY_CODES } from '../../lib/countries';
+import { AppVersionFooter } from './shared/AppVersionFooter';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean; country?: string } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -530,7 +531,20 @@ export function ProfileScreen({
                 <div className="flex items-center gap-1 mt-0.5">
                   <MapPin size={12} color="#8B8FA8" />
                   {currentUser?.state ? (
-                    <span style={{ color: '#8B8FA8', fontSize: '12px' }}>{currentUser.state}, Nigeria</span>
+                    <span style={{ color: '#8B8FA8', fontSize: '12px' }}>
+                      {currentUser.state}
+                      {(() => {
+                        // Unset (legacy pre-country-column accounts) falls
+                        // back to Nigeria -- accurate historical default,
+                        // same reasoning as ProfileDetailsScreen's
+                        // isNigeriaAccount. Previously this was a bare
+                        // hardcoded ", Nigeria" regardless of the account's
+                        // actual country.
+                        const iso = currentUser.country || 'NG';
+                        const name = COUNTRY_CODES.find((c) => c.iso === iso)?.name;
+                        return name ? `, ${name}` : '';
+                      })()}
+                    </span>
                   ) : (
                     <button
                       onClick={() => onNavigate('settings')}
@@ -832,26 +846,12 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* Sign out */}
-        <div className="px-4 mb-5">
-          <button
-            onClick={onSignOut}
-            className="w-full flex items-center justify-center gap-2 p-4"
-            style={{
-              background: 'rgba(239,68,68,0.1)',
-              borderRadius: '14px',
-              border: '1px solid rgba(239,68,68,0.2)',
-              cursor: 'pointer',
-            }}
-          >
-            <LogOut size={16} color="#EF4444" />
-            <span style={{ color: '#EF4444', fontSize: '14px', fontWeight: 600 }}>Sign Out</span>
-          </button>
-        </div>
+        {/* Sign Out lives only in Settings now -- a destructive account
+            action showing up twice (once here, once in Settings) was
+            redundant and inconsistent with every other account-management
+            action, which is Settings-only. */}
 
-        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '8px', paddingBottom: '4px' }}>
-          VENTS v1.1.0 | © VENTS LTD
-        </p>
+        <AppVersionFooter />
       </div>
     </div>
   );

@@ -22,11 +22,17 @@ import { NIGERIA_STATES } from './StateSelectScreen';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { appVersionLabel } from '../../lib/appVersion';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
   onBack: () => void;
   onSignOut: () => void;
+  // Signs out and lands directly on the login screen with "Forgot
+  // Password" pre-selected -- used by Change Password's "don't remember
+  // your current password" link. Optional/falls back to onSignOut so this
+  // screen degrades gracefully if a caller doesn't wire it.
+  onForgotPassword?: () => void;
   onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
@@ -676,6 +682,10 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [stateValue, setStateValue] = useState('');
   const [showStateModal, setShowStateModal] = useState(false);
+  // Unset (legacy pre-country-column accounts) defaults to Nigeria, since
+  // every account that predates users.country was signed up Nigeria-only --
+  // an accurate historical fallback, not an invented one.
+  const isNigeriaAccount = !currentUser?.country || currentUser.country === 'NG';
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1178,12 +1188,28 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 )}
               </div>
               <div>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Location</p>
-                <PickerField
-                  value={stateValue}
-                  placeholder="Select your state"
-                  onOpen={() => setShowStateModal(true)}
-                />
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Region / Province</p>
+                {/* Nigeria (including legacy accounts predating users.country,
+                    which were exclusively Nigerian at the time) gets the
+                    curated NIGERIA_STATES picker; every other account gets a
+                    free-text field -- same fallback AuthScreen's signup form
+                    already uses for non-Nigeria countries. Previously this
+                    always showed the Nigeria picker regardless of
+                    currentUser.country. */}
+                {isNigeriaAccount ? (
+                  <PickerField
+                    value={stateValue}
+                    placeholder="Select your state"
+                    onOpen={() => setShowStateModal(true)}
+                  />
+                ) : (
+                  <input
+                    value={stateValue}
+                    onChange={(e) => setStateValue(e.target.value)}
+                    placeholder="State / Region / Province"
+                    style={inputStyle}
+                  />
+                )}
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Bio</p>
@@ -1411,7 +1437,7 @@ function PasswordField({
   );
 }
 
-function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: string } | null; onBack: () => void }) {
+function ChangePasswordScreen({ currentUser, onBack, onForgotPassword }: { currentUser: { email: string } | null; onBack: () => void; onForgotPassword?: () => void }) {
   const [step, setStep] = useState<'verify' | 'otp'>('verify');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1538,6 +1564,20 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
             placeholder="Enter current password" show={showOld} onToggleShow={() => setShowOld(v => !v)}
             autoComplete="current-password" enterKeyHint="next"
           />
+          <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '-8px 0 0', lineHeight: 1.5 }}>
+            Don't remember your current password?{' '}
+            {onForgotPassword ? (
+              <button
+                type="button"
+                onClick={onForgotPassword}
+                style={{ background: 'none', border: 'none', padding: 0, color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Sign out and use Forgot Password
+              </button>
+            ) : (
+              <>Use <strong style={{ color: '#C4C9E0' }}>Forgot Password</strong> on the login screen instead.</>
+            )}
+          </p>
 
           <PasswordField
             label="NEW PASSWORD" value={newPassword} onChange={setNewPassword}
@@ -1624,6 +1664,7 @@ export function SettingsScreen({
   currentUser,
   onBack,
   onSignOut,
+  onForgotPassword,
   onNavigate,
   isDark,
   onToggleDark,
@@ -1692,7 +1733,7 @@ export function SettingsScreen({
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
-  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
   if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onContactSupport={() => setSubScreen('help')} />;
 
@@ -1821,7 +1862,7 @@ export function SettingsScreen({
         </div>
 
         <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
-          VENTS v1.1.0 | © VENTS LTD
+          {appVersionLabel()}
         </p>
       </div>
 

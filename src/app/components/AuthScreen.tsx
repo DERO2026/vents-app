@@ -220,11 +220,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(
     (selectedCountryIso && countryByIso(selectedCountryIso)?.code) || REGION.phoneCountryCode
   );
-  // NIGERIA_STATES only makes sense for a Nigerian phone/account — every
-  // other country falls back to a free-text region field rather than a
+  // NIGERIA_STATES only makes sense for a Nigerian account -- every other
+  // country falls back to a free-text region field rather than a
   // fabricated or incorrect subdivision list (no per-country states/
-  // provinces data exists yet for the other ~189 countries).
-  const isNigeriaSelected = (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso === 'NG';
+  // provinces data exists yet for the other ~189 countries). Driven by
+  // selectedCountryIso (the account/home country chosen in
+  // CountrySelectScreen), NOT phoneCountryCode -- a phone number's dial
+  // code is not the same signal as the account's country (e.g. a Rwandan
+  // account previously got the Nigerian state picker if phoneCountryCode
+  // still happened to read Nigeria's +234, which is exactly the bug this
+  // fixes), and falls back to the phone country only when no account
+  // country is available yet (e.g. very early in the form, or a mode
+  // where selectedCountryIso isn't meaningful).
+  const isNigeriaSelected = selectedCountryIso
+    ? selectedCountryIso === 'NG'
+    : (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso === 'NG';
   const handlePhoneCountryChange = (code: string) => {
     // Switching country must not leave a stale Nigerian state (or a
     // free-text value typed for a different country) behind.
@@ -2050,13 +2060,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   <input
                     type="date"
                     value={dob}
+                    // type="date" is already the right choice for both iOS
+                    // (native wheel picker) and desktop (native calendar) --
+                    // no custom JS date picker needed. max already blocks
+                    // "under 13"/future dates; min bounds the other end so
+                    // the native year field (freely typable on desktop
+                    // browsers) can't be walked back to an absurd date like
+                    // year 1000 -- 120 years covers any real signup.
+                    min={new Date(Date.now() - 120 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     max={new Date(Date.now() - 13 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     onChange={(e) => {
                       const v = e.target.value;
                       setDob(v);
                       if (v) {
                         const age = Math.floor((Date.now() - new Date(v).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-                        setDobError(age < 13 ? 'You must be at least 13 years old.' : null);
+                        setDobError(age < 13 ? 'You must be at least 13 years old.' : age > 120 ? 'Please enter a valid date of birth.' : null);
                       } else {
                         setDobError(null);
                       }

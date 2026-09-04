@@ -1436,33 +1436,40 @@ export function HomeScreen({
           })}
         </div>
 
-        {/* Discover Services entry banner -- one card, not a full section,
-            per the approved Services entry-point decision (banner in
-            feed, not a 5th BottomNav tab). */}
+        {/* Discover Services entry banner -- one restrained card, not a full
+            section, per the approved Services entry-point decision (banner
+            in feed, not a 5th BottomNav tab). Deliberately matches the flat,
+            border-only card language the rest of Home already uses (see
+            FeedCard above: #090514 flat fill, 1px hairline border, no
+            gradients) rather than the gradient-washed treatment this had
+            before -- that read as decorative/generic next to the real event
+            cards, not consistent with them. */}
         {onServicesPress && (
           <div className="px-4 mb-6">
             <button
               onClick={onServicesPress}
+              className="active:opacity-80"
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
-                padding: '14px', borderRadius: '20px',
-                background: 'linear-gradient(135deg, rgba(123,47,190,0.14), rgba(79,70,229,0.06))',
-                border: '1px solid rgba(255,255,255,0.06)',
+                padding: '14px', borderRadius: '16px',
+                background: '#090514',
+                border: '1px solid rgba(255,255,255,0.07)',
                 cursor: 'pointer', textAlign: 'left',
+                transition: 'opacity 0.15s ease',
               }}
             >
               <div style={{
-                width: '44px', height: '44px', borderRadius: '14px', flexShrink: 0,
-                background: 'linear-gradient(135deg, rgba(123,47,190,0.35), rgba(79,70,229,0.35))',
+                width: '40px', height: '40px', borderRadius: '12px', flexShrink: 0,
+                background: 'rgba(255,255,255,0.06)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
-                <Sparkles size={20} color="#F0F0FF" />
+                <Sparkles size={18} color="#A78BFA" />
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Inter, sans-serif', margin: 0 }}>Discover Services</p>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '2px 0 0' }}>Beauty, events, fashion &amp; more — near you</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, fontFamily: 'Inter, sans-serif', margin: 0 }}>Discover Services</p>
+                <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Beauty, events, fashion &amp; more near you</p>
               </div>
-              <ChevronRight size={18} color="#5A5A7A" />
+              <ChevronRight size={16} color="#5A5A7A" />
             </button>
           </div>
         )}

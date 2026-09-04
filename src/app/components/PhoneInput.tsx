@@ -147,7 +147,21 @@ export function PhoneInput({
           <ChevronDown size={12} color="#8B8FA8" />
         </button>
         <input
-          type="tel"
+          // Deliberately type="text" + inputMode="tel", not type="tel" --
+          // type="tel" is exactly the signal iOS Safari (and some Android
+          // keyboards) use to show the QuickType contact-suggestion strip
+          // above the keyboard while typing, which is what this was fixing.
+          // inputMode="tel" alone still brings up the numeric phone keypad,
+          // so entry UX is unchanged; autoComplete/autoCorrect/autoCapitalize
+          // are all suppressed too since none of them make sense for a
+          // digits-only national-number field with its own country-code
+          // selector right next to it.
+          type="text"
+          inputMode="tel"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           placeholder={placeholder || selected.format}
           value={displayValue}
           onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, maxDigits))}
