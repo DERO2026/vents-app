@@ -627,6 +627,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           is_verified: finalProfile.is_verified === true,
           vc_badge: finalProfile.vc_badge,
           is_service_provider: finalProfile.is_service_provider === true,
+          country: finalProfile.country || payload.country || undefined,
         });
         return;
       }
@@ -2169,36 +2170,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                     />
                   )}
 
-                  {/* Role picker — hidden if role was pre-selected from RoleSelectScreen */}
-                  {!userRole && <div style={{ marginTop: '4px' }}>
-                    <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Select Role
-                    </label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      {(['attendee', 'organizer'] as const).map((r) => (
-                        <button
-                          key={r}
-                          type="button"
-                          onClick={() => setRole(r)}
-                          style={{
-                            flex: 1,
-                            background: role === r ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
-                            border: role === r ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: '12px',
-                            padding: '12px',
-                            color: '#fff',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            boxShadow: role === r ? '0 4px 12px rgba(123,47,190,0.3)' : 'none',
-                            transition: 'all 0.2s ease',
-                          }}
-                        >
-                          {r === 'attendee' ? 'Attendee' : 'Organiser'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>}
                 </>
               )}
             </div>

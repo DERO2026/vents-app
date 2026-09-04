@@ -156,7 +156,6 @@ export type Screen =
   | 'splash'
   | 'welcome'
   | 'country-select'
-  | 'role-select'
   | 'auth'
   | 'home'
   | 'explore'

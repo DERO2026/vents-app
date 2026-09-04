@@ -16,7 +16,6 @@ import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
 
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { RoleSelectScreen } from './components/RoleSelectScreen';
 import { CountrySelectScreen } from './components/CountrySelectScreen';
 import { ServicesHomeScreen } from './components/ServicesHomeScreen';
 import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
@@ -2249,10 +2248,10 @@ export default function App() {
                 setPendingSignup(true);
                 setAuthMode('signup');
                 // Registration no longer forces an Attendee/Organizer choice
-                // up front (see RoleSelectScreen) -- every new account starts
-                // as 'attendee'. Existing users can still become an Organizer
-                // afterwards via ProfileScreen's "Become an Organizer" request
-                // flow (onBecomeOrganizer below), which is unaffected by this.
+                // up front -- every new account starts as 'attendee'.
+                // Existing users can still become an Organizer afterwards
+                // via ProfileScreen's "Become an Organizer" request flow
+                // (onBecomeOrganizer below), which is unaffected by this.
                 setUserRole('attendee');
                 navigateTo('country-select');
               }}
@@ -2351,41 +2350,6 @@ export default function App() {
               currentUser={{ id: currentUser.id, country: currentUser.country }}
               onBack={goBack}
               onSaved={() => goBack()}
-            />
-          )}
-          {screen === 'role-select' && (
-            <RoleSelectScreen
-              onBack={goBack}
-              onSelect={async (role) => {
-                if (currentUser) {
-                  // Already logged in — switch mode directly without re-auth
-                  if (role === 'organizer') {
-                    setUserRole('organizer');
-                    setOrgTab('home');
-                    setActiveTab('home');
-                    setScreen('home');
-                    setScreenStack([]);
-                    if (currentUser.id && currentUser.role !== 'admin') {
-                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
-                      localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                      try {
-                        await supabase.rpc('promote_to_organizer');
-                      } catch (err) {
-                        console.error('Failed to promote to organizer:', err);
-                        Sentry.captureException(err);
-                      }
-                    }
-                  } else {
-                    setUserRole('attendee');
-                    setScreen('home');
-                    setActiveTab('home');
-                    setScreenStack([]);
-                  }
-                } else {
-                  setUserRole(role);
-                  navigateTo('auth');
-                }
-              }}
             />
           )}
           {screen === 'auth' && (
