@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
@@ -167,6 +167,15 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash');
+  // Flips true the first time the user reaches Home, then stays true for
+  // the rest of the session -- see the HomeScreen render call site below,
+  // which uses this (instead of `screen === 'home'`) to decide whether to
+  // mount HomeScreen at all, so it mounts once and is only ever hidden/
+  // shown afterward, never destroyed and recreated on every tab switch.
+  const [homeEverMounted, setHomeEverMounted] = useState(false);
+  useEffect(() => {
+    if (screen === 'home') setHomeEverMounted(true);
+  }, [screen]);
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -918,6 +927,17 @@ export default function App() {
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  // Stable array identity for HomeScreen's blockedUserIds prop -- passing
+  // `[...blockedIds]` inline at the render call site made a brand new array
+  // (and downstream, via HomeScreen's own `useMemo(() => new Set(...), [blockedUserIds])`,
+  // a brand new Set) on every single App re-render, not just when the block
+  // list itself changed. That unstable Set reference feeds directly into
+  // HomeScreen's country/category/price filter effect's dependency array,
+  // so any unrelated App-level state change (a 15s timer tick, an unread
+  // count update, etc.) was silently re-triggering that effect -- and its
+  // skeleton -- while the user was just browsing. Only recomputed when
+  // `blockedIds` itself changes.
+  const blockedUserIdsArray = useMemo(() => [...blockedIds], [blockedIds]);
 
   // Fetch the user's blocked-organizer list so the main feed can exclude
   // their events (App Store Guideline 1.2 UGC requirement).
@@ -1105,11 +1125,22 @@ export default function App() {
   }, [currentUser?.id, currentUser?.full_name]);
 
   const lastFetchRef = useRef<number>(0);
+  // Request-ordering guard: force=true (handleTabChange's Home-tap refresh,
+  // several "revalidate after X" call sites) bypasses the 5s debounce above,
+  // so two overlapping fetchEvents calls are possible (e.g. a fast
+  // double-tap on the Home tab). Without this, whichever request's series
+  // of awaits happens to resolve last always wins and sets dbEvents,
+  // regardless of which one was actually started last -- an older request
+  // finishing after a newer one could silently replace fresher data with
+  // stale data. Bumped once per call; a response only gets to write state
+  // if it's still the most recently *started* call by the time it resolves.
+  const fetchRequestIdRef = useRef(0);
   const fetchEvents = useCallback(async (force = false, loadMore = false) => {
     if (!force && !loadMore && Date.now() - lastFetchRef.current < 5000) {
       return;
     }
     lastFetchRef.current = Date.now();
+    const requestId = ++fetchRequestIdRef.current;
     setLoadingEvents(true);
     try {
       const nextPage = loadMore ? eventsPageRef.current + 1 : 0;
@@ -1146,6 +1177,12 @@ export default function App() {
       const { data: dbEventsData, error: dbEventsError } = await eventsQuery.range(start, end);
 
       if (dbEventsError) throw dbEventsError;
+
+      // A newer fetchEvents call has started since this one began -- its
+      // response (whenever it lands) is the one that should win. Bail out
+      // before touching any state so this stale response can't stomp
+      // fresher data or flip loading back on/off out of turn.
+      if (requestId !== fetchRequestIdRef.current) return;
 
       if (dbEventsData) {
         const hasMore = dbEventsData.length === 20;
@@ -1289,7 +1326,10 @@ export default function App() {
       console.error('Failed to fetch events / rank feed centrally:', err);
       Sentry.captureException(err);
     } finally {
-      setLoadingEvents(false);
+      // Same guard as above -- a stale request resolving (success or error)
+      // after a newer one has already started must not flip loading back
+      // off while that newer request is still in flight.
+      if (requestId === fetchRequestIdRef.current) setLoadingEvents(false);
     }
   }, []);
 
@@ -1429,8 +1469,9 @@ export default function App() {
     if (tab === 'home') {
       fetchEvents(true);
       // Bumping this on every Home tap (not just re-taps) is deliberate:
-      // switching in from another tab always lands scrolled to top anyway
-      // (HomeScreen remounts fresh dbEvents), so this only has a visible
+      // HomeScreen now stays mounted across tab switches (see homeEverMounted
+      // above) rather than remounting, so scrollToTopSignal is what actually
+      // scrolls it back to top on switch-in -- this only has a visible
       // effect exactly when it matters -- tapping Home while already on it.
       setHomeScrollSignal(s => s + 1);
     } else if (wasAlreadyActive) {
@@ -2428,8 +2469,22 @@ export default function App() {
           )}
 
           {/* ── ATTENDEE MAIN TABS ── */}
-          {screen === 'home' && (
-            <HomeScreen
+          {/* HomeScreen mounts once (the first time the user reaches Home)
+              and then stays mounted for the rest of the session -- switching
+              to another tab/screen only hides it (display:none), it no
+              longer unmounts. Previously `{screen === 'home' && <HomeScreen/>}`
+              destroyed and recreated the component on every tab switch,
+              which reset its local filter/search state and re-ran its
+              mount-time fetch every time, on top of the dedicated
+              `screen === 'home'` fetch effect and handleTabChange's own
+              refresh-on-tap -- three redundant fetch triggers stacked on
+              top of a full remount. Home's own scrollToTopSignal prop
+              already handles "tapping the active tab scrolls to top"
+              independently of mount/unmount, so nothing here changes that
+              behavior. */}
+          {homeEverMounted && (
+            <div style={{ display: screen === 'home' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <HomeScreen
               onEventPress={handleEventPress}
               savedEvents={savedEvents}
               onToggleSave={handleToggleSave}
@@ -2467,9 +2522,10 @@ export default function App() {
               hasMore={hasMoreEvents}
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
-              blockedUserIds={[...blockedIds]}
+              blockedUserIds={blockedUserIdsArray}
               scrollToTopSignal={homeScrollSignal}
             />
+            </div>
           )}
           {screen === 'explore' && (
             <ExploreScreen

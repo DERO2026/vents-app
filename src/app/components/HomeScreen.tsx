@@ -1053,6 +1053,14 @@ export function HomeScreen({
     || countryFilter !== 'all'
     || priceFilter !== 'all';
 
+  // Narrowed to the single primitive field this effect actually reads off
+  // currentUser -- depending on the whole `currentUser` object below meant
+  // any unrelated update to it (role sync, profile edits, etc. all replace
+  // it with a new object reference even when date_of_birth is unchanged)
+  // re-ran this fetch, re-showing the filter-grid skeleton for no reason
+  // related to what the user was doing.
+  const currentUserDob = (currentUser as any)?.date_of_birth;
+
   useEffect(() => {
     const q = searchQuery.trim();
     if (q || !filtersActive) { setFilterResults(null); setFilterLoading(false); return; }
@@ -1060,9 +1068,8 @@ export function HomeScreen({
     setFilterLoading(true);
     (async () => {
       try {
-        const userDob = (currentUser as any)?.date_of_birth;
-        const userAgeYears = userDob
-          ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        const userAgeYears = currentUserDob
+          ? Math.floor((Date.now() - new Date(currentUserDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 99;
 
         let query = supabase
@@ -1118,7 +1125,7 @@ export function HomeScreen({
       }
     })();
     return () => { cancelled = true; };
-  }, [searchQuery, activeCategory, priceFilter, stateFilter, countryFilter, currentUser, blockedIdSet, filtersActive]);
+  }, [searchQuery, activeCategory, priceFilter, stateFilter, countryFilter, currentUserDob, blockedIdSet, filtersActive]);
 
   // While a search query is active, filter/sort the server's fuzzy-matched
   // results instead of the locally loaded feed page — search_events_fuzzy
@@ -1672,7 +1679,17 @@ export function HomeScreen({
                 </span>
               </div>
 
-              {(searchActive && searchLoading) || (filtersActive && filterLoading) ? (
+              {/* Stale-while-revalidate here too: only show the skeleton for
+                  this section's very first fetch (searchResults/filterResults
+                  still null). A background refetch (e.g. countryFilter's
+                  effect re-running) keeps the already-fetched cards on
+                  screen instead of blanking them -- same principle as the
+                  dbEvents skeleton above. Since countryFilter now defaults
+                  to the account's country instead of 'all', filtersActive
+                  is true for essentially every normal user by default, so
+                  this is no longer a rare edge case -- it's the default
+                  browsing path. */}
+              {(searchActive && searchLoading && searchResults === null) || (filtersActive && filterLoading && filterResults === null) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="feed" />)}
                 </div>
