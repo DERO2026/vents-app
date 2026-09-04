@@ -2220,7 +2220,13 @@ export default function App() {
               onGetStarted={() => {
                 setPendingSignup(true);
                 setAuthMode('signup');
-                navigateTo('role-select');
+                // Registration no longer forces an Attendee/Organizer choice
+                // up front (see RoleSelectScreen) -- every new account starts
+                // as 'attendee'. Existing users can still become an Organizer
+                // afterwards via ProfileScreen's "Become an Organizer" request
+                // flow (onBecomeOrganizer below), which is unaffected by this.
+                setUserRole('attendee');
+                navigateTo('auth');
               }}
               onSignIn={() => {
                 setPendingSignup(false);
@@ -2230,7 +2236,8 @@ export default function App() {
               onPickState={() => {
                 setPendingSignup(true);
                 setAuthMode('signup');
-                navigateTo('role-select');
+                setUserRole('attendee');
+                navigateTo('auth');
               }}
               onBrowseGuest={() => {
                 setScreen('home');
