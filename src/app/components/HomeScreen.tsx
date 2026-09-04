@@ -46,6 +46,13 @@ interface HomeScreenProps {
   // base feed, but search and category/price/state filtering both ran over
   // their own separately-fetched result sets that didn't apply this filter.
   blockedUserIds?: string[];
+  // Bumped by App.tsx's handleTabChange on every tap of the Home tab
+  // (including while already on Home) so this screen can scroll back to
+  // the top — the "tap the active tab to jump to top" gesture users expect
+  // from Home tabs generally. A plain number rather than a boolean/callback
+  // so repeated taps (same intent, no other state change) still each fire
+  // the effect below, which keys off the value changing.
+  scrollToTopSignal?: number;
 }
 
 
@@ -763,8 +770,20 @@ export function HomeScreen({
   onLoadMore,
   unreadNotificationsCount,
   blockedUserIds,
+  scrollToTopSignal,
 }: HomeScreenProps) {
   const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Skip the very first signal value (mount) — only an actual tap-while-on-
+  // Home should scroll; landing on Home fresh shouldn't jump anything.
+  const scrollSignalMounted = useRef(false);
+  useEffect(() => {
+    if (!scrollSignalMounted.current) {
+      scrollSignalMounted.current = true;
+      return;
+    }
+    scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [scrollToTopSignal]);
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
   const [inputValue, setInputValue] = useState('');
@@ -1369,7 +1388,7 @@ export function HomeScreen({
       </div>
 
       {/* Scrollable content */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
 
 

@@ -36,3 +36,33 @@ other two.
 
 Subject line (`mailer_subjects_confirmation`): "Confirm your VENTS
 account".
+
+## reset-password.html
+
+The VENTS-branded password-recovery email — same layout/wordmark as
+`confirm-signup.html`, contains the OTP code (`{{ .Token }}`, consumed by
+`AuthScreen.tsx`'s forgot-password Step 1 via `supabase.auth.verifyOtp({type:
+'recovery'})`) and a "Reset Password" button. The button links to
+`{{ .SiteURL }}/?reset_email={{ .Email }}` (same reasoning as
+`confirm-signup.html`'s button — VENTS's own domain, never the raw Supabase
+project URL) rather than `{{ .ConfirmationURL }}`. `App.tsx`'s `reset_email`
+query-param handler resumes straight to the forgot-password OTP screen (never
+re-requests a code — the one in this email is still valid) and, on a mobile
+browser, best-effort hands off to the `vents://reset?email=...` scheme the
+native app's `appUrlOpen` listener already handles, with this same web page
+as the fallback if the app isn't installed — mirrors the `vents://verify`
+handoff already wired up for `confirm-signup.html`.
+
+Applies to a different config key than `confirm-signup.html`:
+`mailer_templates_recovery_content` (Authentication → Emails → Reset
+Password), not `mailer_templates_confirmation_content`. Subject line
+(`mailer_subjects_recovery`): "Reset your VENTS password".
+
+**This file did not previously exist in the repo** — the live recovery
+template was apparently edited directly in the Supabase Dashboard at some
+point (it already sends an 8-digit code, matching `AuthScreen.tsx`'s
+`EMAIL_OTP_LENGTH`), with no committed reference copy. If the live dashboard
+template doesn't already match this file, it must be manually re-applied
+there (see "To re-apply a file here" above, using
+`mailer_templates_recovery_content` instead of `_confirmation_content`) —
+this repo change alone does not update it.
