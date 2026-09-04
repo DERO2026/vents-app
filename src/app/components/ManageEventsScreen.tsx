@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import {
   ArrowLeft, Users, Search, Calendar, MapPin, Edit2, Lock, Zap, MoreVertical,
   Trash2, EyeOff, Eye, Wifi, WifiOff, ArrowUpDown, RefreshCw, AlertCircle,
-  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame,
+  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame, Megaphone, X, CheckCircle,
 } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEventOverview, OrganizerEventDisplayStatus } from './types';
@@ -72,6 +72,60 @@ export function ManageEventsScreen({
   // instantly, with no warning to the organizer and no notice to buyers who
   // already hold a ticket for it.
   const [hideWarningTarget, setHideWarningTarget] = useState<OrganizerEventOverview | null>(null);
+
+  // Send Announcement — self-contained: send_event_announcement (SECURITY
+  // DEFINER) does every real ownership/eligibility/rate-limit check
+  // server-side (0041_event_announcements.sql); this only collects the
+  // text and surfaces whatever the RPC says.
+  const [announceTarget, setAnnounceTarget] = useState<OrganizerEventOverview | null>(null);
+  const [announceTitle, setAnnounceTitle] = useState('');
+  const [announceBody, setAnnounceBody] = useState('');
+  const [announceSending, setAnnounceSending] = useState(false);
+  const [announceError, setAnnounceError] = useState('');
+  const [announceRecipients, setAnnounceRecipients] = useState<number | null>(null);
+  const ANNOUNCE_TITLE_MAX = 80;
+  const ANNOUNCE_BODY_MAX = 500;
+
+  function openAnnounce(event: OrganizerEventOverview) {
+    setAnnounceTarget(event);
+    setAnnounceTitle('');
+    setAnnounceBody('');
+    setAnnounceError('');
+    setAnnounceRecipients(null);
+  }
+
+  function closeAnnounce() {
+    setAnnounceTarget(null);
+    setAnnounceError('');
+    setAnnounceRecipients(null);
+  }
+
+  async function sendAnnouncement() {
+    if (!announceTarget) return;
+    const title = announceTitle.trim();
+    const body = announceBody.trim();
+    if (!title || !body) { setAnnounceError('Enter a title and a message.'); return; }
+    setAnnounceSending(true);
+    setAnnounceError('');
+    try {
+      const { data, error: err } = await supabase.rpc('send_event_announcement', {
+        p_event_id: announceTarget.id,
+        p_title: title,
+        p_body: body,
+      });
+      if (err) {
+        if (err.message?.includes('rate_limited')) {
+          throw new Error('You already sent an announcement for this event recently — try again in a few minutes.');
+        }
+        throw new Error(err.message);
+      }
+      setAnnounceRecipients((data as any)?.recipients ?? 0);
+    } catch (e: any) {
+      setAnnounceError(e?.message || 'Could not send this announcement. Please try again.');
+    } finally {
+      setAnnounceSending(false);
+    }
+  }
 
   const filtered = useMemo(
     () => events.filter((e) => !query || e.title.toLowerCase().includes(query.toLowerCase())),
@@ -347,6 +401,9 @@ export function ManageEventsScreen({
               { icon: <BarChart3 size={18} />, label: 'Analytics', color: C.green, action: () => { onViewAnalytics(optionsEvent); setOptionsEvent(null); } },
               { icon: <DoorOpen size={18} />, label: 'Door Manager', color: C.gold, action: () => { onOpenDoorManager(optionsEvent); setOptionsEvent(null); } },
               { icon: <ScanLine size={18} />, label: 'Scan Tickets', color: C.gold, action: () => { onOpenScanner(optionsEvent); setOptionsEvent(null); } },
+              ...(optionsEvent.displayStatus === 'live' || optionsEvent.displayStatus === 'sold_out'
+                ? [{ icon: <Megaphone size={18} />, label: 'Send Announcement', color: C.purple, action: () => { openAnnounce(optionsEvent); setOptionsEvent(null); } }]
+                : []),
               { icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? 'Make Live' : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) },
               { icon: <Trash2 size={18} />, label: 'Delete Event', color: C.red, action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } },
             ].map((item: any, i) => (
@@ -393,6 +450,83 @@ export function ManageEventsScreen({
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Send Announcement */}
+      {announceTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'ventsFadeIn 0.15s ease-out' }}>
+          <div style={{ background: C.card, borderRadius: '20px 20px 0 0', border: `1px solid ${C.line}`, padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', animation: 'ventsSheetUp 0.25s cubic-bezier(0.16,1,0.3,1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Megaphone size={18} color={C.purple} />
+                <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: C.text }}>Send Announcement</p>
+              </div>
+              <button onClick={closeAnnounce} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: C.sub }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {announceRecipients !== null ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color={C.green} />
+                  <span style={{ color: C.green, fontSize: '13px', lineHeight: 1.5 }}>
+                    {announceRecipients === 0
+                      ? 'Sent — but no ticket holders matched right now.'
+                      : `Sent to ${announceRecipients} ticket holder${announceRecipients === 1 ? '' : 's'}.`}
+                  </span>
+                </div>
+                <button onClick={closeAnnounce} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: C.sub, margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Send a text update to everyone holding a paid ticket for "{announceTarget.title}". This can't be undone, and only once per event every 15 minutes.
+                </p>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <input
+                    placeholder="Announcement title"
+                    value={announceTitle}
+                    onChange={e => setAnnounceTitle(e.target.value.slice(0, ANNOUNCE_TITLE_MAX))}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <p style={{ margin: '4px 2px 0', textAlign: 'right', fontSize: '11px', color: C.faint }}>{announceTitle.length}/{ANNOUNCE_TITLE_MAX}</p>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <textarea
+                    placeholder="What do you want to tell your ticket holders?"
+                    value={announceBody}
+                    onChange={e => setAnnounceBody(e.target.value.slice(0, ANNOUNCE_BODY_MAX))}
+                    rows={4}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', outline: 'none', resize: 'none', fontFamily: 'Inter, sans-serif' }}
+                  />
+                  <p style={{ margin: '4px 2px 0', textAlign: 'right', fontSize: '11px', color: C.faint }}>{announceBody.length}/{ANNOUNCE_BODY_MAX}</p>
+                </div>
+
+                {announceError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color={C.red} />
+                    <span style={{ color: C.red, fontSize: '13px' }}>{announceError}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeAnnounce} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: C.sub, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={sendAnnouncement}
+                    disabled={announceSending || !announceTitle.trim() || !announceBody.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
+                  >
+                    {announceSending ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
