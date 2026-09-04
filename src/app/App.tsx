@@ -1468,7 +1468,7 @@ export default function App() {
         // proof of payment — that's just the client's own JS reporting
         // success, which is nothing a scripted caller couldn't fake, and
         // some channels (bank transfer/ussd/mobile money) don't even call
-        // this reliably at all. api/payments/verify.ts is the actual
+        // this reliably at all. api/webhook/paystack.ts (?action=verify) is the actual
         // server-side check: it calls Paystack's own GET /transaction/
         // verify/:reference with the secret key before finalizing anything.
         // finalize_pending_purchase/confirm_ticket_payment (real ticket
@@ -1478,7 +1478,7 @@ export default function App() {
         // client can no longer manufacture a working ticket by calling the
         // old RPC directly without ever paying.
         const token = await getAuthToken();
-        const verifyRes = await fetch(apiUrl('/api/payments/verify'), {
+        const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ reference: ticket.ticketId }),
@@ -1497,7 +1497,7 @@ export default function App() {
         const ticketIds: string[] = Array.isArray(verifyJson.ticketIds) ? verifyJson.ticketIds : [];
 
         if (ticketIds.length === 0 && verifyJson.ticketLookupPending) {
-          // Payment IS confirmed at this point (api/payments/verify.ts only
+          // Payment IS confirmed at this point (api/webhook/paystack.ts (?action=verify) only
           // ever sets this flag after confirm_ticket_payment already
           // succeeded) — a transient failure reading the ticket ids back is
           // not a payment failure and must never be shown as one. Fall back
@@ -1520,7 +1520,7 @@ export default function App() {
 
         // generate_ticket_token requires auth.uid() = the ticket's owner
         // (0004_functions.sql) — called here, under the buyer's own
-        // session, rather than from api/payments/verify.ts's project_admin
+        // session, rather than from api/webhook/paystack.ts (?action=verify)'s project_admin
         // connection, which has no user JWT/RLS context to satisfy that
         // check with.
         rows = await Promise.all(ticketIds.map(async (id) => {
@@ -1639,7 +1639,7 @@ export default function App() {
     (async () => {
       try {
         const token = await getAuthToken();
-        const verifyRes = await fetch(apiUrl('/api/payments/verify'), {
+        const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
           body: JSON.stringify({ reference }),

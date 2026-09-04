@@ -1,7 +1,8 @@
-// Shared by api/webhook/paystack.ts (the authoritative path, triggered by
-// Paystack's own signed webhook event) and api/payments/verify.ts (the
-// client-triggered "I'm back from Paystack, verify me" path, triggered
-// only after that endpoint's own server-side call to Paystack's
+// Shared by api/webhook/paystack.ts's two entry points: the authoritative
+// path (triggered by Paystack's own signed webhook event) and the
+// ?action=verify path (the client-triggered "I'm back from Paystack,
+// verify me" path, triggered only after that path's own server-side call
+// to Paystack's
 // GET /transaction/verify/:reference confirms status === 'success').
 // Kept as one function so the two paths can never drift out of sync --
 // whichever of them runs first wins, the other is a no-op against the same

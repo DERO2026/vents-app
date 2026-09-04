@@ -340,7 +340,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         // https://getvents.com/, Paystack will redirect there on its own
         // for scenarios the popup can't call back from, and App.tsx's
         // ?reference=/?trxref= handling (with its vents:// native handoff)
-        // already resolves that through api/payments/verify.ts. That
+        // already resolves that through api/webhook/paystack.ts (?action=verify). That
         // recovery path is left in place because it's harmless and
         // correctly does nothing when unreached, not because this code
         // triggers it directly.

@@ -1,11 +1,39 @@
 // @ts-nocheck
-// Vercel serverless function: POST /api/webhook/paystack
-// Verifies Paystack webhook HMAC-SHA512 signature before processing.
+// Vercel serverless function, two entry points sharing one file to stay
+// under the Hobby plan's 12-Serverless-Functions-per-deployment cap (this
+// repo was already at exactly 12; api/payments/verify.ts as its own file
+// pushed it to 13 and broke every deployment -- see PR #6):
+//
+// - POST /api/webhook/paystack            -- Paystack's own signed webhook
+//   (HMAC-SHA512, verified below). Unauthenticated by design; Paystack is
+//   the caller, not a browser, so no CORS applies here.
+// - POST /api/webhook/paystack?action=verify -- the client-triggered
+//   "I'm back from Paystack, verify me" path (formerly api/payments/verify.ts),
+//   called after CheckoutScreen's Paystack popup reports success, or after
+//   returning from a redirect-based channel like bank transfer/USSD via the
+//   vents:// deep-link / ?paystack_ref= web fallback (see App.tsx).
+//   Deliberately does NOT trust that client signal on its own: the only real
+//   proof is Paystack's own GET /transaction/verify/:reference, called here
+//   server-side with the secret key -- exactly the same authority the
+//   webhook itself relies on via its HMAC-signed event. This is the second,
+//   client-triggered path to that same authoritative confirmation, for when
+//   the webhook is slow or the app closed before the popup's JS callback
+//   could fire (common for bank_transfer/ussd/mobile_money channels, which
+//   don't complete inside the iframe at all).
+//
+// Both paths funnel into finalizeAndConfirmPurchase (finalize_pending_
+// purchase + confirm_ticket_payment, project_admin-only per
+// supabase/migrations/0031_restrict_finalize_pending_purchase.sql) so they
+// can never drift out of sync -- whichever runs first wins, the other is a
+// no-op against the same locked rows.
+//
 // Set PAYSTACK_SECRET_KEY in Vercel environment variables.
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
-import { callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
+import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 import { finalizeAndConfirmPurchase } from '../_lib/finalizePaystackPayment.js';
+import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { applyCors } from '../_lib/cors.js';
 import crypto from 'crypto';
 
 function fmtNaira(kobo) {
@@ -13,6 +41,98 @@ function fmtNaira(kobo) {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.action === 'verify') return handleClientVerify(req, res);
+  return handleWebhook(req, res);
+}
+
+// ── Client-triggered verify path (formerly api/payments/verify.ts) ───────
+async function handleClientVerify(req, res) {
+  applyCors(req, res);
+
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const session = await verifyInsforgeSession(req.headers.authorization);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+  const { reference } = req.body || {};
+  if (!reference || typeof reference !== 'string') {
+    return res.status(400).json({ error: 'reference is required' });
+  }
+
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) {
+    console.error('[webhook/paystack?action=verify] PAYSTACK_SECRET_KEY not set');
+    return res.status(500).json({ error: 'Payment verification not configured' });
+  }
+
+  try {
+    // Ownership check: confirm the caller actually owns the pending
+    // purchase this reference belongs to before spending a Paystack call or
+    // finalizing anything on their say-so. A reference with no matching
+    // pending_purchases row (already finalized in a prior call, or simply
+    // unknown) isn't itself an error here -- finalize_pending_purchase's own
+    // idempotency and confirm_ticket_payment's ticket lookup below handle
+    // that; this only blocks a caller asking about a reference that
+    // demonstrably belongs to someone else.
+    const ownerId = await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
+    if (ownerId && ownerId !== session.userId) {
+      return res.status(403).json({ error: 'Not authorized for this payment reference' });
+    }
+
+    const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const pJson = await pRes.json().catch(() => null);
+
+    if (!pRes.ok || !pJson?.status) {
+      return res.status(502).json({ status: 'error', error: pJson?.message || 'Could not reach Paystack to verify this payment.' });
+    }
+
+    const txStatus = pJson.data?.status; // 'success' | 'failed' | 'abandoned' | ...
+    const amountKobo = pJson.data?.amount;
+
+    if (txStatus !== 'success') {
+      // Covers failed, abandoned, and cancelled payments alike -- Paystack's
+      // own transaction record is the source of truth for all three; none
+      // of them ever reach finalizeAndConfirmPurchase, so no ticket is ever
+      // created for a payment that didn't actually succeed.
+      return res.status(200).json({ status: txStatus === 'abandoned' ? 'abandoned' : 'failed' });
+    }
+
+    if (typeof amountKobo !== 'number') {
+      return res.status(502).json({ status: 'error', error: 'Paystack returned no amount for this transaction.' });
+    }
+
+    const result = await finalizeAndConfirmPurchase(reference, amountKobo);
+
+    if (result.status === 'amount_mismatch') {
+      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
+      return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected order amount.' });
+    }
+    if (result.status === 'not_found') {
+      return res.status(200).json({ status: 'error', error: 'No matching order was found for this payment.' });
+    }
+    if (result.status === 'confirmed_lookup_failed') {
+      // Payment IS confirmed at this point (payment_status='paid', wallet
+      // already credited) -- only the ticket-id readback failed. Still
+      // reported as status: 'success' (it genuinely is one) so the client
+      // never shows a failure/refund-support message for a payment that
+      // went through; ticketIds is empty and ticketLookupPending tells the
+      // client to fall back to a Wallet refresh instead of expecting an
+      // instant ticket_id/token.
+      return res.status(200).json({ status: 'success', ticketIds: [], ticketLookupPending: true });
+    }
+
+    return res.status(200).json({ status: 'success', ticketIds: result.ticketIds });
+  } catch (err: any) {
+    console.error('[webhook/paystack?action=verify] error:', err?.message || err);
+    return res.status(500).json({ status: 'error', error: 'Payment verification failed. Please try again or contact support.' });
+  }
+}
+
+// ── Paystack's own signed webhook ─────────────────────────────────────────
+async function handleWebhook(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
@@ -53,11 +173,11 @@ export default async function handler(req, res) {
 
     try {
       // Recovery path: if the client was killed/crashed/lost network between
-      // Paystack charging the card and its own verify call (api/payments/
-      // verify.ts), this is what still gets the buyer a ticket — this is
-      // the authoritative confirmation path (Paystack's own signed webhook
-      // event, HMAC-verified above), not a fallback to it. Shared with
-      // api/payments/verify.ts's client-triggered path via
+      // Paystack charging the card and its own verify call
+      // (this file's ?action=verify path), this is what still gets the
+      // buyer a ticket -- this is the authoritative confirmation path
+      // (Paystack's own signed webhook event, HMAC-verified above), not a
+      // fallback to it. Shared with the ?action=verify path via
       // finalizeAndConfirmPurchase so the two can never drift out of sync;
       // whichever runs first wins, the other no-ops against the same
       // locked rows.
@@ -73,7 +193,7 @@ export default async function handler(req, res) {
         console.log('[Paystack webhook] Ticket confirmed for reference', reference);
       } else if (result.status === 'confirmed_lookup_failed') {
         // Payment is genuinely confirmed (payment_status='paid', wallet
-        // credited) — only the ticket-id readback failed, which this path
+        // credited) -- only the ticket-id readback failed, which this path
         // doesn't even use. Logged for visibility, not an error condition.
         console.warn('[Paystack webhook] Ticket confirmed but id lookup failed for reference', reference);
       }
@@ -83,7 +203,7 @@ export default async function handler(req, res) {
   }
 
   // ── Organizer payout transfer status ──────────────────────────────────
-  // This is the authoritative completion signal for a payout — the
+  // This is the authoritative completion signal for a payout -- the
   // synchronous /transfer response only means "accepted for processing",
   // not "money actually moved" (some accounts require OTP finalization).
   if (event?.event === 'transfer.success' || event?.event === 'transfer.failed' || event?.event === 'transfer.reversed') {
@@ -100,7 +220,7 @@ export default async function handler(req, res) {
       // complete_organizer_payout/fail_organizer_payout have no internal
       // auth check of their own (they trust this webhook's HMAC verification
       // above, not RLS) and are project_admin-only (no anon/authenticated/
-      // service_role EXECUTE grant) — called via the direct project_admin
+      // service_role EXECUTE grant) -- called via the direct project_admin
       // Postgres connection, same as the ticket-confirmation block above
       // (see api/_lib/projectAdminDb.ts).
       const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
@@ -110,7 +230,7 @@ export default async function handler(req, res) {
       const row = rows[0];
       console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
 
-      // Fire the payout email only on a genuine, first-time state change —
+      // Fire the payout email only on a genuine, first-time state change --
       // never on 'not_found'/'already_completed'/'already_finalized', which
       // would otherwise re-send on Paystack's webhook retries.
       if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed')) {
@@ -142,7 +262,7 @@ export default async function handler(req, res) {
     try {
       // finalize_ticket_refund / fail_ticket_refund are keyed only on
       // Paystack's own numeric refund id (short, sequential, enumerable)
-      // with no internal auth check — that id alone would be enough to
+      // with no internal auth check -- that id alone would be enough to
       // revert someone else's in-flight refund if these were reachable over
       // the normal REST surface, so (like the transfer.* handlers above)
       // EXECUTE is revoked from anon/authenticated/service_role and they're
