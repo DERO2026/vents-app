@@ -1848,11 +1848,11 @@ export function SettingsScreen({
         <Section title="RESOURCES">
           <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => openExternalUrl('mailto:support@getvents.com')} />
           <Divider />
-          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/TheVentsApp')} />
+          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/vents.app')} />
           <Divider />
-          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://twitter.com/TheVentsApp')} />
+          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://x.com/vents_app')} />
           <Divider />
-          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@theventsapp')} />
+          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@vents.app')} />
         </Section>
 
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>

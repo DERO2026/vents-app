@@ -16,7 +16,7 @@ import BadgeChip from './BadgeChip';
 import { formatEventDateRange, formatCardCTA } from './data';
 import { haptics } from '../../lib/haptics';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { COUNTRY_CODES as COUNTRY_CODES_HOME } from '../../lib/countries';
 import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
@@ -757,6 +757,22 @@ function FeaturedCarousel({
   );
 }
 
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button
+      onClick={onClear}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '5px',
+        background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)',
+        borderRadius: '999px', padding: '5px 8px 5px 10px', cursor: 'pointer',
+      }}
+    >
+      <span style={{ color: '#C4B5FD', fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <X size={11} color="#C4B5FD" />
+    </button>
+  );
+}
+
 export function HomeScreen({
   onEventPress,
   savedEvents,
@@ -815,7 +831,21 @@ export function HomeScreen({
   const handleCountryFilterChange = useCallback((iso: string) => {
     countryFilterTouchedRef.current = true;
     setCountryFilter(iso);
+    // A subdivision chosen for the previous country (e.g. "Lagos" while
+    // browsing Nigeria) is meaningless once the browsing country changes —
+    // clear it rather than silently applying a stale, invalid filter (or,
+    // worse, one that happens to collide with a same-named place elsewhere).
+    setStateFilter((prev) => {
+      if (prev === 'all') return prev;
+      const subs = subdivisionsForCountry(iso);
+      return subs && subs.options.includes(prev) ? prev : 'all';
+    });
   }, []);
+  // The single source of truth for which subdivision list (if any) applies
+  // to the country currently being browsed -- Nigeria states, Rwanda
+  // provinces, Qatar municipalities, or null (no subdivision field shown)
+  // for every other country. Never a hardcoded Nigeria-only list.
+  const subdivisions = useMemo(() => subdivisionsForCountry(countryFilter), [countryFilter]);
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -842,7 +872,9 @@ export function HomeScreen({
     setTempState('all');
     setTempPrice('all');
   };
-  const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all';
+  const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all'
+    || (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week')
+    || countryFilter !== 'all';
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -1055,13 +1087,28 @@ export function HomeScreen({
         if (cancelled) return;
         if (error || !data) { setFilterResults([]); return; }
 
+        // Trending/Featured now source from this same country/state/
+        // category/price-scoped set (see baseEvents below) rather than the
+        // separately-fetched, country-blind dbEvents page -- so this fetch
+        // needs the same trending score every event card elsewhere relies
+        // on (App.tsx's own fetchEvents computes it identically).
+        const eventIds = data.map((e: any) => e.id);
+        let trendingScoreMap: Record<string, number> = {};
+        if (eventIds.length > 0) {
+          const { data: trendingRes } = await supabase.rpc('get_event_trending_scores', { p_event_ids: eventIds });
+          (trendingRes || []).forEach((t: any) => { trendingScoreMap[t.event_id] = Number(t.trending_score) || 0; });
+        }
+
         const mapped = data.map((e: any) => {
           const orgUser = e.users;
-          return mapDbEventToFrontend({
-            ...e,
-            organizer_name: orgUser?.username || orgUser?.full_name || null,
-            organizer_vc_badge: orgUser?.vc_badge || null,
-          });
+          return {
+            ...mapDbEventToFrontend({
+              ...e,
+              organizer_name: orgUser?.username || orgUser?.full_name || null,
+              organizer_vc_badge: orgUser?.vc_badge || null,
+            }),
+            trendingScore: trendingScoreMap[e.id] || 0,
+          };
         });
         setFilterResults(mapped);
       } catch {
@@ -1142,50 +1189,51 @@ export function HomeScreen({
     return dtA - dtB;
   }), [baseEvents, activeCategory, stateFilter, countryFilter, priceFilter, upcomingOnly, blockedIdSet]);
 
-  const todayStart = new Date(new Date().toISOString().split('T')[0]);
-  const upcomingDbEvents = dbEvents.filter(e => {
-    const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
-    return d && d >= todayStart;
-  });
-
-  const matchesStateFilter = (event: any) =>
-    stateFilter === 'all' || event.state?.toLowerCase() === stateFilter.toLowerCase();
-  const matchesCountryFilter = (event: any) =>
-    countryFilter === 'all' || (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
-
   const byNearestDate = (a: any, b: any) => {
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
     const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
     return dtA - dtB;
   };
 
+  // Trending/Featured source from `baseEvents` -- the SAME pool the main
+  // grid uses (server-side country/state/category/price-scoped via
+  // filterResults whenever any filter is active, falling back to the
+  // country-blind dbEvents page only when browsing with every filter at
+  // its neutral "all" value). Previously these two sourced from dbEvents/
+  // upcomingDbEvents directly and only re-applied country/state as a
+  // client-side pass -- correct as far as it went, but blind to any
+  // matching event outside whatever page of the country-blind feed
+  // happened to already be loaded. Sourcing from baseEvents instead means
+  // Trending and Featured are always exactly as country/state-aware as the
+  // grid immediately below them, with the same data.
+  const todayStart = new Date(new Date().toISOString().split('T')[0]);
+  const upcomingBaseEvents = useMemo(() => baseEvents.filter(e => {
+    if (blockedIdSet.has((e as any).organizer_id)) return false;
+    const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
+    return d && d >= todayStart;
+  }), [baseEvents, blockedIdSet]);
+
   // Trending events: selection is the real, server-computed trending score
   // (get_event_trending_scores — recent booking velocity weighted well
   // above lifetime sales/saves, migrations/20260801134748). Purely organic:
   // no promotion purchase or admin action can place an event here, and a
   // brand-new event scores 0 until it earns real engagement. Display order
-  // is nearest-date-first; state filter applies same as the Explore grid.
-  const trendingEvents = [...upcomingDbEvents]
-    .filter(matchesStateFilter)
-    .filter(matchesCountryFilter)
-    .filter((e) => (e.trendingScore || 0) > 0)
-    .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
-    .slice(0, 5)
-    .sort(byNearestDate);
+  // is nearest-date-first.
+  const trendingEvents = useMemo(() =>
+    [...upcomingBaseEvents]
+      .filter((e) => (e.trendingScore || 0) > 0)
+      .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
+      .slice(0, 5)
+      .sort(byNearestDate),
+    [upcomingBaseEvents]
+  );
 
-  // Featured events: selection stays isFeatured + upcoming, but display
-  // order is now nearest-date-first (previously randomized), and the
-  // state filter now applies here too.
-  const featuredEvents = useMemo(() => {
-    const start = new Date(new Date().toISOString().split('T')[0]);
-    return dbEvents.filter(e => {
-      if (!e.isFeatured) return false;
-      if (!matchesStateFilter(e)) return false;
-      if (!matchesCountryFilter(e)) return false;
-      const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
-      return d && d >= start;
-    }).sort(byNearestDate);
-  }, [dbEvents, stateFilter, countryFilter]);
+  // Featured events: selection stays isFeatured + upcoming, display order
+  // nearest-date-first.
+  const featuredEvents = useMemo(() =>
+    upcomingBaseEvents.filter(e => e.isFeatured).sort(byNearestDate),
+    [upcomingBaseEvents]
+  );
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
@@ -1353,7 +1401,10 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Header */}
+      {/* Header -- logo + a country-aware (never hardcoded-Nigeria) one-line
+          tagline on the left; account-level actions (notifications, create)
+          on the right. Discovery controls (search/country/filters) live in
+          their own cluster below, not mixed in here. */}
       <div
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -1361,40 +1412,15 @@ export function HomeScreen({
           flexShrink: 0,
         }}
       >
-        {/* Logo + tagline */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <VentsLogo size={28} />
           <div style={{ fontSize: '9px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
-            Discover Nigeria's Best Events through VENTS
+            {countryFilter === 'all'
+              ? "Discover what's happening around you"
+              : `Discover the best events in ${COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}`}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Filters button */}
-          <button
-            onClick={openFilterSheet}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '36px', height: '36px',
-              background: 'rgba(123,47,247,0.1)',
-              border: '1px solid rgba(123,47,247,0.3)',
-              borderRadius: '50%', cursor: 'pointer', position: 'relative', flexShrink: 0,
-            }}
-          >
-            <SlidersHorizontal size={15} color="#7B2FBE" />
-            {hasActiveFilters && (
-              <span style={{
-                position: 'absolute', top: '-2px', right: '-2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#7B2FBE', border: '2px solid #020005',
-              }} />
-            )}
-          </button>
-          <button
-            onClick={() => setSearchOpen(true)}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Search size={17} color="#A78BFA" />
-          </button>
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
@@ -1428,30 +1454,86 @@ export function HomeScreen({
       {/* Scrollable content */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
-        {/* Discovery-country pill -- defaults to the account's country
-            (users.country) but is a purely local browsing preference:
-            picking a different country here never writes back to
-            users.country, and "All Countries" is always available as an
-            explicit escape hatch. Same non-negotiable already established
-            for Services' discovery-country selector. */}
-        <div className="px-4 mb-3" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Discovery control cluster -- Search + Country + Filters, grouped
+            as one row instead of scattered across the header and a
+            separate pill row. The country pill is a purely local browsing
+            preference (never written back to users.country, "All
+            Countries" always available as an explicit escape hatch); the
+            state/region filter it feeds is single-sourced from
+            countrySubdivisions.ts (see the Filters sheet below), never a
+            hardcoded Nigeria list. */}
+        <div className="px-4 mb-2" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button
+            onClick={() => setSearchOpen(true)}
+            style={{
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px',
+              background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
+            }}
+          >
+            <Search size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
+            <span style={{ color: '#8B8FA8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, people…</span>
+          </button>
           <button
             onClick={() => setShowCountryPicker(true)}
             style={{
-              display: 'flex', alignItems: 'center', gap: '6px', background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '6px 12px',
-              cursor: 'pointer',
+              display: 'flex', alignItems: 'center', gap: '5px', background: '#090514',
+              border: '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '9px 12px',
+              cursor: 'pointer', flexShrink: 0, maxWidth: '120px',
             }}
           >
-            <MapPin size={12} color="#8B8FA8" />
-            <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>
-              {countryFilter === 'all' ? 'All Countries' : (COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter)}
+            <MapPin size={13} color="#8B8FA8" style={{ flexShrink: 0 }} />
+            <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {countryFilter === 'all' ? 'All' : (COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter)}
             </span>
-            <ChevronDown size={12} color="#8B8FA8" />
+            <ChevronDown size={12} color="#8B8FA8" style={{ flexShrink: 0 }} />
+          </button>
+          <button
+            onClick={openFilterSheet}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: '38px', height: '38px', flexShrink: 0,
+              background: hasActiveFilters ? 'rgba(123,47,247,0.18)' : '#090514',
+              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '50%', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <SlidersHorizontal size={15} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
+            {hasActiveFilters && (
+              <span style={{
+                position: 'absolute', top: '-2px', right: '-2px',
+                width: '8px', height: '8px', borderRadius: '50%',
+                background: '#A78BFA', border: '2px solid #020005',
+              }} />
+            )}
           </button>
         </div>
 
-
+        {/* Combined active-filter summary -- one place to see (and clear)
+            every filter narrowing the feed, instead of no visible summary
+            at all beyond a single dot on the Filters button. */}
+        {hasActiveFilters && (
+          <div className="px-4 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            {countryFilter !== 'all' && (
+              <FilterChip label={COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter} onClear={() => handleCountryFilterChange('all')} />
+            )}
+            {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
+              <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
+            )}
+            {stateFilter !== 'all' && (
+              <FilterChip label={stateFilter} onClear={() => setStateFilter('all')} />
+            )}
+            {priceFilter !== 'all' && (
+              <FilterChip label={priceFilter === 'free' ? 'Free' : 'Paid'} onClear={() => setPriceFilter('all')} />
+            )}
+            <button
+              onClick={() => { handleCountryFilterChange('all'); setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textDecoration: 'underline' }}
+            >
+              Clear all
+            </button>
+          </div>
+        )}
 
         {/* Category icon bar */}
         <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
@@ -1493,44 +1575,6 @@ export function HomeScreen({
             );
           })}
         </div>
-
-        {/* Discover Services entry banner -- one restrained card, not a full
-            section, per the approved Services entry-point decision (banner
-            in feed, not a 5th BottomNav tab). Deliberately matches the flat,
-            border-only card language the rest of Home already uses (see
-            FeedCard above: #090514 flat fill, 1px hairline border, no
-            gradients) rather than the gradient-washed treatment this had
-            before -- that read as decorative/generic next to the real event
-            cards, not consistent with them. */}
-        {onServicesPress && (
-          <div className="px-4 mb-6">
-            <button
-              onClick={onServicesPress}
-              className="active:opacity-80"
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
-                padding: '14px', borderRadius: '16px',
-                background: '#090514',
-                border: '1px solid rgba(255,255,255,0.07)',
-                cursor: 'pointer', textAlign: 'left',
-                transition: 'opacity 0.15s ease',
-              }}
-            >
-              <div style={{
-                width: '40px', height: '40px', borderRadius: '12px', flexShrink: 0,
-                background: 'rgba(255,255,255,0.06)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>
-                <Sparkles size={18} color="#A78BFA" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, fontFamily: 'Inter, sans-serif', margin: 0 }}>Discover Services</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Beauty, events, fashion &amp; more near you</p>
-              </div>
-              <ChevronRight size={16} color="#5A5A7A" />
-            </button>
-          </div>
-        )}
 
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load
@@ -1634,27 +1678,7 @@ export function HomeScreen({
                 </div>
               ) : filteredEvents.length === 0 ? (
                 <div className="flex flex-col items-center py-12 px-4 text-center">
-                  {isDefaultState ? (
-                    <>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
-                        No events yet
-                      </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Check back soon — new events are added every day.
-                      </p>
-                    </>
-                  ) : !searchQuery.trim() && activeCategory !== 'all' ? (
-                    <>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
-                        No {activeCategory} events yet
-                      </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Check back soon or browse <span style={{ color: '#A855F7', cursor: 'pointer' }} onClick={() => setActiveCategory('all')}>All events</span>.
-                      </p>
-                    </>
-                  ) : (
+                  {searchActive ? (
                     <>
                       <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
                       <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
@@ -1662,6 +1686,37 @@ export function HomeScreen({
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
                         Try a different search or browse all events.
+                      </p>
+                    </>
+                  ) : hasActiveFilters ? (
+                    // Distinguishes "genuinely nothing here yet" from "your
+                    // filters narrowed it to zero" -- same generic copy for
+                    // both used to read as a broken filter once country
+                    // filtering could realistically return zero results for
+                    // a smaller market.
+                    <>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                        No events match your filters
+                      </p>
+                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                        Try a different country, category, or price — or clear everything to see all events.
+                      </p>
+                      <button
+                        onClick={() => { handleCountryFilterChange('all'); setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
+                        style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Clear filters
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                        No events yet
+                      </p>
+                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                        Check back soon — new events are added every day.
                       </p>
                     </>
                   )}
@@ -1703,6 +1758,31 @@ export function HomeScreen({
                 </div>
               )}
             </div>
+
+            {/* Discover Services -- a small, secondary entry point below the
+                event feed rather than a full-width banner competing with
+                Featured/Trending/the grid for top-of-fold attention.
+                Events stay the clear primary purpose of Home; Services
+                remains one tap away without narrowing the space events get. */}
+            {onServicesPress && (
+              <div className="px-4 mt-2">
+                <button
+                  onClick={onServicesPress}
+                  className="active:opacity-70"
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '12px 14px', borderRadius: '14px',
+                    background: 'rgba(255,255,255,0.02)',
+                    border: '1px solid rgba(255,255,255,0.05)',
+                    cursor: 'pointer', textAlign: 'left',
+                  }}
+                >
+                  <Sparkles size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
+                  <span style={{ flex: 1, color: '#8B8FA8', fontSize: '12.5px', fontWeight: 600 }}>Also on VENTS: Services — beauty, fashion &amp; more</span>
+                  <ChevronRight size={14} color="#5A5A7A" style={{ flexShrink: 0 }} />
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1737,31 +1817,36 @@ export function HomeScreen({
 
             {/* Scrollable content */}
             <div style={{ overflowY: 'auto', flex: 1, scrollbarWidth: 'none', padding: '0 20px' }}>
-              {/* STATE */}
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>STATE</p>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-                {['All States', 'Lagos', 'Abuja', 'Rivers', 'Kano', 'Oyo', 'Enugu', 'Delta',
-                  'Anambra', 'Edo', 'Ogun', 'Ondo', 'Kwara', 'Kogi', 'Benue', 'Plateau',
-                  'Kaduna', 'Sokoto', 'Kebbi', 'Zamfara', 'Katsina', 'Jigawa', 'Bauchi',
-                  'Gombe', 'Yobe', 'Borno', 'Adamawa', 'Taraba', 'Nasarawa', 'Niger',
-                  'Ekiti', 'Imo', 'Abia', 'Ebonyi', 'Cross River', 'Akwa Ibom', 'Bayelsa'
-                ].map((st) => {
-                  const stId = st === 'All States' ? 'all' : st;
-                  const active = tempState === stId;
-                  return (
-                    <button
-                      key={st}
-                      onClick={() => setTempState(stId)}
-                      style={{
-                        padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
-                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FBE' : 'transparent',
-                        color: active ? '#fff' : '#666666',
-                      }}
-                    >{st}</button>
-                  );
-                })}
-              </div>
+              {/* SUBDIVISION -- Nigeria states, Rwanda provinces, Qatar
+                  municipalities, driven entirely by countrySubdivisions.ts
+                  for whichever country is currently being browsed. No
+                  subdivision list exists for most countries yet, so the
+                  whole field is simply omitted rather than showing a
+                  mismatched (or empty) list -- never a Nigeria-only
+                  fallback for a non-Nigeria country. */}
+              {subdivisions && (
+                <>
+                  <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>{subdivisions.label.toUpperCase()}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                    {[`All ${subdivisions.label}s`, ...subdivisions.options].map((st) => {
+                      const stId = st === `All ${subdivisions.label}s` ? 'all' : st;
+                      const active = tempState === stId;
+                      return (
+                        <button
+                          key={st}
+                          onClick={() => setTempState(stId)}
+                          style={{
+                            padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
+                            cursor: 'pointer', border: active ? 'none' : '1px solid #333',
+                            background: active ? '#7B2FBE' : 'transparent',
+                            color: active ? '#fff' : '#666666',
+                          }}
+                        >{st}</button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
 
               {/* PRICE */}
               <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
