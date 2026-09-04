@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
@@ -17,25 +17,98 @@ interface WalletData {
   pending_kobo: number;
 }
 
+// A ledger row's metadata is a free-form jsonb column -- older rows (or
+// rows written before 0039_wallet_transaction_metadata.sql) may have none,
+// or only the bank_name/account_number/account_name shape complete_organizer_payout
+// has always written. Every field here is therefore optional -- the detail
+// screen must show "Not available" rather than fabricate anything missing.
+interface TxnMetadata {
+  bank_name?: string;
+  account_number?: string;
+  account_name?: string;
+  event_title?: string;
+  ticket_type?: string;
+  quantity?: number;
+  gross_kobo?: number;
+  buyer_fee_kobo?: number;
+  paystack_reference?: string;
+  buyer_name?: string;
+  buyer_email?: string;
+  buyer_phone?: string;
+}
+
 interface Transaction {
   id: string;
   type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund';
   amount_kobo: number;
   description: string | null;
   withdrawal_request_id: string | null;
-  metadata: { bank_name?: string; account_number?: string; account_name?: string } | null;
+  metadata: TxnMetadata | null;
   created_at: string;
 }
+
+// organizer_withdrawal_requests rows that never generate an organizer_transactions
+// ledger row (pending/processing -- no money has permanently moved yet; failed/
+// rejected -- the debit was reversed, net wallet effect is zero) are shown
+// directly from this table so a withdrawal's full lifecycle is visible even
+// when the ledger itself has nothing to say about it. Per product decision:
+// we do NOT fabricate ledger rows for these -- this table is the authoritative
+// record of a withdrawal that didn't (yet, or ever) complete.
+interface WithdrawalRequest {
+  id: string;
+  amount_kobo: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'rejected' | 'cancelled';
+  bank_name: string | null;
+  bank_code: string | null;
+  account_number: string | null;
+  account_name: string | null;
+  paystack_reference: string | null;
+  transfer_code: string | null;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// A unified, sortable feed item -- either a ledger row (organizer_transactions)
+// or a still-pending/failed/rejected withdrawal request that has no ledger
+// counterpart yet. Completed and cancelled withdrawal requests are NOT
+// included as their own feed item -- they're already represented by the
+// 'payout' / 'cancelled_payout_refund' ledger rows those functions write,
+// and including both would show the same withdrawal twice.
+type FeedItem =
+  | { kind: 'ledger'; sortKey: string; row: Transaction }
+  | { kind: 'withdrawal_request'; sortKey: string; row: WithdrawalRequest };
 
 // Money actually leaving the wallet vs. coming into/back into it — used to
 // pick the icon, color, and +/- sign for each transaction row.
 const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund']);
 const TYPE_LABELS: Record<string, string> = {
-  credit: 'Credit',
+  credit: 'Ticket Sale',
   debit: 'Withdrawal',
-  payout: 'Payout',
-  cancelled_payout_refund: 'Payout Cancelled — Refunded',
+  payout: 'Withdrawal',
+  cancelled_payout_refund: 'Withdrawal Cancelled — Refunded',
 };
+
+const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
+  pending: 'Withdrawal Requested',
+  processing: 'Withdrawal Processing',
+  failed: 'Withdrawal Failed — Refunded',
+  rejected: 'Withdrawal Rejected — Refunded',
+  completed: 'Withdrawal',
+  cancelled: 'Withdrawal Cancelled — Refunded',
+};
+
+// Masks a bank account number down to its last 4 digits (e.g. "0123456789"
+// -> "•••••• 6789"). Never render a full account number anywhere in this
+// screen -- the audit found no DB-layer masking, so it has to happen here.
+function maskAccountNumber(acct: string | null | undefined): string {
+  if (!acct) return 'Not available';
+  const digits = acct.replace(/\s/g, '');
+  if (digits.length <= 4) return digits;
+  return '•'.repeat(Math.max(0, digits.length - 4)) + digits.slice(-4);
+}
+
+const PAGE_SIZE = 30;
 
 interface BankAccount {
   id: string;
@@ -71,8 +144,13 @@ async function authedFetch(path: string, body: any) {
 export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [txns, setTxns] = useState<Transaction[]>([]);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [txnsHasMore, setTxnsHasMore] = useState(true);
+  const [txnsError, setTxnsError] = useState('');
+  const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
   // Which account a withdrawal pays out to (defaults to the org's default).
   const [withdrawAccountId, setWithdrawAccountId] = useState<string | null>(null);
@@ -120,15 +198,25 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const load = async () => {
     if (!currentUser?.id) return;
     setLoading(true);
+    setTxnsError('');
     try {
-      const [wRes, tRes, bRes, vRes] = await Promise.all([
+      const [wRes, tRes, wrRes, bRes, vRes] = await Promise.all([
         supabase.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
-        supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
+        supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
+        // Only pending/processing/failed/rejected -- completed and cancelled
+        // requests are already represented by their 'payout' / 'cancelled_
+        // payout_refund' ledger rows above; including them here too would
+        // show the same withdrawal twice in the feed.
+        supabase.from('organizer_withdrawal_requests').select('id, amount_kobo, status, bank_name, bank_code, account_number, account_name, paystack_reference, transfer_code, admin_note, created_at, updated_at').eq('organizer_id', currentUser.id).in('status', ['pending', 'processing', 'failed', 'rejected']).order('created_at', { ascending: false }),
         supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         supabase.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
-      setTxns(tRes.data || []);
+      if (tRes.error) { setTxnsError(tRes.error.message); setTxns([]); } else {
+        setTxns(tRes.data || []);
+        setTxnsHasMore((tRes.data || []).length === PAGE_SIZE);
+      }
+      setWithdrawalRequests(wrRes.data || []);
       const accounts: BankAccount[] = (bRes.data as BankAccount[]) || [];
       setBankAccounts(accounts);
       // Preselect the default (or first) account for withdrawals.
@@ -137,12 +225,42 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     } catch (e) {
       console.error('Wallet load error:', e);
       Sentry.captureException(e);
+      setTxnsError('Failed to load wallet data. Pull to retry.');
     } finally {
       setLoading(false);
     }
   };
 
+  const loadMoreTxns = async () => {
+    if (!currentUser?.id || loadingMore || !txnsHasMore) return;
+    setLoadingMore(true);
+    try {
+      const { data, error } = await supabase
+        .from('organizer_transactions')
+        .select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at')
+        .eq('organizer_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .range(txns.length, txns.length + PAGE_SIZE - 1);
+      if (error) throw error;
+      setTxns(prev => [...prev, ...(data || [])]);
+      setTxnsHasMore((data || []).length === PAGE_SIZE);
+    } catch (e) {
+      console.error('Load more transactions error:', e);
+      Sentry.captureException(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => { load(); }, [currentUser?.id]);
+
+  // Ledger rows + open/failed/rejected withdrawal requests, merged into one
+  // reverse-chronological feed. Loading more ledger pages naturally
+  // interleaves with the (unpaginated, typically small) request list.
+  const feed: FeedItem[] = [
+    ...txns.map((row): FeedItem => ({ kind: 'ledger', sortKey: row.created_at, row })),
+    ...withdrawalRequests.map((row): FeedItem => ({ kind: 'withdrawal_request', sortKey: row.updated_at || row.created_at, row })),
+  ].sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
 
   // Detect a real platform authenticator (Face ID / Touch ID / Android
   // biometric) so the "Use biometrics" button is only offered when it can
@@ -512,36 +630,84 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
           {/* Transaction history */}
           <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
-          {txns.length === 0 ? (
+          {txnsError ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 0' }}>
+              <AlertCircle size={18} color="#EF4444" />
+              <p style={{ color: '#EF4444', fontSize: '13px', textAlign: 'center', margin: 0 }}>{txnsError}</p>
+              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '8px 16px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
+            </div>
+          ) : feed.length === 0 ? (
             <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
           ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {txns.map(t => {
-                const isCredit = CREDIT_TYPES.has(t.type);
-                const bank = t.metadata;
-                return (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
-                      {t.type === 'payout' && bank?.bank_name && (
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Paid to {bank.bank_name}{bank.account_number ? ` · ${bank.account_number}` : ''}{bank.account_name ? ` · ${bank.account_name}` : ''}
-                        </p>
-                      )}
-                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
-                    </div>
-                    <span style={{ color: isCredit ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
-                      {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {feed.map(item => {
+                  if (item.kind === 'ledger') {
+                    const t = item.row;
+                    const isCredit = CREDIT_TYPES.has(t.type);
+                    const bank = t.metadata;
+                    return (
+                      <button
+                        key={`t-${t.id}`}
+                        onClick={() => setSelectedItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.metadata?.event_title || t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
+                          {t.type === 'payout' && bank?.bank_name && (
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              Paid to {bank.bank_name}{bank.account_number ? ` · ${maskAccountNumber(bank.account_number)}` : ''}
+                            </p>
+                          )}
+                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        </div>
+                        <span style={{ color: isCredit ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                          {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
+                        </span>
+                      </button>
+                    );
+                  }
+                  const wr = item.row;
+                  const isReversed = wr.status === 'failed' || wr.status === 'rejected';
+                  return (
+                    <button
+                      key={`wr-${wr.id}`}
+                      onClick={() => setSelectedItem(item)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                    >
+                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isReversed ? 'rgba(255,255,255,0.06)' : 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: '16px' }}>{isReversed ? '↺' : '⋯'}</span>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: isReversed ? '#8B8FA8' : '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WITHDRAWAL_REQUEST_LABELS[wr.status]}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                      </div>
+                      <span style={{ color: isReversed ? '#8B8FA8' : '#F59E0B', fontWeight: 700, fontSize: '14px', flexShrink: 0, textDecoration: isReversed ? 'line-through' : 'none' }}>
+                        -{fmt(wr.amount_kobo)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {txnsHasMore && (
+                <button
+                  onClick={loadMoreTxns}
+                  disabled={loadingMore}
+                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+            </>
           )}
         </div>
+      )}
+
+      {selectedItem && (
+        <TransactionDetail item={selectedItem} onClose={() => setSelectedItem(null)} />
       )}
 
       {/* Withdraw modal */}
@@ -749,6 +915,181 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// A single labeled row in the receipt (label left, value right).
+function ReceiptRow({ label, value, valueColor, muted }: { label: string; value: string; valueColor?: string; muted?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: valueColor || (muted ? '#8B8FA8' : '#F0F0FF'), fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  );
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  paid: '#10B981', confirmed: '#10B981', completed: '#10B981',
+  pending: '#F59E0B', processing: '#F59E0B',
+  failed: '#EF4444', rejected: '#EF4444',
+  cancelled: '#8B8FA8', 'cancelled — refunded': '#8B8FA8',
+};
+
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// Transaction detail / receipt screen. Branches by feed item kind:
+// - Ledger 'credit' rows (ticket sale revenue): Gross -> VENTS fee (buyer-
+//   paid, informational, NOT deducted) -> Net Received, plus event/ticket/
+//   buyer/Paystack context from metadata where present.
+// - Ledger 'payout' / 'cancelled_payout_refund' rows: Requested -> Fee
+//   (VENTS charges none today) -> Amount Sent/Refunded, masked bank details.
+// - withdrawal_request rows with no ledger counterpart (pending/processing/
+//   failed/rejected): the same Requested/Fee framing plus the failure or
+//   rejection reason straight from admin_note -- this table is the
+//   authoritative record for a withdrawal that never completed.
+function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => void }) {
+  const na = (v: string | null | undefined) => (v && v.trim() ? v : 'Not available');
+
+  let icon = <Receipt size={22} color="#A855F7" />;
+  let title = 'Transaction';
+  let isMoneyIn = true;
+  let amountLabel = '';
+  let statusLabel = '';
+  let dateLabel = '';
+  let rows: { label: string; value: string; valueColor?: string; muted?: boolean }[] = [];
+
+  if (item.kind === 'ledger') {
+    const t = item.row;
+    const meta = t.metadata || {};
+    isMoneyIn = CREDIT_TYPES.has(t.type);
+    amountLabel = fmt(t.amount_kobo);
+
+    if (t.type === 'credit') {
+      icon = <Ticket size={22} color="#10B981" />;
+      title = 'Ticket Sale';
+      statusLabel = 'Paid';
+      dateLabel = fmtDateTime(t.created_at);
+      const gross = meta.gross_kobo ?? t.amount_kobo;
+      const buyerFee = meta.buyer_fee_kobo;
+      rows = [
+        { label: 'Gross amount', value: fmt(gross) },
+        {
+          label: 'VENTS service fee',
+          value: buyerFee != null ? `${fmt(buyerFee)} (paid by buyer, not deducted)` : 'Not available for this transaction',
+          muted: true,
+        },
+        { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: '#10B981' },
+        { label: 'Currency', value: 'NGN (₦)' },
+        { label: 'Event', value: na(meta.event_title) },
+        { label: 'Ticket type', value: na(meta.ticket_type) },
+        { label: 'Quantity', value: meta.quantity != null ? String(meta.quantity) : 'Not available' },
+        { label: 'Buyer name', value: na(meta.buyer_name) },
+        { label: 'Buyer email', value: na(meta.buyer_email) },
+        { label: 'Buyer phone', value: na(meta.buyer_phone) },
+        { label: 'Payment method', value: 'Not available', muted: true },
+        { label: 'Paystack reference', value: na(meta.paystack_reference) },
+        { label: 'Status', value: 'Paid', valueColor: STATUS_COLORS.paid },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    } else if (t.type === 'payout') {
+      icon = <Landmark size={22} color="#EF4444" />;
+      title = 'Withdrawal';
+      statusLabel = 'Completed';
+      dateLabel = fmtDateTime(t.created_at);
+      rows = [
+        { label: 'Requested amount', value: fmt(t.amount_kobo) },
+        { label: 'Withdrawal fee', value: 'None', muted: true },
+        { label: 'Amount sent', value: fmt(t.amount_kobo), valueColor: '#EF4444' },
+        { label: 'Destination bank', value: na(meta.bank_name) },
+        { label: 'Account number', value: maskAccountNumber(meta.account_number) },
+        { label: 'Account name', value: na(meta.account_name) },
+        { label: 'Status', value: 'Completed', valueColor: STATUS_COLORS.completed },
+        { label: 'Completed', value: fmtDateTime(t.created_at) },
+      ];
+    } else if (t.type === 'cancelled_payout_refund') {
+      icon = <Landmark size={22} color="#10B981" />;
+      title = 'Withdrawal Cancelled — Refunded';
+      statusLabel = 'Refunded';
+      dateLabel = fmtDateTime(t.created_at);
+      rows = [
+        { label: 'Refunded amount', value: fmt(t.amount_kobo), valueColor: '#10B981' },
+        { label: 'Reason', value: na(t.description) },
+        { label: 'Destination bank', value: na(meta.bank_name) },
+        { label: 'Account number', value: maskAccountNumber(meta.account_number) },
+        { label: 'Status', value: 'Cancelled — Refunded', valueColor: STATUS_COLORS.cancelled },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    } else {
+      title = TYPE_LABELS[t.type] || 'Transaction';
+      rows = [
+        { label: 'Amount', value: fmt(t.amount_kobo) },
+        { label: 'Description', value: na(t.description) },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    }
+  } else {
+    const wr = item.row;
+    const isReversed = wr.status === 'failed' || wr.status === 'rejected';
+    icon = <Landmark size={22} color={isReversed ? '#8B8FA8' : '#F59E0B'} />;
+    title = WITHDRAWAL_REQUEST_LABELS[wr.status];
+    isMoneyIn = isReversed; // reversed = funds back in the wallet
+    amountLabel = fmt(wr.amount_kobo);
+    statusLabel = wr.status;
+    dateLabel = fmtDateTime(wr.updated_at || wr.created_at);
+    rows = [
+      { label: 'Requested amount', value: fmt(wr.amount_kobo) },
+      { label: 'Withdrawal fee', value: 'None', muted: true },
+      { label: isReversed ? 'Amount sent' : 'Amount to be sent', value: isReversed ? '₦0.00 (not sent — refunded to balance)' : fmt(wr.amount_kobo) },
+      { label: 'Destination bank', value: na(wr.bank_name) },
+      { label: 'Account number', value: maskAccountNumber(wr.account_number) },
+      { label: 'Account name', value: na(wr.account_name) },
+      { label: 'Withdrawal reference', value: na(wr.paystack_reference || wr.transfer_code) },
+      { label: 'Status', value: wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: STATUS_COLORS[wr.status] },
+      { label: 'Requested', value: fmtDateTime(wr.created_at) },
+      ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),
+      ...(isReversed ? [{ label: 'Failure / rejection reason', value: na(wr.admin_note), valueColor: '#EF4444' }] : []),
+    ];
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9200, display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <button onClick={onClose} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <span style={{ fontSize: '18px', fontWeight: 700 }}>Transaction Details</span>
+      </div>
+
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+        {/* Receipt header card */}
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            {icon}
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#8B8FA8' }}>{title}</p>
+          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? '#10B981' : '#EF4444', wordBreak: 'break-all' }}>
+            {isMoneyIn ? '+' : '-'}{amountLabel}
+          </p>
+          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: STATUS_COLORS[statusLabel.toLowerCase()] || '#C4C9E0', background: 'rgba(255,255,255,0.06)' }}>
+            {statusLabel}
+          </span>
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#8B8FA8' }}>{dateLabel}</p>
+        </div>
+
+        {/* Detail rows */}
+        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px' }}>
+          {rows.map((r, i) => (
+            <ReceiptRow key={i} label={r.label} value={r.value} valueColor={r.valueColor} muted={r.muted} />
+          ))}
+        </div>
+
+        <p style={{ margin: '16px 0 0', fontSize: '11px', color: '#5C6080', textAlign: 'center', lineHeight: 1.6 }}>
+          Card numbers, bank credentials, and other sensitive payment details are never shown here.
+        </p>
+      </div>
     </div>
   );
 }
