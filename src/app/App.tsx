@@ -225,6 +225,9 @@ export default function App() {
   const eventsPageRef = useRef(0);
   const [hasMoreEvents, setHasMoreEvents] = useState(true);
   const [loadingEvents, setLoadingEvents] = useState(true);
+  // Bumped on every Home-tab tap so HomeScreen can scroll itself back to
+  // top -- see handleTabChange below.
+  const [homeScrollSignal, setHomeScrollSignal] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1383,6 +1386,11 @@ export default function App() {
     // same tap also causes `screen` to change to 'home'.
     if (tab === 'home') {
       fetchEvents(true);
+      // Bumping this on every Home tap (not just re-taps) is deliberate:
+      // switching in from another tab always lands scrolled to top anyway
+      // (HomeScreen remounts fresh dbEvents), so this only has a visible
+      // effect exactly when it matters -- tapping Home while already on it.
+      setHomeScrollSignal(s => s + 1);
     }
   }, [fetchEvents]);
 
@@ -2320,6 +2328,7 @@ export default function App() {
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
               blockedUserIds={[...blockedIds]}
+              scrollToTopSignal={homeScrollSignal}
             />
           )}
           {screen === 'explore' && (
