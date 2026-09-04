@@ -1086,6 +1086,7 @@ export default function App() {
             // for, not just the purchaser's own name on every card.
             holderName: t.holder_name || currentUser?.full_name || 'Attendee',
             holderEmail: t.holder_email || undefined,
+            checkedIn: !!t.checked_in,
           };
         });
 
@@ -2605,6 +2606,7 @@ export default function App() {
                 navigateTo('payment-success');
               }}
               onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
+              currentUserId={currentUser?.id}
             />
           )}
           {screen === 'settings' && (

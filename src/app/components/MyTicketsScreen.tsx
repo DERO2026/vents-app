@@ -1,10 +1,11 @@
-import { useState, useRef, useEffect } from 'react';
-import { Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
-import { PurchasedTicket } from './types';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock } from 'lucide-react';
+import { PurchasedTicket, TicketTransfer } from './types';
 import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { prefetchTicketTokens } from '../../lib/ticketToken';
+import { supabase } from '../../lib/supabase';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -12,9 +13,10 @@ interface MyTicketsScreenProps {
   onBack: () => void;
   onViewTicket: (ticket: PurchasedTicket) => void;
   onRefresh?: () => Promise<void>;
+  currentUserId?: string;
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -26,6 +28,86 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   useEffect(() => {
     prefetchTicketTokens(tickets.map((t) => t.ticketId));
   }, [tickets]);
+
+  // Pending ticket transfers involving this user, either direction --
+  // fetched client-side same as WalletScreen fetches its own supplementary
+  // data. RLS (ticket_transfers_involved_read) already scopes this to only
+  // rows where the caller is from_user_id or to_user_id.
+  const [transfers, setTransfers] = useState<TicketTransfer[]>([]);
+  const [transferActionBusy, setTransferActionBusy] = useState<string | null>(null);
+  const [transferActionError, setTransferActionError] = useState('');
+
+  const loadTransfers = useCallback(async () => {
+    if (!currentUserId) return;
+    const { data, error } = await supabase
+      .from('ticket_transfers')
+      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, expires_at, tickets(ticket_type, events(title))')
+      .or(`from_user_id.eq.${currentUserId},to_user_id.eq.${currentUserId}`)
+      .eq('status', 'pending')
+      .order('created_at', { ascending: false });
+    if (error) { console.error('Failed to load ticket transfers:', error); return; }
+    const mapped: TicketTransfer[] = (data || []).map((r: any) => ({
+      id: r.id,
+      ticketId: r.ticket_id,
+      fromUserId: r.from_user_id,
+      toUserId: r.to_user_id,
+      toIdentifier: r.to_identifier,
+      status: r.status,
+      createdAt: r.created_at,
+      expiresAt: r.expires_at,
+      eventTitle: r.tickets?.events?.title,
+      ticketTypeLabel: r.tickets?.ticket_type,
+    }));
+    setTransfers(mapped);
+  }, [currentUserId]);
+
+  useEffect(() => { loadTransfers(); }, [loadTransfers]);
+
+  const handleAcceptTransfer = async (transferId: string) => {
+    setTransferActionBusy(transferId);
+    setTransferActionError('');
+    try {
+      const { error } = await supabase.rpc('accept_ticket_transfer', { p_transfer_id: transferId });
+      if (error) throw new Error(error.message);
+      await loadTransfers();
+      if (onRefresh) await onRefresh();
+    } catch (e: any) {
+      setTransferActionError(e?.message || 'Could not accept this transfer.');
+    } finally {
+      setTransferActionBusy(null);
+    }
+  };
+
+  const handleDeclineTransfer = async (transferId: string) => {
+    setTransferActionBusy(transferId);
+    setTransferActionError('');
+    try {
+      const { error } = await supabase.rpc('decline_ticket_transfer', { p_transfer_id: transferId });
+      if (error) throw new Error(error.message);
+      await loadTransfers();
+    } catch (e: any) {
+      setTransferActionError(e?.message || 'Could not decline this transfer.');
+    } finally {
+      setTransferActionBusy(null);
+    }
+  };
+
+  const handleCancelTransfer = async (transferId: string) => {
+    setTransferActionBusy(transferId);
+    setTransferActionError('');
+    try {
+      const { error } = await supabase.rpc('cancel_ticket_transfer', { p_transfer_id: transferId });
+      if (error) throw new Error(error.message);
+      await loadTransfers();
+    } catch (e: any) {
+      setTransferActionError(e?.message || 'Could not cancel this transfer.');
+    } finally {
+      setTransferActionBusy(null);
+    }
+  };
+
+  const incomingTransfers = transfers.filter((t) => t.toUserId === currentUserId);
+  const outgoingTransfers = transfers.filter((t) => t.fromUserId === currentUserId);
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -209,6 +291,65 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           overscrollBehavior: 'contain',
         }}
       >
+        {transferActionError && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+            <span style={{ color: '#F87171', fontSize: '12px' }}>{transferActionError}</span>
+          </div>
+        )}
+
+        {incomingTransfers.length > 0 && (
+          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Incoming Ticket Transfers</p>
+            {incomingTransfers.map((t) => (
+              <div key={t.id} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Send size={14} color="#C4B5FD" />
+                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{t.eventTitle || 'A ticket'} {t.ticketTypeLabel ? `· ${t.ticketTypeLabel}` : ''}</span>
+                </div>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>Someone wants to transfer this ticket to you · expires {new Date(t.expiresAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => handleAcceptTransfer(t.id)}
+                    disabled={transferActionBusy === t.id}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                  >
+                    <Check size={13} /> Accept
+                  </button>
+                  <button
+                    onClick={() => handleDeclineTransfer(t.id)}
+                    disabled={transferActionBusy === t.id}
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                  >
+                    <X size={13} /> Decline
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {outgoingTransfers.length > 0 && (
+          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Pending Outgoing Transfers</p>
+            {outgoingTransfers.map((t) => (
+              <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <Clock size={13} color="#F59E0B" />
+                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{t.eventTitle || 'A ticket'} {t.ticketTypeLabel ? `· ${t.ticketTypeLabel}` : ''}</span>
+                </div>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>Awaiting {t.toIdentifier} to accept · expires {new Date(t.expiresAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                <button
+                  onClick={() => handleCancelTransfer(t.id)}
+                  disabled={transferActionBusy === t.id}
+                  style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                >
+                  Cancel Transfer
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <SkeletonCard variant="ticket" />

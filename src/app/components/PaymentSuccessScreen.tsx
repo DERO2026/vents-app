@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket } from 'lucide-react';
+import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket, Send, AlertCircle, X } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { formatPrice } from './data';
@@ -11,11 +11,23 @@ import { Capacitor } from '@capacitor/core';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
 import { TOAST_TOP_POSITION } from './shared/toastPosition';
+import { supabase } from '../../lib/supabase';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
   onViewTickets: () => void;
   onGoHome: () => void;
+}
+
+// Client-side mirror of initiate_ticket_transfer's own eligibility checks
+// (0040_ticket_transfer.sql) -- purely for the UI gate; the RPC re-validates
+// everything server-side regardless, so this can never be relied on as the
+// actual security boundary.
+function isTransferEligible(ticket: PurchasedTicket): boolean {
+  if (ticket.checkedIn) return false;
+  const eventDate = ticket.event.event_date ? new Date(ticket.event.event_date) : null;
+  if (eventDate && eventDate.getTime() < Date.now()) return false;
+  return true;
 }
 
 // v2 signed tokens are much longer than the old bare UUID, which pushes the
@@ -125,6 +137,42 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       confetti({ particleCount: 60, spread: 50, origin: { y: 0.5, x: 0.8 }, colors });
     }, 400);
   }, []);
+
+  // Transfer flow -- initiate_ticket_transfer does every real eligibility/
+  // ownership/recipient check server-side; this just collects the
+  // recipient identifier and surfaces the RPC's own error message.
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferIdentifier, setTransferIdentifier] = useState('');
+  const [transferSending, setTransferSending] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const [transferSent, setTransferSent] = useState(false);
+
+  const handleSendTransfer = async () => {
+    const identifier = transferIdentifier.trim();
+    if (!identifier) { setTransferError('Enter the recipient\'s email or username'); return; }
+    setTransferSending(true);
+    setTransferError('');
+    try {
+      const { error } = await supabase.rpc('initiate_ticket_transfer', {
+        p_ticket_id: ticket.ticketId,
+        p_recipient_identifier: identifier,
+      });
+      if (error) throw new Error(error.message);
+      setTransferSent(true);
+      setTransferIdentifier('');
+    } catch (e: any) {
+      setTransferError(e?.message || 'Could not start the transfer. Please try again.');
+    } finally {
+      setTransferSending(false);
+    }
+  };
+
+  const closeTransferModal = () => {
+    setShowTransfer(false);
+    setTransferError('');
+    setTransferSent(false);
+    setTransferIdentifier('');
+  };
 
   const purchaseDate = new Date(ticket.purchasedAt).toLocaleDateString('en-NG', {
     weekday: 'short',
@@ -396,6 +444,27 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           </button>
         </div>
 
+        {isTransferEligible(ticket) && (
+          <button
+            onClick={() => setShowTransfer(true)}
+            style={{
+              width: '100%',
+              background: '#090514',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+            }}
+          >
+            <Send size={16} color="#A78BFA" />
+            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Transfer Ticket</span>
+          </button>
+        )}
+
         <button
           onClick={onViewTickets}
           style={{
@@ -437,6 +506,63 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           Back to Home
         </button>
       </div>
+
+      {showTransfer && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#F0F0FF' }}>Transfer Ticket</p>
+              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#8B8FA8' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {transferSent ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color="#10B981" />
+                  <span style={{ color: '#10B981', fontSize: '13px', lineHeight: 1.5 }}>
+                    Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
+                  </span>
+                </div>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Enter the VENTS email or username of the person you're transferring this ticket to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
+                </p>
+                <input
+                  placeholder="Recipient email or username"
+                  value={transferIdentifier}
+                  onChange={e => setTransferIdentifier(e.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+                />
+                {transferError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color="#EF4444" />
+                    <span style={{ color: '#EF4444', fontSize: '13px' }}>{transferError}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={handleSendTransfer}
+                    disabled={transferSending || !transferIdentifier.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                  >
+                    {transferSending ? 'Sending…' : 'Send Request'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

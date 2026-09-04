@@ -95,6 +95,28 @@ export interface PurchasedTicket {
   // (purchase_ticket_with_tokens) so the QR renders instantly with no mint delay.
   token?: string;
   vcDiscountNgn?: number;
+  // tickets.checked_in -- a checked-in ticket can never be transferred
+  // (initiate_ticket_transfer/accept_ticket_transfer both re-check this
+  // server-side; this only drives the UI gate, see 0040_ticket_transfer.sql).
+  checkedIn?: boolean;
+}
+
+export type TicketTransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
+
+// One ticket_transfers row, joined with just enough ticket/event context to
+// render an incoming-request or outgoing-pending card in My Tickets.
+export interface TicketTransfer {
+  id: string;
+  ticketId: string;
+  fromUserId: string;
+  toUserId: string;
+  toIdentifier: string;
+  status: TicketTransferStatus;
+  createdAt: string;
+  expiresAt: string;
+  eventTitle?: string;
+  ticketTypeLabel?: string;
+  counterpartyLabel?: string;
 }
 
 export interface UserProfile {
