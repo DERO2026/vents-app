@@ -18,7 +18,7 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { Sentry } from '../../lib/sentry';
 import { ImageCropperModal } from './ImageCropperModal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
@@ -684,8 +684,10 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [showStateModal, setShowStateModal] = useState(false);
   // Unset (legacy pre-country-column accounts) defaults to Nigeria, since
   // every account that predates users.country was signed up Nigeria-only --
-  // an accurate historical fallback, not an invented one.
-  const isNigeriaAccount = !currentUser?.country || currentUser.country === 'NG';
+  // an accurate historical fallback, not an invented one. A curated
+  // subdivision list only exists for a few countries (countrySubdivisions.ts);
+  // any other account falls back to a free-text field.
+  const accountSubdivisions = subdivisionsForCountry(currentUser?.country || 'NG');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -1189,17 +1191,18 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Region / Province</p>
-                {/* Nigeria (including legacy accounts predating users.country,
-                    which were exclusively Nigerian at the time) gets the
-                    curated NIGERIA_STATES picker; every other account gets a
-                    free-text field -- same fallback AuthScreen's signup form
-                    already uses for non-Nigeria countries. Previously this
+                {/* A country with a curated subdivision list (see
+                    countrySubdivisions.ts -- Nigeria, including legacy
+                    accounts predating users.country which were exclusively
+                    Nigerian at the time) gets that picker; every other
+                    account gets a free-text field -- same fallback
+                    AuthScreen's signup form already uses. Previously this
                     always showed the Nigeria picker regardless of
                     currentUser.country. */}
-                {isNigeriaAccount ? (
+                {accountSubdivisions ? (
                   <PickerField
                     value={stateValue}
-                    placeholder="Select your state"
+                    placeholder={`Select your ${accountSubdivisions.label.toLowerCase()}`}
                     onOpen={() => setShowStateModal(true)}
                   />
                 ) : (
@@ -1264,12 +1267,12 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         />
       )}
 
-      {showStateModal && (
+      {showStateModal && accountSubdivisions && (
         <PickerSheet
-          title="Select State"
-          searchPlaceholder="Search state..."
+          title={`Select ${accountSubdivisions.label}`}
+          searchPlaceholder={`Search ${accountSubdivisions.label.toLowerCase()}...`}
           value={stateValue}
-          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          options={accountSubdivisions.options.map((name) => ({ value: name, label: name }))}
           onSelect={(v) => { setStateValue(v); setShowStateModal(false); }}
           onClose={() => setShowStateModal(false)}
         />

@@ -6,7 +6,6 @@ import { sanitize } from '../../lib/sanitize';
 import { eventCreateSchema, firstValidationError } from '../../lib/schemas';
 import confetti from 'canvas-confetti';
 import { haptics } from '../../lib/haptics';
-import { NIGERIA_STATES } from './StateSelectScreen';
 import { ImageCropperModal } from './ImageCropperModal';
 import { EVENT_CARD_ASPECT } from '../../lib/eventCardAspect';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
@@ -16,13 +15,15 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { hasCapability } from '../../lib/permissions';
 import { LocationPicker } from './LocationPicker';
 import { NIGERIA_CITIES } from '../../lib/nigeriaLocations';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
+import { COUNTRY_CODES } from '../../lib/countries';
 import { REGION } from '../../lib/regionConfig';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
 
 interface CreateEventScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; country?: string } | null;
   onBack: () => void;
   onCreated: (event: OrganizerEvent) => void;
   /** When set, the screen loads this event's data and edits it in place instead of creating a new one. */
@@ -80,8 +81,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [placeId, setPlaceId] = useState<string | null>(null);
   const [city, setCity] = useState('');
   const [stateName, setStateName] = useState('');
+  // Defaults from the organizer's account country -- editable, since an
+  // organizer can host an event outside their home country. Never writes
+  // back to users.country; this is purely the event's own country.
+  const [eventCountry, setEventCountry] = useState<string>(currentUser?.country || 'NG');
+  const [showCountryModal, setShowCountryModal] = useState(false);
   const [showStateModal, setShowStateModal] = useState(false);
   const [showCityModal, setShowCityModal] = useState(false);
+  const eventSubdivisions = subdivisionsForCountry(eventCountry);
   const [capacity, setCapacity] = useState('');
   
   // Tickets states
@@ -230,6 +237,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setStateName(parts[1] || '');
         setCity(parts[2] || '');
         setAddress(parts[3] || '');
+        if (row.country) setEventCountry(row.country);
         setLatitude(row.latitude != null ? Number(row.latitude) : null);
         setLongitude(row.longitude != null ? Number(row.longitude) : null);
         setPlaceId(row.place_id || null);
@@ -565,6 +573,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              country: eventCountry,
               latitude,
               longitude,
               place_id: placeId,
@@ -713,6 +722,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              country: eventCountry,
               latitude,
               longitude,
               place_id: placeId,
@@ -1331,6 +1341,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 }}
               />
             </div>
+            <div>
+              <Label>Country *</Label>
+              <PickerField
+                value={COUNTRY_CODES.find((c) => c.iso === eventCountry)?.name || ''}
+                placeholder="Select country"
+                onOpen={() => setShowCountryModal(true)}
+              />
+            </div>
             <div style={{ display: 'flex', gap: '10px' }}>
               <div style={{ flex: 1, position: 'relative' }}>
                 <Label>City *</Label>
@@ -1350,12 +1368,26 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 )}
               </div>
               <div style={{ flex: 1 }}>
-                <Label>State *</Label>
-                <PickerField
-                  value={stateName}
-                  placeholder="Select State"
-                  onOpen={() => setShowStateModal(true)}
-                />
+                <Label>{eventSubdivisions?.label || 'State'} *</Label>
+                {/* Only Nigeria (via NIGERIA_CITIES) has a curated city-in-
+                    state list; every other country's "state" is either a
+                    curated subdivision picker (countrySubdivisions.ts) or
+                    free text -- previously this was always the Nigeria
+                    state picker regardless of the event's country. */}
+                {eventSubdivisions ? (
+                  <PickerField
+                    value={stateName}
+                    placeholder={`Select ${eventSubdivisions.label}`}
+                    onOpen={() => setShowStateModal(true)}
+                  />
+                ) : (
+                  <input
+                    placeholder="State / Region / Province"
+                    value={stateName}
+                    onChange={(e) => setStateName(e.target.value)}
+                    style={INPUT_STYLE}
+                  />
+                )}
               </div>
             </div>
             <div>
@@ -1819,12 +1851,30 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       </div>
       )}
 
-      {showStateModal && (
+      {showCountryModal && (
         <PickerSheet
-          title="Select State"
-          searchPlaceholder="Search state..."
+          title="Select Country"
+          searchPlaceholder="Search country..."
+          value={eventCountry}
+          options={COUNTRY_CODES.map((c) => ({ value: c.iso, label: c.name }))}
+          onSelect={(v) => {
+            setEventCountry(v);
+            // A country change can invalidate a previously-picked
+            // state/city that belonged to the old country.
+            setStateName('');
+            setCity('');
+            setShowCountryModal(false);
+          }}
+          onClose={() => setShowCountryModal(false)}
+        />
+      )}
+
+      {showStateModal && eventSubdivisions && (
+        <PickerSheet
+          title={`Select ${eventSubdivisions.label}`}
+          searchPlaceholder={`Search ${eventSubdivisions.label.toLowerCase()}...`}
           value={stateName}
-          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          options={eventSubdivisions.options.map((name) => ({ value: name, label: name }))}
           onSelect={(v) => {
             setStateName(v);
             // A state change can invalidate a previously-picked city that

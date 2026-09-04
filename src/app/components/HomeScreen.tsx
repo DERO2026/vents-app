@@ -4,7 +4,7 @@ import {
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
-  ChevronRight,
+  ChevronRight, ChevronDown,
 } from 'lucide-react';
 import { Event } from './types';
 import { supabase } from '../../lib/supabase';
@@ -17,6 +17,8 @@ import { formatEventDateRange, formatCardCTA } from './data';
 import { haptics } from '../../lib/haptics';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
 import { NIGERIA_STATES } from './StateSelectScreen';
+import { COUNTRY_CODES as COUNTRY_CODES_HOME } from '../../lib/countries';
+import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
 
@@ -39,7 +41,7 @@ interface HomeScreenProps {
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
-  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string } | null;
+  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; country?: string } | null;
   hasMore?: boolean;
   onLoadMore?: () => void;
   unreadNotificationsCount?: number;
@@ -144,6 +146,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     area: venue,
     city: city,
     state: stateFromLocation || city,
+    country: dbEvent.country || 'NG',
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
     images: [
@@ -793,6 +796,26 @@ export function HomeScreen({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
+  // Discovery-country default: the authenticated user's account country
+  // (users.country), never written back to it -- purely a local, in-memory
+  // browsing preference, same non-negotiable already established for
+  // Services' discovery-country selector. 'all' means no country filter
+  // (browse everywhere), the explicit escape hatch this must always keep.
+  const [countryFilter, setCountryFilter] = useState<string>(() => currentUser?.country || 'NG');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  // currentUser is often still null on first render (auth still
+  // hydrating) -- once the real account country arrives, adopt it as the
+  // default exactly once, but never overwrite a country the user has
+  // already deliberately picked in this session.
+  const countryFilterTouchedRef = useRef(false);
+  useEffect(() => {
+    if (countryFilterTouchedRef.current) return;
+    if (currentUser?.country) setCountryFilter(currentUser.country);
+  }, [currentUser?.country]);
+  const handleCountryFilterChange = useCallback((iso: string) => {
+    countryFilterTouchedRef.current = true;
+    setCountryFilter(iso);
+  }, []);
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -995,6 +1018,7 @@ export function HomeScreen({
   const [filterLoading, setFilterLoading] = useState(false);
   const filtersActive = activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week'
     || stateFilter !== 'all'
+    || countryFilter !== 'all'
     || priceFilter !== 'all';
 
   useEffect(() => {
@@ -1023,6 +1047,7 @@ export function HomeScreen({
         if (priceFilter === 'free') query = query.eq('price', 0);
         if (priceFilter === 'paid') query = query.gt('price', 0);
         if (stateFilter !== 'all') query = query.ilike('location', `%, ${stateFilter},%`);
+        if (countryFilter !== 'all') query = query.eq('country', countryFilter);
         if (userAgeYears < 18) query = query.eq('is_18_plus', false);
         if (blockedIdSet.size > 0) query = query.not('organizer_id', 'in', `(${[...blockedIdSet].join(',')})`);
 
@@ -1046,7 +1071,7 @@ export function HomeScreen({
       }
     })();
     return () => { cancelled = true; };
-  }, [searchQuery, activeCategory, priceFilter, stateFilter, currentUser, blockedIdSet, filtersActive]);
+  }, [searchQuery, activeCategory, priceFilter, stateFilter, countryFilter, currentUser, blockedIdSet, filtersActive]);
 
   // While a search query is active, filter/sort the server's fuzzy-matched
   // results instead of the locally loaded feed page — search_events_fuzzy
@@ -1087,6 +1112,12 @@ export function HomeScreen({
       stateFilter === 'all' ||
       event.state?.toLowerCase() === stateFilter.toLowerCase();
 
+    // Country filter -- discovery-default metadata only, never a real
+    // access restriction (see events.country's own doc comment).
+    const matchCountry =
+      countryFilter === 'all' ||
+      (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
+
     // Price filter (free vs paid). "Paid" means at least one ticket tier
     // costs money — event.price alone is only ever the LOWEST tier, so an
     // event with a free tier alongside a paid one would otherwise never
@@ -1103,13 +1134,13 @@ export function HomeScreen({
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
-    return matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
+    return matchCategory && matchDateCategory && matchState && matchCountry && matchPrice && matchUpcoming;
   }).sort((a, b) => {
     // Nearest date to furthest across the board.
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
     const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
     return dtA - dtB;
-  }), [baseEvents, activeCategory, stateFilter, priceFilter, upcomingOnly, blockedIdSet]);
+  }), [baseEvents, activeCategory, stateFilter, countryFilter, priceFilter, upcomingOnly, blockedIdSet]);
 
   const todayStart = new Date(new Date().toISOString().split('T')[0]);
   const upcomingDbEvents = dbEvents.filter(e => {
@@ -1119,6 +1150,8 @@ export function HomeScreen({
 
   const matchesStateFilter = (event: any) =>
     stateFilter === 'all' || event.state?.toLowerCase() === stateFilter.toLowerCase();
+  const matchesCountryFilter = (event: any) =>
+    countryFilter === 'all' || (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
 
   const byNearestDate = (a: any, b: any) => {
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
@@ -1134,6 +1167,7 @@ export function HomeScreen({
   // is nearest-date-first; state filter applies same as the Explore grid.
   const trendingEvents = [...upcomingDbEvents]
     .filter(matchesStateFilter)
+    .filter(matchesCountryFilter)
     .filter((e) => (e.trendingScore || 0) > 0)
     .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
     .slice(0, 5)
@@ -1147,10 +1181,11 @@ export function HomeScreen({
     return dbEvents.filter(e => {
       if (!e.isFeatured) return false;
       if (!matchesStateFilter(e)) return false;
+      if (!matchesCountryFilter(e)) return false;
       const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
       return d && d >= start;
     }).sort(byNearestDate);
-  }, [dbEvents, stateFilter]);
+  }, [dbEvents, stateFilter, countryFilter]);
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
@@ -1392,6 +1427,29 @@ export function HomeScreen({
 
       {/* Scrollable content */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+
+        {/* Discovery-country pill -- defaults to the account's country
+            (users.country) but is a purely local browsing preference:
+            picking a different country here never writes back to
+            users.country, and "All Countries" is always available as an
+            explicit escape hatch. Same non-negotiable already established
+            for Services' discovery-country selector. */}
+        <div className="px-4 mb-3" style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <button
+            onClick={() => setShowCountryPicker(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '6px', background: '#090514',
+              border: '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '6px 12px',
+              cursor: 'pointer',
+            }}
+          >
+            <MapPin size={12} color="#8B8FA8" />
+            <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600 }}>
+              {countryFilter === 'all' ? 'All Countries' : (COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter)}
+            </span>
+            <ChevronDown size={12} color="#8B8FA8" />
+          </button>
+        </div>
 
 
 
@@ -1746,6 +1804,20 @@ export function HomeScreen({
             </div>
           </div>
         </>
+      )}
+
+      {showCountryPicker && (
+        <PickerSheet
+          title="Discover Events In"
+          searchPlaceholder="Search country..."
+          value={countryFilter}
+          options={[
+            { value: 'all', label: 'All Countries' },
+            ...COUNTRY_CODES_HOME.map((c) => ({ value: c.iso, label: c.name })),
+          ]}
+          onSelect={(v) => { handleCountryFilterChange(v); setShowCountryPicker(false); }}
+          onClose={() => setShowCountryPicker(false)}
+        />
       )}
     </div>
   );

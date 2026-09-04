@@ -235,6 +235,10 @@ export default function App() {
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
+  // Bumped on a Profile-tab re-tap (see handleTabChange) -- forwarded to
+  // ProfileScreen as refreshSignal, which turns it into its own internal
+  // profileRefreshKey to re-run its existing stats fetch effects.
+  const [profileTabRefreshSignal, setProfileTabRefreshSignal] = useState(0);
 
   const handleSwitchToAttendee = useCallback(() => {
     setUserRole('attendee');
@@ -1040,6 +1044,7 @@ export default function App() {
             area: venue,
             city: city,
             state: city + ' State',
+            country: dbEvent.country || 'NG',
             price: Number(dbEvent.price || 0),
             image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
             description: dbEvent.description || '',
@@ -1405,6 +1410,7 @@ export default function App() {
   const [analyticsEventTitle, setAnalyticsEventTitle] = useState<string | undefined>(undefined);
 
   const handleTabChange = useCallback((tab: TabId) => {
+    const wasAlreadyActive = activeTab === tab;
     setActiveTab(tab);
     setScreen(TAB_SCREENS[tab]);
     setScreenStack([]);
@@ -1426,8 +1432,29 @@ export default function App() {
       // (HomeScreen remounts fresh dbEvents), so this only has a visible
       // effect exactly when it matters -- tapping Home while already on it.
       setHomeScrollSignal(s => s + 1);
+    } else if (wasAlreadyActive) {
+      // Same "tap the active tab to refresh" gesture as Home, extended to
+      // the other three tabs -- but ONLY on a re-tap (unlike Home's
+      // always-fires approach above), since these three don't already
+      // remount/refetch on every switch-in the way HomeScreen does.
+      // Each reuses its existing fetch/revalidation path, no new fetch
+      // logic: My Tickets calls the same fetchUserTickets already used by
+      // MyTicketsScreen's own pull-to-refresh; Chats bumps chatRefreshKey,
+      // the same signal ConversationScreen's own goBack already uses to
+      // make ExploreScreen's inbox list refetch; Profile bumps
+      // profileTabRefreshSignal, which ProfileScreen turns into its own
+      // internal profileRefreshKey (already-existing stats/service-
+      // provider-profile fetch effects, previously dead since nothing
+      // ever incremented it).
+      if (tab === 'my-tickets' && currentUser?.id) {
+        fetchUserTickets(currentUser.id);
+      } else if (tab === 'explore') {
+        setChatRefreshKey(k => k + 1);
+      } else if (tab === 'profile') {
+        setProfileTabRefreshSignal(s => s + 1);
+      }
     }
-  }, [fetchEvents]);
+  }, [fetchEvents, activeTab, currentUser?.id, fetchUserTickets]);
 
   const handleOrgTabChange = useCallback((tab: OrgTab) => {
     setOrgTab(tab);
@@ -2471,6 +2498,7 @@ export default function App() {
               }}
               onNavigate={handleProfileNavigate}
               unreadNotificationsCount={unreadCount}
+              refreshSignal={profileTabRefreshSignal}
               onBecomeOrganizer={async () => {
                 setUserRole('organizer');
                 setOrgTab('home');

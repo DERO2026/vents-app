@@ -37,6 +37,13 @@ interface ProfileScreenProps {
   onBecomeOrganizer?: () => void;
   userRole?: 'attendee' | 'organizer';
   unreadNotificationsCount?: number;
+  // Bumped by App.tsx whenever the Profile tab is tapped while already
+  // active (the same "tap active tab to refresh" gesture Home already
+  // has) -- re-triggers the existing stats/hasProviderProfile fetch
+  // effects below via profileRefreshKey, rather than adding new fetch
+  // logic. A plain number (not a boolean) so repeated taps each still
+  // register as a change.
+  refreshSignal?: number;
 }
 
 export function ProfileScreen({
@@ -50,10 +57,14 @@ export function ProfileScreen({
   onBecomeOrganizer,
   userRole,
   unreadNotificationsCount = 0,
+  refreshSignal,
 }: ProfileScreenProps) {
   const [eventsCreated, setEventsCreated] = useState(0);
   const [attendees, setAttendees] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  useEffect(() => {
+    if (refreshSignal) setProfileRefreshKey((k) => k + 1);
+  }, [refreshSignal]);
   const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
   const [orgRequestReason, setOrgRequestReason] = useState('');
   const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');

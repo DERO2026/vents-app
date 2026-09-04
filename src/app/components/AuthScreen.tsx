@@ -5,7 +5,7 @@ import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
 import { PickerSheet } from './shared/PickerSheet';
@@ -220,21 +220,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(
     (selectedCountryIso && countryByIso(selectedCountryIso)?.code) || REGION.phoneCountryCode
   );
-  // NIGERIA_STATES only makes sense for a Nigerian account -- every other
-  // country falls back to a free-text region field rather than a
-  // fabricated or incorrect subdivision list (no per-country states/
-  // provinces data exists yet for the other ~189 countries). Driven by
-  // selectedCountryIso (the account/home country chosen in
-  // CountrySelectScreen), NOT phoneCountryCode -- a phone number's dial
-  // code is not the same signal as the account's country (e.g. a Rwandan
-  // account previously got the Nigerian state picker if phoneCountryCode
-  // still happened to read Nigeria's +234, which is exactly the bug this
-  // fixes), and falls back to the phone country only when no account
-  // country is available yet (e.g. very early in the form, or a mode
-  // where selectedCountryIso isn't meaningful).
-  const isNigeriaSelected = selectedCountryIso
-    ? selectedCountryIso === 'NG'
-    : (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso === 'NG';
+  // A curated state/province/region picker only exists for a handful of
+  // countries (see countrySubdivisions.ts) -- every other country falls
+  // back to a free-text region field rather than a fabricated or
+  // incorrect subdivision list. Driven by selectedCountryIso (the
+  // account/home country chosen in CountrySelectScreen), NOT
+  // phoneCountryCode -- a phone number's dial code is not the same signal
+  // as the account's country (e.g. a Rwandan account previously got the
+  // Nigerian state picker if phoneCountryCode still happened to read
+  // Nigeria's +234, which is exactly the bug this fixes), and falls back
+  // to the phone country only when no account country is available yet
+  // (e.g. very early in the form, or a mode where selectedCountryIso
+  // isn't meaningful).
+  const signupCountryIso = selectedCountryIso
+    || (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso;
+  const signupSubdivisions = subdivisionsForCountry(signupCountryIso);
   const handlePhoneCountryChange = (code: string) => {
     // Switching country must not leave a stale Nigerian state (or a
     // free-text value typed for a different country) behind.
@@ -2137,11 +2137,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               {mode === 'signup' && (
                 <>
                   
-                  {/* State selector — Nigerian users get the existing
-                      NIGERIA_STATES picker; every other country falls back
-                      to a free-text State/Region field (see
-                      isNigeriaSelected above). */}
-                  {isNigeriaSelected ? (
+                  {/* State selector — a country with a curated subdivision
+                      list (countrySubdivisions.ts) gets a picker over that
+                      list; every other country falls back to a free-text
+                      State/Region/Province field. */}
+                  {signupSubdivisions ? (
                     <div
                       onClick={() => setShowStateDropdown(true)}
                       style={{
@@ -2166,7 +2166,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                           textAlign: 'left',
                         }}
                       >
-                        {signupState || 'Select State'}
+                        {signupState || `Select ${signupSubdivisions.label}`}
                       </div>
                       <ChevronDown
                         size={16}
@@ -2280,12 +2280,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         )}
       </div>
       
-      {showStateDropdown && isNigeriaSelected && (
+      {showStateDropdown && signupSubdivisions && (
         <PickerSheet
-          title="Select State"
-          searchPlaceholder="Search state..."
+          title={`Select ${signupSubdivisions.label}`}
+          searchPlaceholder={`Search ${signupSubdivisions.label.toLowerCase()}...`}
           value={signupState}
-          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          options={signupSubdivisions.options.map((name) => ({ value: name, label: name }))}
           onSelect={(v) => {
             setSignupState(v);
             setShowStateDropdown(false);

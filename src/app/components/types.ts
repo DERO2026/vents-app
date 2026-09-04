@@ -18,6 +18,11 @@ export interface Event {
   area: string;
   city: string;
   state: string;
+  // ISO 3166-1 alpha-2 (e.g. 'NG', 'RW') -- discovery-default metadata
+  // only, never a visibility restriction (see events_country_format_check,
+  // 0038_events_country.sql, and select_events RLS, which has no country
+  // predicate).
+  country: string;
   price: number;
   image: string;
   // Flyer gallery for the multi-image carousel: image_url followed by
