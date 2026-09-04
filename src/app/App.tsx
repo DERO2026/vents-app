@@ -185,6 +185,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
+  // Set when the 15s hydration safety timeout fires — lets the Splash
+  // Routing Effect below still route a currentUser that arrives late (after
+  // Welcome was already shown as a fallback) into the app, instead of
+  // stranding a genuinely-logged-in user on the sign-in screen.
+  const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
@@ -731,14 +736,32 @@ export default function App() {
     return () => window.removeEventListener('pageshow', onPageShow);
   }, [hydrateAuth]);
 
-  // Safety Timeout to prevent stuck splash screen on network/auth hang
+  // Safety Timeout to prevent stuck splash screen on network/auth hang.
+  //
+  // Used to also force setCurrentUser(null) + setScreen('welcome') directly
+  // here -- which meant a hydrateAuth() call that was merely slow (not
+  // actually logged-out: a retried profile fetch, a slow network refresh of
+  // an expired-but-still-valid session) got permanently treated as a
+  // sign-out. Worse, since the Splash Routing Effect below only ever routes
+  // on `screen === 'splash'`, once this handler force-set screen to
+  // 'welcome' that effect could never fire again for this mount -- so even
+  // when hydrateAuth() went on to complete successfully in the background
+  // moments later and called setCurrentUser() with a fully valid, restored
+  // session, nothing was left to route the user back into the app. A
+  // real user with a real session could get stuck on the sign-in screen
+  // permanently, purely because hydration took a few seconds too long.
+  //
+  // Now this only stops BLOCKING (authLoading=false) so the splash isn't
+  // frozen forever -- it never touches currentUser or screen itself.
+  // hydrationTimedOut records that this happened, so the Splash Routing
+  // Effect below can still route a late-arriving currentUser into the app
+  // even after it's already shown Welcome once as a result.
   useEffect(() => {
     const safetyTimeout = setTimeout(() => {
       if (authLoading) {
-        console.warn("Auth hydration safety timeout (15s) triggered. Forcing welcome screen. Check network or InsForge backend latency.");
-        setCurrentUser(null);
+        console.warn("Auth hydration safety timeout (15s) triggered — no longer blocking, but hydrateAuth() keeps running in the background so a valid session can still restore.");
+        setHydrationTimedOut(true);
         setAuthLoading(false);
-        setScreen('welcome');
       }
     }, 15000);
     return () => clearTimeout(safetyTimeout);
@@ -765,8 +788,22 @@ export default function App() {
     // Waits for any in-flight ?event=/?user= deep link fetch — otherwise
     // this could route to home/welcome while the fetch is still running,
     // and if it later fails, the URL is already cleaned with no way back.
-    if (screen === 'splash' && !authLoading && !deepLinkPending) {
+    //
+    // Also fires when hydrationTimedOut is set and screen is still
+    // 'welcome' -- that's the fallback the 15s safety timeout landed the
+    // user on before hydrateAuth() finished. Without this second
+    // condition, a currentUser that arrives after the timeout (a real,
+    // valid, just-slow-to-restore session) would have nothing left to
+    // route it anywhere: this effect used to only ever fire on
+    // `screen === 'splash'`, and the timeout used to move screen straight
+    // to 'welcome' itself, permanently skipping this effect for the rest
+    // of the mount. Scoped to `screen === 'welcome'` specifically (not
+    // any later screen) so it can't yank a user out of something they've
+    // since started doing on purpose, like filling in the signup form.
+    const shouldRoute = (screen === 'splash' || (hydrationTimedOut && screen === 'welcome')) && !authLoading && !deepLinkPending;
+    if (shouldRoute) {
       if (currentUser) {
+        setHydrationTimedOut(false);
         if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
           setUserRole('attendee');
           setScreen('home');
@@ -777,7 +814,7 @@ export default function App() {
           setScreen('home');
           setActiveTab('home');
         }
-      } else {
+      } else if (screen === 'splash') {
         // A signup left mid-verification (app closed/backgrounded before the
         // OTP was entered) resumes straight into the OTP screen instead of
         // dropping the user on the welcome page and losing their place.
@@ -790,8 +827,35 @@ export default function App() {
           setScreen('welcome');
         }
       }
+      // else: screen is already 'welcome' (the timeout's fallback) and
+      // currentUser is still null — nothing to do, already showing the
+      // right thing.
     }
-  }, [screen, authLoading, currentUser, deepLinkPending]);
+  }, [screen, authLoading, currentUser, deepLinkPending, hydrationTimedOut]);
+
+  // Routes to Welcome if currentUser disappears while the user is already
+  // deep in the app (not on splash/welcome/auth, which handle a null
+  // currentUser themselves). Nothing else in this file does this generically
+  // -- every other place that nulls currentUser (handleSignOut, the
+  // suspended-account branch in hydrateAuth) also explicitly manages screen
+  // itself, which was fine while hydrateAuth only ever ran before the app
+  // was shown (mount) or while backgrounded (pageshow/bfcache). Now that it
+  // also re-runs on native resume/foreground while the user may be actively
+  // using an authenticated screen, a session that turns out to have been
+  // genuinely revoked/expired needs somewhere to send the user other than
+  // silently leaving them on a now-unauthenticated version of whatever
+  // screen they were already on.
+  const prevUserIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const hadUser = prevUserIdRef.current !== null;
+    prevUserIdRef.current = currentUser?.id ?? null;
+    if (hadUser && !currentUser && screen !== 'splash' && screen !== 'welcome' && screen !== 'auth') {
+      setUserRole('attendee');
+      setScreen('welcome');
+      setScreenStack([]);
+      setActiveTab('home');
+    }
+  }, [currentUser, screen]);
 
   useEffect(() => {
     if (!appToastError) return;
@@ -1306,7 +1370,21 @@ export default function App() {
     setActiveTab(tab);
     setScreen(TAB_SCREENS[tab]);
     setScreenStack([]);
-  }, []);
+    // Revalidate Home's event list on every tap of the Home tab — not just
+    // when navigating to Home from elsewhere. The existing "fetch on
+    // screen === 'home'" effect below only fires when `screen` actually
+    // changes value, so tapping Home while already on Home (the common
+    // "tap the active tab to refresh/scroll-to-top" gesture) previously did
+    // nothing — newly published/updated events wouldn't appear without a
+    // full app restart. force=true bypasses fetchEvents' own 5s debounce
+    // (a deliberate tap should always refresh, not be silently skipped),
+    // and running it here means the 5s debounce it also shares with that
+    // other effect naturally prevents a duplicate second query when this
+    // same tap also causes `screen` to change to 'home'.
+    if (tab === 'home') {
+      fetchEvents(true);
+    }
+  }, [fetchEvents]);
 
   const handleOrgTabChange = useCallback((tab: OrgTab) => {
     setOrgTab(tab);
@@ -1879,6 +1957,32 @@ export default function App() {
     })();
     return () => removeListener?.();
   }, []);
+
+  // Re-validate the session on native resume/foreground. The existing
+  // pageshow/bfcache listener above only covers the web case (a browser tab
+  // actually being frozen and restored) -- a Capacitor WebView backgrounded
+  // by the OS is usually never actually unloaded, so pageshow rarely or
+  // never fires there. Meanwhile Supabase's autoRefreshToken relies on a
+  // JS timer that mobile OSes throttle or pause entirely while the app is
+  // backgrounded, so a session's access token can genuinely go stale during
+  // a long background period with nothing to notice or fix it until some
+  // API call eventually fails. Calling hydrateAuth() again here (it already
+  // safely no-ops into "preserve known-good state" on any transient
+  // failure, per its own getSession()-error handling above) gives the
+  // client a chance to refresh proactively right as the user returns,
+  // instead of only reactively after something breaks.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    let removeListener: (() => void) | undefined;
+    (async () => {
+      const { App: CapacitorApp } = await import('@capacitor/app');
+      const sub = await CapacitorApp.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) hydrateAuth();
+      });
+      removeListener = () => sub.remove();
+    })();
+    return () => removeListener?.();
+  }, [hydrateAuth]);
 
   const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
     const enriched = {
