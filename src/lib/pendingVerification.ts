@@ -22,6 +22,10 @@ export interface PendingSignupProfile {
   username: string;
   phone_number: string;
   state: string;
+  // Account/home country, ISO 3166-1 alpha-2 (e.g. 'NG', 'US') -- chosen once
+  // via CountrySelectScreen before signup. Metadata only, never an
+  // event-visibility restriction (see select_events RLS policy).
+  country?: string;
   date_of_birth?: string;
   avatar_url?: string;
 }

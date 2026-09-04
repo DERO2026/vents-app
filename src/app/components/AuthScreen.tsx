@@ -14,7 +14,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
-import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, countryByIso, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
@@ -47,6 +47,11 @@ interface AuthScreenProps {
   initialMode: AuthMode;
   userRole?: string;
   selectedState?: string;
+  // Account/home country, ISO 3166-1 alpha-2, chosen via CountrySelectScreen
+  // before this screen -- persisted on the profile (users.country) and used
+  // here only to pre-fill the phone-country picker below. Never restricts
+  // which events the account can see or buy tickets for.
+  selectedCountryIso?: string;
   onBack: () => void;
   onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
   resetToken?: string;
@@ -193,7 +198,7 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, selectedCountryIso, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -212,7 +217,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   // Raw national-number digits only — the country dial code is tracked
   // separately so the selector can change without re-parsing the input.
   const [phone, setPhone] = useState<string>('');
-  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(
+    (selectedCountryIso && countryByIso(selectedCountryIso)?.code) || REGION.phoneCountryCode
+  );
   // NIGERIA_STATES only makes sense for a Nigerian phone/account — every
   // other country falls back to a free-text region field rather than a
   // fabricated or incorrect subdivision list (no per-country states/
@@ -560,6 +567,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           username: (username.trim() || pendingProfile?.username || '').toLowerCase(),
           phone_number: phone ? buildE164(phone, phoneCountryCode) : (pendingProfile?.phone_number || ''),
           state: (signupState || selectedState || pendingProfile?.state || '').trim(),
+          country: selectedCountryIso || pendingProfile?.country || undefined,
           avatar_url: avatarUrl || signupAvatarUrl || pendingProfile?.avatar_url,
         };
         const effectiveDob = dob || pendingProfile?.date_of_birth;
@@ -754,7 +762,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           phone_number: normalizedPhone,
           state: (signupState || selectedState || '').trim(),
           role: strictRole,
-          avatar_url: signupAvatarUrl
+          avatar_url: signupAvatarUrl,
+          // Account/home country from CountrySelectScreen -- metadata only,
+          // never an access restriction (see select_events RLS policy).
+          country: selectedCountryIso || undefined,
         };
 
         const normalizedEmail = email.trim().toLowerCase();
@@ -809,6 +820,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               username: userMetaPayload.username,
               phone_number: userMetaPayload.phone_number,
               state: userMetaPayload.state,
+              country: userMetaPayload.country,
               date_of_birth: dob || undefined,
             },
           },
@@ -864,6 +876,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             username: userMetaPayload.username,
             phone_number: userMetaPayload.phone_number,
             state: userMetaPayload.state,
+            country: userMetaPayload.country,
             date_of_birth: dob || undefined,
             avatar_url: userMetaPayload.avatar_url || undefined,
           });

@@ -17,6 +17,7 @@ import { useSwipeBack } from '../lib/useSwipeBack';
 
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RoleSelectScreen } from './components/RoleSelectScreen';
+import { CountrySelectScreen } from './components/CountrySelectScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -1363,6 +1364,18 @@ export default function App() {
     return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
   });
 
+  // Account/home country chosen via CountrySelectScreen (ISO 3166-1 alpha-2,
+  // e.g. 'NG', 'US') -- persisted account metadata only, never an
+  // event-visibility restriction (see select_events RLS policy: purely
+  // deletion/ownership based, no country/state predicate anywhere). Reused
+  // across a fresh signup attempt the same way selectedState is, above.
+  const [selectedCountryIso, setSelectedCountryIso] = useState<string | undefined>(() => {
+    return localStorage.getItem('selected_country_preference') || undefined;
+  });
+  useEffect(() => {
+    if (selectedCountryIso) localStorage.setItem('selected_country_preference', selectedCountryIso);
+  }, [selectedCountryIso]);
+
   const [pendingSignup, setPendingSignup] = useState(false);
   // Per-event context for screens navigated to from ManageEventsScreen
   // (Analytics needs to know which event to scope to; undefined = aggregate).
@@ -2226,7 +2239,7 @@ export default function App() {
                 // afterwards via ProfileScreen's "Become an Organizer" request
                 // flow (onBecomeOrganizer below), which is unaffected by this.
                 setUserRole('attendee');
-                navigateTo('auth');
+                navigateTo('country-select');
               }}
               onSignIn={() => {
                 setPendingSignup(false);
@@ -2237,11 +2250,21 @@ export default function App() {
                 setPendingSignup(true);
                 setAuthMode('signup');
                 setUserRole('attendee');
-                navigateTo('auth');
+                navigateTo('country-select');
               }}
               onBrowseGuest={() => {
                 setScreen('home');
                 setActiveTab('home');
+              }}
+            />
+          )}
+          {screen === 'country-select' && (
+            <CountrySelectScreen
+              onBack={goBack}
+              selectedIso={selectedCountryIso}
+              onContinue={(country) => {
+                setSelectedCountryIso(country.iso);
+                navigateTo('auth');
               }}
             />
           )}
@@ -2285,6 +2308,7 @@ export default function App() {
               initialMode={authMode}
               userRole={userRole}
               selectedState={selectedState}
+              selectedCountryIso={selectedCountryIso}
               onBack={goBack}
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}

@@ -124,6 +124,7 @@ export type Screen =
   | 'referral'
   | 'splash'
   | 'welcome'
+  | 'country-select'
   | 'role-select'
   | 'auth'
   | 'home'

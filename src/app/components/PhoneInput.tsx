@@ -42,8 +42,11 @@ function detectFlagEmojiSupport(): boolean {
 // Computed once per session — the result cannot change while the app is open.
 const SUPPORTS_FLAG_EMOJI = detectFlagEmojiSupport();
 
-/** A country's flag, or a legible ISO badge on platforms without flag glyphs. */
-function CountryMark({ country, size = 16 }: { country: CountryOption; size?: number }) {
+/** A country's flag, or a legible ISO badge on platforms without flag glyphs.
+ *  Exported for reuse by CountrySelectScreen (the account/home-country picker
+ *  shown once at signup, distinct from this component's phone-dial-code
+ *  picker) so both surfaces render the exact same flag/fallback logic. */
+export function CountryMark({ country, size = 16 }: { country: CountryOption; size?: number }) {
   if (SUPPORTS_FLAG_EMOJI) {
     return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{flagEmojiFor(country.iso)}</span>;
   }
