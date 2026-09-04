@@ -71,6 +71,11 @@ export default async function handler(req, res) {
         console.log('[Paystack webhook] Ticket already paid, no-op for reference', reference);
       } else if (result.status === 'confirmed') {
         console.log('[Paystack webhook] Ticket confirmed for reference', reference);
+      } else if (result.status === 'confirmed_lookup_failed') {
+        // Payment is genuinely confirmed (payment_status='paid', wallet
+        // credited) — only the ticket-id readback failed, which this path
+        // doesn't even use. Logged for visibility, not an error condition.
+        console.warn('[Paystack webhook] Ticket confirmed but id lookup failed for reference', reference);
       }
     } catch (err: any) {
       console.error('[Paystack webhook] Error calling confirm_ticket_payment:', err?.message || err);

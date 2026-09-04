@@ -442,15 +442,20 @@ export default function App() {
           window.history.replaceState({}, document.title, cleanUrl);
         }
 
-        // Paystack's own post-payment redirect for channels that leave the
-        // in-app iframe entirely (bank transfer/ussd/mobile money — these
-        // don't reliably reach the JS `callback` CheckoutScreen.tsx's popup
-        // otherwise relies on, especially if the app was backgrounded while
-        // the user completed the payment in their banking app). Paystack
-        // appends `?reference=...&trxref=...` to whatever callback_url was
-        // configured (CheckoutScreen.tsx) — same param either way, checked
-        // in preference order. This is only ever a signal to go verify;
-        // resolvePendingPayment (below) is what actually confirms it
+        // Recovery path for a Paystack redirect this code doesn't itself
+        // trigger — CheckoutScreen.tsx's PaystackPop.setup() call has no
+        // callback_url of its own (confirmed against Paystack's docs: the
+        // Inline/popup method it uses doesn't support that option; the
+        // JS `callback` is the only completion signal for every channel,
+        // unchanged). This only fires if the Paystack MERCHANT DASHBOARD's
+        // own default callback URL (Settings → Preferences → Payment) is
+        // separately configured to point at this app's origin — Paystack
+        // appends `?reference=...&trxref=...` when it uses that. Not yet
+        // confirmed whether that dashboard setting is configured for this
+        // account; harmless either way (a no-op if it never fires) and left
+        // in place as a safety net for any channel/challenge flow that
+        // leaves the iframe. This is only ever a signal to go verify; the
+        // pendingPaymentRef resolver effect is what actually confirms it
         // server-side before showing any success state.
         const paystackRef = params.get('reference') || params.get('trxref');
         if (paystackRef) {
@@ -1412,6 +1417,25 @@ export default function App() {
         }
 
         const ticketIds: string[] = Array.isArray(verifyJson.ticketIds) ? verifyJson.ticketIds : [];
+
+        if (ticketIds.length === 0 && verifyJson.ticketLookupPending) {
+          // Payment IS confirmed at this point (api/payments/verify.ts only
+          // ever sets this flag after confirm_ticket_payment already
+          // succeeded) — a transient failure reading the ticket ids back is
+          // not a payment failure and must never be shown as one. Fall back
+          // to the same recovery UX as the redirect/deep-link path below:
+          // refresh from the buyer's own authenticated connection (which
+          // may well succeed even though the project_admin-side lookup
+          // didn't) and surface success via toast + Wallet rather than the
+          // rich instant-QR success screen this path has no data left for.
+          await fetchUserTickets(currentUser.id);
+          await fetchEvents(true);
+          setAppToastSuccess('Payment confirmed! Your ticket is in Wallet.');
+          setScreenStack([]);
+          setScreen('wallet');
+          return;
+        }
+
         if (ticketIds.length === 0) {
           throw new Error('Payment verified, but no ticket was found for this order. Contact support with your reference.');
         }
@@ -2146,7 +2170,9 @@ export default function App() {
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
               pendingVerificationEmail={pendingVerificationEmail}
+              onPendingVerificationConsumed={() => setPendingVerificationEmail(undefined)}
               pendingResetEmail={pendingResetEmail}
+              onPendingResetConsumed={() => setPendingResetEmail(undefined)}
               signupsDisabled={featureFlags.disableSignups}
             />
           )}

@@ -55,12 +55,24 @@ interface AuthScreenProps {
   // left mid-verification on a previous visit — jumps straight to the OTP
   // screen instead of the sign-up form.
   pendingVerificationEmail?: string;
+  // Called once pendingVerificationEmail has been consumed (resumed into
+  // the OTP screen, or resolved as already-verified) — the parent must
+  // clear its own state in response. Without this, the prop stays set for
+  // the rest of the app session and hijacks every future mount of this
+  // screen (e.g. a normal "please sign in" prompt from something
+  // unrelated) back into signup/OTP mode.
+  onPendingVerificationConsumed?: () => void;
   // Same idea as pendingVerificationEmail, for the "Reset Password" link in
   // the recovery email (?reset_email=) — jumps straight to the forgot-
   // password OTP screen with the email pre-filled. Never triggers a new
   // resetPasswordForEmail call itself; the code was already sent by the
   // email carrying this link.
   pendingResetEmail?: string;
+  // Same reasoning as onPendingVerificationConsumed, for pendingResetEmail
+  // — this one is more disruptive if left stale, since it forces the
+  // forgot-password screen open (not just a redirect-with-message) on
+  // every subsequent Auth visit until cleared.
+  onPendingResetConsumed?: () => void;
   // Kill switch (app_config.disable_signups) — the server-side signup path
   // itself can't be gated (Supabase Auth's own signup endpoint runs outside
   // our schema), so this blocks the client's own signup attempt and the
@@ -181,7 +193,7 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, pendingResetEmail, signupsDisabled = false }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -232,6 +244,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     const existingPending = getPendingVerification();
     const resumeEmail = pendingVerificationEmail || existingPending?.email;
     if (!resumeEmail) return;
+
+    // Tell the parent this prop has been seen, regardless of which branch
+    // below actually runs — otherwise it stays set in App.tsx forever (it's
+    // never cleared there on its own) and this effect re-fires the exact
+    // same way on every future mount of this screen, including a plain
+    // "please sign in" prompt from something completely unrelated.
+    if (pendingVerificationEmail) onPendingVerificationConsumed?.();
 
     // Safety net for a pendingVerification flag left stale by a pre-fix
     // build (see handleVerifyOtp: this used to be cleared only after
@@ -324,6 +343,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     setForgotSent(true);
     setForgotOtpStep(true);
     setForgotPasswordStep(false);
+    // Tell the parent this prop has been seen — App.tsx never clears it on
+    // its own, so without this every future mount of this screen (e.g. a
+    // plain login prompt from something unrelated) would force the
+    // forgot-password OTP screen open again with this same stale email,
+    // for the rest of the app session.
+    onPendingResetConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingResetEmail]);
 

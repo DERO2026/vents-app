@@ -93,6 +93,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (result.status === 'not_found') {
       return res.status(200).json({ status: 'error', error: 'No matching order was found for this payment.' });
     }
+    if (result.status === 'confirmed_lookup_failed') {
+      // Payment IS confirmed at this point (payment_status='paid', wallet
+      // already credited) — only the ticket-id readback failed. Still
+      // reported as status: 'success' (it genuinely is one) so the client
+      // never shows a failure/refund-support message for a payment that
+      // went through; ticketIds is empty and ticketLookupPending tells the
+      // client to fall back to a Wallet refresh instead of expecting an
+      // instant ticket_id/token.
+      return res.status(200).json({ status: 'success', ticketIds: [], ticketLookupPending: true });
+    }
 
     return res.status(200).json({ status: 'success', ticketIds: result.ticketIds });
   } catch (err: any) {
