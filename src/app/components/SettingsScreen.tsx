@@ -851,6 +851,33 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     }
   };
 
+  // Reuses the same DB write handleCropComplete ends with (users.avatar_url
+  // + onProfileUpdated), just skipping the whole upload/crop pipeline --
+  // there's nothing to upload, so no storage/compress/crop step is needed.
+  const [removingAvatar, setRemovingAvatar] = useState(false);
+  const handleRemoveAvatar = async () => {
+    if (!currentUser?.id || removingAvatar) return;
+    setRemovingAvatar(true);
+    setErrorMessage(null);
+    try {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ avatar_url: null })
+        .eq('id', currentUser.id);
+      if (updateError) throw updateError;
+      setAvatarUrl('');
+      if (onProfileUpdated) {
+        onProfileUpdated({ avatar_url: undefined });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to remove photo');
+    } finally {
+      setRemovingAvatar(false);
+    }
+  };
+
   const processCoverFile = (file: File) => {
     if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
     setCoverCropSrc(URL.createObjectURL(file));
@@ -1054,13 +1081,24 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 style={{ display: 'none' }}
                 accept="image/*"
               />
-              <button
-                onClick={openAvatarPicker}
-                disabled={saving}
-                style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-              >
-                {saving ? 'Uploading...' : 'Change Photo'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={openAvatarPicker}
+                  disabled={saving || removingAvatar}
+                  style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {saving ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Add Photo'}
+                </button>
+                {avatarUrl && (
+                  <button
+                    onClick={handleRemoveAvatar}
+                    disabled={saving || removingAvatar}
+                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: removingAvatar ? 'wait' : 'pointer', opacity: removingAvatar ? 0.7 : 1 }}
+                  >
+                    {removingAvatar ? 'Removing...' : 'Remove Photo'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {errorMessage && (
