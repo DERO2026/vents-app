@@ -2314,6 +2314,36 @@ export default function App() {
               providerId={selectedServiceProvider.id}
               initialProvider={selectedServiceProvider}
               onBack={goBack}
+              onContactProvider={currentUser ? async (provider) => {
+                try {
+                  // "First provider photo, falling back to user avatar" --
+                  // the PROVIDER's own account avatar, not the viewer's, so
+                  // this needs a lookup (public_profiles, same safe public
+                  // read every other cross-account avatar fetch in this
+                  // file uses) when the listing itself has no photos yet.
+                  let avatarUrl = provider.photoUrls[0] || undefined;
+                  if (!avatarUrl) {
+                    const { data } = await supabase
+                      .from('public_profiles')
+                      .select('avatar_url')
+                      .eq('id', provider.userId)
+                      .maybeSingle();
+                    avatarUrl = data?.avatar_url || undefined;
+                  }
+                  setConversationUser({ id: provider.userId, name: provider.businessName, avatarUrl });
+                  // No event context for a Services contact -- clear any
+                  // leftover eventId/eventTitle from a previous event-
+                  // context chat so ConversationScreen doesn't show a
+                  // stale event banner here.
+                  setConversationEventId(undefined);
+                  setConversationEventTitle(undefined);
+                  navigateTo('conversation');
+                } catch (err) {
+                  console.error('Failed to open provider conversation:', err);
+                  Sentry.captureException(err);
+                  setAppToastError("Couldn't start the conversation. Please try again.");
+                }
+              } : undefined}
             />
           )}
           {screen === 'service-provider-setup' && currentUser && (

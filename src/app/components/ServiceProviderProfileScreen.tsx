@@ -8,10 +8,11 @@ interface ServiceProviderProfileScreenProps {
   providerId: string;
   initialProvider?: ServiceProvider | null;
   onBack: () => void;
-  // Stage 2 is discovery-only -- Contact Provider is visually present (per
-  // the approved spec) but wiring it to the real Chats flow is explicitly
-  // a later stage. Left optional so this screen degrades gracefully until
-  // that stage wires a real handler.
+  // Wired to the existing Chats/conversation flow in App.tsx (Stage 4) --
+  // reuses the same onOpenConversation pattern as Explore/Inbox, so
+  // conversation-request gating and everything else about DMs is
+  // unchanged. Left optional (button renders disabled without it) so
+  // this screen degrades gracefully if ever rendered without a handler.
   onContactProvider?: (provider: ServiceProvider) => void;
 }
 
