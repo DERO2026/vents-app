@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Ticket, Wallet, Receipt, Users, TrendingUp } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { Sentry } from '../../lib/sentry';
@@ -199,6 +199,16 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
 }
 
 export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: SalesAnalyticsScreenProps) {
+  // Per-event mode gets a purpose-built overview/sales/attendance layout
+  // (Stage 11) built on the new get_event_analytics RPC. Portfolio mode
+  // (no eventId — the organizer's whole account) is untouched below.
+  if (eventId) {
+    return <EventAnalyticsScreen currentUser={currentUser} onBack={onBack} eventId={eventId} eventTitle={eventTitle} />;
+  }
+  return <PortfolioAnalyticsScreen currentUser={currentUser} onBack={onBack} />;
+}
+
+function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void }) {
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
     totalRevenue: number;
@@ -241,34 +251,20 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         return;
       }
       try {
-        let eventIds: string[];
-        let totalCapacity = 0;
-        if (eventId) {
-          // Per-event mode — scope straight to the one event, no portfolio query.
-          eventIds = [eventId];
-          const { data: ev, error: evError } = await supabase
-            .from('events')
-            .select('ticket_goal')
-            .eq('id', eventId)
-            .maybeSingle();
-          if (evError) throw evError;
-          totalCapacity = ev?.ticket_goal || 0;
-        } else {
-          const { data: myEvents, error: eventsError } = await supabase
-            .from('events')
-            .select('id, ticket_goal')
-            .eq('organizer_id', currentUser.id)
-            .is('deleted_at', null);
+        const { data: myEvents, error: eventsError } = await supabase
+          .from('events')
+          .select('id, ticket_goal')
+          .eq('organizer_id', currentUser.id)
+          .is('deleted_at', null);
 
-          if (eventsError) throw eventsError;
+        if (eventsError) throw eventsError;
 
-          if (!myEvents || myEvents.length === 0) {
-            setLoading(false);
-            return;
-          }
-          eventIds = myEvents.map((e: any) => e.id);
-          totalCapacity = myEvents.reduce((sum: number, e: any) => sum + (e.ticket_goal || 0), 0);
+        if (!myEvents || myEvents.length === 0) {
+          setLoading(false);
+          return;
         }
+        const eventIds = myEvents.map((e: any) => e.id);
+        const totalCapacity = myEvents.reduce((sum: number, e: any) => sum + (e.ticket_goal || 0), 0);
 
         // Matches the canonical "sold" definition used everywhere else
         // (get_event_ticket_stats, see Data Consistency migration):
@@ -344,10 +340,9 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         // Previously divided by a hardcoded 120 regardless of the event's
         // actual capacity, so "Conversion Rate" was fabricated for any
         // event whose ticket_goal wasn't ~120. Uses the real capacity
-        // (single event's ticket_goal, or the summed ticket_goal across
-        // the organizer's events in portfolio mode) as the denominator;
-        // renders 0 rather than a division-by-zero/fake rate when no
-        // capacity is set anywhere in scope.
+        // (summed ticket_goal across the organizer's events) as the
+        // denominator; renders 0 rather than a division-by-zero/fake rate
+        // when no capacity is set anywhere in scope.
         const conversion = order.map(day => ({
           day,
           rate: dailyRevenue[day] > 0 && totalCapacity > 0
@@ -371,7 +366,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
     }
 
     fetchAnalytics();
-  }, [currentUser, eventId]);
+  }, [currentUser]);
 
   if (!currentUser) {
     return (
@@ -420,7 +415,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
         <div>
           <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>Sales Analytics</h1>
           <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
-            {eventId ? (eventTitle || 'This event') : 'This week · All events'}
+            This week · All events
           </p>
         </div>
       </div>
@@ -510,6 +505,238 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
                 </div>
               ))}
             </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Per-event analytics (Stage 11) ────────────────────────────────────────
+
+interface EventAnalyticsData {
+  eventTitle: string;
+  currency: string;
+  overview: {
+    soldCount: number;
+    soldQuantity: number;
+    ticketGoal: number;
+    remaining: number | null;
+    grossKobo: number;
+    buyerFeeKobo: number;
+    organizerEarnedKobo: number;
+    pendingCount: number;
+    cancelledCount: number;
+    refundedCount: number;
+  };
+  byTicketType: { name: string; soldCount: number; revenueKobo: number; remaining: number | null }[];
+  salesTrend: { date: string; count: number; revenueKobo: number }[];
+  attendance: { checkedInCount: number; soldQuantity: number; attendancePct: number | null };
+  checkinTrend: { date: string; count: number }[];
+}
+
+function fmtKobo(kobo: number): string {
+  return formatPrice(kobo / 100);
+}
+
+function fmtTrendDate(iso: string): string {
+  try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-NG', { month: 'short', day: 'numeric' }); }
+  catch { return iso; }
+}
+
+function StatTile({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
+  return (
+    <div style={{ flex: '1 1 140px', background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+      <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '5px' }}>{label}</p>
+      <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: sub ? '3px' : 0 }}>{value}</p>
+      {sub && <p style={{ color: subColor || '#8B8FA8', fontSize: '11px', fontWeight: 600 }}>{sub}</p>}
+    </div>
+  );
+}
+
+function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '20px 0 10px' }}>
+      {icon}
+      <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>{title}</p>
+    </div>
+  );
+}
+
+// Small, calm horizontal bars for a date-bucketed trend — deliberately not
+// another SVG chart library; this screen already has enough visual weight
+// from the portfolio mode's three chart types, and the ask here was to keep
+// per-event analytics clean and easy to scan.
+function TrendBars({ data, valueKey, color, formatValue }: {
+  data: { date: string; [k: string]: any }[];
+  valueKey: string;
+  color: string;
+  formatValue: (v: number) => string;
+}) {
+  const max = Math.max(1, ...data.map((d) => Number(d[valueKey]) || 0));
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {data.map((d) => {
+        const v = Number(d[valueKey]) || 0;
+        const pct = Math.max(2, Math.round((v / max) * 100));
+        return (
+          <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ color: '#8B8FA8', fontSize: '11px', width: '52px', flexShrink: 0 }}>{fmtTrendDate(d.date)}</span>
+            <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)', borderRadius: '100px', height: '8px', overflow: 'hidden' }}>
+              <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '100px' }} />
+            </div>
+            <span style={{ color: '#F0F0FF', fontSize: '11px', fontWeight: 700, width: '64px', textAlign: 'right', flexShrink: 0 }}>{formatValue(v)}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void; eventId: string; eventTitle?: string }) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [data, setData] = useState<EventAnalyticsData | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    async function load() {
+      if (!currentUser?.id) { setLoading(false); return; }
+      setLoading(true);
+      setError('');
+      try {
+        const { data: res, error: err } = await supabase.rpc('get_event_analytics', { p_event_id: eventId });
+        if (err) throw new Error(err.message);
+        if (alive) setData(res as EventAnalyticsData);
+      } catch (e: any) {
+        console.error('Failed to load event analytics:', e);
+        Sentry.captureException(e);
+        if (alive) setError(e?.message || 'Could not load analytics for this event.');
+      } finally {
+        if (alive) setLoading(false);
+      }
+    }
+    load();
+    return () => { alive = false; };
+  }, [currentUser?.id, eventId]);
+
+  return (
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+        <button
+          onClick={onBack}
+          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+        >
+          <ArrowLeft size={18} color="#C4C9E0" />
+        </button>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Event Analytics</h1>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px', margin: 0 }}>
+            {data?.eventTitle || eventTitle || 'This event'}
+          </p>
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 110px', scrollbarWidth: 'none' }}>
+        {loading ? (
+          <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>Loading analytics…</div>
+        ) : error ? (
+          <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '16px', padding: '16px', textAlign: 'center', marginTop: '20px' }}>
+            <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>
+          </div>
+        ) : !data ? (
+          <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>No analytics available.</div>
+        ) : (
+          <>
+            {/* 1. OVERVIEW */}
+            <SectionHeader icon={<Wallet size={13} color="#A855F7" />} title="Overview" />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '4px' }}>
+              <StatTile label="Tickets Sold" value={data.overview.soldQuantity.toLocaleString()} sub={data.overview.pendingCount > 0 ? `${data.overview.pendingCount} pending payment` : undefined} subColor="#F59E0B" />
+              {data.overview.remaining !== null && (
+                <StatTile label="Tickets Remaining" value={data.overview.remaining.toLocaleString()} sub={`of ${data.overview.ticketGoal.toLocaleString()} capacity`} />
+              )}
+              <StatTile label="Gross Ticket Sales" value={fmtKobo(data.overview.grossKobo)} sub="paid tickets only" subColor="#10B981" />
+              <StatTile label="Organizer Amount Earned" value={fmtKobo(data.overview.organizerEarnedKobo)} sub="credited to your wallet" subColor="#10B981" />
+              <StatTile
+                label="VENTS Service Fee"
+                value={fmtKobo(data.overview.buyerFeeKobo)}
+                sub="paid by buyers, not deducted"
+              />
+            </div>
+            {(data.overview.cancelledCount > 0 || data.overview.refundedCount > 0) && (
+              <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '10px 2px 0' }}>
+                {data.overview.cancelledCount > 0 && `${data.overview.cancelledCount} cancelled`}
+                {data.overview.cancelledCount > 0 && data.overview.refundedCount > 0 && ' · '}
+                {data.overview.refundedCount > 0 && `${data.overview.refundedCount} refunded`}
+                {' — excluded from the figures above.'}
+              </p>
+            )}
+
+            {/* 2. SALES */}
+            <SectionHeader icon={<Ticket size={13} color="#A855F7" />} title="Sales" />
+            {data.byTicketType.length === 0 ? (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>No ticket sales yet.</p>
+              </div>
+            ) : (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '14px' }}>
+                <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>By Ticket Type</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {data.byTicketType.map((t) => (
+                    <div key={t.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                      <div style={{ minWidth: 0 }}>
+                        <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</p>
+                        <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                          {t.soldCount} sold{t.remaining !== null ? ` · ${t.remaining} left` : ''}
+                        </p>
+                      </div>
+                      <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>{fmtKobo(t.revenueKobo)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {data.salesTrend.length === 0 ? (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '4px' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>Sales trend will appear here once tickets start selling.</p>
+              </div>
+            ) : (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '4px' }}>
+                <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '12px' }}>Sales by Date</p>
+                <TrendBars data={data.salesTrend} valueKey="count" color="#A855F7" formatValue={(v) => `${v} sold`} />
+              </div>
+            )}
+
+            {/* 3. ATTENDANCE */}
+            <SectionHeader icon={<Users size={13} color="#A855F7" />} title="Attendance" />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
+              <StatTile label="Total Checked In" value={data.attendance.checkedInCount.toLocaleString()} />
+              <StatTile
+                label="Attendance %"
+                value={data.attendance.attendancePct !== null ? `${data.attendance.attendancePct}%` : '—'}
+                sub={data.attendance.attendancePct === null ? 'No sales yet' : `of ${data.attendance.soldQuantity.toLocaleString()} sold`}
+              />
+            </div>
+
+            {data.checkinTrend.length === 0 ? (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>No check-ins recorded yet.</p>
+              </div>
+            ) : (
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                  <TrendingUp size={13} color="#10B981" />
+                  <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: 0 }}>Check-ins by Date</p>
+                </div>
+                <TrendBars data={data.checkinTrend} valueKey="count" color="#10B981" formatValue={(v) => `${v} in`} />
+              </div>
+            )}
+
+            <p style={{ color: '#555C7A', fontSize: '10.5px', textAlign: 'center', margin: '18px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+              <Receipt size={11} /> All figures in NGN — paid, active tickets only.
+            </p>
           </>
         )}
       </div>
