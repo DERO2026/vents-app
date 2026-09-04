@@ -15,6 +15,7 @@ import {
   Gift,
   Camera,
   Wallet,
+  Briefcase,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { PurchasedTicket } from './types';
@@ -25,7 +26,7 @@ import { getVcBalance } from '../../lib/vcBalanceCache';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -58,6 +59,16 @@ export function ProfileScreen({
   const [orgRequestError, setOrgRequestError] = useState('');
   const [hasOrgDraft, setHasOrgDraft] = useState(false);
   const [vcBalance, setVcBalance] = useState<number | null>(null);
+
+  // Service Provider request — same pattern as the Organizer request above,
+  // deliberately a separate independent state block (not shared) so an
+  // existing Organizer can also request this capability, and so this can
+  // evolve independently of the Organizer flow without risk to it.
+  const [showSpRequestModal, setShowSpRequestModal] = useState(false);
+  const [spRequestReason, setSpRequestReason] = useState('');
+  const [spRequestStatus, setSpRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
+  const [spRequestError, setSpRequestError] = useState('');
+  const [hasSpDraft, setHasSpDraft] = useState(false);
 
   useEffect(() => {
     if (!currentUser?.id) { setVcBalance(null); return; }
@@ -92,6 +103,36 @@ export function ProfileScreen({
       } else {
         localStorage.removeItem(orgDraftKey);
         setHasOrgDraft(false);
+      }
+    } catch { /* ignore */ }
+  };
+
+  // Draft persistence for the Service Provider request textarea — same
+  // reasoning as orgDraftKey above, own storage key so the two drafts never
+  // collide for a user who opens both modals.
+  const spDraftKey = currentUser?.id ? `vents_sp_request_draft_${currentUser.id}` : null;
+
+  useEffect(() => {
+    if (!spDraftKey) return;
+    try {
+      const saved = localStorage.getItem(spDraftKey);
+      if (saved) {
+        setSpRequestReason(saved);
+        setHasSpDraft(true);
+      }
+    } catch { /* ignore */ }
+  }, [spDraftKey]);
+
+  const handleSpReasonChange = (value: string) => {
+    setSpRequestReason(value);
+    if (!spDraftKey) return;
+    try {
+      if (value.trim()) {
+        localStorage.setItem(spDraftKey, value);
+        setHasSpDraft(true);
+      } else {
+        localStorage.removeItem(spDraftKey);
+        setHasSpDraft(false);
       }
     } catch { /* ignore */ }
   };
@@ -216,6 +257,40 @@ export function ProfileScreen({
     } catch (err: any) {
       setOrgRequestError(err?.message || 'Failed to submit request.');
       setOrgRequestStatus('idle');
+    }
+  };
+
+  useEffect(() => {
+    async function checkSpRequest() {
+      if (!currentUser?.id) return;
+      const { data } = await supabase
+        .from('service_provider_requests')
+        .select('status')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) setSpRequestStatus(data.status === 'approved' ? 'sent' : data.status === 'rejected' ? 'idle' : 'already');
+    }
+    checkSpRequest();
+  }, [currentUser?.id]);
+
+  const submitSpRequest = async () => {
+    if (!currentUser?.id || spRequestStatus === 'sending') return;
+    setSpRequestStatus('sending');
+    setSpRequestError('');
+    try {
+      const { error } = await supabase
+        .from('service_provider_requests')
+        .insert([{ user_id: currentUser.id, reason: spRequestReason.trim() || null }]);
+      if (error) throw error;
+      if (spDraftKey) { try { localStorage.removeItem(spDraftKey); } catch { /* ignore */ } }
+      setHasSpDraft(false);
+      setSpRequestStatus('sent');
+      setShowSpRequestModal(false);
+    } catch (err: any) {
+      setSpRequestError(err?.message || 'Failed to submit request.');
+      setSpRequestStatus('idle');
     }
   };
 
@@ -648,6 +723,85 @@ export function ProfileScreen({
                 style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
               >
                 {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Become a Service Provider — an independent capability, not a
+            role. Deliberately not excluded for Organizers/Admins: this
+            release's whole point is that a user can hold both the
+            Organizer role and this capability on one account (see
+            0033_service_provider_capability.sql). Only currentUser.
+            is_service_provider (a plain boolean, unrelated to `role`)
+            gates this. */}
+        {currentUser.is_service_provider ? (
+          <div className="px-4 mb-3">
+            <div
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: 'rgba(34,211,238,0.08)',
+                borderRadius: '14px',
+                border: '1px solid rgba(34,211,238,0.25)',
+              }}
+            >
+              <Briefcase size={16} color="#22D3EE" />
+              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 700 }}>Service Provider</span>
+            </div>
+          </div>
+        ) : (
+          <div className="px-4 mb-3">
+            <button
+              onClick={() => {
+                if (spRequestStatus === 'already' || spRequestStatus === 'sent') return;
+                setShowSpRequestModal(true);
+              }}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: spRequestStatus === 'already' || spRequestStatus === 'sent' ? 'rgba(34,211,238,0.04)' : 'rgba(34,211,238,0.08)',
+                borderRadius: '14px',
+                border: `1px solid ${spRequestStatus === 'already' || spRequestStatus === 'sent' ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.25)'}`,
+                cursor: spRequestStatus === 'already' || spRequestStatus === 'sent' ? 'default' : 'pointer',
+                opacity: spRequestStatus === 'already' || spRequestStatus === 'sent' ? 0.7 : 1,
+              }}
+            >
+              <Briefcase size={16} color="#22D3EE" />
+              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 600 }}>
+                {spRequestStatus === 'already' ? 'Request Pending Review' : spRequestStatus === 'sent' ? 'Service Provider Request Submitted' : 'Become a Service Provider'}
+              </span>
+              {spRequestStatus === 'idle' && hasSpDraft && (
+                <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
+                  PENDING COMPLETION
+                </span>
+              )}
+            </button>
+          </div>
+        )}
+
+        {/* Become Service Provider modal */}
+        {showSpRequestModal && (
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+            onClick={() => setShowSpRequestModal(false)}>
+            <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
+              onClick={(e) => e.stopPropagation()}>
+              <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become a Service Provider</h3>
+              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                Tell us briefly about the services you'd offer on VENTS. Our team will review your request within 1–3 business days.
+              </p>
+              <textarea
+                value={spRequestReason}
+                onChange={(e) => handleSpReasonChange(e.target.value)}
+                placeholder="e.g. I do event photography and videography in Lagos..."
+                rows={4}
+                style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+              />
+              {spRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{spRequestError}</p>}
+              <button
+                onClick={submitSpRequest}
+                disabled={spRequestStatus === 'sending'}
+                style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#0891B2,#22D3EE)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: spRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: spRequestStatus === 'sending' ? 0.7 : 1 }}
+              >
+                {spRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
               </button>
             </div>
           </div>

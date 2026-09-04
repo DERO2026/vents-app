@@ -53,7 +53,7 @@ interface AuthScreenProps {
   // which events the account can see or buy tickets for.
   selectedCountryIso?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean }) => void;
   resetToken?: string;
   // Set when the user arrived via the "Verify Account" link in the
   // verification email (?verify_email=) or is resuming a signup that was
@@ -626,6 +626,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           isOrganizer: verifiedRole === 'organizer',
           is_verified: finalProfile.is_verified === true,
           vc_badge: finalProfile.vc_badge,
+          is_service_provider: finalProfile.is_service_provider === true,
         });
         return;
       }
