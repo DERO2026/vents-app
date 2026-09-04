@@ -2582,7 +2582,7 @@ export function AdminDashboardScreen({
             {(['cac', 'unverified'] as const).map(s => (
               <button key={s} onClick={() => setVerifySection(s)}
                 style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: verifySection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: verifySection === s ? '#A855F7' : '#8B8FA8' }}>
-                {s === 'cac' ? 'CAC Requests' : 'Unverified Organizers'}
+                {s === 'cac' ? 'Verification Requests' : 'Unverified Organizers'}
               </button>
             ))}
           </div>
@@ -2594,7 +2594,7 @@ export function AdminDashboardScreen({
                 <input
                   value={cacSearchInput}
                   onChange={e => setCacSearchInput(e.target.value)}
-                  placeholder="Search by business name, CAC number, organizer name or email…"
+                  placeholder="Search by business/organizer name, CAC/ID number, or email…"
                   style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
                 />
               </div>
@@ -2619,11 +2619,16 @@ export function AdminDashboardScreen({
                   <div key={r.request_id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div onClick={() => setExpandedCacId(expanded ? null : r.request_id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}>
                       <div>
-                        <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name}</div>
+                        <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name || r.owner_name || r.full_name}</div>
                         <div style={{ color: '#8B8FA8', fontSize: '12px' }}>{r.full_name || 'No Name'} · {r.state || 'No state'}</div>
                         <div style={{ color: '#555C7A', fontSize: '11px' }}>{r.email}</div>
                       </div>
-                      <span style={{ fontSize: '10px', color: statusColor, background: `${statusColor}1A`, padding: '2px 8px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.status}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <span style={{ fontSize: '10px', color: statusColor, background: `${statusColor}1A`, padding: '2px 8px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.status}</span>
+                        <span style={{ fontSize: '9px', color: '#8B8FA8', background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          {r.organizer_type === 'individual' ? 'Individual' : 'Business'} · {r.country || 'NG'}
+                        </span>
+                      </div>
                     </div>
                     <div style={{ color: '#555C7A', fontSize: '10px' }}>Submitted {new Date(r.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
 
@@ -2651,12 +2656,27 @@ export function AdminDashboardScreen({
                         </div>
 
                         <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Owner/Director:</strong> {r.owner_name || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Registration Date:</strong> {r.registration_date ? new Date(r.registration_date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Email:</strong> {r.business_email || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Phone:</strong> {r.business_phone || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>{r.organizer_type === 'individual' ? 'Full Name' : 'Owner/Director'}:</strong> {r.owner_name || '—'}</p>
+                          {r.organizer_type === 'individual' ? (
+                            <>
+                              {r.identity_id_type && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>{r.identity_id_type}:</strong> {r.identity_id_number || '—'}</p>
+                              )}
+                              {!r.identity_id_type && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#555C7A' }}>No structured ID requirement for {r.country || 'this country'} yet — see uploaded document.</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {r.cac_number && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
+                              )}
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Registration Date:</strong> {r.registration_date ? new Date(r.registration_date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Email:</strong> {r.business_email || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Phone:</strong> {r.business_phone || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address || '—'}</p>
+                            </>
+                          )}
                           {r.status !== 'pending' && r.admin_note && (
                             <p style={{ margin: 0, fontSize: '12px', color: '#EF4444' }}><strong style={{ color: '#8B8FA8' }}>Rejection Reason:</strong> {r.admin_note}</p>
                           )}

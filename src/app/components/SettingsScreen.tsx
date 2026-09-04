@@ -232,17 +232,21 @@ function uploadVerificationCertificate(file: File, token: string, onProgress: (p
 const VERIFICATION_SUBMIT_ERROR = "We couldn't submit your verification request. Please try again or contact support if the issue continues.";
 const KNOWN_VERIFICATION_RPC_ERRORS = new Set([
   'Business name is required', 'CAC number is required', 'Business address is required',
-  'Owner name is required', 'A valid registration date is required', 'A valid business email is required',
-  'Business phone is required', 'A certificate document is required',
+  'Your name is required', 'A valid registration date is required', 'A valid business email is required',
+  'Business phone is required', 'A verification document is required',
   'Only organizers can request brand verification', 'You already have a pending verification request',
-  'Not authenticated',
+  'Not authenticated', "organizer_type must be 'individual' or 'business'", 'A valid country is required',
+  'A valid NIN is required', 'NIN must be 11 digits', 'Unsupported identity document type for Nigeria',
 ]);
 
 interface VerificationRow {
   request_id: string; status: 'pending' | 'approved' | 'rejected'; admin_note: string | null;
   created_at: string; reviewed_at: string | null;
-  company_name: string; cac_number: string; owner_name: string; registration_date: string;
-  business_email: string; business_phone: string; business_address: string; document_url: string;
+  organizer_type: 'individual' | 'business'; country: string;
+  company_name: string | null; cac_number: string | null; owner_name: string; registration_date: string | null;
+  business_email: string | null; business_phone: string | null; business_address: string | null;
+  identity_id_type: string | null; identity_id_number: string | null;
+  document_url: string;
 }
 
 // Professional "Verification Pending" status page (Task 4) — business name,
@@ -252,7 +256,9 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
   const refId = `VER-${v.request_id.slice(0, 8).toUpperCase()}`;
   const submittedDate = new Date(v.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' });
   const rows: { label: string; value: string; color?: string; mono?: boolean }[] = [
-    { label: 'Business Name', value: v.company_name },
+    v.organizer_type === 'individual'
+      ? { label: 'Name', value: v.owner_name }
+      : { label: 'Business Name', value: v.company_name || v.owner_name },
     { label: 'Submission Date', value: submittedDate },
     { label: 'Status', value: 'Pending Review', color: '#F59E0B' },
     { label: 'Estimated Review Time', value: '1–3 business days' },
@@ -296,6 +302,15 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const [verification, setVerification] = useState<VerificationRow | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  // Individual vs. registered business -- previously this screen only
+  // ever submitted a CAC/business request. Defaults to 'individual' since
+  // most organizers hosting events on VENTS aren't registered companies;
+  // business is an explicit, deliberate choice.
+  const [organizerType, setOrganizerType] = useState<'individual' | 'business'>('individual');
+  // Defaults from the account's country (set at signup) but stays fully
+  // editable -- a verification's country need not match users.country,
+  // and this write never touches users.country itself.
+  const [country, setCountry] = useState<string>(currentUser?.country || DEFAULT_COUNTRY.iso);
   const [companyName, setCompanyName] = useState('');
   const [cacNumber, setCacNumber] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -303,7 +318,8 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
-  const [businessAddress, setBusinessAddress] = useState(currentUser?.state ? `${currentUser.state}, Nigeria` : '');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [nin, setNin] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -358,18 +374,30 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
   useEffect(() => { loadLatest(); }, [loadLatest]);
 
+  // What's actually required is country/type-conditional -- mirrors the
+  // exact branches submit_organizer_verification() enforces server-side
+  // (see 0037_organizer_verification_country_aware.sql), so a rejected
+  // submission never reaches the network with a confusing generic error.
+  const isNigeriaIndividual = organizerType === 'individual' && country === 'NG';
+  const requiresCac = organizerType === 'business' && country === 'NG';
+
   const handleSubmit = async () => {
     setError('');
     // 1. Validate every field before touching the network.
-    if (!companyName.trim()) { setError('Business name is required.'); return; }
-    if (!cacNumber.trim()) { setError('CAC registration number is required.'); return; }
-    if (!businessAddress.trim()) { setError('Business address is required.'); return; }
-    if (!ownerName.trim()) { setError('Owner name is required.'); return; }
-    if (!registrationDate) { setError('Registration date is required.'); return; }
-    if (registrationDate > todayStr) { setError('Registration date cannot be in the future.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail.trim())) { setError('A valid business email is required.'); return; }
-    if (businessPhone.replace(/\D/g, '').length < 6) { setError('A valid business phone number is required.'); return; }
-    if (!file) { setError('Please upload your Certificate of Incorporation.'); return; }
+    if (!ownerName.trim()) { setError('Your name is required.'); return; }
+    if (!file) { setError('Please upload your verification document.'); return; }
+
+    if (organizerType === 'business') {
+      if (!companyName.trim()) { setError('Business name is required.'); return; }
+      if (requiresCac && !cacNumber.trim()) { setError('CAC registration number is required.'); return; }
+      if (!businessAddress.trim()) { setError('Business address is required.'); return; }
+      if (!registrationDate) { setError('Registration date is required.'); return; }
+      if (registrationDate > todayStr) { setError('Registration date cannot be in the future.'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail.trim())) { setError('A valid business email is required.'); return; }
+      if (businessPhone.replace(/\D/g, '').length < 6) { setError('A valid business phone number is required.'); return; }
+    } else if (isNigeriaIndividual) {
+      if (!/^\d{11}$/.test(nin.trim())) { setError('A valid 11-digit NIN is required.'); return; }
+    }
 
     setSubmitting(true);
     try {
@@ -397,16 +425,23 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
       // 3. Save that URL directly into the organizer's verification record
       // (status defaults to 'pending'; the RPC also blocks duplicate
-      // pending submissions server-side).
+      // pending submissions server-side). Business-only fields are sent
+      // as undefined (-> SQL NULL) for an individual submission, and vice
+      // versa -- the RPC itself enforces which are actually required for
+      // this organizer_type/country combination.
       const { error: rpcError } = await supabase.rpc('submit_organizer_verification' as any, {
-        p_company_name: companyName.trim(),
-        p_cac_number: cacNumber.trim(),
-        p_business_address: businessAddress.trim(),
-        p_document_url: documentUrl,
+        p_organizer_type: organizerType,
+        p_country: country,
         p_owner_name: ownerName.trim(),
-        p_registration_date: registrationDate,
-        p_business_email: businessEmail.trim(),
-        p_business_phone: `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}`,
+        p_document_url: documentUrl,
+        p_company_name: organizerType === 'business' ? companyName.trim() : undefined,
+        p_cac_number: organizerType === 'business' ? cacNumber.trim() : undefined,
+        p_business_address: organizerType === 'business' ? businessAddress.trim() : undefined,
+        p_registration_date: organizerType === 'business' ? registrationDate : undefined,
+        p_business_email: organizerType === 'business' ? businessEmail.trim() : undefined,
+        p_business_phone: organizerType === 'business' ? `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}` : undefined,
+        p_identity_id_type: isNigeriaIndividual ? 'NIN' : undefined,
+        p_identity_id_number: isNigeriaIndividual ? nin.trim() : undefined,
       });
       if (rpcError) throw rpcError;
       analytics.organizerVerificationSubmitted();
@@ -440,50 +475,108 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const form = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: status === 'form' ? '8px' : 0 }}>
       <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-        Verify your organization with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
+        Verify yourself or your business with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
       </p>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Legal Registered Name</label>
-        <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Verifying as</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          {(['individual', 'business'] as const).map(t => (
+            <button
+              key={t} type="button" onClick={() => setOrganizerType(t)}
+              style={{
+                flex: 1, padding: '12px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                background: organizerType === t ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : '#090514',
+                border: organizerType === t ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                color: '#fff',
+              }}
+            >
+              {t === 'individual' ? 'Individual Organizer' : 'Registered Business'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
-        <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Country</label>
+        <select
+          value={country}
+          onChange={e => setCountry(e.target.value)}
+          style={{ ...inputStyle, appearance: 'none' as const, cursor: 'pointer' }}
+        >
+          {COUNTRY_CODES.map(c => (
+            <option key={c.iso} value={c.iso} style={{ background: '#090514' }}>{c.name}</option>
+          ))}
+        </select>
       </div>
 
+      {organizerType === 'business' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Legal Registered Name</label>
+          <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+        </div>
+      )}
+
+      {requiresCac && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
+          <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
+        </div>
+      )}
+
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Owner / Director Full Name</label>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>{organizerType === 'business' ? 'Owner / Director Full Name' : 'Full Name'}</label>
         <input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="e.g. Jane Doe" style={inputStyle} />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Date</label>
-        <input
-          type="date" value={registrationDate} max={todayStr}
-          onChange={e => setRegistrationDate(e.target.value)}
-          style={{ ...inputStyle, colorScheme: 'dark' }}
-        />
-      </div>
+      {isNigeriaIndividual && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>NIN (National Identification Number)</label>
+          <input
+            value={nin} onChange={e => setNin(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            placeholder="11-digit NIN" inputMode="numeric" style={inputStyle}
+          />
+        </div>
+      )}
+
+      {organizerType === 'individual' && !isNigeriaIndividual && (
+        <p style={{ color: '#8B8FA8', fontSize: '12px', lineHeight: 1.5, margin: 0 }}>
+          We don't have a specific ID requirement for {COUNTRY_CODES.find(c => c.iso === country)?.name || 'your country'} yet — upload a government-issued ID or other proof of identity below.
+        </p>
+      )}
+
+      {organizerType === 'business' && (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Registration Date</label>
+            <input
+              type="date" value={registrationDate} max={todayStr}
+              onChange={e => setRegistrationDate(e.target.value)}
+              style={{ ...inputStyle, colorScheme: 'dark' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Email</label>
+            <input type="email" value={businessEmail} onChange={e => setBusinessEmail(e.target.value)} placeholder="business@yourcompany.com" style={inputStyle} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Phone</label>
+            <PhoneInput countryCode={phoneCountryCode} onCountryCodeChange={setPhoneCountryCode} value={businessPhone} onChange={setBusinessPhone} placeholder="801 234 5678" height={45} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
+            <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Email</label>
-        <input type="email" value={businessEmail} onChange={e => setBusinessEmail(e.target.value)} placeholder="business@yourcompany.com" style={inputStyle} />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Phone</label>
-        <PhoneInput countryCode={phoneCountryCode} onCountryCodeChange={setPhoneCountryCode} value={businessPhone} onChange={setBusinessPhone} placeholder="801 234 5678" height={45} />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
-        <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Certificate of Incorporation</label>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>
+          {organizerType === 'business' ? 'Certificate of Incorporation' : 'Government-issued ID'}
+        </label>
         <input
           ref={fileInputRef}
           type="file"
