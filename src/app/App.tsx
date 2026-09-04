@@ -907,15 +907,44 @@ export default function App() {
   }, [currentUser, screen]);
 
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
-  // Services discovery (Stage 2): selected category/provider for the
-  // browsing and profile screens, plus a session-only discovery-country
-  // filter. Deliberately NOT persisted to users.country or localStorage
-  // under the account-country key -- this is a per-session Services
-  // browsing preference only, distinct from selectedCountryIso (the
-  // signup/account country above).
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<string | null>(null);
   const [selectedServiceProvider, setSelectedServiceProvider] = useState<ServiceProvider | null>(null);
-  const [discoveryCountryIso, setDiscoveryCountryIso] = useState<string | undefined>(undefined);
+  // Single shared discovery-country state for both Home and Services (Stage
+  // B) -- previously each screen kept its own local country state
+  // (HomeScreen's own `countryFilter`, and this `discoveryCountryIso` for
+  // Services alone), which is exactly what let them disagree: opening
+  // Services from Home could show a stale/different country than whatever
+  // Home was actively browsing. One piece of state, read and written by
+  // both screens, makes that structurally impossible instead of relying on
+  // a reset-on-navigate patch (which is what the previous, incomplete fix
+  // here did). Deliberately NOT persisted to users.country or localStorage
+  // under the account-country key -- this is a session-only browsing
+  // preference, distinct from selectedCountryIso (the signup/account
+  // country, below) which it defaults from exactly once (see the effect
+  // near selectedCountryIso) but never overwrites once the user has picked
+  // a discovery country themselves.
+  // Falls back to 'NG' only for the brief window before auth hydrates (or
+  // permanently for a guest session with no account country at all) --
+  // the effect below immediately replaces this with the real
+  // currentUser.country the moment it's known, same as HomeScreen's own
+  // prior default did.
+  const [discoveryCountryIso, setDiscoveryCountryIso] = useState<string>(() => currentUser?.country || 'NG');
+  const discoveryCountryTouchedRef = useRef(false);
+  const handleDiscoveryCountryChange = useCallback((iso: string) => {
+    discoveryCountryTouchedRef.current = true;
+    setDiscoveryCountryIso(iso);
+  }, []);
+  // Default the shared discovery country to the account's own country
+  // (users.country) the moment it's known -- currentUser is often still
+  // null on first render while auth is hydrating, so this can't just be the
+  // useState initializer above. Adopts it exactly once; a country the user
+  // has already deliberately picked (in Home or Services, either sets the
+  // same touched flag) is never silently overwritten by this effect again,
+  // even if currentUser?.country changes identity on an unrelated update.
+  useEffect(() => {
+    if (discoveryCountryTouchedRef.current) return;
+    if (currentUser?.country) setDiscoveryCountryIso(currentUser.country);
+  }, [currentUser?.country]);
   const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null);
   const [selectedTicketQty, setSelectedTicketQty] = useState(1);
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
@@ -2374,9 +2403,9 @@ export default function App() {
           {screen === 'services-home' && (
             <ServicesHomeScreen
               onBack={goBack}
-              accountCountryIso={selectedCountryIso}
+              accountCountryIso={currentUser?.country || selectedCountryIso}
               discoveryCountryIso={discoveryCountryIso}
-              onDiscoveryCountryChange={setDiscoveryCountryIso}
+              onDiscoveryCountryChange={handleDiscoveryCountryChange}
               onCategoryPress={(category) => {
                 setSelectedServiceCategory(category);
                 navigateTo('services-category');
@@ -2503,18 +2532,7 @@ export default function App() {
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
-              onServicesPress={() => {
-                // Re-sync to Home's current discovery country on every fresh
-                // entry into Services -- undefined makes ServicesHomeScreen's
-                // own `discoveryCountryIso || accountCountryIso` fallback
-                // pick up selectedCountryIso again, instead of leaking a
-                // country picked in a previous Services visit (or under a
-                // previous account) across into this one. Still session-only:
-                // picking a country inside Services this visit continues to
-                // work exactly as before.
-                setDiscoveryCountryIso(undefined);
-                navigateTo('services-home');
-              }}
+              onServicesPress={() => navigateTo('services-home')}
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}
@@ -2524,6 +2542,8 @@ export default function App() {
               unreadNotificationsCount={unreadCount}
               blockedUserIds={blockedUserIdsArray}
               scrollToTopSignal={homeScrollSignal}
+              countryFilter={discoveryCountryIso}
+              onCountryFilterChange={handleDiscoveryCountryChange}
             />
             </div>
           )}

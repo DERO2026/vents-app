@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
+import { COUNTRY_CODES } from '../../lib/countries';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
@@ -427,7 +428,11 @@ export function EventDetailsScreen({
   }
 
   const openMap = (provider: 'google' | 'apple') => {
-    const label = `${event.venue}, ${event.area}, ${event.city}, Nigeria`;
+    // event.country is a real ISO code (events_country.sql) -- resolve it to
+    // a name for the map search label instead of hardcoding Nigeria, which
+    // sent every non-Nigerian event's map search to the wrong country.
+    const countryName = COUNTRY_CODES.find((c) => c.iso === event.country)?.name || event.country;
+    const label = `${event.venue}, ${event.area}, ${event.city}, ${countryName}`;
     const query = encodeURIComponent(label);
     const hasCoords = event.latitude != null && event.longitude != null;
     const coords = hasCoords ? `${event.latitude},${event.longitude}` : '';

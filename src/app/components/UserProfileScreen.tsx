@@ -383,7 +383,11 @@ export function UserProfileScreen({
           }}
         >
           <MapPin size={13} color="#8B8FA8" />
-          <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{user.city}, Nigeria</span>
+          {/* No per-profile country data is available here (public_profiles
+              doesn't expose one) -- showing just the city avoids asserting
+              a country this screen has no actual data for, rather than
+              hardcoding one that's wrong for non-Nigerian users. */}
+          <span style={{ color: '#8B8FA8', fontSize: '13px' }}>{user.city}</span>
         </div>
       )}
 

@@ -57,6 +57,14 @@ interface HomeScreenProps {
   // so repeated taps (same intent, no other state change) still each fire
   // the effect below, which keys off the value changing.
   scrollToTopSignal?: number;
+  // Shared discovery-country state (Stage B) -- lifted up to App.tsx so
+  // Home and Services read/write the exact same value instead of each
+  // keeping their own local country state, which is what previously let
+  // them disagree (opening Services from Home could show a stale/different
+  // country). Always a specific ISO code, never 'all' -- there is no more
+  // "All Countries" option.
+  countryFilter: string;
+  onCountryFilterChange: (iso: string) => void;
 }
 
 
@@ -793,6 +801,8 @@ export function HomeScreen({
   unreadNotificationsCount,
   blockedUserIds,
   scrollToTopSignal,
+  countryFilter,
+  onCountryFilterChange,
 }: HomeScreenProps) {
   const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -812,25 +822,17 @@ export function HomeScreen({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
-  // Discovery-country default: the authenticated user's account country
-  // (users.country), never written back to it -- purely a local, in-memory
-  // browsing preference, same non-negotiable already established for
-  // Services' discovery-country selector. 'all' means no country filter
-  // (browse everywhere), the explicit escape hatch this must always keep.
-  const [countryFilter, setCountryFilter] = useState<string>(() => currentUser?.country || 'NG');
+  // Discovery country is controlled by App.tsx now (see countryFilter/
+  // onCountryFilterChange props) -- one shared piece of state read and
+  // written by both Home and Services, so the two can never disagree about
+  // which country is being browsed. Always a specific ISO code; there is
+  // no "All Countries" state to default to or fall back on. App.tsx owns
+  // defaulting it to the account's country and never silently resetting a
+  // country the user has deliberately picked -- this component only needs
+  // to forward changes upward and keep its own subdivision filter in sync.
   const [showCountryPicker, setShowCountryPicker] = useState(false);
-  // currentUser is often still null on first render (auth still
-  // hydrating) -- once the real account country arrives, adopt it as the
-  // default exactly once, but never overwrite a country the user has
-  // already deliberately picked in this session.
-  const countryFilterTouchedRef = useRef(false);
-  useEffect(() => {
-    if (countryFilterTouchedRef.current) return;
-    if (currentUser?.country) setCountryFilter(currentUser.country);
-  }, [currentUser?.country]);
   const handleCountryFilterChange = useCallback((iso: string) => {
-    countryFilterTouchedRef.current = true;
-    setCountryFilter(iso);
+    onCountryFilterChange(iso);
     // A subdivision chosen for the previous country (e.g. "Lagos" while
     // browsing Nigeria) is meaningless once the browsing country changes —
     // clear it rather than silently applying a stale, invalid filter (or,
@@ -840,7 +842,7 @@ export function HomeScreen({
       const subs = subdivisionsForCountry(iso);
       return subs && subs.options.includes(prev) ? prev : 'all';
     });
-  }, []);
+  }, [onCountryFilterChange]);
   // The single source of truth for which subdivision list (if any) applies
   // to the country currently being browsed -- Nigeria states, Rwanda
   // provinces, Qatar municipalities, or null (no subdivision field shown)
@@ -872,9 +874,12 @@ export function HomeScreen({
     setTempState('all');
     setTempPrice('all');
   };
+  // Country is intentionally excluded here -- it's always a specific
+  // selection now (never 'all'), so it's the base browsing context (shown
+  // permanently via the country pill), not a togglable "filter" that should
+  // light up the Filters button's dot or add a clearable chip.
   const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all'
-    || (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week')
-    || countryFilter !== 'all';
+    || (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week');
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -1048,10 +1053,12 @@ export function HomeScreen({
   // preloaded. null = no active filter fetch (fall back to dbEvents).
   const [filterResults, setFilterResults] = useState<Event[] | null>(null);
   const [filterLoading, setFilterLoading] = useState(false);
-  const filtersActive = activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week'
-    || stateFilter !== 'all'
-    || countryFilter !== 'all'
-    || priceFilter !== 'all';
+  // Always true now: countryFilter is always a specific ISO code (never
+  // 'all'), and dbEvents (App.tsx's paginated feed) has no server-side
+  // country scoping at all -- so the country/category/state/price-scoped
+  // query below must always run to actually filter by country, not just
+  // when category/state/price happen to be non-default.
+  const filtersActive = true;
 
   // Narrowed to the single primitive field this effect actually reads off
   // currentUser -- depending on the whole `currentUser` object below meant
@@ -1086,7 +1093,8 @@ export function HomeScreen({
         if (priceFilter === 'free') query = query.eq('price', 0);
         if (priceFilter === 'paid') query = query.gt('price', 0);
         if (stateFilter !== 'all') query = query.ilike('location', `%, ${stateFilter},%`);
-        if (countryFilter !== 'all') query = query.eq('country', countryFilter);
+        // countryFilter is always a specific ISO code now -- no 'all' branch.
+        query = query.eq('country', countryFilter);
         if (userAgeYears < 18) query = query.eq('is_18_plus', false);
         if (blockedIdSet.size > 0) query = query.not('organizer_id', 'in', `(${[...blockedIdSet].join(',')})`);
 
@@ -1168,9 +1176,8 @@ export function HomeScreen({
 
     // Country filter -- discovery-default metadata only, never a real
     // access restriction (see events.country's own doc comment).
-    const matchCountry =
-      countryFilter === 'all' ||
-      (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
+    // countryFilter is always a specific ISO code now -- no 'all' branch.
+    const matchCountry = (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
 
     // Price filter (free vs paid). "Paid" means at least one ticket tier
     // costs money — event.price alone is only ever the LOWEST tier, so an
@@ -1422,9 +1429,7 @@ export function HomeScreen({
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
           <VentsLogo size={28} />
           <div style={{ fontSize: '9px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
-            {countryFilter === 'all'
-              ? "Discover what's happening around you"
-              : `Discover the best events in ${COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}`}
+            {`Discover the best events in ${COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}`}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1463,12 +1468,12 @@ export function HomeScreen({
 
         {/* Discovery control cluster -- Search + Country + Filters, grouped
             as one row instead of scattered across the header and a
-            separate pill row. The country pill is a purely local browsing
-            preference (never written back to users.country, "All
-            Countries" always available as an explicit escape hatch); the
-            state/region filter it feeds is single-sourced from
-            countrySubdivisions.ts (see the Filters sheet below), never a
-            hardcoded Nigeria list. */}
+            separate pill row. The country pill always shows one specific
+            country (never written back to users.country, and there is no
+            "All Countries" option -- Home always browses a specific
+            country, defaulting to the account's own); the state/region
+            filter it feeds is single-sourced from countrySubdivisions.ts
+            (see the Filters sheet below), never a hardcoded Nigeria list. */}
         <div className="px-4 mb-2" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={() => setSearchOpen(true)}
@@ -1491,7 +1496,7 @@ export function HomeScreen({
           >
             <MapPin size={13} color="#8B8FA8" style={{ flexShrink: 0 }} />
             <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {countryFilter === 'all' ? 'All' : (COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter)}
+              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter}
             </span>
             <ChevronDown size={12} color="#8B8FA8" style={{ flexShrink: 0 }} />
           </button>
@@ -1517,13 +1522,15 @@ export function HomeScreen({
         </div>
 
         {/* Combined active-filter summary -- one place to see (and clear)
-            every filter narrowing the feed, instead of no visible summary
-            at all beyond a single dot on the Filters button. */}
+            category/state/price filters narrowing the feed. Country is
+            deliberately not shown here: it's always a specific selection
+            (shown permanently via the country pill above, changed only
+            through that picker), not a togglable filter with its own clear
+            control -- and there's exactly one "clear everything" action in
+            this screen now, in the Filters sheet below, rather than a
+            second one duplicated here. */}
         {hasActiveFilters && (
           <div className="px-4 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-            {countryFilter !== 'all' && (
-              <FilterChip label={COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter} onClear={() => handleCountryFilterChange('all')} />
-            )}
             {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
               <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
             )}
@@ -1533,12 +1540,6 @@ export function HomeScreen({
             {priceFilter !== 'all' && (
               <FilterChip label={priceFilter === 'free' ? 'Free' : 'Paid'} onClear={() => setPriceFilter('all')} />
             )}
-            <button
-              onClick={() => { handleCountryFilterChange('all'); setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 6px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textDecoration: 'underline' }}
-            >
-              Clear all
-            </button>
           </div>
         )}
 
@@ -1705,36 +1706,30 @@ export function HomeScreen({
                         Try a different search or browse all events.
                       </p>
                     </>
-                  ) : hasActiveFilters ? (
-                    // Distinguishes "genuinely nothing here yet" from "your
-                    // filters narrowed it to zero" -- same generic copy for
-                    // both used to read as a broken filter once country
-                    // filtering could realistically return zero results for
-                    // a smaller market.
+                  ) : (
+                    // Country is always a specific selection now, so a zero
+                    // result set is always at least partly "this country/
+                    // filter combination has nothing" rather than "genuinely
+                    // nothing exists in the app" -- one message covers both,
+                    // same reasoning that originally justified splitting this
+                    // copy out, just no longer gated on hasActiveFilters
+                    // (which now deliberately excludes country).
                     <>
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
                       <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
                         No events match your filters
                       </p>
                       <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Try a different country, category, or price — or clear everything to see all events.
+                        Try a different country, category, or price.
                       </p>
-                      <button
-                        onClick={() => { handleCountryFilterChange('all'); setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
-                        style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
-                      >
-                        Clear filters
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
-                        No events yet
-                      </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Check back soon — new events are added every day.
-                      </p>
+                      {hasActiveFilters && (
+                        <button
+                          onClick={() => { setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
+                          style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Clear filters
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
@@ -1913,10 +1908,7 @@ export function HomeScreen({
           title="Discover Events In"
           searchPlaceholder="Search country..."
           value={countryFilter}
-          options={[
-            { value: 'all', label: 'All Countries' },
-            ...COUNTRY_CODES_HOME.map((c) => ({ value: c.iso, label: c.name })),
-          ]}
+          options={COUNTRY_CODES_HOME.map((c) => ({ value: c.iso, label: c.name }))}
           onSelect={(v) => { handleCountryFilterChange(v); setShowCountryPicker(false); }}
           onClose={() => setShowCountryPicker(false)}
         />

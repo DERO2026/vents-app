@@ -128,13 +128,13 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
         }}
       >
         <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
-          Discover Nigeria's
+          Discover Your
           <br />
           <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Best Events</span>
         </h1>
 
         <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
-          Book tickets to concerts, tech summits, food festivals and more — all across Nigeria.
+          Book tickets to concerts, tech summits, food festivals and more — wherever you are.
         </p>
 
         {/* Feature chips */}

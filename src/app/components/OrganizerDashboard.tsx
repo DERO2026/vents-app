@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
+import { COUNTRY_CODES } from '../../lib/countries';
 
 interface OrganizerDashboardProps {
   currentUser?: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -633,7 +634,9 @@ export function OrganizerDashboard({
                           {event.title}
                         </h4>
                         <p style={{ color: '#94A3B8', fontSize: '12px', margin: 0 }} className="truncate">
-                          {dateStr} • {event.location || 'Lagos, Nigeria'}
+                          {dateStr}
+                          {(event.location || (event.country && COUNTRY_CODES.find((c) => c.iso === event.country)?.name)) &&
+                            ` • ${event.location || COUNTRY_CODES.find((c) => c.iso === event.country)?.name}`}
                         </p>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
