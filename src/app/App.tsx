@@ -2448,7 +2448,18 @@ export default function App() {
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
-              onServicesPress={() => navigateTo('services-home')}
+              onServicesPress={() => {
+                // Re-sync to Home's current discovery country on every fresh
+                // entry into Services -- undefined makes ServicesHomeScreen's
+                // own `discoveryCountryIso || accountCountryIso` fallback
+                // pick up selectedCountryIso again, instead of leaking a
+                // country picked in a previous Services visit (or under a
+                // previous account) across into this one. Still session-only:
+                // picking a country inside Services this visit continues to
+                // work exactly as before.
+                setDiscoveryCountryIso(undefined);
+                navigateTo('services-home');
+              }}
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}
