@@ -15,6 +15,23 @@ export default defineConfig(({ mode }) => {
   if (mode === 'production') {
     const env = loadEnv(mode, process.cwd(), '');
     const paystackKey = env.VITE_PAYSTACK_PUBLIC_KEY || '';
+    // Vercel sets VERCEL_ENV to 'production' | 'preview' | 'development' on
+    // every build it runs; it's simply absent for a local native
+    // (iOS/Android) build, which is exactly the case this whole guard exists
+    // for -- so this can only ever narrow the guard for Vercel's own Preview
+    // deployments, never for a local/native build or Vercel's own Production
+    // deployment. Preview builds need *some* real key or `vite build` itself
+    // throws before Paystack's own runtime !publicKey guard ever gets a
+    // chance to run -- but a Preview URL is reachable by anyone, so it must
+    // never hold a live key (this repo already shipped that exact incident
+    // once: see supabase/CUTOVER_PLAN.md, commit a5dc677, "stop shipping the
+    // live public key in Preview builds"). A real pk_test_ key is the only
+    // safe value for Preview; Production and every local/native build still
+    // require pk_live_ exactly as before, completely unchanged below.
+    const isVercelPreview = process.env.VERCEL_ENV === 'preview';
+    const paystackKeyValid = isVercelPreview
+      ? paystackKey.startsWith('pk_test_') || paystackKey.startsWith('pk_live_')
+      : paystackKey.startsWith('pk_live_');
     // Catches both the original failure (a committed pk_test_ value) and the
     // gap that opened once .env.production's key was cleared to close that
     // hole: an empty/missing key doesn't start with 'pk_test_', so it would
@@ -23,11 +40,13 @@ export default defineConfig(({ mode }) => {
     // (openPaystackPopup()'s own !publicKey guard is a console.error + a
     // quiet onClose(), not a build-time failure). Either case means the same
     // thing: no real key was supplied for this build.
-    if (!paystackKey.startsWith('pk_live_')) {
+    if (!paystackKeyValid) {
       throw new Error(
         `[build guard] VITE_PAYSTACK_PUBLIC_KEY is ${paystackKey ? 'a pk_test_ key' : 'missing'} in a production build. ` +
-        'Set the real pk_live_ key as an actual environment variable (export it in your ' +
-        'shell, or via your CI secrets) before building for iOS/Android/TestFlight -- ' +
+        (isVercelPreview
+          ? 'Set a real pk_test_ (or pk_live_) key as a Preview-scoped Vercel environment variable -- '
+          : 'Set the real pk_live_ key as an actual environment variable (export it in your ' +
+            'shell, or via your CI secrets) before building for iOS/Android/TestFlight -- ') +
         'never put a live key in a committed .env file. Vercel\'s web deploy is unaffected: ' +
         'its own Production environment variable already overrides the committed value.'
       );
