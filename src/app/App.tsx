@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
+import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { NIGERIA_STATES } from './components/StateSelectScreen';
 import { supabase, getAuthToken } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
@@ -18,6 +18,9 @@ import { useSwipeBack } from '../lib/useSwipeBack';
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { RoleSelectScreen } from './components/RoleSelectScreen';
 import { CountrySelectScreen } from './components/CountrySelectScreen';
+import { ServicesHomeScreen } from './components/ServicesHomeScreen';
+import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
+import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -891,6 +894,15 @@ export default function App() {
   }, [currentUser, screen]);
 
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  // Services discovery (Stage 2): selected category/provider for the
+  // browsing and profile screens, plus a session-only discovery-country
+  // filter. Deliberately NOT persisted to users.country or localStorage
+  // under the account-country key -- this is a per-session Services
+  // browsing preference only, distinct from selectedCountryIso (the
+  // signup/account country above).
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState<string | null>(null);
+  const [selectedServiceProvider, setSelectedServiceProvider] = useState<ServiceProvider | null>(null);
+  const [discoveryCountryIso, setDiscoveryCountryIso] = useState<string | undefined>(undefined);
   const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null);
   const [selectedTicketQty, setSelectedTicketQty] = useState(1);
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
@@ -2269,6 +2281,39 @@ export default function App() {
               }}
             />
           )}
+          {screen === 'services-home' && (
+            <ServicesHomeScreen
+              onBack={goBack}
+              accountCountryIso={selectedCountryIso}
+              discoveryCountryIso={discoveryCountryIso}
+              onDiscoveryCountryChange={setDiscoveryCountryIso}
+              onCategoryPress={(category) => {
+                setSelectedServiceCategory(category);
+                navigateTo('services-category');
+              }}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
+            />
+          )}
+          {screen === 'services-category' && selectedServiceCategory && (
+            <ServiceCategoryScreen
+              category={selectedServiceCategory}
+              onBack={goBack}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
+            />
+          )}
+          {screen === 'service-provider-profile' && selectedServiceProvider && (
+            <ServiceProviderProfileScreen
+              providerId={selectedServiceProvider.id}
+              initialProvider={selectedServiceProvider}
+              onBack={goBack}
+            />
+          )}
           {screen === 'role-select' && (
             <RoleSelectScreen
               onBack={goBack}
@@ -2352,6 +2397,7 @@ export default function App() {
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
+              onServicesPress={() => navigateTo('services-home')}
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}

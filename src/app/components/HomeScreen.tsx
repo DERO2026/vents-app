@@ -4,6 +4,7 @@ import {
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
   Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
+  ChevronRight,
 } from 'lucide-react';
 import { Event } from './types';
 import { supabase } from '../../lib/supabase';
@@ -34,6 +35,7 @@ interface HomeScreenProps {
   selectedState?: string;
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
+  onServicesPress?: () => void;
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
@@ -762,6 +764,7 @@ export function HomeScreen({
   onCreatePress,
   onUserPress,
   onLiveMapPress,
+  onServicesPress,
   dbEvents,
   loading,
   fetchEvents,
@@ -1432,6 +1435,37 @@ export function HomeScreen({
             );
           })}
         </div>
+
+        {/* Discover Services entry banner -- one card, not a full section,
+            per the approved Services entry-point decision (banner in
+            feed, not a 5th BottomNav tab). */}
+        {onServicesPress && (
+          <div className="px-4 mb-6">
+            <button
+              onClick={onServicesPress}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
+                padding: '14px', borderRadius: '20px',
+                background: 'linear-gradient(135deg, rgba(123,47,190,0.14), rgba(79,70,229,0.06))',
+                border: '1px solid rgba(255,255,255,0.06)',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <div style={{
+                width: '44px', height: '44px', borderRadius: '14px', flexShrink: 0,
+                background: 'linear-gradient(135deg, rgba(123,47,190,0.35), rgba(79,70,229,0.35))',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Sparkles size={20} color="#F0F0FF" />
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Inter, sans-serif', margin: 0 }}>Discover Services</p>
+                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '2px 0 0' }}>Beauty, events, fashion &amp; more — near you</p>
+              </div>
+              <ChevronRight size={18} color="#5A5A7A" />
+            </button>
+          </div>
+        )}
 
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load

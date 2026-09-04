@@ -183,7 +183,10 @@ export type Screen =
   | 'door-manager'
   | 'inbox'
   | 'conversation'
-  | 'wallet';
+  | 'wallet'
+  | 'services-home'
+  | 'services-category'
+  | 'service-provider-profile';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
