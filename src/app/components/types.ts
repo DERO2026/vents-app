@@ -120,6 +120,32 @@ export interface Notification {
   icon: string;
 }
 
+// Frontend-shape mirror of a public.service_providers row (see
+// supabase/migrations/0034_service_providers.sql). `status` here reflects
+// the LISTING'S visibility, separate from users.is_service_provider (the
+// capability grant, 0033) -- a listing can only exist for a capability
+// holder, but the two are tracked independently by design.
+export type ServiceProviderStatus = 'draft' | 'approved' | 'rejected';
+
+export interface ServiceProvider {
+  id: string;
+  userId: string;
+  businessName: string;
+  category: string;
+  description?: string | null;
+  location?: string | null;
+  photoUrls: string[];
+  startingPrice?: number | null;
+  startingPriceCurrency?: string | null;
+  servicesOffered: string[];
+  offersHomeService: boolean;
+  offersDelivery: boolean;
+  offersSameDay: boolean;
+  status: ServiceProviderStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type Screen =
   | 'referral'
   | 'splash'
