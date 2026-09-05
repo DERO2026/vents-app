@@ -67,7 +67,17 @@ export function ProfileScreen({
   }, [refreshSignal]);
   const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
   const [orgRequestReason, setOrgRequestReason] = useState('');
-  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
+  // Tracks the actual DB state machine (pending/rejected/approved) instead
+  // of squashing pending+approved into one 'already'/'sent' bucket -- same
+  // fix pattern applied to the Service Provider flow above (see
+  // spRequestStatus): a squashed status can't tell "nothing to do yet" from
+  // "approved, should already have organizer access", and 'approved' here
+  // is also trusted directly (isOrganizerEffective below) instead of
+  // waiting on App.tsx's separate 15s role-sync poll to flip
+  // currentUser.role -- closing the same race that could show/hide the
+  // wrong section for a few seconds right after admin approval.
+  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'pending' | 'rejected' | 'approved'>('idle');
+  const [orgRequestAdminNote, setOrgRequestAdminNote] = useState<string | null>(null);
   const [orgRequestError, setOrgRequestError] = useState('');
   const [hasOrgDraft, setHasOrgDraft] = useState(false);
   const [vcBalance, setVcBalance] = useState<number | null>(null);
@@ -221,12 +231,15 @@ export function ProfileScreen({
       if (!currentUser?.id) return;
       const { data } = await supabase
         .from('organizer_requests')
-        .select('status')
+        .select('status, admin_note')
         .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) setOrgRequestStatus(data.status === 'approved' ? 'sent' : data.status === 'rejected' ? 'idle' : 'already');
+      if (data) {
+        setOrgRequestStatus(data.status === 'approved' ? 'approved' : data.status === 'rejected' ? 'rejected' : 'pending');
+        setOrgRequestAdminNote(data.admin_note ?? null);
+      }
     }
     checkOrgRequest();
   }, [currentUser?.id]);
@@ -242,9 +255,18 @@ export function ProfileScreen({
       if (error) throw error;
       if (orgDraftKey) { try { localStorage.removeItem(orgDraftKey); } catch { /* ignore */ } }
       setHasOrgDraft(false);
-      setOrgRequestStatus('sent');
+      setOrgRequestAdminNote(null);
+      setOrgRequestStatus('pending');
       setShowOrgRequestModal(false);
     } catch (err: any) {
+      // A duplicate-submit race (e.g. two tabs) hits the DB's own
+      // organizer_requests_one_pending_per_user guard -- treat that as
+      // "you already have one pending", not a generic failure back to idle.
+      if (err?.code === '23505') {
+        setOrgRequestStatus('pending');
+        setShowOrgRequestModal(false);
+        return;
+      }
       setOrgRequestError(err?.message || 'Failed to submit request.');
       setOrgRequestStatus('idle');
     }
@@ -368,6 +390,14 @@ export function ProfileScreen({
   const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
   const isSubAdmin = currentUser?.role === 'sub-admin';
+  // Trusts an 'approved' organizer_requests row immediately, rather than
+  // only currentUser.role -- which is only refreshed by App.tsx's 15s
+  // syncRole poll -- so approval doesn't leave a stale window where this
+  // screen still renders the application CTA. Independent of, and does not
+  // replace, isOrganizer: roleLabel/badge/menu filtering below intentionally
+  // keep using the role-derived isOrganizer since those reflect the actual
+  // account role, while capability GATING (below) uses this.
+  const isOrganizerEffective = isOrganizer || orgRequestStatus === 'approved';
   const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
   const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Attendee';
   
@@ -649,7 +679,7 @@ export function ProfileScreen({
         </div>
 
         {/* Organizer Wallet */}
-        {(isOrganizer || isAdmin || isSubAdmin) && (
+        {(isOrganizerEffective || isAdmin || isSubAdmin) && (
           <div className="px-4 mb-3">
             <button
               onClick={() => onNavigate('wallet')}
@@ -689,26 +719,27 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* Become an Organizer — only for attendees */}
-        {!isOrganizer && !isAdmin && !isSubAdmin && (
+        {/* Become an Organizer -- an independent capability entry point,
+            like Become a Service Provider below: gated on isOrganizerEffective
+            (role OR an approved request) and admin/sub-admin/root, never on
+            is_service_provider or any other capability, so holding one
+            capability never blocks acquiring the other. */}
+        {!isOrganizerEffective && !isAdmin && !isSubAdmin && (
           <div className="px-4 mb-3">
             <button
-              onClick={() => {
-                if (orgRequestStatus === 'already' || orgRequestStatus === 'sent') return;
-                setShowOrgRequestModal(true);
-              }}
+              onClick={() => setShowOrgRequestModal(true)}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
-                background: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
+                background: orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
                 borderRadius: '14px',
-                border: `1px solid ${orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
-                cursor: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'default' : 'pointer',
-                opacity: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 0.7 : 1,
+                border: `1px solid ${orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
+                cursor: 'pointer',
+                opacity: orgRequestStatus === 'pending' ? 0.7 : 1,
               }}
             >
               <BadgeCheck size={16} color="#A78BFA" />
               <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>
-                {orgRequestStatus === 'already' ? 'Request Pending Review' : orgRequestStatus === 'sent' ? 'Organizer Request Submitted' : 'Become an Organizer'}
+                {orgRequestStatus === 'pending' ? 'Application Submitted' : orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
               </span>
               {orgRequestStatus === 'idle' && hasOrgDraft && (
                 <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
@@ -719,31 +750,58 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* Become Organizer modal */}
+        {/* Become Organizer modal -- always clickable (never a dead-end),
+            per capability: idle/rejected shows the submission form,
+            pending shows a read-only status view instead of hiding the
+            application, so it stays reachable while under review. */}
         {showOrgRequestModal && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
             onClick={() => setShowOrgRequestModal(false)}>
             <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
               onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become an Organizer</h3>
-              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-                Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
-              </p>
-              <textarea
-                value={orgRequestReason}
-                onChange={(e) => handleOrgReasonChange(e.target.value)}
-                placeholder="e.g. I want to host tech meetups in Lagos..."
-                rows={4}
-                style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-              />
-              {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
-              <button
-                onClick={submitOrgRequest}
-                disabled={orgRequestStatus === 'sending'}
-                style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
-              >
-                {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
-              </button>
+              {orgRequestStatus === 'pending' ? (
+                <>
+                  <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
+                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                    Your organizer request is under review. Our team typically responds within 1–3 business days.
+                  </p>
+                  {orgRequestReason && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', lineHeight: 1.5 }}>
+                      {orgRequestReason}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>
+                    {orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
+                  </h3>
+                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                    Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
+                  </p>
+                  {orgRequestStatus === 'rejected' && orgRequestAdminNote && (
+                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+                      <p style={{ color: '#EF4444', fontSize: '12px', fontWeight: 700, margin: '0 0 4px' }}>Your previous application wasn't approved</p>
+                      <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>{orgRequestAdminNote}</p>
+                    </div>
+                  )}
+                  <textarea
+                    value={orgRequestReason}
+                    onChange={(e) => handleOrgReasonChange(e.target.value)}
+                    placeholder="e.g. I want to host tech meetups in Lagos..."
+                    rows={4}
+                    style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                  />
+                  {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
+                  <button
+                    onClick={submitOrgRequest}
+                    disabled={orgRequestStatus === 'sending'}
+                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+                  >
+                    {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}

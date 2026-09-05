@@ -54,12 +54,12 @@ describe('Issue 3: approved Service Provider application is never a dead end', (
 
 describe('Issues 4 & 5: Become an Organizer / Become a Service Provider capability gating', () => {
   it('a normal user (not organizer/admin/sub-admin) sees "Become an Organizer"', () => {
-    expect(profileScreenSrc).toMatch(/\{!isOrganizer && !isAdmin && !isSubAdmin && \(/);
+    expect(profileScreenSrc).toMatch(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \(/);
     expect(profileScreenSrc).toMatch(/Become an Organizer/);
   });
 
   it('admin and sub-admin are explicitly excluded from the Become-an-Organizer application CTA', () => {
-    const gate = profileScreenSrc.match(/\{!isOrganizer && !isAdmin && !isSubAdmin && \([\s\S]*?\)\}\n\n\s*\{\/\* Become Organizer modal/)?.[0] ?? '';
+    const gate = profileScreenSrc.match(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \([\s\S]*?\)\}\n\n\s*\{\/\* Become Organizer modal/)?.[0] ?? '';
     expect(gate).toMatch(/!isAdmin && !isSubAdmin/);
   });
 
