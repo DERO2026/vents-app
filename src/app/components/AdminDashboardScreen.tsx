@@ -15,7 +15,6 @@ import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
 import { triggerPushDelivery } from '../../lib/pushNotifications';
 import { AdminActionsTab } from './AdminActionsTab';
-import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
 import { appVersionLabel } from '../../lib/appVersion';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
@@ -59,7 +58,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'import-events' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -686,6 +685,12 @@ export function AdminDashboardScreen({
   const [eventSearch, setEventSearch] = useState('');
   const [eventsFilter, setEventsFilter] = useState<'active' | 'deleted'>('active');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Per-row pickers for the Users table's role-change and ban-duration
+  // actions -- keyed by user id, since these controls are inside a mapped
+  // list (one native <select> per row was the last holdout; every other
+  // dropdown in the app already routes through PickerSheet).
+  const [rolePickerUserId, setRolePickerUserId] = useState<string | null>(null);
+  const [banPickerUserId, setBanPickerUserId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -774,49 +779,6 @@ export function AdminDashboardScreen({
   const [svcServiceSaving, setSvcServiceSaving] = useState(false);
   const [svcServiceBusyId, setSvcServiceBusyId] = useState<string | null>(null);
 
-  // Import Events tab state
-  const [importText, setImportText] = useState('');
-  const [importLoading, setImportLoading] = useState(false);
-  const [importResults, setImportResults] = useState<ImportedEvent[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [selectedImports, setSelectedImports] = useState<Set<number>>(new Set());
-  const [publishLoading, setPublishLoading] = useState(false);
-  const [publishMsg, setPublishMsg] = useState<string | null>(null);
-  const [extractionConfigured, setExtractionConfigured] = useState(true);
-  // Manual flyer override per imported event (keyed by its index in
-  // importResults) — lets an admin replace/attach a flyer before publishing,
-  // instead of only ever using whatever image the AI extraction found.
-  const [importFlyers, setImportFlyers] = useState<Record<number, { file: File; previewUrl: string }>>({});
-  const [flyerUploading, setFlyerUploading] = useState<number | null>(null);
-
-  useEffect(() => {
-    if (tab !== 'import-events') return;
-    isEventExtractionConfigured().then(setExtractionConfigured);
-  }, [tab]);
-
-  // Revoke every flyer preview blob URL on unmount so they don't leak.
-  useEffect(() => {
-    return () => { Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl)); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleImportFlyerSelect = (index: number, file: File) => {
-    setImportFlyers((prev) => {
-      const existing = prev[index];
-      if (existing) URL.revokeObjectURL(existing.previewUrl);
-      return { ...prev, [index]: { file, previewUrl: URL.createObjectURL(file) } };
-    });
-  };
-
-  const clearImportFlyer = (index: number) => {
-    setImportFlyers((prev) => {
-      const existing = prev[index];
-      if (existing) URL.revokeObjectURL(existing.previewUrl);
-      const next = { ...prev };
-      delete next[index];
-      return next;
-    });
-  };
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -2036,7 +1998,6 @@ export function AdminDashboardScreen({
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
     { key: 'sp-requests' as Tab, label: 'SP Reqs', icon: <Briefcase size={14} /> },
     { key: 'services-admin' as Tab, label: 'Services', icon: <Wrench size={14} /> },
-    { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
@@ -2229,20 +2190,16 @@ export function AdminDashboardScreen({
                           // demoted deputy can be re-promoted).
                           (() => {
                             const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+                            const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
                             return (
-                              <select
-                                value={roleOptions.includes(u.role) ? u.role : ''}
-                                onChange={e => handleRoleChange(u.id, e.target.value)}
+                              <button
+                                type="button"
+                                onClick={() => setRolePickerUserId(u.id)}
                                 disabled={isBusy}
-                                style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
+                                style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
                               >
-                                {!roleOptions.includes(u.role) && (
-                                  <option value="" disabled>{u.role}</option>
-                                )}
-                                <option value="attendee">Attendee</option>
-                                <option value="organizer">Organizer</option>
-                                {isRoot && <option value="sub-admin">Sub-Admin</option>}
-                              </select>
+                                {roleLabels[u.role] || u.role}
+                              </button>
                             );
                           })()
                         )}
@@ -2273,23 +2230,14 @@ export function AdminDashboardScreen({
                                 <UserCheck size={13} />
                               </button>
                             ) : (
-                              <select
+                              <button
+                                type="button"
+                                onClick={() => setBanPickerUserId(u.id)}
                                 disabled={isBusy || isRootUser}
-                                defaultValue=""
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (!val) return;
-                                  e.target.value = '';
-                                  handleSuspend(u, val === 'permanent' ? null : Number(val));
-                                }}
-                                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: 'pointer', outline: 'none' }}
+                                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: (isBusy || isRootUser) ? 'not-allowed' : 'pointer', opacity: (isBusy || isRootUser) ? 0.6 : 1 }}
                               >
-                                <option value="" disabled>🚫 Ban</option>
-                                <option value="1">1 day</option>
-                                <option value="7">7 days</option>
-                                <option value="30">30 days</option>
-                                <option value="permanent">Permanent</option>
-                              </select>
+                                🚫 Ban
+                              </button>
                             )
                           )}
 
@@ -2315,6 +2263,43 @@ export function AdminDashboardScreen({
           </div>
         </>
       )}
+
+      {rolePickerUserId && (() => {
+        const u = users.find(x => x.id === rolePickerUserId);
+        if (!u) return null;
+        const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+        const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+        return (
+          <PickerSheet
+            title="Change Role"
+            searchable={false}
+            options={roleOptions.map(r => ({ value: r, label: roleLabels[r] }))}
+            value={u.role}
+            onSelect={(v) => { handleRoleChange(u.id, v); setRolePickerUserId(null); }}
+            onClose={() => setRolePickerUserId(null)}
+          />
+        );
+      })()}
+
+      {banPickerUserId && (() => {
+        const u = users.find(x => x.id === banPickerUserId);
+        if (!u) return null;
+        return (
+          <PickerSheet
+            title="Ban User"
+            searchable={false}
+            options={[
+              { value: '1', label: '1 day' },
+              { value: '7', label: '7 days' },
+              { value: '30', label: '30 days' },
+              { value: 'permanent', label: 'Permanent' },
+            ]}
+            value=""
+            onSelect={(v) => { handleSuspend(u, v === 'permanent' ? null : Number(v)); setBanPickerUserId(null); }}
+            onClose={() => setBanPickerUserId(null)}
+          />
+        );
+      })()}
 
       {/* ════════════════ DELETED USERS TAB ═══════════════════════════════ */}
       {tab === 'deleted' && (
@@ -3435,254 +3420,6 @@ export function AdminDashboardScreen({
           onClose={() => setShowSvcServiceCurrencyPicker(false)}
           zIndex={9999}
         />
-      )}
-
-      {/* ════════════════ IMPORT EVENTS TAB ═══════════════ */}
-      {tab === 'import-events' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Header */}
-          <div style={{ background: 'rgba(123,47,247,0.08)', border: '1px solid rgba(123,47,247,0.25)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FF7, #F107A3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Zap size={20} color="#fff" />
-            </div>
-            <div>
-              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Import Free Events</h3>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Copy event details from tix.africa, pulse.ng or any site and paste below. AI will format and categorise them instantly.</p>
-            </div>
-          </div>
-
-          {/* Paste input */}
-          <div>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>PASTE EVENT DETAILS</p>
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              placeholder={`Paste event details here — copy from any website:\n\nEvent Name: \nDate: \nTime: \nVenue: \nCity/State: \nDescription: \nPrice: Free\n\nYou can paste multiple events separated by ---`}
-              rows={10}
-              style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }}
-            />
-          </div>
-
-          {/* Extract button */}
-          <button
-            onClick={async () => {
-              if (!importText.trim()) return;
-              setImportLoading(true);
-              setImportError(null);
-              setImportResults([]);
-              setSelectedImports(new Set());
-              setPublishMsg(null);
-              try {
-                const results = await extractEventsFromText(importText.trim());
-                // Best-effort — never blocks or fails the import if Places
-                // is unavailable, just leaves those events unverified.
-                const verified = await resolveEventLocations(results);
-                setImportResults(verified);
-                if (verified.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
-                else setSelectedImports(new Set(verified.map((_, i) => i)));
-              } catch (err: any) {
-                setImportError(friendlyPublishError(err) || 'Failed to format events. Check your API key and try again.');
-              } finally {
-                setImportLoading(false);
-              }
-            }}
-            disabled={importLoading || !importText.trim()}
-            style={{ width: '100%', background: importLoading || !importText.trim() ? 'rgba(123,47,247,0.3)' : 'linear-gradient(135deg, #7B2FF7, #F107A3)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: importLoading || !importText.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-          >
-            {importLoading ? (
-              <>
-                <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                Formatting with AI...
-              </>
-            ) : (
-              <><Zap size={14} /> Format with AI</>
-            )}
-          </button>
-
-          {importError && (
-            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '12px', color: '#EF4444', fontSize: '13px' }}>
-              {importError}
-            </div>
-          )}
-
-          {/* Results */}
-          {importResults.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{importResults.length} event{importResults.length !== 1 ? 's' : ''} found</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setSelectedImports(new Set(importResults.map((_, i) => i)))} style={{ background: 'none', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#A78BFA', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>All</button>
-                  <button onClick={() => setSelectedImports(new Set())} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '4px 10px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>None</button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {importResults.map((event, i) => {
-                  const selected = selectedImports.has(i);
-                  return (
-                    <div
-                      key={i}
-                      onClick={() => {
-                        const next = new Set(selectedImports);
-                        if (selected) next.delete(i); else next.add(i);
-                        setSelectedImports(next);
-                      }}
-                      style={{ background: selected ? 'rgba(123,47,247,0.08)' : '#131629', border: selected ? '1.5px solid rgba(123,47,247,0.4)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', cursor: 'pointer' }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: selected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: selected ? '#7B2FF7' : 'transparent', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800 }}>✓</span>}
-                        </div>
-
-                        {/* Flyer thumbnail — manual override preview takes priority over the AI-found image_url */}
-                        <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.06)' }}>
-                          {importFlyers[i] ? (
-                            <img src={importFlyers[i].previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : event.image_url ? (
-                            <img src={event.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <ImageIcon size={18} color="#555C7A" />
-                          )}
-                        </div>
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
-                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>
-                            {event.date}{event.end_date && event.end_date !== event.date ? ` – ${event.end_date}` : ''} {event.time && `· ${event.time}${event.end_time ? `–${event.end_time}` : ''}`} · {event.venue || 'No venue'}
-                          </p>
-                          {(event.organizer_name || event.contact_phone || event.social_instagram) && (
-                            <p style={{ color: '#6B7280', fontSize: '10.5px', margin: '0 0 4px' }}>
-                              {[event.organizer_name, event.contact_phone, event.social_instagram && `@${event.social_instagram}`].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>
-                              {event.is_free ? 'FREE' : `₦${Number(event.price || 0).toLocaleString()}`}
-                            </span>
-                            {event.categories?.[0] && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.categories[0]}</span>}
-                            {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.city ? `${event.city}, ` : ''}{event.state}</span>}
-                            {event.location_verified && (
-                              <span style={{ background: 'rgba(6,214,160,0.1)', border: '1px solid rgba(6,214,160,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#06D6A0', fontSize: '10px', fontWeight: 600 }}>
-                                📍 Location verified
-                              </span>
-                            )}
-                            {!(event.venue && event.state && event.city) && !(event.location_verified && event.latitude != null) && (
-                              <span style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#F59E0B', fontSize: '10px', fontWeight: 600 }}>
-                                Needs review — will save as draft
-                              </span>
-                            )}
-                          </div>
-                          {event.description && <p style={{ color: '#6B7280', fontSize: '11px', margin: '6px 0 0', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{event.description}</p>}
-
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
-                            <label style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#A78BFA', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
-                              {importFlyers[i] ? 'Replace flyer' : event.image_url ? 'Replace flyer' : 'Add flyer'}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                style={{ display: 'none' }}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleImportFlyerSelect(i, file);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-                            {importFlyers[i] && (
-                              <button onClick={() => clearImportFlyer(i)} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#EF4444', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* Publish button */}
-              <button
-                onClick={async () => {
-                  const selectedIndices = importResults.map((_, i) => i).filter((i) => selectedImports.has(i));
-                  if (selectedIndices.length === 0) return;
-                  setPublishLoading(true);
-                  setPublishMsg(null);
-                  try {
-                    // Upload any manually-attached flyers first so publishEvents
-                    // writes the real hosted URL as image_url — the event card
-                    // must show the correct image immediately, not the AI's
-                    // (possibly missing/wrong) extracted one.
-                    const toPublish = await Promise.all(selectedIndices.map(async (i) => {
-                      const event = importResults[i];
-                      const flyer = importFlyers[i];
-                      if (!flyer) return event;
-                      try {
-                        setFlyerUploading(i);
-                        const asset = await uploadImage(flyer.file, { bucket: 'events', filenameBase: `import-${Date.now()}-${i}` });
-                        return { ...event, image_url: asset.url };
-                      } catch (e) {
-                        console.error('[admin-import] flyer upload failed for index', i, e);
-                        Sentry.captureException(e);
-                        return event; // fall back to the AI's image_url rather than blocking the whole publish
-                      }
-                    }));
-                    setFlyerUploading(null);
-                    const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', supabase);
-                    if (result.success > 0) {
-                      const liveCount = result.success - result.drafted;
-                      const parts = [
-                        liveCount > 0 ? `${liveCount} published live` : null,
-                        result.drafted > 0 ? `${result.drafted} saved as draft (missing venue/state/city — complete in Edit Event)` : null,
-                        result.failed > 0 ? `${result.failed} failed` : null,
-                      ].filter(Boolean);
-                      setPublishMsg(`✓ ${parts.join(', ')}.`);
-                      Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl));
-                      setImportFlyers({});
-                      setImportResults([]);
-                      setSelectedImports(new Set());
-                      setImportText('');
-                    } else {
-                      setPublishMsg(`✗ All ${result.failed} event${result.failed !== 1 ? 's' : ''} failed to publish.${result.lastError ? ` Error: ${result.lastError}` : ''}`);
-                    }
-                  } catch (err: any) {
-                    setPublishMsg(`✗ ${friendlyPublishError(err)}`);
-                  } finally {
-                    setFlyerUploading(null);
-                    setPublishLoading(false);
-                  }
-                }}
-                disabled={publishLoading || selectedImports.size === 0}
-                style={{ width: '100%', background: publishLoading || selectedImports.size === 0 ? 'rgba(123,47,247,0.3)' : '#7B2FF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: publishLoading || selectedImports.size === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: selectedImports.size > 0 ? '0 4px 16px rgba(123,47,247,0.4)' : 'none' }}
-              >
-                {publishLoading ? (
-                  <>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                    {flyerUploading !== null ? 'Uploading flyer…' : 'Publishing...'}
-                  </>
-                ) : (
-                  `Publish ${selectedImports.size} Selected Event${selectedImports.size !== 1 ? 's' : ''}`
-                )}
-              </button>
-            </>
-          )}
-
-          {publishMsg && (
-            <div style={{ background: publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`, borderRadius: '10px', padding: '12px', color: publishMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '13px', fontWeight: 600 }}>
-              {publishMsg}
-            </div>
-          )}
-
-          {/* Instructions — only show if API key not configured */}
-          {!extractionConfigured && (
-            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '14px' }}>
-              <p style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>⚠ SETUP REQUIRED</p>
-              <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
-                Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>ANTHROPIC_API_KEY</span> (server-only — no <span style={{ fontFamily: 'monospace' }}>VITE_</span> prefix) in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>. Redeploy after adding.
-              </p>
-            </div>
-          )}
-        </div>
       )}
 
       {/* ════════════════ SYSTEM CONTROLLER TAB (ROOT ONLY) ═══════════════ */}

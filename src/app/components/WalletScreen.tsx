@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { PickerSheet } from './shared/PickerSheet';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
@@ -184,7 +185,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(false);
   const [showBankPicker, setShowBankPicker] = useState(false);
-  const [bankSearch, setBankSearch] = useState('');
   const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
   const [resolvedName, setResolvedName] = useState('');
@@ -525,9 +525,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const balance = wallet?.balance_kobo ?? 0;
   const pending = wallet?.pending_kobo ?? 0;
   const totalEarned = wallet?.total_earned_kobo ?? 0;
-  const filteredBanks = bankSearch.trim()
-    ? banks.filter(b => b.name.toLowerCase().includes(bankSearch.toLowerCase()))
-    : banks;
 
   return (
     <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
@@ -829,41 +826,19 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
       {/* Bank picker modal */}
       {showBankPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9500, display: 'flex', flexDirection: 'column', padding: 'calc(20px + env(safe-area-inset-top)) 20px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Select Bank</p>
-            <button onClick={() => { setShowBankPicker(false); setBankSearch(''); }} style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer' }}>Close</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', padding: '10px 16px', marginBottom: '14px' }}>
-            <Search size={16} color="#8B8FA8" />
-            <input
-              placeholder="Search banks…"
-              value={bankSearch}
-              onChange={e => setBankSearch(e.target.value)}
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '14px' }}
-              autoFocus
-            />
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {banksLoading ? (
-              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>Loading banks…</p>
-            ) : filteredBanks.length === 0 ? (
-              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>
-                {banks.length === 0 ? 'No banks loaded.' : 'No banks match your search.'}
-              </p>
-            ) : (
-              filteredBanks.map(bank => (
-                <button
-                  key={bank.code}
-                  onClick={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
-                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '14px 4px', color: '#fff', fontSize: '15px', cursor: 'pointer' }}
-                >
-                  {bank.name}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
+        <PickerSheet
+          title="Select Bank"
+          searchPlaceholder="Search banks…"
+          value={selectedBank?.code || ''}
+          options={banks.map(b => ({ value: b.code, label: b.name }))}
+          onSelect={(code) => {
+            const bank = banks.find(b => b.code === code);
+            if (bank) setSelectedBank(bank);
+            setShowBankPicker(false);
+          }}
+          onClose={() => setShowBankPicker(false)}
+          zIndex={9600}
+        />
       )}
 
       {/* Security gate: password / biometric confirmation for bank mutations */}
@@ -1063,7 +1038,14 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         <span style={{ fontSize: '18px', fontWeight: 700 }}>Transaction Details</span>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+      {/* scrollbarWidth hides it in Firefox; WebKit (desktop Safari/Chrome --
+          which is what this screen was reviewed in via the web Preview
+          build, unlike native iOS WebView which already auto-hides overlay
+          scrollbars) ignores that property entirely and needs its own
+          ::-webkit-scrollbar rule, which can only be set via a class, not
+          inline style -- .no-scrollbar (src/styles/index.css) already
+          defines both. */}
+      <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
         {/* Receipt header card */}
         <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>

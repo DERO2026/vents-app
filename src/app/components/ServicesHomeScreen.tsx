@@ -8,6 +8,7 @@ import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
+import { PickerSheet } from './shared/PickerSheet';
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   'Beauty & Grooming': Scissors,
@@ -43,52 +44,19 @@ function CardSkeleton() {
 // account metadata) and different call-to-action, so keeping them
 // independent avoids coupling two screens that should be free to diverge.
 function DiscoveryCountryPicker({ selectedIso, onSelect, onClose }: { selectedIso?: string; onSelect: (c: CountryOption) => void; onClose: () => void }) {
-  const [search, setSearch] = useState('');
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return COUNTRY_CODES;
-    return COUNTRY_CODES.filter((c) => c.name.toLowerCase().includes(q));
-  }, [search]);
-
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: servicesColors.bg, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h2 style={{ color: servicesColors.textPrimary, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Browse services in</h2>
-          <button onClick={onClose} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '32px', height: '32px', color: servicesColors.textSecondary, cursor: 'pointer' }}>×</button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '11px 14px' }}>
-          <Search size={16} color={servicesColors.textSecondary} style={{ flexShrink: 0 }} />
-          <input
-            autoFocus
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search country..."
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
-          />
-        </div>
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px 40px', scrollbarWidth: 'none' }}>
-        {filtered.map((country) => {
-          const isSelected = selectedIso === country.iso;
-          return (
-            <div
-              key={country.iso}
-              onClick={() => { onSelect(country); onClose(); }}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', marginBottom: '6px',
-                borderRadius: servicesRadii.md, cursor: 'pointer',
-                background: isSelected ? 'rgba(168,85,247,0.12)' : servicesColors.cardBgAlt,
-                border: isSelected ? `1.5px solid ${servicesColors.borderSelected}` : `1px solid ${servicesColors.border}`,
-              }}
-            >
-              <CountryMark country={country} size={18} />
-              <span style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 600 }}>{country.name}</span>
-            </div>
-          );
-        })}
-      </div>
-    </div>
+    <PickerSheet
+      title="Browse services in"
+      searchPlaceholder="Search country..."
+      value={selectedIso || ''}
+      options={COUNTRY_CODES.map((c) => ({ value: c.iso, label: c.name, icon: <CountryMark country={c} size={18} /> }))}
+      onSelect={(iso) => {
+        const c = COUNTRY_CODES.find((x) => x.iso === iso);
+        if (c) onSelect(c);
+        onClose();
+      }}
+      onClose={onClose}
+    />
   );
 }
 

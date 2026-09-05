@@ -273,6 +273,39 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
     setSaving(true);
     setError(null);
     try {
+      // ROOT CAUSE (proven via live diagnostic against Preview, not
+      // guessed): ProfileScreen's canAccessProviderSetup treats an
+      // 'approved' service_provider_requests row as equivalent to holding
+      // the capability, to close a UX race right after admin approval (the
+      // atomic admin_decide_service_provider_request RPC sets both
+      // service_provider_requests.status and users.is_service_provider
+      // together, so in the NORMAL flow these can never disagree). But a
+      // real Preview account was found with status='approved' while
+      // users.is_service_provider was still false -- a genuine persisted
+      // desync (most likely an out-of-band edit to the request row outside
+      // that RPC), not a timing race and not an RLS defect:
+      // service_providers_insert_own correctly rejected the write from an
+      // account that does not actually hold the capability. The bug was
+      // letting the client reach this screen and attempt the write at all
+      // on a signal that can drift from the authoritative flag.
+      //
+      // Fix: re-check the authoritative flag directly, immediately before
+      // the write -- never trust the capability-gate signal that got the
+      // user onto this screen. This never touches RLS; it only stops the
+      // client from attempting a write RLS was always going to correctly
+      // reject, replacing a raw "row-level security policy" error with an
+      // honest, actionable message.
+      const { data: capRow, error: capErr } = await supabase
+        .from('users')
+        .select('is_service_provider')
+        .eq('id', currentUser.id)
+        .maybeSingle();
+      if (capErr) throw capErr;
+      if (!capRow?.is_service_provider) {
+        setError("Your Service Provider approval isn't active yet. Please contact support or re-check your application status before publishing.");
+        return;
+      }
+
       const input: ServiceProviderInput = {
         businessName: businessName.trim(),
         category,
@@ -290,45 +323,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       const saved = await saveAndPublishServiceProvider(currentUser.id, input);
       onSaved(saved);
     } catch (err: any) {
-      // TEMPORARY diagnostic for the "new row violates row-level security
-      // policy for table service_providers" investigation -- proves,
-      // without needing anyone's identity, exactly which of the two
-      // AND-ed conditions in service_providers_insert_own
-      // (auth.uid() = user_id AND users.is_service_provider = true) is
-      // false at the exact moment of the failed write. Safe to leave in
-      // (no tokens/secrets, just uid/role/capability booleans) but should
-      // be removed once the root cause is confirmed. Only runs on the RLS
-      // error path -- zero cost on the success path.
-      if (String(err?.message || '').includes('row-level security policy')) {
-        try {
-          const { data: authData } = await supabase.auth.getUser();
-          const liveUid = authData?.user?.id ?? null;
-          const { data: liveRow, error: liveErr } = await supabase
-            .from('users')
-            .select('id, role, is_service_provider')
-            .eq('id', liveUid || currentUser.id)
-            .maybeSingle();
-          const diagnostic = {
-            passedInUserId: currentUser.id,
-            liveAuthUid: liveUid,
-            uidMatchesPassedIn: liveUid === currentUser.id,
-            liveIsServiceProvider: liveRow?.is_service_provider ?? null,
-            liveRole: liveRow?.role ?? null,
-            liveRowFetchError: liveErr?.message ?? null,
-          };
-          console.error('[SP setup RLS diagnostic]', diagnostic);
-          setError(
-            `Failed to save your profile. Diagnostic: uid match=${diagnostic.uidMatchesPassedIn}, ` +
-            `is_service_provider=${diagnostic.liveIsServiceProvider}, role=${diagnostic.liveRole}` +
-            (diagnostic.liveRowFetchError ? `, users-row fetch error=${diagnostic.liveRowFetchError}` : '')
-          );
-        } catch (diagErr) {
-          console.error('[SP setup RLS diagnostic] failed to gather diagnostic', diagErr);
-          setError(err?.message || 'Failed to save your profile. Please try again.');
-        }
-      } else {
-        setError(err?.message || 'Failed to save your profile. Please try again.');
-      }
+      setError(err?.message || 'Failed to save your profile. Please try again.');
     } finally {
       setSaving(false);
     }

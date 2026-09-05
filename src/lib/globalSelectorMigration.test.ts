@@ -34,26 +34,12 @@ beforeAll(() => {
   phoneInputSrc = readFileSync(join(componentsDir, 'PhoneInput.tsx'), 'utf8');
 });
 
+// NOTE: PickerSheet's exact visual shape (bottom sheet vs. centered card,
+// dimensions, corner radii, presence of a drag handle) is now asserted in
+// src/lib/selectorAuditComplete.test.ts, which reflects the current
+// screenshot-3 direction (a centered floating card) -- this file only
+// covers behavior that hasn't changed across that redesign.
 describe('PickerSheet: the single reusable VENTS selector component', () => {
-  it('renders as a compact floating card, not a full-screen page or an edge-to-edge sheet (fixed inset backdrop, bottom-anchored, side margins, capped height well below full-screen)', () => {
-    expect(pickerSheetSrc).toMatch(/position: 'fixed',\s*inset: 0,/);
-    expect(pickerSheetSrc).toMatch(/alignItems: 'flex-end',/);
-    expect(pickerSheetSrc).toMatch(/width: 'calc\(100% - 24px\)',/);
-    expect(pickerSheetSrc).toMatch(/maxHeight: 'min\(56vh, 460px\)',/);
-  });
-
-  it('has a translucent/dark, blurred backdrop AND a translucent frosted-glass card surface (not a solid opaque sheet) so the dimmed app stays visible through it', () => {
-    expect(pickerSheetSrc).toMatch(/background: 'rgba\(2,0,5,0\.55\)',/);
-    expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(6px\)',/);
-    expect(pickerSheetSrc).toMatch(/background: 'rgba\(13,10,26,0\.78\)',/);
-    expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(24px\) saturate\(1\.4\)',/);
-  });
-
-  it('has rounded corners on every side (a floating card, not a sheet flush with the screen edges) and a drag handle', () => {
-    expect(pickerSheetSrc).toMatch(/borderRadius: '22px',/);
-    expect(pickerSheetSrc).toMatch(/width: '36px', height: '4px', borderRadius: '2px'/);
-  });
-
   it('supports internal scrolling, search, and clear selected-state indication', () => {
     expect(pickerSheetSrc).toMatch(/overflowY: 'auto',/);
     expect(pickerSheetSrc).toMatch(/searchable = true,/);
@@ -115,9 +101,9 @@ describe('Admin Dashboard: Services filters and service-form selectors migrated'
     expect(adminDashboardSrc).toMatch(/zIndex=\{9999\}/);
   });
 
-  it('dense per-row admin actions (role change, ban duration) deliberately keep native <select> -- a bottom sheet per row in a scrollable data table is a regression, not an improvement, for that quick power-user action', () => {
-    expect(adminDashboardSrc).toMatch(/<select\s*\n\s*value=\{roleOptions\.includes/);
-    expect(adminDashboardSrc).toMatch(/<select\s*\n\s*disabled=\{isBusy \|\| isRootUser\}\s*\n\s*defaultValue=""/);
+  it('the two per-row admin actions (role change, ban duration) are also migrated now, per the "literally every" requirement -- see selectorAuditComplete.test.ts for the full assertion', () => {
+    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*value=\{roleOptions\.includes/);
+    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*disabled=\{isBusy \|\| isRootUser\}\s*\n\s*defaultValue=""/);
   });
 });
 

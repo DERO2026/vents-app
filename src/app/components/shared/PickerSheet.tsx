@@ -1,4 +1,4 @@
-import { ReactNode, useRef, useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { Search, X, Check, ChevronDown } from 'lucide-react';
 
 export interface PickerOption {
@@ -101,30 +101,6 @@ export function PickerSheet({
   renderOption?: (option: PickerOption, isSelected: boolean) => ReactNode;
 }) {
   const [query, setQuery] = useState('');
-  // Drag-to-dismiss — only the grab handle + header area is a drag surface
-  // (not the scrollable option list, so a downward scroll there never gets
-  // mistaken for a dismiss gesture).
-  const [dragY, setDragY] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const dragStartY = useRef<number | null>(null);
-  const handleDragStart = (e: React.TouchEvent) => {
-    dragStartY.current = e.touches[0].clientY;
-    setDragging(true);
-  };
-  const handleDragMove = (e: React.TouchEvent) => {
-    if (dragStartY.current === null) return;
-    const dy = e.touches[0].clientY - dragStartY.current;
-    if (dy > 0) setDragY(dy);
-  };
-  const handleDragEnd = () => {
-    dragStartY.current = null;
-    setDragging(false);
-    if (dragY > 100) {
-      onClose();
-    } else {
-      setDragY(0);
-    }
-  };
   const filtered = searchable
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
@@ -143,56 +119,55 @@ export function PickerSheet({
         WebkitBackdropFilter: 'blur(6px)',
         zIndex,
         display: 'flex',
-        alignItems: 'flex-end',
+        alignItems: 'center',
+        justifyContent: 'center',
+        // Room on every side so the card never touches an edge -- and, with
+        // the keyboard open, this padding responds like any other flex
+        // centering: the card re-centers in whatever visual space is left
+        // above the keyboard rather than getting shoved off-screen.
+        padding: '24px',
+        boxSizing: 'border-box',
         animation: 'pickerBackdropIn 0.2s ease',
       }}
     >
       <style>{`
         @keyframes pickerBackdropIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes pickerSheetIn { from { transform: translateY(24px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pickerCardIn { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
       `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          // Floating card, not an edge-to-edge full-width sheet: small side
-          // margins so the dimmed/blurred app underneath stays visible on
-          // every edge, matching the iOS action-sheet/photo-picker reference
-          // (a compact translucent card near the bottom, not a screen).
-          width: 'calc(100% - 24px)',
-          margin: '0 12px calc(10px + env(safe-area-inset-bottom))',
+          // A centered floating card, not a sheet anchored to any edge --
+          // margins on all four sides via the backdrop's own padding above,
+          // rounded on every corner, capped width so it reads as a compact
+          // control (an action sheet / context menu), never a screen.
+          width: '100%',
+          maxWidth: '360px',
           // Capped well below "nearly full screen" -- short lists (a handful
           // of options) size to their own content via the column layout
           // below; long lists (e.g. every country) stop scrolling within
-          // this, never anywhere near 90-100% of the viewport.
-          maxHeight: 'min(56vh, 460px)',
+          // this, never anywhere near 90-100% of the viewport. min() against
+          // the viewport also keeps it clear of the keyboard: a shorter
+          // visual viewport (keyboard open) shrinks this along with it.
+          maxHeight: 'min(50vh, 420px)',
           display: 'flex',
           flexDirection: 'column',
-          // Translucent frosted-glass surface (the actual gap from the
-          // previous pass): a solid #0D0A1A sheet read as "another screen",
-          // not a floating overlay. blur+alpha here lets the dimmed app
-          // behind bleed through, the way an iOS blur-material sheet does.
+          // Translucent frosted-glass surface: a solid sheet reads as
+          // "another screen", not a floating overlay. blur+alpha here lets
+          // the dimmed app behind bleed through, the way an iOS blur-
+          // material menu/sheet does.
           background: 'rgba(13,10,26,0.78)',
           backdropFilter: 'blur(24px) saturate(1.4)',
           WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-          borderRadius: '22px',
+          borderRadius: '20px',
           border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 -12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03)',
-          padding: '10px 16px 16px',
-          animation: 'pickerSheetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          transform: dragY ? `translateY(${dragY}px)` : undefined,
-          transition: dragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          boxShadow: '0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03)',
+          padding: '14px 16px 16px',
+          animation: 'pickerCardIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Grab handle + header — the drag surface for swipe-to-dismiss;
-            deliberately excludes the scrollable option list below so a
-            downward scroll there is never mistaken for a dismiss gesture. */}
-        <div onTouchStart={handleDragStart} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-            <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+          <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
             {title}
           </h3>
           <button
@@ -201,8 +176,8 @@ export function PickerSheet({
               background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '50%',
-              width: '30px',
-              height: '30px',
+              width: '28px',
+              height: '28px',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -210,9 +185,8 @@ export function PickerSheet({
               flexShrink: 0,
             }}
           >
-            <X size={15} color="#C4C9E0" />
+            <X size={14} color="#C4C9E0" />
           </button>
-          </div>
         </div>
 
         {searchable && (
