@@ -290,7 +290,45 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       const saved = await saveAndPublishServiceProvider(currentUser.id, input);
       onSaved(saved);
     } catch (err: any) {
-      setError(err?.message || 'Failed to save your profile. Please try again.');
+      // TEMPORARY diagnostic for the "new row violates row-level security
+      // policy for table service_providers" investigation -- proves,
+      // without needing anyone's identity, exactly which of the two
+      // AND-ed conditions in service_providers_insert_own
+      // (auth.uid() = user_id AND users.is_service_provider = true) is
+      // false at the exact moment of the failed write. Safe to leave in
+      // (no tokens/secrets, just uid/role/capability booleans) but should
+      // be removed once the root cause is confirmed. Only runs on the RLS
+      // error path -- zero cost on the success path.
+      if (String(err?.message || '').includes('row-level security policy')) {
+        try {
+          const { data: authData } = await supabase.auth.getUser();
+          const liveUid = authData?.user?.id ?? null;
+          const { data: liveRow, error: liveErr } = await supabase
+            .from('users')
+            .select('id, role, is_service_provider')
+            .eq('id', liveUid || currentUser.id)
+            .maybeSingle();
+          const diagnostic = {
+            passedInUserId: currentUser.id,
+            liveAuthUid: liveUid,
+            uidMatchesPassedIn: liveUid === currentUser.id,
+            liveIsServiceProvider: liveRow?.is_service_provider ?? null,
+            liveRole: liveRow?.role ?? null,
+            liveRowFetchError: liveErr?.message ?? null,
+          };
+          console.error('[SP setup RLS diagnostic]', diagnostic);
+          setError(
+            `Failed to save your profile. Diagnostic: uid match=${diagnostic.uidMatchesPassedIn}, ` +
+            `is_service_provider=${diagnostic.liveIsServiceProvider}, role=${diagnostic.liveRole}` +
+            (diagnostic.liveRowFetchError ? `, users-row fetch error=${diagnostic.liveRowFetchError}` : '')
+          );
+        } catch (diagErr) {
+          console.error('[SP setup RLS diagnostic] failed to gather diagnostic', diagErr);
+          setError(err?.message || 'Failed to save your profile. Please try again.');
+        }
+      } else {
+        setError(err?.message || 'Failed to save your profile. Please try again.');
+      }
     } finally {
       setSaving(false);
     }
