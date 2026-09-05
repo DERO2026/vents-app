@@ -2167,7 +2167,13 @@ export default function App() {
     setUserRole('attendee');
     setScreenStack([]);
     setActiveTab('home');
-    if (toForgotPassword) {
+    // Strict === true, not a truthy check -- this is the one call this
+    // function makes that decides whether a sign-out lands on Welcome/Login
+    // (the only correct destination for a plain Sign Out) or detours into
+    // Forgot Password, and a caller passing this straight through as a
+    // React event handler (as SettingsScreen's Sign Out row previously did)
+    // would otherwise leak a truthy SyntheticEvent into this parameter.
+    if (toForgotPassword === true) {
       setAuthMode('forgot');
       setScreen('auth');
     } else {

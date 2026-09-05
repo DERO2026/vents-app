@@ -17,7 +17,7 @@ interface MyTicketsScreenProps {
 }
 
 export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId }: MyTicketsScreenProps) {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -150,7 +150,9 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     }
   });
 
-  const displayed = activeTab === 'upcoming' ? upcoming : past;
+  // 'transfers' doesn't use `displayed` at all -- it renders the incoming/
+  // outgoing transfer lists below instead of ticket cards.
+  const displayed = activeTab === 'upcoming' ? upcoming : activeTab === 'past' ? past : [];
 
   return (
     <div
@@ -240,7 +242,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             gap: '3px',
           }}
         >
-          {(['upcoming', 'past'] as const).map((tab) => (
+          {(['upcoming', 'past', 'transfers'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -260,7 +262,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 transition: 'all 0.2s ease',
               }}
             >
-              {tab === 'upcoming' ? 'Upcoming' : 'Past'}{' '}
+              {tab === 'upcoming' ? 'Upcoming' : tab === 'past' ? 'Past' : 'Transfers'}{' '}
               <span
                 style={{
                   background: activeTab === tab ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)',
@@ -269,7 +271,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   fontSize: '11px',
                 }}
               >
-                {tab === 'upcoming' ? upcoming.length : past.length}
+                {tab === 'upcoming' ? upcoming.length : tab === 'past' ? past.length : transfers.length}
               </span>
             </button>
           ))}
@@ -291,13 +293,46 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           overscrollBehavior: 'contain',
         }}
       >
-        {transferActionError && (
+        {/* Transfers is now its own tab (Upcoming | Past | Transfers)
+            instead of these lists sitting above Upcoming regardless of
+            which tab was selected -- same accept/decline/cancel RPCs and
+            handlers below, just gated on activeTab now. */}
+        {activeTab === 'transfers' && transferActionError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
             <span style={{ color: '#F87171', fontSize: '12px' }}>{transferActionError}</span>
           </div>
         )}
 
-        {incomingTransfers.length > 0 && (
+        {activeTab === 'transfers' && incomingTransfers.length === 0 && outgoingTransfers.length === 0 && (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              paddingTop: '70px',
+              gap: '16px',
+            }}
+          >
+            <div
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '20px',
+                background: '#090514',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Send size={32} color="#94A3B8" />
+            </div>
+            <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, textAlign: 'center', padding: '0 16px' }}>
+              No pending ticket transfers right now.
+            </p>
+          </div>
+        )}
+
+        {activeTab === 'transfers' && incomingTransfers.length > 0 && (
           <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Incoming Ticket Transfers</p>
             {incomingTransfers.map((t) => (
@@ -328,7 +363,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           </div>
         )}
 
-        {outgoingTransfers.length > 0 && (
+        {activeTab === 'transfers' && outgoingTransfers.length > 0 && (
           <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Pending Outgoing Transfers</p>
             {outgoingTransfers.map((t) => (
@@ -350,7 +385,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           </div>
         )}
 
-        {loading ? (
+        {activeTab === 'transfers' ? null : loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <SkeletonCard variant="ticket" />
             <SkeletonCard variant="ticket" />

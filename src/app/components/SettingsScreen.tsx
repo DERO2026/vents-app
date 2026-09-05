@@ -95,7 +95,17 @@ function SettingRow({
 }) {
   return (
     <div
-      onClick={onPress}
+      // Root cause of the Sign Out -> Forgot Password bug: this was
+      // `onClick={onPress}`, which forwards React's click SyntheticEvent as
+      // onPress's first argument. Every other row's onPress ignores that
+      // extra argument, but Sign Out is wired straight through to
+      // handleSignOut(toForgotPassword?: boolean) in App.tsx -- the leaked
+      // event object landed in that boolean parameter and, being truthy,
+      // made `if (toForgotPassword)` true, routing a plain Sign Out tap into
+      // the Forgot Password flow. Explicitly calling onPress with no
+      // arguments closes off this whole class of accidental-argument bugs
+      // for every row, not just Sign Out.
+      onClick={() => onPress?.()}
       style={{
         display: 'flex',
         alignItems: 'center',
