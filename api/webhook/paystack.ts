@@ -34,7 +34,27 @@ import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAd
 import { finalizeAndConfirmPurchase } from '../_lib/finalizePaystackPayment.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
+import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 import crypto from 'crypto';
+
+// After confirm_transfer_fee_payment confirms/no-ops a transfer-fee payment,
+// trigger immediate push delivery for the notification it just inserted
+// (from_user_id: "Your ticket transfer was accepted") instead of waiting
+// for the daily cron sweep -- this is the fix for the hours-late
+// ticket-transfer push. Never awaited by the caller in a way that could
+// fail the webhook/verify response: deliverPendingPushesForUser already
+// never throws, and this is fired after the response-determining work is
+// done. Safe to call on every 'confirmed'/'already_paid' result, including
+// a retried webhook for an already-delivered notification -- it only ever
+// sends rows still marked unsent.
+async function notifyTransferFeeOutcome(reference: string) {
+  try {
+    const fromUserId = await callProjectAdminRpc<string>('get_ticket_transfer_from_user', [reference]);
+    if (fromUserId) await deliverPendingPushesForUser(fromUserId);
+  } catch (err: any) {
+    console.error('[Paystack webhook] notifyTransferFeeOutcome failed (non-fatal, cron sweep will retry):', err?.message || err);
+  }
+}
 
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -140,6 +160,7 @@ async function handleClientVerify(req, res) {
       // 'confirmed' or 'already_paid' -- either way the fee is paid and
       // ownership has moved (confirm_transfer_fee_payment does both
       // atomically), so this is a success from the client's perspective.
+      await notifyTransferFeeOutcome(reference);
       return res.status(200).json({ status: 'success' });
     }
 
@@ -223,6 +244,9 @@ async function handleWebhook(req, res) {
           console.error('[Paystack webhook] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', feeStatus);
         } else {
           console.log('[Paystack webhook] transfer fee', feeStatus, 'for reference', reference);
+          if (feeStatus === 'confirmed' || feeStatus === 'already_paid') {
+            await notifyTransferFeeOutcome(reference);
+          }
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_transfer_fee_payment:', err?.message || err);

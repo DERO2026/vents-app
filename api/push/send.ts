@@ -2,17 +2,36 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 
 // ─── Native push send (Firebase Cloud Messaging HTTP v1) ─────────────────────
-// Sends a notification to every device token registered for a target user.
+// Two request shapes, sharing this file to stay under the Hobby plan's
+// 12-serverless-function cap:
 //
-// Auth: caller must present a valid InsForge session that resolves to a Super
-// Admin (checked via whoami_admin). Sends are an admin/broadcast capability.
+// 1. { deliverForUserId } -- the event-driven delivery trigger. Called
+//    immediately after a client action that just created a notification for
+//    ANOTHER user (e.g. initiating/declining a ticket transfer, an admin
+//    approving a service-provider request) so that recipient's push arrives
+//    within seconds instead of waiting for the next daily cron sweep. Any
+//    authenticated caller may use this mode (checked via
+//    verifyInsforgeSession, no admin requirement) -- it is safe precisely
+//    because the caller supplies only a user id, never message content: the
+//    handler only ever looks up and delivers that user's own pre-existing,
+//    already-legitimate unsent `notifications` rows (via the trusted
+//    project_admin connection, see api/_lib/pushDelivery.ts), and device
+//    tokens never leave this server process. Worst case of misuse is
+//    accelerating a delivery that was already going to happen on its own.
+//
+// 2. { userId, title, body, data } -- the original admin/broadcast
+//    capability, unchanged: caller must resolve to a Super Admin (via
+//    admin_list_push_tokens, which itself enforces is_super_admin()), and
+//    composes arbitrary content, so it stays admin-gated.
 //
 // Delivery requires a Firebase service account, provided as the env var
 // FCM_SERVICE_ACCOUNT_JSON (the full service-account JSON, minified). Without
-// it the endpoint returns 503 — the client registration + token storage still
-// work; only the send leg is gated on that credential.
+// it the endpoint returns 503 (mode 2) / a soft no-op (mode 1) — the client
+// registration + token storage still work; only the send leg is gated on
+// that credential.
 //
 // FCM v1 needs a short-lived OAuth2 access token minted from the service
 // account (RS256-signed JWT → Google token endpoint). Implemented here with
@@ -60,6 +79,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
+  // Mode 1: on-demand delivery trigger for one user's already-pending
+  // notifications. Any authenticated caller -- see the file header comment
+  // for why that's safe.
+  const { deliverForUserId } = (req.body || {}) as { deliverForUserId?: string };
+  if (deliverForUserId) {
+    const result = await deliverPendingPushesForUser(deliverForUserId);
+    return res.status(200).json(result);
+  }
+
+  // Mode 2: admin/broadcast -- unchanged below.
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;

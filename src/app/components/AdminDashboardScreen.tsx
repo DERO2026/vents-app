@@ -13,6 +13,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
+import { triggerPushDelivery } from '../../lib/pushNotifications';
 import { AdminActionsTab } from './AdminActionsTab';
 import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
@@ -1276,6 +1277,7 @@ export function AdminDashboardScreen({
     // Single atomic RPC: updates the request, grants/leaves the capability,
     // AND inserts the applicant's notification together -- see
     // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    const req = spRequests.find((r) => r.id === id);
     const { error } = await supabase.rpc('admin_decide_service_provider_request', {
       p_request_id: id,
       p_status: status,
@@ -1283,6 +1285,7 @@ export function AdminDashboardScreen({
     });
     if (!error) {
       setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+      triggerPushDelivery(req?.user_id);
     } else {
       flash(false, error.message || 'Failed to review request.');
     }

@@ -9,6 +9,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
+import { triggerPushDelivery } from '../../lib/pushNotifications';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -232,9 +233,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     setTransferActionBusy(transferId);
     setTransferActionError('');
     try {
+      // Captured before the RPC runs -- fromUserId doesn't change, and
+      // `transfers` is only re-fetched (via loadTransfers) after this call.
+      const notifyUserId = transfers.find((t) => t.id === transferId)?.fromUserId;
       const { error } = await supabase.rpc('decline_ticket_transfer', { p_transfer_id: transferId });
       if (error) throw new Error(error.message);
       haptics.light();
+      triggerPushDelivery(notifyUserId);
       await loadTransfers();
     } catch (e: any) {
       haptics.error();
@@ -314,7 +319,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     setTransferSending(true);
     setInitiateError('');
     try {
-      const { error } = await supabase.rpc('initiate_ticket_transfer', {
+      const { data: newTransferId, error } = await supabase.rpc('initiate_ticket_transfer', {
         p_ticket_id: transferTicket.ticketId,
         p_recipient_identifier: identifier,
       });
@@ -322,6 +327,21 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       haptics.success();
       setTransferSent(true);
       setTransferIdentifier('');
+      // initiate_ticket_transfer only returns the new transfer's id, not the
+      // resolved recipient -- one extra own-row select (RLS already allows
+      // the sender to read it) to get to_user_id for the delivery trigger.
+      if (newTransferId) {
+        (async () => {
+          try {
+            const { data } = await supabase
+              .from('ticket_transfers')
+              .select('to_user_id')
+              .eq('id', newTransferId)
+              .maybeSingle();
+            triggerPushDelivery(data?.to_user_id);
+          } catch { /* best-effort only -- cron sweep is the safety net */ }
+        })();
+      }
       await loadTransfers();
     } catch (e: any) {
       haptics.error();

@@ -2,21 +2,30 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 
-// ─── Notification sweep (Vercel Cron) ─────────────────────────────────────
-// ROOT CAUSE of hours-late push delivery: every transactional notification
-// (ticket-transfer accept/decline, chat message, sale, etc.) is written to
-// `notifications` immediately by its own RPC, but the ONLY thing that ever
-// turns an unsent row into an actual FCM push is this sweep — there is no
-// immediate/on-action send path. When this ran once/day (vercel.json's
-// crons entry was "0 8 * * *"), a notification created at 08:01 UTC waited
-// up to ~24h for the next run. Tightened to hourly ("0 * * * *") below —
-// this bounds worst-case delay to under an hour without adding a new
-// serverless function (the project is already at Vercel's Hobby 12-function
-// cap) or replacing the sweep architecture. NOTE: Vercel's Hobby plan caps
-// cron *invocation frequency* to once/day regardless of the schedule
-// expression configured — hourly here only takes effect once the project is
-// on a Pro (or higher) plan. This is a plan-tier fact to verify on the
-// Vercel dashboard, not something fixable from this repo.
+// ─── Daily notification safety-net sweep (Vercel Cron) ────────────────────
+// PREVIOUS root cause of hours-late push delivery: this daily sweep used to
+// be the ONLY thing that ever turned an unsent `notifications` row into an
+// actual FCM push -- a notification created just after this ran waited up
+// to ~24h for the next tick. Fixed not by running this MORE OFTEN (Vercel's
+// Hobby plan caps cron invocation frequency to once/day regardless of the
+// schedule string configured, so an hourly entry here would silently still
+// only fire daily -- do not "optimize" this back to hourly) but by adding a
+// request-triggered delivery path that fires immediately at the moment each
+// transactional notification is created: api/webhook/paystack.ts (for the
+// ticket-transfer fee flow -- see notifyTransferFeeOutcome there) and the
+// client, via triggerPushDelivery() (src/lib/pushNotifications.ts) right
+// after initiate/decline-transfer and the admin service-provider decision,
+// both hitting api/push/send.ts's `deliverForUserId` mode. See
+// api/_lib/pushDelivery.ts for the shared delivery logic those share.
+//
+// This daily run is now purely the SAFETY NET for whatever that on-demand
+// path misses (app closed before the client-side call fires, a delivery
+// call that itself failed, etc.) and the home for the 24h/1h event-reminder
+// sweep below, which has no "moment of creation" to hook a trigger onto in
+// the first place -- both of those are fine to run once/day. It intentionally
+// still delivers ALL unsent notifications for ALL users (not just the ones
+// the reminder sweep just created), which is what makes it a real safety
+// net rather than only covering reminders.
 // Combines what were originally two separate cron endpoints
 // (event-reminders.ts + send-pending-pushes.ts) into one file, in that
 // order — the Hobby-plan 12-serverless-function cap forced the merge, but
