@@ -20,6 +20,7 @@ import { ServicesHomeScreen } from './components/ServicesHomeScreen';
 import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
 import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
 import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
+import { ServiceProviderVerificationScreen } from './components/ServiceProviderVerificationScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -371,12 +372,18 @@ export default function App() {
     const syncRole = () => {
       supabase
         .from('users')
-        .select('role')
+        .select('role, is_service_provider')
         .eq('id', currentUser.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (cancelled || !data?.role || data.role === currentUser.role) return;
-          setCurrentUser(prev => (prev ? { ...prev, role: data.role } : prev));
+          if (cancelled || !data) return;
+          setCurrentUser(prev => {
+            if (!prev) return prev;
+            const roleChanged = data.role && data.role !== prev.role;
+            const spChanged = data.is_service_provider !== prev.is_service_provider;
+            if (!roleChanged && !spChanged) return prev;
+            return { ...prev, role: data.role || prev.role, is_service_provider: data.is_service_provider === true };
+          });
         }, () => {});
     };
     syncRole(); // run IMMEDIATELY — a just-promoted organizer must not wait 15s
@@ -2496,6 +2503,12 @@ export default function App() {
               currentUser={{ id: currentUser.id, country: currentUser.country }}
               onBack={goBack}
               onSaved={() => goBack()}
+            />
+          )}
+          {screen === 'service-provider-verify' && currentUser && (
+            <ServiceProviderVerificationScreen
+              currentUser={{ id: currentUser.id, country: currentUser.country }}
+              onBack={goBack}
             />
           )}
           {screen === 'auth' && (

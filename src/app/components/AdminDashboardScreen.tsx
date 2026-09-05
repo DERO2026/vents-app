@@ -1247,7 +1247,7 @@ export function AdminDashboardScreen({
       try {
         const { data: reqs, error } = await supabase
           .from('service_provider_requests')
-          .select('id, user_id, reason, status, admin_note, created_at')
+          .select('id, user_id, reason, status, admin_note, created_at, provider_type, country, owner_name, business_name, cac_number, identity_id_type, identity_id_number, document_url')
           .order('created_at', { ascending: false })
           .limit(100);
         if (error) throw error;
@@ -1273,21 +1273,18 @@ export function AdminDashboardScreen({
   }, [tab, currentUser?.id, isRoot]);
 
   const reviewSpRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
-    const { error } = await supabase
-      .from('service_provider_requests')
-      .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
-      .eq('id', id);
+    // Single atomic RPC: updates the request, grants/leaves the capability,
+    // AND inserts the applicant's notification together -- see
+    // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    const { error } = await supabase.rpc('admin_decide_service_provider_request', {
+      p_request_id: id,
+      p_status: status,
+      p_admin_note: adminNote || null,
+    });
     if (!error) {
       setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      const req = spRequests.find((r) => r.id === id);
-      // Approving grants the capability via the secure admin-only RPC.
-      // Rejecting only updates the request row above -- no RPC call, no
-      // capability change.
-      if (status === 'approved') {
-        if (req?.user_id) {
-          await supabase.rpc('admin_set_service_provider_capability', { p_user_id: req.user_id, p_enabled: true });
-        }
-      }
+    } else {
+      flash(false, error.message || 'Failed to review request.');
     }
   };
 
@@ -2873,8 +2870,22 @@ export function AdminDashboardScreen({
                       {[user?.email, user?.phone_number, user?.state].filter(Boolean).join(' · ')}
                     </p>
                   )}
+                  {(req.provider_type || req.country) && (
+                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 6px' }}>
+                      {[req.provider_type && req.provider_type.toUpperCase(), req.country, req.business_name, req.cac_number && `CAC ${req.cac_number}`, req.identity_id_number && `${req.identity_id_type || 'ID'} ${req.identity_id_number}`].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
                   {req.reason && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px', lineHeight: 1.4 }}>{req.reason}</p>}
                   <p style={{ color: '#555C7A', fontSize: '11px', margin: '0 0 10px' }}>{new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  {req.document_url && (
+                    <button
+                      onClick={() => handlePreviewCacDocument(req.id, req.document_url)}
+                      disabled={cacPreviewLoadingId === req.id}
+                      style={{ width: '100%', height: '32px', borderRadius: '10px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer', marginBottom: '8px' }}
+                    >
+                      {cacPreviewLoadingId === req.id ? 'Loading...' : 'View Document'}
+                    </button>
+                  )}
                   {req.status === 'pending' && (
                     <div style={{ display: 'flex', gap: '8px' }}>
                       <button onClick={() => reviewSpRequest(req.id, 'approved')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Approve</button>
