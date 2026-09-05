@@ -76,7 +76,18 @@ export function ProfileScreen({
   // deliberately a separate independent state block (not shared) so an
   // existing Organizer can also request this capability, and so this can
   // evolve independently of the Organizer flow without risk to it.
-  const [spRequestStatus, setSpRequestStatus] = useState<'idle' | 'already'>('idle');
+  // ROOT CAUSE of the "approved application shows a dead 'Application
+  // Submitted' button" bug: this used to collapse every non-rejected
+  // status (both 'pending' AND 'approved') into a single 'already' bucket,
+  // which the CTA below both disabled AND made unclickable (`if
+  // (spRequestStatus === 'already') return;`) -- so an approved applicant
+  // saw the exact same greyed-out, do-nothing button as someone still
+  // pending review, with no way to open the application or continue into
+  // setup until currentUser.is_service_provider happened to sync from its
+  // separate 15s poll (App.tsx's syncRole effect) or a full reload. Now
+  // tracks the actual DB status so 'approved' can be handled as its own
+  // state instead of being indistinguishable from 'pending'.
+  const [spRequestStatus, setSpRequestStatus] = useState<'idle' | 'pending' | 'approved'>('idle');
 
   useEffect(() => {
     if (!currentUser?.id) { setVcBalance(null); return; }
@@ -249,7 +260,7 @@ export function ProfileScreen({
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) setSpRequestStatus(data.status === 'rejected' ? 'idle' : 'already');
+      if (data) setSpRequestStatus(data.status === 'rejected' ? 'idle' : data.status === 'approved' ? 'approved' : 'pending');
     }
     checkSpRequest();
   }, [currentUser?.id]);
@@ -265,7 +276,14 @@ export function ProfileScreen({
   // RLS's own is_admin() policies server-side (0045_service_provider_admin_
   // access.sql); this only decides what the Profile UI offers them.
   const isAdminOrSubAdminForServices = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
-  const canAccessProviderSetup = currentUser?.is_service_provider === true || isAdminOrSubAdminForServices;
+  // Also trust spRequestStatus === 'approved' directly, not just the
+  // currentUser.is_service_provider flag -- that flag is only refreshed by
+  // App.tsx's 15s syncRole poll, so relying on it alone left a real (if
+  // short-lived) window right after admin approval where this screen's own
+  // service_provider_requests fetch already knows the applicant is
+  // approved, but the CTA below hadn't caught up yet and still rendered as
+  // a dead, disabled "Application Submitted" button.
+  const canAccessProviderSetup = currentUser?.is_service_provider === true || isAdminOrSubAdminForServices || spRequestStatus === 'approved';
 
   const [hasProviderProfile, setHasProviderProfile] = useState<boolean | null>(null);
   useEffect(() => {
@@ -760,23 +778,29 @@ export function ProfileScreen({
           </div>
         ) : (
           <div className="px-4 mb-3">
+            {/* Pending is the ONLY state that should read as "nothing to do
+                yet" -- but it's still clickable, opening
+                ServiceProviderVerificationScreen's own PendingCard, so the
+                application itself is never unreachable (requirement: "the
+                user cannot open the submitted application again" must not
+                happen). 'idle' (never applied, or a past rejection) is a
+                fresh application entry point. 'approved' never reaches this
+                branch at all now -- canAccessProviderSetup above already
+                covers it, sending the user straight to setup instead. */}
             <button
-              onClick={() => {
-                if (spRequestStatus === 'already') return;
-                onNavigate('service-provider-verify');
-              }}
+              onClick={() => onNavigate('service-provider-verify')}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
-                background: spRequestStatus === 'already' ? 'rgba(34,211,238,0.04)' : 'rgba(34,211,238,0.08)',
+                background: spRequestStatus === 'pending' ? 'rgba(34,211,238,0.04)' : 'rgba(34,211,238,0.08)',
                 borderRadius: '14px',
-                border: `1px solid ${spRequestStatus === 'already' ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.25)'}`,
-                cursor: spRequestStatus === 'already' ? 'default' : 'pointer',
-                opacity: spRequestStatus === 'already' ? 0.7 : 1,
+                border: `1px solid ${spRequestStatus === 'pending' ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.25)'}`,
+                cursor: 'pointer',
+                opacity: spRequestStatus === 'pending' ? 0.7 : 1,
               }}
             >
               <Briefcase size={16} color="#22D3EE" />
               <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 600 }}>
-                {spRequestStatus === 'already' ? 'Application Submitted' : 'Become a Service Provider'}
+                {spRequestStatus === 'pending' ? 'Application Submitted' : 'Become a Service Provider'}
               </span>
             </button>
           </div>

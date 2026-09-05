@@ -14,6 +14,7 @@ import {
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
 import { COUNTRY_CODES } from '../../lib/countries';
+import { hasEventEnded } from '../../lib/eventLifecycle';
 
 interface OrganizerDashboardProps {
   currentUser?: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -579,15 +580,24 @@ export function OrganizerDashboard({
           // Resolve event status — treat null/undefined as 'live' for backward compat
           const getStatus = (e: any): string => e.status ?? 'live';
 
-          // Compare against start-of-today so same-day events still show as live/upcoming
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
+          // "Ended" now uses the SAME canonical rule as everywhere else
+          // (server-side purchase guards, Home/Explore discovery, the
+          // EventDetailsScreen CTA — see supabase/migrations/0051 and
+          // src/lib/eventLifecycle.ts): COALESCE(end_date, event_date + 24h)
+          // vs now(), not a bare "event_date before local midnight today"
+          // comparison. The old check only looked at the START date against
+          // a LOCAL-timezone midnight boundary, ignored end_date entirely,
+          // and never accounted for the actual end time — so a multi-day
+          // event that started days ago but hasn't ended yet could get
+          // dropped into Past, while an event that started and ended
+          // earlier TODAY stayed in Live until local midnight.
+          const ended = (e: any) => hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null });
 
           const displayEvents = activeTab === 'live'
-            ? orgEvents.filter(e => getStatus(e) === 'live' && new Date(e.event_date) >= todayStart)
+            ? orgEvents.filter(e => getStatus(e) !== 'draft' && !ended(e))
             : activeTab === 'drafts'
             ? orgEvents.filter(e => getStatus(e) === 'draft')
-            : orgEvents.filter(e => getStatus(e) !== 'draft' && new Date(e.event_date) < todayStart);
+            : orgEvents.filter(e => getStatus(e) !== 'draft' && ended(e));
 
 
           if (displayEvents.length > 0) {
@@ -595,6 +605,12 @@ export function OrganizerDashboard({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {displayEvents.map((event) => {
                   const dateStr = event.event_date ? new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                  // The row's own DB `status` column means "published vs
+                  // draft", not "has it ended" -- badging a Past-tab row
+                  // with the raw status read as "LIVE" even though it's
+                  // sorted into Past, which is what was reported. Show
+                  // "Ended" for anything in the Past tab instead.
+                  const badgeLabel = ended(event) ? 'ended' : getStatus(event);
                   return (
                     <div
                       key={event.id}
@@ -619,14 +635,14 @@ export function OrganizerDashboard({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                           <span style={{
                             fontSize: '9px',
-                            background: getStatus(event) === 'live' ? 'rgba(16, 185, 129, 0.12)' : getStatus(event) === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                            color: getStatus(event) === 'live' ? '#10B981' : getStatus(event) === 'draft' ? '#F59E0B' : '#EF4444',
+                            background: badgeLabel === 'live' ? 'rgba(16, 185, 129, 0.12)' : badgeLabel === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            color: badgeLabel === 'live' ? '#10B981' : badgeLabel === 'draft' ? '#F59E0B' : '#EF4444',
                             padding: '2px 6px',
                             borderRadius: '4px',
                             fontWeight: 700,
                             textTransform: 'uppercase' as const
                           }}>
-                            {getStatus(event)}
+                            {badgeLabel}
                           </span>
                           <span style={{ color: '#8B8FA8', fontSize: '10px' }}>{event.category}</span>
                         </div>

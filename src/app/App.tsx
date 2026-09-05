@@ -2918,9 +2918,20 @@ export default function App() {
                 navigateTo('checkin-scanner');
               }}
               onEventPress={(event) => {
-                // Navigate to event management / analytics for this event
+                // Navigate to event management / analytics for this event.
+                // dbEvents is the public Home feed, which now (correctly)
+                // excludes ended/draft/hidden events -- so for any event in
+                // OrganizerDashboard's Past Events / Drafts tabs, `mapped`
+                // was always undefined here. The old code then silently did
+                // NOT call setSelectedEvent on a miss, yet still navigated
+                // to event-details -- showing whatever event was PREVIOUSLY
+                // selected (a stale, unrelated, often-live event) instead of
+                // the one just tapped. orgEvents rows are already full
+                // `select('*')` rows (see OrganizerDashboard's own fetch),
+                // so map the tapped row directly as the fallback instead of
+                // depending on a dbEvents hit.
                 const mapped = dbEvents.find(e => e.id === event.id);
-                if (mapped) setSelectedEvent(mapped);
+                setSelectedEvent(mapped || mapDbEventToFrontend(event));
                 navigateTo('event-details');
               }}
               onManageEvents={() => navigateTo('manage-events')}

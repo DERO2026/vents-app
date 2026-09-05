@@ -56,7 +56,7 @@ describe('ServiceProviderVerificationScreen: an approved applicant never sees th
 
 describe('Admin/Sub-Admin Services access: bypasses capability gate, RLS-protected server-side', () => {
   it('ProfileScreen computes canAccessProviderSetup from role OR capability, not capability alone', () => {
-    expect(profileScreenSrc).toMatch(/const canAccessProviderSetup = currentUser\?\.is_service_provider === true \|\| isAdminOrSubAdminForServices;/);
+    expect(profileScreenSrc).toMatch(/const canAccessProviderSetup = currentUser\?\.is_service_provider === true \|\| isAdminOrSubAdminForServices \|\| spRequestStatus === 'approved';/);
   });
 
   it('both the setup button and the own-listing fetch gate on canAccessProviderSetup', () => {
