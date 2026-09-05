@@ -5,8 +5,10 @@ import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { prefetchTicketTokens } from '../../lib/ticketToken';
-import { supabase } from '../../lib/supabase';
+import { supabase, getAuthToken } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
+import { openPaystackPopup } from '../../lib/paystack';
+import { apiUrl } from '../../lib/apiBase';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -15,6 +17,9 @@ interface MyTicketsScreenProps {
   onViewTicket: (ticket: PurchasedTicket) => void;
   onRefresh?: () => Promise<void>;
   currentUserId?: string;
+  // Needed to open the Paystack popup for the transfer-fee payment (Accept
+  // now requires paying the fee first, see 0043_ticket_transfer_fee.sql).
+  currentUserEmail?: string;
   // Bumped by App.tsx's handleTabChange on every tap of the My Tickets tab
   // (including while already on it) -- this screen now stays mounted
   // across tab switches instead of remounting, so its internally-fetched
@@ -31,10 +36,16 @@ function formatTransferDate(iso: string): string {
 
 // Visual treatment for each terminal transfer status in History -- a
 // resolved transfer is never shown as if it's still pending.
-function transferStatusBadge(status: TicketTransfer['status']) {
+// isOutgoing: from the SENDER's own perspective, an accepted transfer reads
+// as "Transferred" (their ticket moved on) rather than "Accepted" (which
+// reads like something that happened TO them, ambiguous about direction) --
+// the recipient still sees "Accepted" (they're the one who accepted it).
+function transferStatusBadge(status: TicketTransfer['status'], isOutgoing: boolean) {
   switch (status) {
     case 'accepted':
-      return { label: 'Accepted', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
+      return isOutgoing
+        ? { label: 'Transferred', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle }
+        : { label: 'Accepted', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
     case 'declined':
       return { label: 'Declined', color: '#EF4444', bg: 'rgba(239,68,68,0.14)', Icon: XCircle };
     case 'cancelled':
@@ -57,7 +68,7 @@ function TransferEmptyState({ text }: { text: string }) {
   );
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, refreshSignal }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -87,7 +98,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     if (!currentUserId) return;
     const { data, error } = await supabase
       .from('ticket_transfers')
-      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, responded_at, expires_at, tickets(ticket_type, events(title))')
+      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, responded_at, expires_at, fee_kobo, fee_paid_at, tickets(ticket_type, events(title))')
       .or(`from_user_id.eq.${currentUserId},to_user_id.eq.${currentUserId}`)
       .order('created_at', { ascending: false });
     if (error) { console.error('Failed to load ticket transfers:', error); return; }
@@ -127,6 +138,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         eventTitle: r.tickets?.events?.title,
         ticketTypeLabel: r.tickets?.ticket_type,
         counterpartyLabel: profileMap[otherId] || r.to_identifier,
+        feeKobo: Number(r.fee_kobo) || 0,
+        feePaidAt: r.fee_paid_at || undefined,
       };
     });
     setTransfers(mapped);
@@ -144,24 +157,72 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     loadTransfers();
   }, [refreshSignal, loadTransfers]);
 
-  const handleAcceptTransfer = async (transferId: string) => {
+  // Accepting a transfer now requires paying the transfer fee first
+  // (0043_ticket_transfer_fee.sql) -- initiate_transfer_fee_payment gets a
+  // fresh reference + the exact fee to charge (server-computed, never a
+  // client number), the SAME Paystack popup + ?action=verify architecture
+  // CheckoutScreen/App.tsx already use for ticket purchases confirms it,
+  // and confirm_transfer_fee_payment (project_admin-only, called from that
+  // same verify endpoint) does the actual ownership swap -- there is no
+  // client-callable path that accepts a transfer without a verified
+  // payment landing first.
+  const handleAcceptTransfer = async (transfer: TicketTransfer) => {
     // Explicit re-entrancy guard, not just the button's own `disabled` --
     // `disabled` only takes effect after React commits the next render, so
     // a fast enough double-tap could otherwise fire this twice before that
     // happens. `transferActionBusy` flips synchronously, before any await.
     if (transferActionBusy) return;
-    setTransferActionBusy(transferId);
+    setTransferActionBusy(transfer.id);
     setTransferActionError('');
     try {
-      const { error } = await supabase.rpc('accept_ticket_transfer', { p_transfer_id: transferId });
+      const { data, error } = await supabase.rpc('initiate_transfer_fee_payment', { p_transfer_id: transfer.id });
       if (error) throw new Error(error.message);
-      haptics.success();
-      await loadTransfers();
-      if (onRefresh) await onRefresh();
+      const reference: string = data?.reference;
+      const feeKobo: number = Number(data?.feeKobo) || transfer.feeKobo;
+      if (!reference) throw new Error('Could not start the transfer fee payment.');
+
+      openPaystackPopup({
+        email: currentUserEmail || '',
+        amountKobo: feeKobo,
+        ref: reference,
+        label: `Transfer fee — ${transfer.eventTitle || 'ticket transfer'}`,
+        metadata: { transferId: transfer.id, kind: 'ticket_transfer_fee' },
+        onSuccess: async () => {
+          try {
+            const token = await getAuthToken();
+            const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ reference }),
+            });
+            const verifyJson = await verifyRes.json().catch(() => null);
+            if (!verifyRes.ok || verifyJson?.status !== 'success') {
+              throw new Error(verifyJson?.error || 'Could not verify the transfer fee payment. If you were charged, contact support with your reference.');
+            }
+            haptics.success();
+            await loadTransfers();
+            if (onRefresh) await onRefresh();
+          } catch (e: any) {
+            haptics.error();
+            setTransferActionError(e?.message || 'Could not verify the transfer fee payment.');
+          } finally {
+            setTransferActionBusy(null);
+          }
+        },
+        onClose: () => {
+          // Popup dismissed with no charge -- not an error, just stop
+          // showing busy so Accept can be tapped again.
+          setTransferActionBusy(null);
+        },
+        onError: (message) => {
+          haptics.error();
+          setTransferActionError(message);
+          setTransferActionBusy(null);
+        },
+      });
     } catch (e: any) {
       haptics.error();
-      setTransferActionError(e?.message || 'Could not accept this transfer.');
-    } finally {
+      setTransferActionError(e?.message || 'Could not start the transfer fee payment.');
       setTransferActionBusy(null);
     }
   };
@@ -547,16 +608,23 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                           Action needed
                         </span>
                       </div>
-                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>
+                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 6px' }}>
                         From <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.createdAt)} · expires {formatTransferDate(t.expiresAt)}
+                      </p>
+                      {/* Fee shown clearly before any payment is triggered --
+                          this is the exact amount Paystack will charge,
+                          straight from the server-computed, server-locked
+                          fee_kobo on this row (never a client estimate). */}
+                      <p style={{ color: '#C4B5FD', fontSize: '11px', fontWeight: 700, margin: '0 0 10px' }}>
+                        Transfer fee: {formatPrice(t.feeKobo / 100)} (paid by you to accept)
                       </p>
                       <div style={{ display: 'flex', gap: '8px' }}>
                         <button
-                          onClick={() => handleAcceptTransfer(t.id)}
+                          onClick={() => handleAcceptTransfer(t)}
                           disabled={transferActionBusy === t.id}
                           style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
                         >
-                          <Check size={13} /> Accept
+                          <Check size={13} /> {transferActionBusy === t.id ? 'Processing…' : `Accept & Pay ${formatPrice(t.feeKobo / 100)}`}
                         </button>
                         <button
                           onClick={() => handleDeclineTransfer(t.id)}
@@ -611,9 +679,9 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {transferHistory.map((t) => {
-                    const badge = transferStatusBadge(t.status);
-                    const BadgeIcon = badge.Icon;
                     const isOutgoing = t.fromUserId === currentUserId;
+                    const badge = transferStatusBadge(t.status, isOutgoing);
+                    const BadgeIcon = badge.Icon;
                     return (
                       <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>

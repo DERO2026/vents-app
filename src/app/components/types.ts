@@ -123,6 +123,16 @@ export interface TicketTransfer {
   // full_name for an incoming transfer, recipient's for outgoing) --
   // resolved via public_profiles, never raw email/phone.
   counterpartyLabel?: string;
+  // Recipient-paid transfer fee (0043_ticket_transfer_fee.sql) -- locked in
+  // server-side at initiate time from the ticket's own amount (7.5%,
+  // clamped NGN 500-5000), in kobo. Never a client-computed number; always
+  // read straight from the row so the fee shown is the fee that will
+  // actually be charged.
+  feeKobo: number;
+  // Set only once confirm_transfer_fee_payment has verified the payment
+  // with Paystack AND swapped ownership, atomically -- never set on its
+  // own without ownership having moved.
+  feePaidAt?: string;
 }
 
 export interface UserProfile {

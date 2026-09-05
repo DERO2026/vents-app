@@ -2723,6 +2723,7 @@ export default function App() {
                 }}
                 onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
                 currentUserId={currentUser?.id}
+                currentUserEmail={currentUser?.email}
                 refreshSignal={myTicketsRefreshSignal}
               />
             </div>

@@ -66,16 +66,27 @@ async function handleClientVerify(req, res) {
     return res.status(500).json({ error: 'Payment verification not configured' });
   }
 
+  // Ticket-transfer fee payments use the same Paystack-verify machinery as
+  // a ticket purchase, distinguished only by their reference prefix
+  // (initiate_transfer_fee_payment, 0043_ticket_transfer_fee.sql, always
+  // generates 'txf_' + a random uuid) -- kept in this same handler rather
+  // than a new serverless function (Vercel Hobby's 12-function cap is
+  // already exactly hit, see this file's header comment).
+  const isTransferFeeRef = reference.startsWith('txf_');
+
   try {
-    // Ownership check: confirm the caller actually owns the pending
-    // purchase this reference belongs to before spending a Paystack call or
-    // finalizing anything on their say-so. A reference with no matching
-    // pending_purchases row (already finalized in a prior call, or simply
-    // unknown) isn't itself an error here -- finalize_pending_purchase's own
-    // idempotency and confirm_ticket_payment's ticket lookup below handle
-    // that; this only blocks a caller asking about a reference that
+    // Ownership check: confirm the caller actually owns the payment this
+    // reference belongs to (the pending purchase, or the transfer-fee
+    // recipient) before spending a Paystack call or finalizing anything on
+    // their say-so. A reference with no matching row (already finalized in
+    // a prior call, or simply unknown) isn't itself an error here --
+    // finalize_pending_purchase/confirm_ticket_payment's and
+    // confirm_transfer_fee_payment's own idempotency and lookups below
+    // handle that; this only blocks a caller asking about a reference that
     // demonstrably belongs to someone else.
-    const ownerId = await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
+    const ownerId = isTransferFeeRef
+      ? await callProjectAdminRpc('get_transfer_fee_payment_owner', [reference])
+      : await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
     if (ownerId && ownerId !== session.userId) {
       return res.status(403).json({ error: 'Not authorized for this payment reference' });
     }
@@ -95,13 +106,41 @@ async function handleClientVerify(req, res) {
     if (txStatus !== 'success') {
       // Covers failed, abandoned, and cancelled payments alike -- Paystack's
       // own transaction record is the source of truth for all three; none
-      // of them ever reach finalizeAndConfirmPurchase, so no ticket is ever
-      // created for a payment that didn't actually succeed.
+      // of them ever reach finalizeAndConfirmPurchase/confirm_transfer_fee_
+      // payment, so no ticket is ever created and no transfer ownership
+      // ever moves for a payment that didn't actually succeed.
       return res.status(200).json({ status: txStatus === 'abandoned' ? 'abandoned' : 'failed' });
     }
 
     if (typeof amountKobo !== 'number') {
       return res.status(502).json({ status: 'error', error: 'Paystack returned no amount for this transaction.' });
+    }
+
+    if (isTransferFeeRef) {
+      const feeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+
+      if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
+        const [, expected, got] = feeStatus.split(':');
+        console.error('[webhook/paystack?action=verify] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', expected, 'vs', got);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected transfer fee.' });
+      }
+      if (feeStatus === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching transfer was found for this payment.' });
+      }
+      if (feeStatus === 'expired') {
+        return res.status(200).json({ status: 'error', error: 'This transfer request has expired.' });
+      }
+      if (feeStatus === 'ticket_ineligible') {
+        return res.status(200).json({ status: 'error', error: 'This ticket is no longer eligible for transfer.' });
+      }
+      if (typeof feeStatus === 'string' && feeStatus.startsWith('transfer_not_pending')) {
+        return res.status(200).json({ status: 'error', error: 'This transfer is no longer pending.' });
+      }
+
+      // 'confirmed' or 'already_paid' -- either way the fee is paid and
+      // ownership has moved (confirm_transfer_fee_payment does both
+      // atomically), so this is a success from the client's perspective.
+      return res.status(200).json({ status: 'success' });
     }
 
     const result = await finalizeAndConfirmPurchase(reference, amountKobo);
@@ -168,6 +207,26 @@ async function handleWebhook(req, res) {
 
     if (!reference || typeof amountKobo !== 'number') {
       console.error('[Paystack webhook] charge.success missing reference or amount', { reference, amountKobo });
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('txf_')) {
+      // Same recovery-path reasoning as the ticket-purchase branch below,
+      // for a transfer-fee payment: this is the authoritative confirmation
+      // (Paystack's own signed webhook event) if the client's own ?action=
+      // verify call never fired. confirm_transfer_fee_payment is idempotent
+      // (fee_paid_at IS NOT NULL short-circuits to 'already_paid'), so
+      // whichever of the two paths runs first wins and the other no-ops.
+      try {
+        const feeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+        if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
+          console.error('[Paystack webhook] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', feeStatus);
+        } else {
+          console.log('[Paystack webhook] transfer fee', feeStatus, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_transfer_fee_payment:', err?.message || err);
+      }
       return res.status(200).json({ received: true });
     }
 
