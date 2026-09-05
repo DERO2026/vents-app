@@ -683,7 +683,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   );
 }
 
-function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
+function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteAccount }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void; onDeleteAccount?: () => void }) {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -1245,6 +1245,26 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Profile saved successfully!</span>
               </div>
             )}
+
+            {/* Delete Account -- moved here from Settings' main list (it
+                previously sat directly under Sign Out). This is the
+                account-details screen, so a destructive account-level
+                action belongs here, clearly separated from the save flow
+                above rather than mixed into it. The underlying delete
+                confirmation flow/RPC (DeleteAccountScreen) is unchanged --
+                only its entry point moved. */}
+            {onDeleteAccount && (
+              <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid rgba(239,68,68,0.15)' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>Danger Zone</p>
+                <button
+                  onClick={onDeleteAccount}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '14px', padding: '14px', color: '#EF4444', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <Trash2 size={16} />
+                  Delete Account
+                </button>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1744,7 +1764,7 @@ export function SettingsScreen({
       .eq('id', currentUser.id);
   };
 
-  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
+  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
@@ -1869,10 +1889,10 @@ export function SettingsScreen({
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
           </div>
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '0 14px' }}>
-            <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
-          </div>
         </div>
+        {/* Delete Account now lives in Profile Details (Edit Profile) as a
+            clearly-separated destructive action, not directly under Sign
+            Out -- see ProfileDetailsScreen's Danger Zone section. */}
 
         <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
           {appVersionLabel()}

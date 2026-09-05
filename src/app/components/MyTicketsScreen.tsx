@@ -349,8 +349,18 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       // Pull-to-refresh
       handleRefresh();
     } else if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-      if (dx < 0) setActiveTab('past');
-      else setActiveTab('upcoming');
+      // Swipe left/right moves one tab at a time through the same
+      // Upcoming/Past/Transfers order the segmented control above renders,
+      // clamped at both ends -- no wraparound, and no accidental jump past
+      // Transfers on a fast swipe. Tap navigation (the segmented control)
+      // still works independently of this gesture.
+      const order: Array<'upcoming' | 'past' | 'transfers'> = ['upcoming', 'past', 'transfers'];
+      const currentIndex = order.indexOf(activeTab);
+      const nextIndex = dx < 0 ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex >= 0 && nextIndex < order.length) {
+        haptics.light();
+        setActiveTab(order[nextIndex]);
+      }
     }
     touchStartX.current = null;
     touchStartY.current = null;

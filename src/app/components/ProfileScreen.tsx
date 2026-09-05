@@ -259,9 +259,17 @@ export function ProfileScreen({
   // Profile" label -- independent of the capability-request status above
   // (spRequestStatus governs the request card, hasProviderProfile governs
   // the setup/edit card that only appears once the capability is granted).
+  // Admin/Sub-Admin must have full access to Services -- same admin reach
+  // as every other admin-managed section -- without being blocked by the
+  // normal provider onboarding/KYC gate. Privileged writes still go through
+  // RLS's own is_admin() policies server-side (0045_service_provider_admin_
+  // access.sql); this only decides what the Profile UI offers them.
+  const isAdminOrSubAdminForServices = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
+  const canAccessProviderSetup = currentUser?.is_service_provider === true || isAdminOrSubAdminForServices;
+
   const [hasProviderProfile, setHasProviderProfile] = useState<boolean | null>(null);
   useEffect(() => {
-    if (!currentUser?.id || !currentUser.is_service_provider) { setHasProviderProfile(null); return; }
+    if (!currentUser?.id || !canAccessProviderSetup) { setHasProviderProfile(null); return; }
     let cancelled = false;
     Promise.resolve(
       supabase
@@ -273,7 +281,7 @@ export function ProfileScreen({
       .then(({ data }: any) => { if (!cancelled) setHasProviderProfile(!!data); })
       .catch(() => { if (!cancelled) setHasProviderProfile(false); });
     return () => { cancelled = true; };
-  }, [currentUser?.id, currentUser?.is_service_provider, profileRefreshKey]);
+  }, [currentUser?.id, canAccessProviderSetup, profileRefreshKey]);
 
   if (!currentUser) {
     return (
@@ -726,10 +734,13 @@ export function ProfileScreen({
             role. Deliberately not excluded for Organizers/Admins: this
             release's whole point is that a user can hold both the
             Organizer role and this capability on one account (see
-            0033_service_provider_capability.sql). Only currentUser.
-            is_service_provider (a plain boolean, unrelated to `role`)
-            gates this. */}
-        {currentUser.is_service_provider ? (
+            0033_service_provider_capability.sql). Admin/Sub-Admin skip the
+            capability check entirely (canAccessProviderSetup) so they can
+            always reach Services setup, matching their reach over every
+            other admin-managed section -- the actual privileged write path
+            still goes through is_admin() RLS server-side, never a client
+            bypass alone (see 0045_service_provider_admin_access.sql). */}
+        {canAccessProviderSetup ? (
           <div className="px-4 mb-3">
             <button
               onClick={() => onNavigate('service-provider-setup')}

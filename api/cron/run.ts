@@ -2,7 +2,21 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 
-// ─── Daily notification sweep (Vercel Cron) ───────────────────────────────
+// ─── Notification sweep (Vercel Cron) ─────────────────────────────────────
+// ROOT CAUSE of hours-late push delivery: every transactional notification
+// (ticket-transfer accept/decline, chat message, sale, etc.) is written to
+// `notifications` immediately by its own RPC, but the ONLY thing that ever
+// turns an unsent row into an actual FCM push is this sweep — there is no
+// immediate/on-action send path. When this ran once/day (vercel.json's
+// crons entry was "0 8 * * *"), a notification created at 08:01 UTC waited
+// up to ~24h for the next run. Tightened to hourly ("0 * * * *") below —
+// this bounds worst-case delay to under an hour without adding a new
+// serverless function (the project is already at Vercel's Hobby 12-function
+// cap) or replacing the sweep architecture. NOTE: Vercel's Hobby plan caps
+// cron *invocation frequency* to once/day regardless of the schedule
+// expression configured — hourly here only takes effect once the project is
+// on a Pro (or higher) plan. This is a plan-tier fact to verify on the
+// Vercel dashboard, not something fixable from this repo.
 // Combines what were originally two separate cron endpoints
 // (event-reminders.ts + send-pending-pushes.ts) into one file, in that
 // order — the Hobby-plan 12-serverless-function cap forced the merge, but

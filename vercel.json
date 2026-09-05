@@ -7,7 +7,7 @@
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "crons": [
-    { "path": "/api/cron/run", "schedule": "0 8 * * *" }
+    { "path": "/api/cron/run", "schedule": "0 * * * *" }
   ],
   "headers": [
     {
