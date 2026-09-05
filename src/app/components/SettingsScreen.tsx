@@ -665,7 +665,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 40px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(40px + env(safe-area-inset-bottom))', minWidth: 0, WebkitOverflowScrolling: 'touch' }}>
         {status === 'loading' && (
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>Loading…</p>
         )}

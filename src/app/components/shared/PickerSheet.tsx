@@ -1,9 +1,14 @@
-import { useRef, useState } from 'react';
+import { ReactNode, useRef, useState } from 'react';
 import { Search, X, Check, ChevronDown } from 'lucide-react';
 
 export interface PickerOption {
   value: string;
   label: string;
+  /** Optional leading visual (e.g. a country flag) — rendered before the
+   *  label in the default row layout. Ignored when `renderOption` is set. */
+  icon?: ReactNode;
+  /** Optional secondary line under the label (e.g. a dial-code format hint). */
+  sublabel?: string;
 }
 
 // The trigger field — matches the app's INPUT_STYLE surfaces (dark field,
@@ -78,6 +83,10 @@ export function PickerSheet({
   // (e.g. a bottom-sheet form already at a higher z-index) push this above
   // it, so the picker isn't stuck rendering behind its own host.
   zIndex = 1000,
+  // Escape hatch for a row that needs more than icon+label+sublabel (e.g.
+  // PhoneInput's dial-code trailing chip) — receives the option and whether
+  // it's the current value, returns the row's full inner content.
+  renderOption,
 }: {
   title: string;
   options: PickerOption[];
@@ -89,6 +98,7 @@ export function PickerSheet({
   allowCustom?: boolean;
   customLabel?: (query: string) => string;
   zIndex?: number;
+  renderOption?: (option: PickerOption, isSelected: boolean) => ReactNode;
 }) {
   const [query, setQuery] = useState('');
   // Drag-to-dismiss — only the grab handle + header area is a drag surface
@@ -144,17 +154,30 @@ export function PickerSheet({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%',
-          maxHeight: '75vh',
+          // Floating card, not an edge-to-edge full-width sheet: small side
+          // margins so the dimmed/blurred app underneath stays visible on
+          // every edge, matching the iOS action-sheet/photo-picker reference
+          // (a compact translucent card near the bottom, not a screen).
+          width: 'calc(100% - 24px)',
+          margin: '0 12px calc(10px + env(safe-area-inset-bottom))',
+          // Capped well below "nearly full screen" -- short lists (a handful
+          // of options) size to their own content via the column layout
+          // below; long lists (e.g. every country) stop scrolling within
+          // this, never anywhere near 90-100% of the viewport.
+          maxHeight: 'min(56vh, 460px)',
           display: 'flex',
           flexDirection: 'column',
-          background: '#0D0A1A',
-          borderTopLeftRadius: '24px',
-          borderTopRightRadius: '24px',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderBottom: 'none',
-          boxShadow: '0 -20px 50px rgba(0,0,0,0.45)',
-          padding: '12px 20px calc(20px + env(safe-area-inset-bottom))',
+          // Translucent frosted-glass surface (the actual gap from the
+          // previous pass): a solid #0D0A1A sheet read as "another screen",
+          // not a floating overlay. blur+alpha here lets the dimmed app
+          // behind bleed through, the way an iOS blur-material sheet does.
+          background: 'rgba(13,10,26,0.78)',
+          backdropFilter: 'blur(24px) saturate(1.4)',
+          WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
+          borderRadius: '22px',
+          border: '1px solid rgba(255,255,255,0.1)',
+          boxShadow: '0 -12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.03)',
+          padding: '10px 16px 16px',
           animation: 'pickerSheetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
           transform: dragY ? `translateY(${dragY}px)` : undefined,
           transition: dragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
@@ -279,10 +302,23 @@ export function PickerSheet({
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   flexShrink: 0,
+                  gap: '12px',
                 }}
               >
-                {o.label}
-                {isSelected && <Check size={16} color="#A78BFA" />}
+                {renderOption ? (
+                  renderOption(o, isSelected)
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                      {o.icon}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</div>
+                        {o.sublabel && <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500 }}>{o.sublabel}</div>}
+                      </div>
+                    </div>
+                    {isSelected && <Check size={16} color="#A78BFA" style={{ flexShrink: 0 }} />}
+                  </>
+                )}
               </div>
             );
           })}

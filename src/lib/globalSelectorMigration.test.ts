@@ -23,6 +23,7 @@ let spVerifySrc: string;
 let manageProviderServicesSrc: string;
 let adminDashboardSrc: string;
 let pickerSheetSrc: string;
+let phoneInputSrc: string;
 
 beforeAll(() => {
   settingsSrc = readFileSync(join(componentsDir, 'SettingsScreen.tsx'), 'utf8');
@@ -30,22 +31,26 @@ beforeAll(() => {
   manageProviderServicesSrc = readFileSync(join(componentsDir, 'ManageProviderServicesScreen.tsx'), 'utf8');
   adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
   pickerSheetSrc = readFileSync(join(componentsDir, 'shared', 'PickerSheet.tsx'), 'utf8');
+  phoneInputSrc = readFileSync(join(componentsDir, 'PhoneInput.tsx'), 'utf8');
 });
 
 describe('PickerSheet: the single reusable VENTS selector component', () => {
-  it('renders as a compact bottom sheet, not a full-screen page (fixed inset, bottom-anchored, capped height)', () => {
+  it('renders as a compact floating card, not a full-screen page or an edge-to-edge sheet (fixed inset backdrop, bottom-anchored, side margins, capped height well below full-screen)', () => {
     expect(pickerSheetSrc).toMatch(/position: 'fixed',\s*inset: 0,/);
     expect(pickerSheetSrc).toMatch(/alignItems: 'flex-end',/);
-    expect(pickerSheetSrc).toMatch(/maxHeight: '75vh',/);
+    expect(pickerSheetSrc).toMatch(/width: 'calc\(100% - 24px\)',/);
+    expect(pickerSheetSrc).toMatch(/maxHeight: 'min\(56vh, 460px\)',/);
   });
 
-  it('has a translucent/dark backdrop that dims the underlying screen instead of replacing it', () => {
+  it('has a translucent/dark, blurred backdrop AND a translucent frosted-glass card surface (not a solid opaque sheet) so the dimmed app stays visible through it', () => {
     expect(pickerSheetSrc).toMatch(/background: 'rgba\(2,0,5,0\.55\)',/);
     expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(6px\)',/);
+    expect(pickerSheetSrc).toMatch(/background: 'rgba\(13,10,26,0\.78\)',/);
+    expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(24px\) saturate\(1\.4\)',/);
   });
 
-  it('has rounded top corners and a drag handle', () => {
-    expect(pickerSheetSrc).toMatch(/borderTopLeftRadius: '24px',/);
+  it('has rounded corners on every side (a floating card, not a sheet flush with the screen edges) and a drag handle', () => {
+    expect(pickerSheetSrc).toMatch(/borderRadius: '22px',/);
     expect(pickerSheetSrc).toMatch(/width: '36px', height: '4px', borderRadius: '2px'/);
   });
 
@@ -58,6 +63,11 @@ describe('PickerSheet: the single reusable VENTS selector component', () => {
   it('accepts an overridable zIndex so it can render above a host screen that already has its own modal', () => {
     expect(pickerSheetSrc).toMatch(/zIndex = 1000,/);
     expect(pickerSheetSrc).toMatch(/zIndex,\s*$/m);
+  });
+
+  it('supports a custom renderOption for rows that need more than icon+label+sublabel (e.g. PhoneInput\'s flag + format + dial code)', () => {
+    expect(pickerSheetSrc).toMatch(/renderOption\?: \(option: PickerOption, isSelected: boolean\) => ReactNode;/);
+    expect(pickerSheetSrc).toMatch(/renderOption \? \(\s*renderOption\(o, isSelected\)/);
   });
 });
 
@@ -108,5 +118,18 @@ describe('Admin Dashboard: Services filters and service-form selectors migrated'
   it('dense per-row admin actions (role change, ban duration) deliberately keep native <select> -- a bottom sheet per row in a scrollable data table is a regression, not an improvement, for that quick power-user action', () => {
     expect(adminDashboardSrc).toMatch(/<select\s*\n\s*value=\{roleOptions\.includes/);
     expect(adminDashboardSrc).toMatch(/<select\s*\n\s*disabled=\{isBusy \|\| isRootUser\}\s*\n\s*defaultValue=""/);
+  });
+});
+
+describe('PhoneInput: dial-code picker migrated onto the same shared PickerSheet', () => {
+  it('uses PickerSheet instead of its own bespoke modal', () => {
+    expect(phoneInputSrc).toMatch(/import \{ PickerSheet \} from '\.\/shared\/PickerSheet';/);
+    expect(phoneInputSrc).toMatch(/<PickerSheet/);
+    expect(phoneInputSrc).not.toMatch(/position: 'fixed', inset: 0, background: 'rgba\(0,0,0,0\.65\)'/);
+  });
+
+  it('preserves multi-field search (name, dial code, ISO) via the label, and preserves the flag/format/dial-code row via renderOption', () => {
+    expect(phoneInputSrc).toMatch(/label: `\$\{c\.name\} \$\{c\.code\} \$\{c\.iso\}`/);
+    expect(phoneInputSrc).toMatch(/renderOption=\{\(o\) => \{/);
   });
 });

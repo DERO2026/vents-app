@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
-import { ChevronDown, X, Search } from 'lucide-react';
+import { useState } from 'react';
+import { ChevronDown } from 'lucide-react';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, CountryOption, maxDigitsFor, formatNationalNumber } from '../../lib/countries';
+import { PickerSheet } from './shared/PickerSheet';
 
 export type { CountryOption } from '../../lib/countries';
 export { COUNTRY_CODES, DEFAULT_COUNTRY, maxDigitsFor, formatNationalNumber } from '../../lib/countries';
@@ -95,7 +96,6 @@ export function PhoneInput({
   background = '#090514', borderColor = 'rgba(255,255,255,0.08)', radius = '12px',
 }: PhoneInputProps) {
   const [showPicker, setShowPicker] = useState(false);
-  const [search, setSearch] = useState('');
 
   // Some dial codes are shared (+1 is USA and Canada). The parent stores only
   // the dial code — deliberately, since both countries produce the identical
@@ -114,13 +114,6 @@ export function PhoneInput({
   const maxDigits = maxDigitsFor(selected);
   const displayValue = formatNationalNumber(value, selected);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return COUNTRY_CODES;
-    return COUNTRY_CODES.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.code.includes(q) || c.iso.toLowerCase() === q
-    );
-  }, [search]);
 
   return (
     <>
@@ -183,62 +176,38 @@ export function PhoneInput({
       </div>
 
       {showPicker && (
-        <div
-          onClick={() => { setShowPicker(false); setSearch(''); }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 1000 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-          >
-            <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Select Country</p>
-              <button onClick={() => { setShowPicker(false); setSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <X size={20} color="#8B8FA8" />
-              </button>
-            </div>
-            <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px' }}>
-                <Search size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
-                <input
-                  autoFocus
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search country or code..."
-                  style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 28px' }}>
-              {filtered.length === 0 ? (
-                <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 20px' }}>No countries match "{search}".</p>
-              ) : filtered.map((c) => (
-                <button
-                  key={`${c.iso}`}
-                  type="button"
-                  onClick={() => { setPickedIso(c.iso); onCountryCodeChange(c.code); setShowPicker(false); setSearch(''); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '100%',
-                    padding: '14px 20px',
-                    background: selected.iso === c.iso ? 'rgba(124,58,237,0.1)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <CountryMark country={c} size={22} />
-                  <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Format: {c.format}</p>
+        <PickerSheet
+          title="Select Country"
+          searchPlaceholder="Search country or code..."
+          // label carries name+code+iso so PickerSheet's search matches all
+          // three (as the old bespoke filter did) even though renderOption
+          // below replaces it visually with the flag/format/dial-code row.
+          options={COUNTRY_CODES.map((c) => ({ value: c.iso, label: `${c.name} ${c.code} ${c.iso}` }))}
+          value={selected.iso}
+          onSelect={(iso) => {
+            const c = COUNTRY_CODES.find((x) => x.iso === iso);
+            if (!c) return;
+            setPickedIso(c.iso);
+            onCountryCodeChange(c.code);
+            setShowPicker(false);
+          }}
+          onClose={() => setShowPicker(false)}
+          renderOption={(o) => {
+            const c = COUNTRY_CODES.find((x) => x.iso === o.value)!;
+            return (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0, flex: 1 }}>
+                  <CountryMark country={c} size={20} />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</div>
+                    <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500 }}>Format: {c.format}</div>
                   </div>
-                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600, flexShrink: 0 }}>{c.code}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+                </div>
+                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600, flexShrink: 0 }}>{c.code}</span>
+              </>
+            );
+          }}
+        />
       )}
     </>
   );
