@@ -113,9 +113,15 @@ export interface TicketTransfer {
   toIdentifier: string;
   status: TicketTransferStatus;
   createdAt: string;
+  // Set once the transfer leaves 'pending' (accepted/declined/cancelled) --
+  // ticket_transfers.responded_at, used to order/label History entries.
+  respondedAt?: string;
   expiresAt: string;
   eventTitle?: string;
   ticketTypeLabel?: string;
+  // Display name for the OTHER party in this transfer (sender's username/
+  // full_name for an incoming transfer, recipient's for outgoing) --
+  // resolved via public_profiles, never raw email/phone.
   counterpartyLabel?: string;
 }
 

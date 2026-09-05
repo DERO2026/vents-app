@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
-import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock, AlertCircle, CheckCircle, XCircle, Ban } from 'lucide-react';
 import { PurchasedTicket, TicketTransfer } from './types';
 import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
@@ -16,6 +16,41 @@ interface MyTicketsScreenProps {
   currentUserId?: string;
 }
 
+// Short, consistent date/time format for transfer cards -- expiry, sent-at,
+// and resolved-at all read the same way instead of three different styles.
+function formatTransferDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-NG', { dateStyle: 'medium' }) +
+    ' · ' + new Date(iso).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' });
+}
+
+// Visual treatment for each terminal transfer status in History -- a
+// resolved transfer is never shown as if it's still pending.
+function transferStatusBadge(status: TicketTransfer['status']) {
+  switch (status) {
+    case 'accepted':
+      return { label: 'Accepted', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
+    case 'declined':
+      return { label: 'Declined', color: '#EF4444', bg: 'rgba(239,68,68,0.14)', Icon: XCircle };
+    case 'cancelled':
+      return { label: 'Cancelled', color: '#94A3B8', bg: 'rgba(148,163,184,0.14)', Icon: Ban };
+    case 'expired':
+      return { label: 'Expired', color: '#F59E0B', bg: 'rgba(245,158,11,0.14)', Icon: Clock };
+    default:
+      return { label: status, color: '#94A3B8', bg: 'rgba(148,163,184,0.14)', Icon: Clock };
+  }
+}
+
+function TransferEmptyState({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '56px', gap: '16px' }}>
+      <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: '#090514', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Send size={28} color="#94A3B8" />
+      </div>
+      <p style={{ color: '#94A3B8', fontSize: '13.5px', fontWeight: 600, textAlign: 'center', padding: '0 24px' }}>{text}</p>
+    </div>
+  );
+}
+
 export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
@@ -29,35 +64,65 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     prefetchTicketTokens(tickets.map((t) => t.ticketId));
   }, [tickets]);
 
-  // Pending ticket transfers involving this user, either direction --
-  // fetched client-side same as WalletScreen fetches its own supplementary
-  // data. RLS (ticket_transfers_involved_read) already scopes this to only
-  // rows where the caller is from_user_id or to_user_id.
+  // ALL ticket transfers involving this user, either direction and any
+  // status -- fetched client-side same as WalletScreen fetches its own
+  // supplementary data. RLS (ticket_transfers_involved_read) already scopes
+  // this to only rows where the caller is from_user_id or to_user_id.
+  // Previously this only loaded status='pending' rows (there was no
+  // History view yet); now it loads everything so accepted/declined/
+  // cancelled transfers have somewhere to appear instead of just vanishing
+  // once resolved.
   const [transfers, setTransfers] = useState<TicketTransfer[]>([]);
   const [transferActionBusy, setTransferActionBusy] = useState<string | null>(null);
   const [transferActionError, setTransferActionError] = useState('');
+  const [transferSubTab, setTransferSubTab] = useState<'incoming' | 'outgoing' | 'history'>('incoming');
 
   const loadTransfers = useCallback(async () => {
     if (!currentUserId) return;
     const { data, error } = await supabase
       .from('ticket_transfers')
-      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, expires_at, tickets(ticket_type, events(title))')
+      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, responded_at, expires_at, tickets(ticket_type, events(title))')
       .or(`from_user_id.eq.${currentUserId},to_user_id.eq.${currentUserId}`)
-      .eq('status', 'pending')
       .order('created_at', { ascending: false });
     if (error) { console.error('Failed to load ticket transfers:', error); return; }
-    const mapped: TicketTransfer[] = (data || []).map((r: any) => ({
-      id: r.id,
-      ticketId: r.ticket_id,
-      fromUserId: r.from_user_id,
-      toUserId: r.to_user_id,
-      toIdentifier: r.to_identifier,
-      status: r.status,
-      createdAt: r.created_at,
-      expiresAt: r.expires_at,
-      eventTitle: r.tickets?.events?.title,
-      ticketTypeLabel: r.tickets?.ticket_type,
-    }));
+    const rows = data || [];
+
+    // Resolve a display name for whichever party ISN'T the current user, via
+    // public_profiles (the same public-safe, RLS-open view used everywhere
+    // else in the app to show another user's name by id) -- never a raw
+    // email/phone, and never a direct query against `users` (which RLS
+    // restricts to the row owner).
+    const otherIds = Array.from(new Set(
+      rows.map((r: any) => (r.from_user_id === currentUserId ? r.to_user_id : r.from_user_id))
+    ));
+    const profileMap: Record<string, string> = {};
+    if (otherIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('public_profiles')
+        .select('id, username, full_name')
+        .in('id', otherIds);
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.id] = p.username || p.full_name || 'a VENTS user';
+      });
+    }
+
+    const mapped: TicketTransfer[] = rows.map((r: any) => {
+      const otherId = r.from_user_id === currentUserId ? r.to_user_id : r.from_user_id;
+      return {
+        id: r.id,
+        ticketId: r.ticket_id,
+        fromUserId: r.from_user_id,
+        toUserId: r.to_user_id,
+        toIdentifier: r.to_identifier,
+        status: r.status,
+        createdAt: r.created_at,
+        respondedAt: r.responded_at || undefined,
+        expiresAt: r.expires_at,
+        eventTitle: r.tickets?.events?.title,
+        ticketTypeLabel: r.tickets?.ticket_type,
+        counterpartyLabel: profileMap[otherId] || r.to_identifier,
+      };
+    });
     setTransfers(mapped);
   }, [currentUserId]);
 
@@ -106,8 +171,73 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     }
   };
 
-  const incomingTransfers = transfers.filter((t) => t.toUserId === currentUserId);
-  const outgoingTransfers = transfers.filter((t) => t.fromUserId === currentUserId);
+  // Incoming/Outgoing show only what's actionable (status === 'pending');
+  // everything resolved (accepted/declined/cancelled/expired) moves to
+  // History instead -- a transfer is never shown as still-pending once the
+  // server has resolved it.
+  const incomingPending = transfers.filter((t) => t.toUserId === currentUserId && t.status === 'pending');
+  const outgoingPending = transfers.filter((t) => t.fromUserId === currentUserId && t.status === 'pending');
+  const transferHistory = transfers.filter((t) => t.status !== 'pending');
+
+  // Ticket ids with an already-pending outgoing transfer -- initiate_ticket_
+  // transfer's own unique index (ticket_transfers_one_pending_per_ticket)
+  // is the real guard against a duplicate; this only hides the "Transfer
+  // Ticket" button so a user doesn't tap it and get a server error for a
+  // transfer they can already see pending in the Transfers tab.
+  const ticketsWithPendingTransfer = useMemo(
+    () => new Set(outgoingPending.map((t) => t.ticketId)),
+    [outgoingPending]
+  );
+
+  // Standalone "Transfer this ticket" flow, reachable any time from an
+  // eligible ticket in Upcoming -- not just right after purchase
+  // (PaymentSuccessScreen has the same flow for that moment). Same RPC,
+  // same recipient-identifier collection; initiate_ticket_transfer does
+  // every real eligibility/ownership/recipient check server-side, this UI
+  // gate (isTicketTransferable below) just avoids showing the action where
+  // it would obviously fail.
+  const [transferTicket, setTransferTicket] = useState<PurchasedTicket | null>(null);
+  const [transferIdentifier, setTransferIdentifier] = useState('');
+  const [transferSending, setTransferSending] = useState(false);
+  const [initiateError, setInitiateError] = useState('');
+  const [transferSent, setTransferSent] = useState(false);
+
+  const isTicketTransferable = useCallback((ticket: PurchasedTicket) => {
+    if (ticket.checkedIn) return false;
+    const eventDate = ticket.event.event_date ? new Date(ticket.event.event_date) : null;
+    if (eventDate && eventDate.getTime() < Date.now()) return false;
+    if (ticketsWithPendingTransfer.has(ticket.ticketId)) return false;
+    return true;
+  }, [ticketsWithPendingTransfer]);
+
+  const closeTransferModal = () => {
+    setTransferTicket(null);
+    setTransferIdentifier('');
+    setInitiateError('');
+    setTransferSent(false);
+  };
+
+  const handleSendTransfer = async () => {
+    if (!transferTicket) return;
+    const identifier = transferIdentifier.trim();
+    if (!identifier) { setInitiateError("Enter the recipient's email or username"); return; }
+    setTransferSending(true);
+    setInitiateError('');
+    try {
+      const { error } = await supabase.rpc('initiate_ticket_transfer', {
+        p_ticket_id: transferTicket.ticketId,
+        p_recipient_identifier: identifier,
+      });
+      if (error) throw new Error(error.message);
+      setTransferSent(true);
+      setTransferIdentifier('');
+      await loadTransfers();
+    } catch (e: any) {
+      setInitiateError(e?.message || 'Could not start the transfer. Please try again.');
+    } finally {
+      setTransferSending(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -231,10 +361,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         )}
       </div>
 
-      {/* Tabs */}
+      {/* Tabs -- a single indicator glides between positions (translateX,
+          transitioned) instead of each button's own background flipping on
+          and off, so switching tabs reads as one smooth, premium motion. */}
       <div style={{ padding: '0 16px 14px' }}>
         <div
           style={{
+            position: 'relative',
             display: 'flex',
             background: '#090514',
             borderRadius: '100px',
@@ -242,24 +375,36 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             gap: '3px',
           }}
         >
+          <div
+            style={{
+              position: 'absolute',
+              top: '4px',
+              left: '4px',
+              bottom: '4px',
+              width: 'calc((100% - 8px) / 3)',
+              borderRadius: '100px',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              transform: `translateX(${(['upcoming', 'past', 'transfers'] as const).indexOf(activeTab) * 100}%)`,
+              transition: 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
+            }}
+          />
           {(['upcoming', 'past', 'transfers'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
               style={{
+                position: 'relative',
+                zIndex: 1,
                 flex: 1,
                 padding: '9px',
                 borderRadius: '100px',
                 border: 'none',
-                background:
-                  activeTab === tab
-                    ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-                    : 'transparent',
+                background: 'transparent',
                 color: activeTab === tab ? '#FFFFFF' : '#94A3B8',
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'color 0.2s ease',
               }}
             >
               {tab === 'upcoming' ? 'Upcoming' : tab === 'past' ? 'Past' : 'Transfers'}{' '}
@@ -269,9 +414,10 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   borderRadius: '4px',
                   padding: '1px 6px',
                   fontSize: '11px',
+                  transition: 'background 0.2s ease',
                 }}
               >
-                {tab === 'upcoming' ? upcoming.length : tab === 'past' ? past.length : transfers.length}
+                {tab === 'upcoming' ? upcoming.length : tab === 'past' ? past.length : incomingPending.length + outgoingPending.length}
               </span>
             </button>
           ))}
@@ -293,96 +439,170 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           overscrollBehavior: 'contain',
         }}
       >
-        {/* Transfers is now its own tab (Upcoming | Past | Transfers)
-            instead of these lists sitting above Upcoming regardless of
-            which tab was selected -- same accept/decline/cancel RPCs and
-            handlers below, just gated on activeTab now. */}
-        {activeTab === 'transfers' && transferActionError && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
-            <span style={{ color: '#F87171', fontSize: '12px' }}>{transferActionError}</span>
-          </div>
-        )}
-
-        {activeTab === 'transfers' && incomingTransfers.length === 0 && outgoingTransfers.length === 0 && (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              paddingTop: '70px',
-              gap: '16px',
-            }}
-          >
-            <div
-              style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '20px',
-                background: '#090514',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Send size={32} color="#94A3B8" />
-            </div>
-            <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, textAlign: 'center', padding: '0 16px' }}>
-              No pending ticket transfers right now.
-            </p>
-          </div>
-        )}
-
-        {activeTab === 'transfers' && incomingTransfers.length > 0 && (
-          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Incoming Ticket Transfers</p>
-            {incomingTransfers.map((t) => (
-              <div key={t.id} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <Send size={14} color="#C4B5FD" />
-                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{t.eventTitle || 'A ticket'} {t.ticketTypeLabel ? `· ${t.ticketTypeLabel}` : ''}</span>
-                </div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>Someone wants to transfer this ticket to you · expires {new Date(t.expiresAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => handleAcceptTransfer(t.id)}
-                    disabled={transferActionBusy === t.id}
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
-                  >
-                    <Check size={13} /> Accept
-                  </button>
-                  <button
-                    onClick={() => handleDeclineTransfer(t.id)}
-                    disabled={transferActionBusy === t.id}
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
-                  >
-                    <X size={13} /> Decline
-                  </button>
-                </div>
+        {/* Transfers is its own tab (Upcoming | Past | Transfers), split
+            into Incoming / Outgoing / History sub-sections so a resolved
+            transfer never sits mixed in with ones that still need action --
+            same accept/decline/cancel RPCs and handlers as before, just
+            reorganized. */}
+        {activeTab === 'transfers' && (
+          <>
+            {transferActionError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color="#F87171" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#F87171', fontSize: '12px' }}>{transferActionError}</span>
               </div>
-            ))}
-          </div>
-        )}
+            )}
 
-        {activeTab === 'transfers' && outgoingTransfers.length > 0 && (
-          <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <p style={{ fontSize: '12px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>Pending Outgoing Transfers</p>
-            {outgoingTransfers.map((t) => (
-              <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '14px 16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <Clock size={13} color="#F59E0B" />
-                  <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{t.eventTitle || 'A ticket'} {t.ticketTypeLabel ? `· ${t.ticketTypeLabel}` : ''}</span>
-                </div>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>Awaiting {t.toIdentifier} to accept · expires {new Date(t.expiresAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+            {/* Incoming / Outgoing / History segmented control */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+              {([
+                { key: 'incoming' as const, label: 'Incoming', count: incomingPending.length },
+                { key: 'outgoing' as const, label: 'Outgoing', count: outgoingPending.length },
+                { key: 'history' as const, label: 'History', count: 0 },
+              ]).map((sub) => (
                 <button
-                  onClick={() => handleCancelTransfer(t.id)}
-                  disabled={transferActionBusy === t.id}
-                  style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                  key={sub.key}
+                  onClick={() => setTransferSubTab(sub.key)}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '9px 8px',
+                    borderRadius: '12px',
+                    border: transferSubTab === sub.key ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                    background: transferSubTab === sub.key ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.02)',
+                    color: transferSubTab === sub.key ? '#C4B5FD' : '#8B8FA8',
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
                 >
-                  Cancel Transfer
+                  {sub.label}
+                  {sub.count > 0 && (
+                    <span style={{
+                      minWidth: '16px', height: '16px', padding: '0 4px', borderRadius: '8px',
+                      background: '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {sub.count}
+                    </span>
+                  )}
                 </button>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+
+            {/* Incoming -- action required. Purple-accented cards make it
+                obvious these need a response; Accept/Decline are disabled
+                (not hidden) mid-request to block accidental double-taps
+                without the buttons jumping around. */}
+            {transferSubTab === 'incoming' && (
+              incomingPending.length === 0 ? (
+                <TransferEmptyState text="No incoming transfer requests right now." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {incomingPending.map((t) => (
+                    <div key={t.id} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                          <Send size={14} color="#C4B5FD" style={{ flexShrink: 0 }} />
+                          <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                          </span>
+                        </div>
+                        <span style={{ flexShrink: 0, background: 'rgba(168,85,247,0.2)', color: '#C4B5FD', fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', padding: '3px 7px', borderRadius: '100px', textTransform: 'uppercase' }}>
+                          Action needed
+                        </span>
+                      </div>
+                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>
+                        From <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.createdAt)} · expires {formatTransferDate(t.expiresAt)}
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleAcceptTransfer(t.id)}
+                          disabled={transferActionBusy === t.id}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                        >
+                          <Check size={13} /> Accept
+                        </button>
+                        <button
+                          onClick={() => handleDeclineTransfer(t.id)}
+                          disabled={transferActionBusy === t.id}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                        >
+                          <X size={13} /> Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Outgoing -- pending only; terminal states live in History. */}
+            {transferSubTab === 'outgoing' && (
+              outgoingPending.length === 0 ? (
+                <TransferEmptyState text="No outgoing transfers pending." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {outgoingPending.map((t) => (
+                    <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <Clock size={13} color="#F59E0B" />
+                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                        </span>
+                      </div>
+                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>
+                        Awaiting <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> to accept · expires {formatTransferDate(t.expiresAt)}
+                      </p>
+                      <button
+                        onClick={() => handleCancelTransfer(t.id)}
+                        disabled={transferActionBusy === t.id}
+                        style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                      >
+                        Cancel Transfer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* History -- read-only. Every terminal transfer (accepted/
+                declined/cancelled/expired) lands here permanently; no
+                action is ever offered on a resolved transfer. */}
+            {transferSubTab === 'history' && (
+              transferHistory.length === 0 ? (
+                <TransferEmptyState text="No past transfers yet." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {transferHistory.map((t) => {
+                    const badge = transferStatusBadge(t.status);
+                    const BadgeIcon = badge.Icon;
+                    const isOutgoing = t.fromUserId === currentUserId;
+                    return (
+                      <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
+                          <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                          </span>
+                          <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '100px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            <BadgeIcon size={11} /> {badge.label}
+                          </span>
+                        </div>
+                        <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }}>
+                          {isOutgoing ? 'To' : 'From'} <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.respondedAt || t.createdAt)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </>
         )}
 
         {activeTab === 'transfers' ? null : loading ? (
@@ -575,12 +795,92 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       {ticketDisplayCode(ticket.ticketId)}
                     </span>
                   </div>
+
+                  {/* Transfer Ticket -- reachable any time on an eligible
+                      owned ticket, not just right after purchase.
+                      stopPropagation so this doesn't also open the QR view
+                      underneath it. */}
+                  {activeTab === 'upcoming' && isTicketTransferable(ticket) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setTransferTicket(ticket); }}
+                      style={{
+                        width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center',
+                        justifyContent: 'center', gap: '6px', background: 'rgba(168,85,247,0.08)',
+                        border: '1px solid rgba(168,85,247,0.25)', borderRadius: '10px', padding: '9px',
+                        color: '#C4B5FD', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      <Send size={13} /> Transfer Ticket
+                    </button>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Transfer Ticket modal -- same recipient-identifier flow and RPC as
+          PaymentSuccessScreen's post-purchase transfer prompt; initiate_
+          ticket_transfer does every real eligibility/ownership/recipient
+          check server-side, this just collects the identifier and surfaces
+          the RPC's own error message. */}
+      {transferTicket && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#F0F0FF' }}>Transfer Ticket</p>
+              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#8B8FA8' }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {transferSent ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color="#10B981" />
+                  <span style={{ color: '#10B981', fontSize: '13px', lineHeight: 1.5 }}>
+                    Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
+                  </span>
+                </div>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Enter the VENTS email or username of the person you're transferring "{transferTicket.event.title}" to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
+                </p>
+                <input
+                  placeholder="Recipient email or username"
+                  value={transferIdentifier}
+                  onChange={e => setTransferIdentifier(e.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+                />
+                {initiateError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color="#EF4444" />
+                    <span style={{ color: '#EF4444', fontSize: '13px' }}>{initiateError}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={handleSendTransfer}
+                    disabled={transferSending || !transferIdentifier.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                  >
+                    {transferSending ? 'Sending…' : 'Send Request'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
