@@ -1129,6 +1129,35 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           setErrorMessage("We couldn't verify your login right now. Please check your connection and try again.");
           return;
         }
+        // ROOT-CAUSE FIX (found on retest after the lookup/profile-read
+        // fixes above still didn't fully resolve the intermittent report):
+        // signInWithPassword() ITSELF can fail with a transient, non-
+        // credential error -- a dropped connection, a Supabase Auth 5xx, a
+        // DNS blip -- and supabase-js surfaces that as a thrown error same
+        // as it does for a genuinely wrong password (both just reach this
+        // catch block as `err`). Every other check above only handles a
+        // failure from OUR OWN code around the call (the username lookup,
+        // the rate-limit check); this is the first check that looks at
+        // what signInWithPassword's OWN error actually says before
+        // defaulting to "Incorrect email or password" -- previously ANY
+        // unrecognized error, including a plain network failure, fell
+        // through to that same wrong-password message. Supabase's genuine
+        // wrong-credentials error is a stable, specific string ("Invalid
+        // login credentials"); a network/infra failure looks nothing like
+        // that, so this only ever intercepts errors that could NOT have
+        // been a real password rejection -- it never masks an actual wrong
+        // password as a network issue.
+        const isNetworkOrInfraError =
+          err?.name === 'AuthRetryableFetchError' ||
+          msgL.includes('failed to fetch') || msgL.includes('load failed') ||
+          msgL.includes('network') || msgL.includes('timeout') || msgL.includes('timed out') ||
+          msgL.includes('econnreset') || msgL.includes('econnrefused') ||
+          msgL.includes('internal server error') || msgL.includes('unexpected_failure') ||
+          msgL.includes('502') || msgL.includes('503') || msgL.includes('504') || msgL.includes('gateway');
+        if (isNetworkOrInfraError && !msgL.includes('invalid login credentials')) {
+          setErrorMessage("We couldn't reach the server. Please check your connection and try again.");
+          return;
+        }
         try {
           let checkEmail = email.trim();
           if (!isValidEmail(checkEmail)) {

@@ -38,6 +38,18 @@ import { join } from 'node:path';
 // signInWithPassword or trusts a client-supplied role/admin field), the
 // username resolver stays a SECURITY DEFINER RPC (never a client-side
 // query subject to RLS), and no password appears in any log/error path.
+//
+// 3. (found on retest, after 1-2 above still didn't fully resolve the
+//    report) signInWithPassword() ITSELF can fail with a transient,
+//    non-credential error (dropped connection, a Supabase Auth 5xx, a DNS
+//    blip) -- supabase-js surfaces that as a thrown error the same way it
+//    surfaces a genuinely wrong password, and every check added for (1)
+//    only handled failures from code AROUND that call, never the call's
+//    own error. Fixed by checking for network/infra error signatures
+//    (AuthRetryableFetchError, "failed to fetch", 5xx, timeout, etc.)
+//    before falling through to "Incorrect email or password" -- explicitly
+//    excluding Supabase's actual "Invalid login credentials" string, so a
+//    real wrong password is never reclassified as a network issue.
 
 let authScreenSrc: string;
 let m0049: string;
@@ -69,6 +81,28 @@ describe('login: username-lookup failures are never shown as "wrong password"', 
 
   it('a genuine "no account found" (username really does not exist) is a distinct, separate error from a lookup failure', () => {
     expect(authScreenSrc).toMatch(/if \(!resolvedEmail\) throw new Error\('No account found with this username\.'\);/);
+  });
+});
+
+describe('login: signInWithPassword\'s own transient/network errors are never shown as "wrong password"', () => {
+  it('checks for network/infra error signatures before the generic wrong-password fallback', () => {
+    const idx = authScreenSrc.indexOf('const isNetworkOrInfraError =');
+    const genericFallbackIdx = authScreenSrc.indexOf("setErrorMessage('Incorrect email or password.');");
+    expect(idx).toBeGreaterThan(-1);
+    expect(idx).toBeLessThan(genericFallbackIdx);
+  });
+
+  it('covers AuthRetryableFetchError and common transient-failure signatures', () => {
+    const block = authScreenSrc.match(/const isNetworkOrInfraError =[\s\S]*?;/)?.[0] ?? '';
+    expect(block).toMatch(/AuthRetryableFetchError/);
+    expect(block).toMatch(/failed to fetch/);
+    expect(block).toMatch(/timeout/);
+    expect(block).toMatch(/502.*503.*504|503.*504.*502|504.*502.*503/s);
+  });
+
+  it('never reclassifies a genuine "Invalid login credentials" as a network error', () => {
+    const checkLine = authScreenSrc.match(/if \(isNetworkOrInfraError[\s\S]*?\) \{/)?.[0] ?? '';
+    expect(checkLine).toMatch(/!msgL\.includes\('invalid login credentials'\)/);
   });
 });
 
