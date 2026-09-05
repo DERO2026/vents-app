@@ -6,6 +6,7 @@ import { registerPushNotifications, unregisterPushNotifications, setPushActionHa
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification, clearPendingVerification } from '../lib/pendingVerification';
+import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
@@ -1209,12 +1210,24 @@ export default function App() {
         ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : 99;
 
+      // Conservative server-side prefilter, exact client-side filter (see
+      // src/lib/eventLifecycle.ts): an event is still possibly-active if
+      // either its explicit end_date hasn't passed, or (no end_date) its
+      // start was within the last 24h -- the widest window the fallback
+      // rule could ever consider active. isEventDiscoverable() below then
+      // applies the EXACT rule per-row. This replaces a plain date-only
+      // `event_date >= today` filter that let an event which started AND
+      // ended earlier today stay visible/purchasable until midnight, and
+      // that ignored end_date/archived_at entirely.
+      const nowIso = new Date().toISOString();
+      const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       let eventsQuery = supabase
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
         .eq('hidden_by_admin', false)
         .is('deleted_at', null)
-        .gte('event_date', new Date().toISOString().split('T')[0])
+        .is('archived_at', null)
+        .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
         .in('status', ['live', 'published']);
 
       // Hide 18+ events from underage users
@@ -1244,8 +1257,9 @@ export default function App() {
         setHasMoreEvents(hasMore);
         eventsPageRef.current = loadMore ? nextPage : 0;
 
-        const eventIds = dbEventsData.map((e: any) => e.id);
-        const mapped = dbEventsData.map((e: any) => {
+        const activeDbEventsData = dbEventsData.filter((e: any) => isEventDiscoverable(e));
+        const eventIds = activeDbEventsData.map((e: any) => e.id);
+        const mapped = activeDbEventsData.map((e: any) => {
           const orgUser = e.users;
           return mapDbEventToFrontend({
             ...e,

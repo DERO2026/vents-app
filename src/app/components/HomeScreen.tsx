@@ -11,6 +11,7 @@ import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
+import { isEventDiscoverable } from '../../lib/eventLifecycle';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatEventDateRange, formatCardCTA } from './data';
@@ -1079,12 +1080,20 @@ export function HomeScreen({
           ? Math.floor((Date.now() - new Date(currentUserDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 99;
 
+        // See src/lib/eventLifecycle.ts: conservative server prefilter
+        // (widest possible active window) + exact client-side filter below,
+        // instead of a date-only `event_date >= today` check that let an
+        // event which started AND ended earlier today stay visible/
+        // purchasable until midnight and ignored end_date/archived_at.
+        const nowIso = new Date().toISOString();
+        const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         let query = supabase
           .from('events')
           .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
           .eq('hidden_by_admin', false)
           .is('deleted_at', null)
-          .gte('event_date', new Date().toISOString().split('T')[0])
+          .is('archived_at', null)
+          .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
           .in('status', ['live', 'published']);
 
         if (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') {
@@ -1098,9 +1107,10 @@ export function HomeScreen({
         if (userAgeYears < 18) query = query.eq('is_18_plus', false);
         if (blockedIdSet.size > 0) query = query.not('organizer_id', 'in', `(${[...blockedIdSet].join(',')})`);
 
-        const { data, error } = await query.limit(200);
+        const { data: rawData, error } = await query.limit(200);
         if (cancelled) return;
-        if (error || !data) { setFilterResults([]); return; }
+        if (error || !rawData) { setFilterResults([]); return; }
+        const data = rawData.filter((e: any) => isEventDiscoverable(e));
 
         // Trending/Featured now source from this same country/state/
         // category/price-scoped set (see baseEvents below) rather than the

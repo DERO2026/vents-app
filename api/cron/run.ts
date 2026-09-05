@@ -112,6 +112,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Not authorized' });
   }
 
+  // ── 0) Event lifecycle archival sweep ──────────────────────────────────
+  // Soft-archives events whose effective end passed >7 days ago (see
+  // migrations/0051_event_lifecycle_single_source_of_truth.sql). Runs first
+  // and independently of the reminder/push steps below so a missing FCM
+  // config never blocks it. Idempotent — safe to re-run every day.
+  let archiveResult: any = null;
+  try {
+    archiveResult = await callProjectAdminRpc<number>('archive_ended_events', []);
+  } catch (err: any) {
+    archiveResult = { error: `archive sweep failed: ${err?.message || err}` };
+  }
+
   // ── 1) Reminder sweep ──────────────────────────────────────────────────
   let reminderResult: any = null;
   try {
@@ -124,31 +136,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── 2) Push delivery ────────────────────────────────────────────────────
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!saJson) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
   }
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
     sa = JSON.parse(saJson);
   } catch {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
   let rows: PendingRow[];
   try {
     rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
   } catch (err: any) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
   if (!rows.length) {
-    return res.status(200).json({ reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
 
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sa);
   } catch (err: any) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
   }
 
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
@@ -225,6 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(200).json({
+    archived: archiveResult,
     reminders: reminderResult,
     push: { sent, pruned: pruned.size, marked: toMark.size, total: rows.length },
   });

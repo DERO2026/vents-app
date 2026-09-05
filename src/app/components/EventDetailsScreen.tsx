@@ -29,6 +29,7 @@ import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
+import { hasEventEnded, isEventDiscoverable } from '../../lib/eventLifecycle';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
@@ -288,7 +289,14 @@ export function EventDetailsScreen({
   // buy more (extra tickets for friends, a different tier, etc). isBooked
   // now only drives the small "you already have a ticket" notice below,
   // never whether buying is possible.
-  const canBook = !!selectedTicket && selectedQty > 0;
+  // Single source of truth for "has this event ended" (requirement #3 of
+  // the event-lifecycle fix) -- see src/lib/eventLifecycle.ts. Direct links
+  // to an ended event must show "Event Ended" with no purchase CTA, even
+  // though the row is still readable (organizer/admin/ticket-holders keep
+  // access per RLS -- ended-ness is a UI/purchase-eligibility concern, not
+  // a visibility one).
+  const hasEnded = hasEventEnded({ event_date: (event as any).event_date, end_date: (event as any).endDate });
+  const canBook = !hasEnded && !!selectedTicket && selectedQty > 0;
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -327,13 +335,21 @@ export function EventDetailsScreen({
     const fetchRelatedEvents = async () => {
       setLoadingRelated(true);
       try {
+        // Requirement #4: Related Events must never show ended events. No
+        // date/expiry filter existed here at all before -- conservative
+        // server prefilter + exact client-side isEventDiscoverable() below,
+        // same pattern as the Home/Explore feed (see src/lib/eventLifecycle.ts).
+        const nowIso = new Date().toISOString();
+        const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         let relatedQuery = supabase
           .from('events')
           .select('*')
           .eq('category', event.category)
           .in('status', ['live', 'published'])
           .is('deleted_at', null)
+          .is('archived_at', null)
           .eq('hidden_by_admin', false)
+          .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
           .neq('id', event.id);
 
         // Every other event surface (home feed, search) hides 18+ events
@@ -347,11 +363,11 @@ export function EventDetailsScreen({
           relatedQuery = relatedQuery.eq('is_18_plus', false);
         }
 
-        const { data, error } = await relatedQuery.limit(4);
+        const { data, error } = await relatedQuery.limit(8);
 
         if (error) throw error;
         if (data && !cancelled) {
-          const mapped = data.map(mapDbEventToFrontend);
+          const mapped = data.filter((e: any) => isEventDiscoverable(e)).slice(0, 4).map(mapDbEventToFrontend);
           setRelatedEvents(mapped);
         }
       } catch (err) {
@@ -1401,55 +1417,63 @@ export function EventDetailsScreen({
           gap: '12px',
         }}
       >
-        {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
-            "Buy from ₦X") instead of a bare "FROM / Free" label, which read
-            as a fully free event even when paid tiers also exist. */}
-        <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? '#06D6A0' : '#FFFFFF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
-          {formatCardCTA(event.ticketTypes)}
-        </div>
-        <button
-          onClick={() => {
-            try {
-              if (canBook && !purchasesDisabled && selectedTicket) {
-                haptics.medium();
-                onGetTickets(selectedTicket, selectedQty);
-              }
-            } catch (err: any) {
-              console.error('BOOK BUTTON CRASH:', err);
-              Sentry.captureException(err);
-              setBookingError(err?.message || String(err));
-              setTimeout(() => setBookingError(null), 3500);
-            }
-          }}
-          disabled={!canBook || purchasesDisabled}
-          style={{
-            flex: 1,
-            background: purchasesDisabled
-              ? '#1A1D2E'
-              : canBook
-              ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-              : '#1A1D2E',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '14px 28px',
-            color: purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
-            fontSize: '16px',
-            fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
-            cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          {purchasesDisabled
-            ? 'Purchases Temporarily Paused'
-            : canBook
-            ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
-            : 'Select tickets above'}
-        </button>
+        {hasEnded ? (
+          <div style={{ flex: 1, textAlign: 'center', color: '#8B8FA8', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', padding: '14px 28px' }}>
+            Event Ended
+          </div>
+        ) : (
+          <>
+            {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
+                "Buy from ₦X") instead of a bare "FROM / Free" label, which read
+                as a fully free event even when paid tiers also exist. */}
+            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? '#06D6A0' : '#FFFFFF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
+              {formatCardCTA(event.ticketTypes)}
+            </div>
+            <button
+              onClick={() => {
+                try {
+                  if (canBook && !purchasesDisabled && selectedTicket) {
+                    haptics.medium();
+                    onGetTickets(selectedTicket, selectedQty);
+                  }
+                } catch (err: any) {
+                  console.error('BOOK BUTTON CRASH:', err);
+                  Sentry.captureException(err);
+                  setBookingError(err?.message || String(err));
+                  setTimeout(() => setBookingError(null), 3500);
+                }
+              }}
+              disabled={!canBook || purchasesDisabled}
+              style={{
+                flex: 1,
+                background: purchasesDisabled
+                  ? '#1A1D2E'
+                  : canBook
+                  ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                  : '#1A1D2E',
+                border: 'none',
+                borderRadius: '16px',
+                padding: '14px 28px',
+                color: purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
+                fontSize: '16px',
+                fontWeight: 700,
+                fontFamily: 'Space Grotesk, sans-serif',
+                cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+                boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              {purchasesDisabled
+                ? 'Purchases Temporarily Paused'
+                : canBook
+                ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+                : 'Select tickets above'}
+            </button>
+          </>
+        )}
       </div>
 
       {shared && (
