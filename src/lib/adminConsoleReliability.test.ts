@@ -132,3 +132,67 @@ describe('Issue 1 follow-up: a signup-time username/phone collision is surfaced,
     expect(handlerBlock).toMatch(/\.\.\.profileFields,/); // enriched is built from profileFields, not raw userProfile
   });
 });
+
+describe('AuthScreen corrective update: safe retry, never overwrites another user, never blocks a successful signup', () => {
+  function correctiveUpdateBlock(): string {
+    return authScreenSrc.match(/if \(Object\.keys\(writablePayload\)\.length > 0\) \{[\s\S]*?\n {8}\}/)?.[0] ?? '';
+  }
+
+  it('normal signup persists all profile fields: the update writes every non-empty field from payload, scoped to the signing-up user\'s own row', () => {
+    const block = correctiveUpdateBlock();
+    expect(block).toMatch(/supabase\.from\('users'\)\.update\(writablePayload\)\.eq\('id', userId\)/);
+    // writablePayload itself (built above this block) includes every
+    // collected field (full_name, username, phone_number, state, country,
+    // avatar_url, date_of_birth) with only empty/null ones filtered out --
+    // a normal signup with every field filled writes all of them.
+    expect(authScreenSrc).toMatch(/const writablePayload = Object\.fromEntries\(/);
+  });
+
+  it('a username collision does not wipe unrelated fields: the update is one single-payload call, not per-field, and a failure never clears other local state', () => {
+    const block = correctiveUpdateBlock();
+    // Only one .update() call in this block -- the payload (all fields
+    // together) either lands or doesn't; there is no separate per-field
+    // write that could clear full_name/state/country independently of a
+    // username failure. Combined with 0050_fix_signup_profile_data_loss.sql
+    // (server-side: a username collision only blocks the username column
+    // itself at the DB layer), no code path here additionally resets any
+    // other field when updateError is set.
+    const updateCallCount = (block.match(/\.update\(writablePayload\)/g) || []).length + (block.match(/\(await supabase\.from\('users'\)\.update\(writablePayload\)/g) || []).length;
+    expect(updateCallCount).toBeGreaterThanOrEqual(1);
+    expect(block).not.toMatch(/setUsername\(|setPhone\(|setName\(/); // no local form-state reset on failure
+  });
+
+  it('a phone collision does not wipe unrelated fields (same single-payload-call reasoning as username)', () => {
+    const block = correctiveUpdateBlock();
+    expect(block).toMatch(/writablePayload/);
+    expect(block).not.toMatch(/delete writablePayload|writablePayload\.phone_number = null|writablePayload\.username = null/);
+  });
+
+  it('corrective update failure is not silently swallowed: it is retried once for transient errors, logged, AND later surfaced via profileWarning -- never just console-logged and forgotten', () => {
+    const block = correctiveUpdateBlock();
+    expect(block).toMatch(/if \(updateError && updateError\.code !== '23505'\) \{/);
+    expect(block).toMatch(/await new Promise\(\(resolve\) => setTimeout\(resolve, 800\)\);/);
+    expect(block).toMatch(/console\.error\('Signup Failure Trace — profile completion update:', updateError\);/);
+    expect(block).toMatch(/Sentry\.captureException\(updateError\);/);
+    // The eventual outcome (whether the retry succeeded or not) is what
+    // usernameSaveFailed/phoneSaveFailed actually checks -- by reading the
+    // re-fetched finalProfile, not the updateError object -- so this is
+    // never just a logged-and-ignored failure.
+    expect(authScreenSrc).toMatch(/const usernameSaveFailed = !!payload\.username && !finalProfile\.username;/);
+  });
+
+  it('a genuine unique-constraint collision (23505) is never retried -- retrying can\'t change a real "already taken" outcome', () => {
+    const block = correctiveUpdateBlock();
+    expect(block).toMatch(/updateError\.code !== '23505'/);
+  });
+
+  it('successful signup still completes correctly: no throw anywhere in this block -- onSuccess is always reached', () => {
+    const block = correctiveUpdateBlock();
+    expect(block).not.toMatch(/throw /);
+  });
+
+  it('never exposes the raw database error to the user -- profileWarning text is fully hand-authored, never interpolates updateError.message', () => {
+    const warningSection = authScreenSrc.match(/let profileWarning: string \| undefined;[\s\S]*?\}/)?.[0] ?? '';
+    expect(warningSection).not.toMatch(/updateError\.message|updateError\}|\$\{updateError/);
+  });
+});

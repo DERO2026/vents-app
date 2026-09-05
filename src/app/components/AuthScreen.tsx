@@ -591,7 +591,24 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           Object.entries(payload).filter(([, v]) => v !== '' && v != null)
         );
         if (Object.keys(writablePayload).length > 0) {
-          const { error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId);
+          // Scoped to this exact user's own row (.eq('id', userId), plus
+          // RLS's own auth.uid() = id check underneath) -- this can only
+          // ever touch the account that just signed up, never another
+          // user's data.
+          let { error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId);
+          // One bounded retry, transient failures only. A 23505 (unique
+          // constraint violation on username/phone_number) is a genuine,
+          // permanent collision -- retrying can't change that outcome, so
+          // it's never retried; only a real network/connection hiccup gets
+          // a second, brief attempt before this gives up and lets the
+          // usernameSaveFailed/phoneSaveFailed check below report it
+          // honestly. Never throws either way -- a still-failing optional
+          // profile-field write must never turn an otherwise-successful
+          // signup into a failure.
+          if (updateError && updateError.code !== '23505') {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            ({ error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId));
+          }
           if (updateError) { console.error('Signup Failure Trace — profile completion update:', updateError); Sentry.captureException(updateError); }
         }
 
