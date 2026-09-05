@@ -919,8 +919,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           // Supabase client is already unauthenticated (anon) at this point;
           // it only carries a session once one has actually been
           // established.
+          //
+          // ROOT-CAUSE FIX: a network/RPC failure here (timeout, connection
+          // reset, a cold Postgres connection) used to fall through to the
+          // exact same generic "Incorrect email or password" message as an
+          // actual wrong password below -- a transient lookup failure and a
+          // genuinely wrong password were indistinguishable to the user.
+          // That's what made retrying "fix" it: attempt 1 hit a transient
+          // RPC hiccup and got told the password was wrong; attempt 2/3
+          // succeeded once the connection was warm, with the SAME
+          // credentials the whole time. Tagged with a distinct marker
+          // (LOGIN_LOOKUP_FAILED, checked in the catch block below) so this
+          // now surfaces an honest "couldn't verify your login" message
+          // instead of accusing the user of a wrong password.
           const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
-          if (resolveError) throw resolveError;
+          if (resolveError) throw new Error(`LOGIN_LOOKUP_FAILED: ${resolveError.message || 'username lookup failed'}`);
           if (!resolvedEmail) throw new Error('No account found with this username.');
           loginEmail = resolvedEmail;
         }
@@ -955,6 +968,22 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           // network call in this file -- previously the only one that
           // could hang the "Signing in..." button forever on a stalled
           // connection, with no timeout to recover from it.
+          // ROOT-CAUSE FIX: this profile read runs AFTER signInWithPassword
+          // has already succeeded -- Supabase Auth has verified the password
+          // and a real session now exists. A timeout here used to throw
+          // (via withTimeoutFallback's default no-fallback behavior), which
+          // propagated to the outer catch and showed "Incorrect email or
+          // password" for a login that had already been proven correct --
+          // the user was left silently signed-in-but-stuck-on-the-login-
+          // screen, and a retry "worked" only because the profile query
+          // happened to be faster/cached the second time, not because the
+          // password was ever wrong. Now degrades to `profile = null`
+          // instead of throwing; every field below already has a
+          // user_metadata fallback for exactly this case, so login still
+          // completes with a (possibly incomplete) profile rather than
+          // falsely rejecting valid credentials. App.tsx's own role-sync
+          // poll (see syncRole) corrects role/capability fields moments
+          // later if this fallback path ever under-reports them.
           const { data: profile } = await withTimeoutFallback(
             Promise.resolve(
               supabase
@@ -963,7 +992,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 .eq('id', data.user.id)
                 .maybeSingle()
             ),
-            { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+            {
+              timeoutMs: 10000,
+              timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.',
+              fallback: () => ({ data: null, error: null, count: null, status: 0, statusText: 'timeout' } as any),
+            }
           );
 
           // 3.5: Block banned / deleted accounts immediately after auth
@@ -1083,6 +1116,17 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         // problem) instead of just waiting.
         if (msgL.includes('too many attempts')) {
           setErrorMessage(msg.trim());
+          return;
+        }
+        // ROOT-CAUSE FIX: a username-lookup failure (network/RPC error, not
+        // "this username doesn't exist") is NOT the same thing as a wrong
+        // password -- Supabase's own password check never even ran. Tagged
+        // above (LOGIN_LOOKUP_FAILED) so it gets an honest, distinct
+        // message instead of falling through to "Incorrect email or
+        // password" below, which previously made a transient lookup
+        // failure indistinguishable from a genuinely wrong password.
+        if (msg.includes('LOGIN_LOOKUP_FAILED')) {
+          setErrorMessage("We couldn't verify your login right now. Please check your connection and try again.");
           return;
         }
         try {
