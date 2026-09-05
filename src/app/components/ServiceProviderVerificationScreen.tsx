@@ -105,7 +105,7 @@ function PendingCard({ v, onContactSupport }: { v: SpVerificationRow; onContactS
 }
 
 export function ServiceProviderVerificationScreen({ currentUser, onBack, onApprovedSetup }: { currentUser: { id: string; country?: string } | null; onBack: () => void; onApprovedSetup?: () => void }) {
-  const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
+  const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected' | 'approved'>('loading');
   const [verification, setVerification] = useState<SpVerificationRow | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -146,10 +146,21 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
     try {
       const { data } = await supabase.rpc('my_latest_service_provider_verification' as any);
       const row = Array.isArray(data) ? data[0] : data;
+      // Approved -- this screen's job (submit -> pending -> decision) is
+      // done; never show the submission form again to an already-approved
+      // applicant. Hand off to whoever owns "what happens next"
+      // (App.tsx routes this to Service Provider setup) rather than
+      // rendering anything here ourselves.
+      if (row?.status === 'approved') {
+        if (onApprovedSetup) { onApprovedSetup(); return; }
+        // No handoff wired (defensive fallback) -- still never show the
+        // submission form; render a minimal approved state instead.
+        setStatus('approved');
+        return;
+      }
       if (row?.status === 'pending' || row?.status === 'rejected') {
         setVerification(row as SpVerificationRow);
         setStatus(row.status);
-        if (row.status === 'approved' && onApprovedSetup) onApprovedSetup();
         return;
       }
       setStatus('form');
@@ -234,6 +245,16 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
         {status === 'loading' && <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>}
 
         {status === 'pending' && verification && <PendingCard v={verification} />}
+
+        {status === 'approved' && (
+          <div style={{ marginTop: '40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
+            <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0 }}>You're approved ✓</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, maxWidth: '280px' }}>Head back to your profile to set up your Services listing.</p>
+            <button onClick={onBack} style={{ marginTop: '12px', height: '44px', padding: '0 24px', borderRadius: '14px', background: 'linear-gradient(135deg,#0891B2,#22D3EE)', border: 'none', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+              Back to Profile
+            </button>
+          </div>
+        )}
 
         {status === 'rejected' && verification && (
           <div style={{ marginTop: '12px' }}>

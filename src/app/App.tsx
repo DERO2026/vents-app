@@ -2509,6 +2509,7 @@ export default function App() {
             <ServiceProviderVerificationScreen
               currentUser={{ id: currentUser.id, country: currentUser.country }}
               onBack={goBack}
+              onApprovedSetup={() => navigateTo('service-provider-setup')}
             />
           )}
           {screen === 'auth' && (
