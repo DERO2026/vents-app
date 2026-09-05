@@ -21,6 +21,7 @@ import { appVersionLabel } from '../../lib/appVersion';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
 import { COUNTRY_CODES } from '../../lib/countries';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { CURRENCIES } from '../../lib/currencies';
 import {
   fetchOwnServicesForProvider as fetchServicesForProviderId,
@@ -761,12 +762,15 @@ export function AdminDashboardScreen({
   const [svcCategoryFilter, setSvcCategoryFilter] = useState('');
   const [svcStatusFilter, setSvcStatusFilter] = useState<'all' | 'draft' | 'approved' | 'rejected'>('all');
   const [svcServiceStatusFilter, setSvcServiceStatusFilter] = useState<'all' | 'has-active' | 'no-active'>('all');
+  const [openSvcFilterPicker, setOpenSvcFilterPicker] = useState<'country' | 'category' | 'status' | 'serviceStatus' | null>(null);
   const [svcSelectedProviderId, setSvcSelectedProviderId] = useState<string | null>(null);
   const [svcServices, setSvcServices] = useState<ProviderService[] | null>(null);
   const [svcServicesLoading, setSvcServicesLoading] = useState(false);
   const [svcServicesError, setSvcServicesError] = useState<string | null>(null);
   const [svcServiceForm, setSvcServiceForm] = useState<null | { editing: ProviderService | null; input: ProviderServiceInput }>(null);
   const [svcServiceFormError, setSvcServiceFormError] = useState('');
+  const [showSvcServiceCategoryPicker, setShowSvcServiceCategoryPicker] = useState(false);
+  const [showSvcServiceCurrencyPicker, setShowSvcServiceCurrencyPicker] = useState(false);
   const [svcServiceSaving, setSvcServiceSaving] = useState(false);
   const [svcServiceBusyId, setSvcServiceBusyId] = useState<string | null>(null);
 
@@ -3155,27 +3159,68 @@ export function AdminDashboardScreen({
             </button>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-            <select value={svcCountryFilter} onChange={(e) => setSvcCountryFilter(e.target.value)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
-              <option value="">All countries</option>
-              {COUNTRY_CODES.map((c) => <option key={c.iso} value={c.iso}>{c.name}</option>)}
-            </select>
-            <select value={svcCategoryFilter} onChange={(e) => setSvcCategoryFilter(e.target.value)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
-              <option value="">All categories</option>
-              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <select value={svcStatusFilter} onChange={(e) => setSvcStatusFilter(e.target.value as any)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
-              <option value="all">All provider statuses</option>
-              <option value="draft">Draft</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-            </select>
-            <select value={svcServiceStatusFilter} onChange={(e) => setSvcServiceStatusFilter(e.target.value as any)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
-              <option value="all">All service statuses</option>
-              <option value="has-active">Has active service(s)</option>
-              <option value="no-active">No active services</option>
-            </select>
-          </div>
+          {(() => {
+            const chipStyle: React.CSSProperties = { height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' };
+            const countryLabel = svcCountryFilter ? COUNTRY_CODES.find((c) => c.iso === svcCountryFilter)?.name : 'All countries';
+            const statusLabels: Record<string, string> = { all: 'All provider statuses', draft: 'Draft', approved: 'Approved', rejected: 'Rejected' };
+            const serviceStatusLabels: Record<string, string> = { all: 'All service statuses', 'has-active': 'Has active service(s)', 'no-active': 'No active services' };
+            return (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('country')}>{countryLabel || 'All countries'}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('category')}>{svcCategoryFilter || 'All categories'}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('status')}>{statusLabels[svcStatusFilter]}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('serviceStatus')}>{serviceStatusLabels[svcServiceStatusFilter]}</div>
+              </div>
+            );
+          })()}
+
+          {openSvcFilterPicker === 'country' && (
+            <PickerSheet
+              title="Filter by Country"
+              options={[{ value: '', label: 'All countries' }, ...COUNTRY_CODES.map((c) => ({ value: c.iso, label: c.name }))]}
+              value={svcCountryFilter}
+              onSelect={(v) => { setSvcCountryFilter(v); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'category' && (
+            <PickerSheet
+              title="Filter by Category"
+              options={[{ value: '', label: 'All categories' }, ...SERVICE_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+              value={svcCategoryFilter}
+              onSelect={(v) => { setSvcCategoryFilter(v); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'status' && (
+            <PickerSheet
+              title="Filter by Provider Status"
+              searchable={false}
+              options={[
+                { value: 'all', label: 'All provider statuses' },
+                { value: 'draft', label: 'Draft' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'rejected', label: 'Rejected' },
+              ]}
+              value={svcStatusFilter}
+              onSelect={(v) => { setSvcStatusFilter(v as any); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'serviceStatus' && (
+            <PickerSheet
+              title="Filter by Service Status"
+              searchable={false}
+              options={[
+                { value: 'all', label: 'All service statuses' },
+                { value: 'has-active', label: 'Has active service(s)' },
+                { value: 'no-active', label: 'No active services' },
+              ]}
+              value={svcServiceStatusFilter}
+              onSelect={(v) => { setSvcServiceStatusFilter(v as any); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
 
           {svcProvidersError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcProvidersError}</p>}
 
@@ -3319,29 +3364,26 @@ export function AdminDashboardScreen({
               rows={3}
               style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', resize: 'none' }}
             />
-            <select
+            <PickerField
               value={svcServiceForm.input.category || ''}
-              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, category: e.target.value } })}
-              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px' }}
-            >
-              <option value="">No category</option>
-              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-            <div style={{ display: 'flex', gap: '8px' }}>
+              placeholder="No category"
+              onOpen={() => setShowSvcServiceCategoryPicker(true)}
+            />
+            <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
               <input
                 type="number" min="0"
                 value={svcServiceForm.input.price || ''}
                 onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, price: Number(e.target.value) } })}
                 placeholder="Price"
-                style={{ flex: 1, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+                style={{ flex: 1, minWidth: 0, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
               />
-              <select
-                value={svcServiceForm.input.currency}
-                onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, currency: e.target.value } })}
-                style={{ width: '100px', flexShrink: 0, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 8px', color: '#F0F0FF', fontSize: '13px' }}
-              >
-                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-              </select>
+              <div style={{ width: '100px', flexShrink: 0 }}>
+                <PickerField
+                  value={svcServiceForm.input.currency}
+                  placeholder="Currency"
+                  onOpen={() => setShowSvcServiceCurrencyPicker(true)}
+                />
+              </div>
             </div>
             <input
               type="number" min="1"
@@ -3372,6 +3414,27 @@ export function AdminDashboardScreen({
             </div>
           </div>
         </div>
+      )}
+
+      {svcServiceForm && showSvcServiceCategoryPicker && (
+        <PickerSheet
+          title="Select Category"
+          options={[{ value: '', label: 'No category' }, ...SERVICE_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+          value={svcServiceForm.input.category || ''}
+          onSelect={(v) => { setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, category: v } }); setShowSvcServiceCategoryPicker(false); }}
+          onClose={() => setShowSvcServiceCategoryPicker(false)}
+          zIndex={9999}
+        />
+      )}
+      {svcServiceForm && showSvcServiceCurrencyPicker && (
+        <PickerSheet
+          title="Select Currency"
+          options={CURRENCIES.map((c) => ({ value: c.code, label: c.code }))}
+          value={svcServiceForm.input.currency}
+          onSelect={(v) => { setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, currency: v } }); setShowSvcServiceCurrencyPicker(false); }}
+          onClose={() => setShowSvcServiceCurrencyPicker(false)}
+          zIndex={9999}
+        />
       )}
 
       {/* ════════════════ IMPORT EVENTS TAB ═══════════════ */}

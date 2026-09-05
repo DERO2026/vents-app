@@ -74,6 +74,10 @@ export function PickerSheet({
   // anyone whose city isn't already in it.
   allowCustom = false,
   customLabel = (q: string) => `Use "${q}"`,
+  // Lets a host that renders its own modal above this sheet's default 1000
+  // (e.g. a bottom-sheet form already at a higher z-index) push this above
+  // it, so the picker isn't stuck rendering behind its own host.
+  zIndex = 1000,
 }: {
   title: string;
   options: PickerOption[];
@@ -84,6 +88,7 @@ export function PickerSheet({
   searchable?: boolean;
   allowCustom?: boolean;
   customLabel?: (query: string) => string;
+  zIndex?: number;
 }) {
   const [query, setQuery] = useState('');
   // Drag-to-dismiss — only the grab handle + header area is a drag surface
@@ -126,7 +131,7 @@ export function PickerSheet({
         background: 'rgba(2,0,5,0.55)',
         backdropFilter: 'blur(6px)',
         WebkitBackdropFilter: 'blur(6px)',
-        zIndex: 1000,
+        zIndex,
         display: 'flex',
         alignItems: 'flex-end',
         animation: 'pickerBackdropIn 0.2s ease',

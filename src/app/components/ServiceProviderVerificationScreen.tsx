@@ -3,6 +3,7 @@ import { ChevronLeft, Clock, Upload, MessageSquare } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase } from '../../lib/supabase';
 import { COUNTRY_CODES, DEFAULT_COUNTRY } from '../../lib/countries';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 
 // KYC submission screen for the Service Provider capability, mirroring
@@ -111,6 +112,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
 
   const [providerType, setProviderType] = useState<'individual' | 'business'>('individual');
   const [country, setCountry] = useState<string>(currentUser?.country || DEFAULT_COUNTRY.iso);
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [ownerName, setOwnerName] = useState('');
   const [businessName, setBusinessName] = useState('');
   const [cacNumber, setCacNumber] = useState('');
@@ -282,9 +284,20 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
               ))}
             </div>
 
-            <select value={country} onChange={(e) => setCountry(e.target.value)} style={inputStyle}>
-              {COUNTRY_CODES.map((c) => <option key={c.iso} value={c.iso}>{c.name}</option>)}
-            </select>
+            <PickerField
+              value={COUNTRY_CODES.find((c) => c.iso === country)?.name || ''}
+              placeholder="Select country"
+              onOpen={() => setShowCountryPicker(true)}
+            />
+            {showCountryPicker && (
+              <PickerSheet
+                title="Select Country"
+                options={COUNTRY_CODES.map((c) => ({ value: c.iso, label: c.name }))}
+                value={country}
+                onSelect={(v) => { setCountry(v); setShowCountryPicker(false); }}
+                onClose={() => setShowCountryPicker(false)}
+              />
+            )}
 
             <input type="text" placeholder="Your full name" value={ownerName} onChange={(e) => setOwnerName(e.target.value)} style={inputStyle} />
 

@@ -8,6 +8,7 @@ import {
 } from '../../lib/providerServices';
 import { ProviderService } from './types';
 import { ConfirmDialog } from './ConfirmDialog';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
 
 // Manage Your Services & Prices -- the individual priced offerings under a
 // provider's listing (see supabase/migrations/0048_provider_services.sql).
@@ -43,6 +44,8 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
   const [editing, setEditing] = useState<ProviderService | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderServiceInput>(emptyForm(providerCategory, currencyForCountry(accountCountry)));
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -198,16 +201,21 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
             <input style={inputStyle} placeholder="Service name (e.g. Bridal Makeup)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <textarea style={{ ...inputStyle, resize: 'none' }} rows={3} placeholder="Description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
 
-            <select style={inputStyle} value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value })}>
-              <option value="">No category</option>
-              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <PickerField
+              value={form.category || ''}
+              placeholder="No category"
+              onOpen={() => setShowCategoryPicker(true)}
+            />
 
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <input style={{ ...inputStyle, flex: 1 }} type="number" min="0" placeholder="Price" value={form.price || ''} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} />
-              <select style={{ ...inputStyle, width: '110px', flexShrink: 0 }} value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })}>
-                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
-              </select>
+            <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
+              <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} type="number" min="0" placeholder="Price" value={form.price || ''} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} />
+              <div style={{ width: '110px', flexShrink: 0 }}>
+                <PickerField
+                  value={form.currency}
+                  placeholder="Currency"
+                  onOpen={() => setShowCurrencyPicker(true)}
+                />
+              </div>
             </div>
 
             <input style={inputStyle} type="number" min="1" placeholder="Duration in minutes (optional)" value={form.durationMinutes ?? ''} onChange={(e) => setForm({ ...form, durationMinutes: e.target.value ? Number(e.target.value) : null })} />
@@ -237,6 +245,28 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
         onConfirm={handleDelete}
         onCancel={() => setConfirmDeleteId(null)}
       />
+
+      {showCategoryPicker && (
+        <PickerSheet
+          title="Select Category"
+          options={[{ value: '', label: 'No category' }, ...SERVICE_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+          value={form.category || ''}
+          onSelect={(v) => { setForm({ ...form, category: v }); setShowCategoryPicker(false); }}
+          onClose={() => setShowCategoryPicker(false)}
+          zIndex={10000}
+        />
+      )}
+
+      {showCurrencyPicker && (
+        <PickerSheet
+          title="Select Currency"
+          options={CURRENCIES.map((c) => ({ value: c.code, label: c.code }))}
+          value={form.currency}
+          onSelect={(v) => { setForm({ ...form, currency: v }); setShowCurrencyPicker(false); }}
+          onClose={() => setShowCurrencyPicker(false)}
+          zIndex={10000}
+        />
+      )}
     </div>
   );
 }

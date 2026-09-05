@@ -336,6 +336,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [businessAddress, setBusinessAddress] = useState('');
   const [nin, setNin] = useState('');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -494,17 +495,28 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         Verify yourself or your business with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
         <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Verifying as</label>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        {/* ROOT CAUSE of the horizontal-overflow bug on this screen: `flex: 1`
+            alone does not let a flex child shrink below its own content's
+            intrinsic (min-content) width -- the browser default is
+            `min-width: auto`, not 0. Two buttons each needing enough width
+            to fit "Individual Organizer"/"Registered Business" on one line
+            forced this row (and the whole scroll container, since nothing
+            above constrained it either) wider than a narrow iPhone's
+            viewport. `minWidth: 0` on each flex child is the actual fix --
+            letting them shrink and their text wrap onto two lines instead of
+            pushing the layout sideways. */}
+        <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
           {(['individual', 'business'] as const).map(t => (
             <button
               key={t} type="button" onClick={() => setOrganizerType(t)}
               style={{
-                flex: 1, padding: '12px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                flex: 1, minWidth: 0, padding: '12px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                 background: organizerType === t ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : '#090514',
                 border: organizerType === t ? 'none' : '1px solid rgba(255,255,255,0.08)',
                 color: '#fff',
+                lineHeight: 1.3,
               }}
             >
               {t === 'individual' ? 'Individual Organizer' : 'Registered Business'}
@@ -513,17 +525,13 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
         <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Country</label>
-        <select
-          value={country}
-          onChange={e => setCountry(e.target.value)}
-          style={{ ...inputStyle, appearance: 'none' as const, cursor: 'pointer' }}
-        >
-          {COUNTRY_CODES.map(c => (
-            <option key={c.iso} value={c.iso} style={{ background: '#090514' }}>{c.name}</option>
-          ))}
-        </select>
+        <PickerField
+          value={COUNTRY_CODES.find(c => c.iso === country)?.name || ''}
+          placeholder="Select country"
+          onOpen={() => setShowCountryPicker(true)}
+        />
       </div>
 
       {organizerType === 'business' && (
@@ -679,6 +687,16 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
         {status === 'form' && form}
       </div>
+
+      {showCountryPicker && (
+        <PickerSheet
+          title="Select Country"
+          options={COUNTRY_CODES.map(c => ({ value: c.iso, label: c.name }))}
+          value={country}
+          onSelect={(v) => { setCountry(v); setShowCountryPicker(false); }}
+          onClose={() => setShowCountryPicker(false)}
+        />
+      )}
     </div>
   );
 }
