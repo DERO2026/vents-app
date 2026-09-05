@@ -18,6 +18,7 @@ import { AdminActionsTab } from './AdminActionsTab';
 import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
 import { appVersionLabel } from '../../lib/appVersion';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { CURRENCIES } from '../../lib/currencies';
@@ -248,7 +249,13 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [reqRes, walRes] = await Promise.all([
+      // ROOT-CAUSE FIX (Admin Console "buffering" audit): neither request
+      // here had a timeout -- a hung Supabase call (network stall, a slow
+      // admin_list_pending_payouts join) left `loading` true indefinitely
+      // with no recovery, same failure mode already fixed once in
+      // AuthScreen.tsx but never applied to this tab.
+      const [reqRes, walRes] = await withTimeoutFallback(
+        Promise.all([
         // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
         // it joins organizer + bank metadata server-side in one call, so the
         // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
@@ -264,7 +271,9 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
           .order('balance_kobo', { ascending: false })
           .limit(100),
-      ]);
+        ]),
+        { timeoutMs: 15000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+      );
       const { data: reqs, error: reqError } = reqRes;
       const { data: walsRaw, error: walError } = walRes;
       if (reqError || walError) {
@@ -1625,10 +1634,20 @@ export function AdminDashboardScreen({
   };
 
   // ── Flash ────────────────────────────────────────────────────────────────────
-  const flash = (ok: boolean, msg: string) => {
+  // ROOT-CAUSE FIX (Admin Console "buffering" audit): this was a plain
+  // inline function, recreated with a new identity on every render of this
+  // (very large, frequently-re-rendering) component -- including every 20s
+  // from refreshPendingCount's poll below. AdminActionsTab receives this as
+  // a prop and includes it in a useCallback dependency array for its own
+  // data-load effect, so a new `flash` identity every ~20s was silently
+  // re-triggering that effect and resetting its `loading` state to true --
+  // "repeatedly sitting on Loading requests…" was a real refetch loop, not
+  // a stuck spinner. Only calls stable React state setters internally, so
+  // an empty dependency array gives it a permanently stable identity.
+  const flash = useCallback((ok: boolean, msg: string) => {
     if (ok) setSuccessMessage(msg); else setErrorMessage(msg);
     setTimeout(() => { setSuccessMessage(null); setErrorMessage(null); }, 3500);
-  };
+  }, []);
 
   // ── Maker-checker gate (single source of truth for every admin action) ───────
   // Super Admins (Root + full Admin) execute immediately. Sub-Admins NEVER

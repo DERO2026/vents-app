@@ -8,6 +8,7 @@
 
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase } from '../../lib/supabase';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { CheckCircle2, XCircle, Clock, ChevronRight, Eye, Check, X, CheckCheck } from 'lucide-react';
 
 type Status = 'pending' | 'approved' | 'rejected';
@@ -79,9 +80,19 @@ export function AdminActionsTab({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.rpc('admin_list_action_requests' as any, {
-        p_status: filter === 'all' ? null : filter,
-      });
+      // ROOT-CAUSE FIX (Admin Console "buffering" audit): this call had no
+      // timeout -- a hung Supabase RPC (network stall, slow connection)
+      // left `loading` true forever with no recovery. Wrapped the same way
+      // AuthScreen.tsx already handles this exact failure mode elsewhere in
+      // the app.
+      const { data, error } = await withTimeoutFallback(
+        Promise.resolve(
+          supabase.rpc('admin_list_action_requests' as any, {
+            p_status: filter === 'all' ? null : filter,
+          })
+        ),
+        { timeoutMs: 15000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+      );
       if (error) throw error;
       setRows((data as ActionRequest[]) || []);
       // Mark the loaded pending items as seen (notification read) for admins.
