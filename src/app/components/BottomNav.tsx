@@ -1,5 +1,6 @@
 import { Home, Ticket, MessageCircle, User } from 'lucide-react';
 import { TabId } from './types';
+import { haptics } from '../../lib/haptics';
 
 interface BottomNavProps {
   activeTab: TabId;
@@ -38,7 +39,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
         return (
           <button
             key={id}
-            onClick={() => onTabChange(id)}
+            onClick={() => { if (!isActive) haptics.light(); onTabChange(id); }}
             style={{
               flex: 1,
               display: 'flex',

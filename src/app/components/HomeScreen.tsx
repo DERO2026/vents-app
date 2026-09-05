@@ -2,7 +2,7 @@ import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
-  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
+  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond, Store,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
   ChevronDown,
 } from 'lucide-react';
@@ -1437,14 +1437,20 @@ export function HomeScreen({
               below the event feed. Same premium, low-noise treatment as
               the other header icon buttons (36x36 circle) rather than a
               second, competing full-width surface -- Services is one tap
-              away without taking any space from the event grid. */}
+              away without taking any space from the event grid.
+              Store (a simple storefront glyph) instead of Sparkles -- a
+              sparkle/starburst reads as an "AI" icon (Gemini-style) in
+              this exact size/weight/color, not as "Services"; a plain
+              geometric storefront is unambiguous at a glance and matches
+              the flat, minimal line weight already used by the Bell icon
+              next to it. */}
           {onServicesPress && (
             <button
               onClick={onServicesPress}
               aria-label="Services"
               style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <Sparkles size={15} color="#C4C9E0" />
+              <Store size={15} color="#C4C9E0" />
             </button>
           )}
           <button

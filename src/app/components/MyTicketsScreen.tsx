@@ -6,6 +6,7 @@ import { SkeletonCard } from './SkeletonCard';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { prefetchTicketTokens } from '../../lib/ticketToken';
 import { supabase } from '../../lib/supabase';
+import { haptics } from '../../lib/haptics';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -14,6 +15,11 @@ interface MyTicketsScreenProps {
   onViewTicket: (ticket: PurchasedTicket) => void;
   onRefresh?: () => Promise<void>;
   currentUserId?: string;
+  // Bumped by App.tsx's handleTabChange on every tap of the My Tickets tab
+  // (including while already on it) -- this screen now stays mounted
+  // across tab switches instead of remounting, so its internally-fetched
+  // transfers list needs an explicit trigger to refresh on switch-in.
+  refreshSignal?: number;
 }
 
 // Short, consistent date/time format for transfer cards -- expiry, sent-at,
@@ -51,7 +57,7 @@ function TransferEmptyState({ text }: { text: string }) {
   );
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, refreshSignal }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -128,15 +134,32 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
 
   useEffect(() => { loadTransfers(); }, [loadTransfers]);
 
+  // Refresh transfers on every tap of the My Tickets tab (App.tsx bumps
+  // refreshSignal for that, including while already on this tab) -- skip
+  // the very first value since the mount effect above already covers the
+  // initial load; only an actual tab-tap afterward should trigger this.
+  const refreshSignalMounted = useRef(false);
+  useEffect(() => {
+    if (!refreshSignalMounted.current) { refreshSignalMounted.current = true; return; }
+    loadTransfers();
+  }, [refreshSignal, loadTransfers]);
+
   const handleAcceptTransfer = async (transferId: string) => {
+    // Explicit re-entrancy guard, not just the button's own `disabled` --
+    // `disabled` only takes effect after React commits the next render, so
+    // a fast enough double-tap could otherwise fire this twice before that
+    // happens. `transferActionBusy` flips synchronously, before any await.
+    if (transferActionBusy) return;
     setTransferActionBusy(transferId);
     setTransferActionError('');
     try {
       const { error } = await supabase.rpc('accept_ticket_transfer', { p_transfer_id: transferId });
       if (error) throw new Error(error.message);
+      haptics.success();
       await loadTransfers();
       if (onRefresh) await onRefresh();
     } catch (e: any) {
+      haptics.error();
       setTransferActionError(e?.message || 'Could not accept this transfer.');
     } finally {
       setTransferActionBusy(null);
@@ -144,13 +167,16 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   };
 
   const handleDeclineTransfer = async (transferId: string) => {
+    if (transferActionBusy) return;
     setTransferActionBusy(transferId);
     setTransferActionError('');
     try {
       const { error } = await supabase.rpc('decline_ticket_transfer', { p_transfer_id: transferId });
       if (error) throw new Error(error.message);
+      haptics.light();
       await loadTransfers();
     } catch (e: any) {
+      haptics.error();
       setTransferActionError(e?.message || 'Could not decline this transfer.');
     } finally {
       setTransferActionBusy(null);
@@ -158,13 +184,16 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   };
 
   const handleCancelTransfer = async (transferId: string) => {
+    if (transferActionBusy) return;
     setTransferActionBusy(transferId);
     setTransferActionError('');
     try {
       const { error } = await supabase.rpc('cancel_ticket_transfer', { p_transfer_id: transferId });
       if (error) throw new Error(error.message);
+      haptics.light();
       await loadTransfers();
     } catch (e: any) {
+      haptics.error();
       setTransferActionError(e?.message || 'Could not cancel this transfer.');
     } finally {
       setTransferActionBusy(null);
@@ -218,7 +247,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   };
 
   const handleSendTransfer = async () => {
-    if (!transferTicket) return;
+    if (!transferTicket || transferSending) return;
     const identifier = transferIdentifier.trim();
     if (!identifier) { setInitiateError("Enter the recipient's email or username"); return; }
     setTransferSending(true);
@@ -229,10 +258,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         p_recipient_identifier: identifier,
       });
       if (error) throw new Error(error.message);
+      haptics.success();
       setTransferSent(true);
       setTransferIdentifier('');
       await loadTransfers();
     } catch (e: any) {
+      haptics.error();
       setInitiateError(e?.message || 'Could not start the transfer. Please try again.');
     } finally {
       setTransferSending(false);
@@ -391,7 +422,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           {(['upcoming', 'past', 'transfers'] as const).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => { haptics.light(); setActiveTab(tab); }}
               style={{
                 position: 'relative',
                 zIndex: 1,
@@ -462,7 +493,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               ]).map((sub) => (
                 <button
                   key={sub.key}
-                  onClick={() => setTransferSubTab(sub.key)}
+                  onClick={() => { haptics.light(); setTransferSubTab(sub.key); }}
                   style={{
                     flex: 1,
                     display: 'flex',
@@ -605,7 +636,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           </>
         )}
 
-        {activeTab === 'transfers' ? null : loading ? (
+        {/* Stale-while-revalidate, same principle as Home's fix (Stage A):
+            `loading` flips true on every refresh (pull-to-refresh, or the
+            fetchUserTickets call that follows an Accept), not just the
+            first load -- only show the skeleton when there's nothing to
+            keep on screen yet, otherwise the whole list would blank out on
+            every refresh even though nothing about it needs to. */}
+        {activeTab === 'transfers' ? null : loading && tickets.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <SkeletonCard variant="ticket" />
             <SkeletonCard variant="ticket" />
@@ -802,7 +839,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       underneath it. */}
                   {activeTab === 'upcoming' && isTicketTransferable(ticket) && (
                     <button
-                      onClick={(e) => { e.stopPropagation(); setTransferTicket(ticket); }}
+                      onClick={(e) => { e.stopPropagation(); haptics.light(); setTransferTicket(ticket); }}
                       style={{
                         width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center',
                         justifyContent: 'center', gap: '6px', background: 'rgba(168,85,247,0.08)',

@@ -176,6 +176,15 @@ export default function App() {
   useEffect(() => {
     if (screen === 'home') setHomeEverMounted(true);
   }, [screen]);
+  // Same pattern for My Tickets -- switching to another tab and back was
+  // destroying and recreating it (screen === 'my-tickets' && <...>), which
+  // reset its activeTab/transferSubTab back to Upcoming/Incoming and
+  // re-fetched transfers every single time, instead of just picking back
+  // up where the user left it.
+  const [myTicketsEverMounted, setMyTicketsEverMounted] = useState(false);
+  useEffect(() => {
+    if (screen === 'my-tickets') setMyTicketsEverMounted(true);
+  }, [screen]);
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -240,6 +249,11 @@ export default function App() {
   // Bumped on every Home-tab tap so HomeScreen can scroll itself back to
   // top -- see handleTabChange below.
   const [homeScrollSignal, setHomeScrollSignal] = useState(0);
+  // Same idea, for My Tickets -- bumped on every tap of the My Tickets tab
+  // so it can refresh its internally-fetched transfers list, now that it
+  // stays mounted across tab switches (myTicketsEverMounted) instead of
+  // remounting (which used to refetch everything for free).
+  const [myTicketsRefreshSignal, setMyTicketsRefreshSignal] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -1503,23 +1517,31 @@ export default function App() {
       // scrolls it back to top on switch-in -- this only has a visible
       // effect exactly when it matters -- tapping Home while already on it.
       setHomeScrollSignal(s => s + 1);
+    } else if (tab === 'my-tickets') {
+      // Same always-fires approach as Home, for the same reason: My Tickets
+      // also now stays mounted across tab switches (myTicketsEverMounted)
+      // instead of remounting, so both its tickets prop (via fetchUserTickets
+      // here) and its internally-fetched transfers list (via
+      // myTicketsRefreshSignal, which MyTicketsScreen turns into its own
+      // loadTransfers() call) need an explicit refresh trigger on every tap
+      // of this tab now -- the old "remount refetches everything" guarantee
+      // this used to lean on (see wasAlreadyActive branch below) is gone.
+      if (currentUser?.id) fetchUserTickets(currentUser.id);
+      setMyTicketsRefreshSignal(s => s + 1);
     } else if (wasAlreadyActive) {
-      // Same "tap the active tab to refresh" gesture as Home, extended to
-      // the other three tabs -- but ONLY on a re-tap (unlike Home's
-      // always-fires approach above), since these three don't already
-      // remount/refetch on every switch-in the way HomeScreen does.
-      // Each reuses its existing fetch/revalidation path, no new fetch
-      // logic: My Tickets calls the same fetchUserTickets already used by
-      // MyTicketsScreen's own pull-to-refresh; Chats bumps chatRefreshKey,
+      // Same "tap the active tab to refresh" gesture as Home/My Tickets,
+      // extended to the remaining two tabs -- but ONLY on a re-tap (unlike
+      // Home/My Tickets' always-fires approach above), since these two
+      // don't already remount/refetch on every switch-in the way
+      // HomeScreen/MyTicketsScreen do. Each reuses its existing fetch/
+      // revalidation path, no new fetch logic: Chats bumps chatRefreshKey,
       // the same signal ConversationScreen's own goBack already uses to
       // make ExploreScreen's inbox list refetch; Profile bumps
       // profileTabRefreshSignal, which ProfileScreen turns into its own
       // internal profileRefreshKey (already-existing stats/service-
       // provider-profile fetch effects, previously dead since nothing
       // ever incremented it).
-      if (tab === 'my-tickets' && currentUser?.id) {
-        fetchUserTickets(currentUser.id);
-      } else if (tab === 'explore') {
+      if (tab === 'explore') {
         setChatRefreshKey(k => k + 1);
       } else if (tab === 'profile') {
         setProfileTabRefreshSignal(s => s + 1);
@@ -2689,18 +2711,21 @@ export default function App() {
               onRefreshUnread={fetchUnreadCount}
             />
           )}
-          {screen === 'my-tickets' && (
-            <MyTicketsScreen
-              tickets={allTickets}
-              loading={ticketsLoading}
-              onBack={goBack}
-              onViewTicket={(ticket) => {
-                setPurchasedTicket(ticket);
-                navigateTo('payment-success');
-              }}
-              onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
-              currentUserId={currentUser?.id}
-            />
+          {myTicketsEverMounted && (
+            <div style={{ display: screen === 'my-tickets' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <MyTicketsScreen
+                tickets={allTickets}
+                loading={ticketsLoading}
+                onBack={goBack}
+                onViewTicket={(ticket) => {
+                  setPurchasedTicket(ticket);
+                  navigateTo('payment-success');
+                }}
+                onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
+                currentUserId={currentUser?.id}
+                refreshSignal={myTicketsRefreshSignal}
+              />
+            </div>
           )}
           {screen === 'settings' && (
           <SettingsScreen
