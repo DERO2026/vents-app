@@ -21,6 +21,7 @@ import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
 import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
 import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
 import { ServiceProviderVerificationScreen } from './components/ServiceProviderVerificationScreen';
+import { ManageProviderServicesScreen } from './components/ManageProviderServicesScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -930,6 +931,10 @@ export default function App() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedServiceCategory, setSelectedServiceCategory] = useState<string | null>(null);
   const [selectedServiceProvider, setSelectedServiceProvider] = useState<ServiceProvider | null>(null);
+  // The provider LISTING id (service_providers.id, not a user id) whose
+  // catalog is being managed -- set right before navigating to
+  // 'manage-provider-services' from ServiceProviderSetupScreen.
+  const [manageServicesProviderId, setManageServicesProviderId] = useState<string | null>(null);
   // Single shared discovery-country state for both Home and Services (Stage
   // B) -- previously each screen kept its own local country state
   // (HomeScreen's own `countryFilter`, and this `discoveryCountryIso` for
@@ -2503,6 +2508,10 @@ export default function App() {
               currentUser={{ id: currentUser.id, country: currentUser.country }}
               onBack={goBack}
               onSaved={() => goBack()}
+              onManageServices={(providerId) => {
+                setManageServicesProviderId(providerId);
+                navigateTo('manage-provider-services');
+              }}
             />
           )}
           {screen === 'service-provider-verify' && currentUser && (
@@ -2510,6 +2519,13 @@ export default function App() {
               currentUser={{ id: currentUser.id, country: currentUser.country }}
               onBack={goBack}
               onApprovedSetup={() => navigateTo('service-provider-setup')}
+            />
+          )}
+          {screen === 'manage-provider-services' && manageServicesProviderId && (
+            <ManageProviderServicesScreen
+              providerId={manageServicesProviderId}
+              accountCountry={currentUser?.country}
+              onBack={goBack}
             />
           )}
           {screen === 'auth' && (

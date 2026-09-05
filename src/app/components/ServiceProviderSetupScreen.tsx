@@ -30,6 +30,11 @@ interface ServiceProviderSetupScreenProps {
   currentUser: { id: string; country?: string };
   onBack: () => void;
   onSaved: (provider: ServiceProvider) => void;
+  // Only meaningful once a listing exists (a service belongs to the
+  // listing's own id, provider_services.provider_id -- see
+  // 0048_provider_services.sql) -- omitted/unused while creating a
+  // brand-new listing for the first time.
+  onManageServices?: (providerId: string) => void;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -126,7 +131,7 @@ function OverlayPicker<T>({
   );
 }
 
-export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved }: ServiceProviderSetupScreenProps) {
+export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onManageServices }: ServiceProviderSetupScreenProps) {
   const [loading, setLoading] = useState(true);
   const [existing, setExisting] = useState<ServiceProvider | null>(null);
 
@@ -350,6 +355,14 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved }: Ser
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '6px 0 0' }}>
           This is your public listing in VENTS Services.
         </p>
+        {existing && onManageServices && (
+          <button
+            onClick={() => onManageServices(existing.id)}
+            style={{ marginTop: '14px', width: '100%', padding: '13px', background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md, color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+          >
+            Manage Your Services & Prices
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(120px + env(safe-area-inset-bottom))` }}>

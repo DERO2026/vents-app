@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, MapPin, Tag, Zap, MessageCircle } from 'lucide-react';
-import { ServiceProvider } from './types';
+import { ServiceProvider, ProviderService } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
 import { fetchServiceProviderById } from '../../lib/serviceProviders';
+import { fetchActiveServicesForProvider } from '../../lib/providerServices';
 
 interface ServiceProviderProfileScreenProps {
   providerId: string;
@@ -47,6 +48,7 @@ function ProfileSkeleton({ onBack }: { onBack: () => void }) {
 export function ServiceProviderProfileScreen({ providerId, initialProvider, onBack, onContactProvider }: ServiceProviderProfileScreenProps) {
   const [provider, setProvider] = useState<ServiceProvider | null | undefined>(initialProvider);
   const [notFound, setNotFound] = useState(false);
+  const [services, setServices] = useState<ProviderService[] | null>(null);
 
   useEffect(() => {
     if (initialProvider && initialProvider.id === providerId) return;
@@ -58,6 +60,19 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
       .catch(() => { if (!cancelled) { setProvider(null); setNotFound(true); } });
     return () => { cancelled = true; };
   }, [providerId, initialProvider]);
+
+  // Real priced offerings (0048_provider_services.sql) -- RLS already
+  // restricts this to active services under an approved listing, so no
+  // extra "is this provider approved" check is needed here, same as how
+  // fetchServiceProviderById itself only ever resolves an approved row.
+  useEffect(() => {
+    let cancelled = false;
+    setServices(null);
+    fetchActiveServicesForProvider(providerId)
+      .then((rows) => { if (!cancelled) setServices(rows); })
+      .catch(() => { if (!cancelled) setServices([]); });
+    return () => { cancelled = true; };
+  }, [providerId]);
 
   if (provider === undefined) {
     return <ProfileSkeleton onBack={onBack} />;
@@ -124,6 +139,26 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         {provider.description && (
           <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
             <p style={{ color: '#C9C9D9', fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{provider.description}</p>
+          </div>
+        )}
+
+        {services && services.length > 0 && (
+          <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Services & Prices</p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {services.map((svc) => (
+                <div key={svc.id} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.lg, padding: '14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
+                    {svc.description && <p style={{ color: '#C9C9D9', fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
+                    {svc.durationMinutes && <p style={{ color: servicesColors.textTertiary, fontSize: '11px', margin: '4px 0 0' }}>{svc.durationMinutes} min</p>}
+                  </div>
+                  <span style={{ color: accent, fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {svc.currency} {svc.price.toLocaleString('en-US')}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

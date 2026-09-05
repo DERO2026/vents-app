@@ -194,6 +194,34 @@ export interface ServiceProvider {
   updatedAt: string;
 }
 
+// A single priced offering under a provider's listing (see
+// supabase/migrations/0048_provider_services.sql). Deliberately keyed by
+// `providerId` (service_providers.id, the LISTING), not the provider's
+// user_id -- ownership for writes is still resolved back to the owning
+// user via that FK in RLS, but every reference this stage or the next
+// needs (a future booking_requests.service_id) points at this row's own
+// `id`, not the provider account.
+export interface ProviderService {
+  id: string;
+  providerId: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  // ISO 4217 code (e.g. 'NGN', 'USD') -- same convention as
+  // ServiceProvider.startingPriceCurrency, stored per-service rather than
+  // assumed from the provider's listing so a provider can price different
+  // services in different currencies if they ever need to.
+  currency: string;
+  durationMinutes?: number | null;
+  // Free text, defaults to the provider's own category at creation time but
+  // independently editable per service -- same convention as
+  // ServiceProvider.category (no DB enum, client-enforced list).
+  category?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type Screen =
   | 'referral'
   | 'splash'
@@ -235,7 +263,8 @@ export type Screen =
   | 'services-category'
   | 'service-provider-profile'
   | 'service-provider-setup'
-  | 'service-provider-verify';
+  | 'service-provider-verify'
+  | 'manage-provider-services';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
