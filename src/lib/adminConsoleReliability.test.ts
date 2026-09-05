@@ -10,12 +10,16 @@ import { join } from 'node:path';
 let m0050: string;
 let adminDashboardSrc: string;
 let adminActionsTabSrc: string;
+let authScreenSrc: string;
+let appSrc: string;
 
 beforeAll(() => {
   m0050 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0050_fix_signup_profile_data_loss.sql'), 'utf8');
   const componentsDir = join(__dirname, '..', 'app', 'components');
   adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
   adminActionsTabSrc = readFileSync(join(componentsDir, 'AdminActionsTab.tsx'), 'utf8');
+  authScreenSrc = readFileSync(join(componentsDir, 'AuthScreen.tsx'), 'utf8');
+  appSrc = readFileSync(join(__dirname, '..', 'app', 'App.tsx'), 'utf8');
 });
 
 describe('Issue 1: new-user signup no longer loses the whole profile on one field collision', () => {
@@ -92,5 +96,39 @@ describe('Issue 2: both Admin Actions and Payouts now have timeout protection on
     expect(loadFn).toMatch(/\} finally \{\s*\n\s*setLoading\(false\);/);
     const payoutsLoad = adminDashboardSrc.match(/function PayoutsTab\(\{ flash \}[\s\S]*?const load = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? '';
     expect(payoutsLoad).toMatch(/\} finally \{\s*\n\s*setLoading\(false\);/);
+  });
+});
+
+describe('Issue 1 follow-up: a signup-time username/phone collision is surfaced, never silently masked', () => {
+  it('the client no longer falls back to the unsaved local value for username/phone in the onSuccess payload', () => {
+    const onSuccessCall = authScreenSrc.match(/onSuccess\(\{\s*\n\s*id: userId,[\s\S]*?\n\s{8}\}\);/)?.[0] ?? '';
+    expect(onSuccessCall).toMatch(/username: finalProfile\.username \|\| undefined,/);
+    expect(onSuccessCall).toMatch(/phone_number: finalProfile\.phone_number \|\| undefined,/);
+    expect(onSuccessCall).not.toMatch(/username: finalProfile\.username \|\| payload\.username,/);
+    expect(onSuccessCall).not.toMatch(/phone_number: finalProfile\.phone_number \|\| payload\.phone_number,/);
+  });
+
+  it('full_name/state/country keep their read-after-write fallback -- only the two unique-constrained fields changed', () => {
+    const onSuccessCall = authScreenSrc.match(/onSuccess\(\{\s*\n\s*id: userId,[\s\S]*?\n\s{8}\}\);/)?.[0] ?? '';
+    expect(onSuccessCall).toMatch(/full_name: finalProfile\.full_name \|\| payload\.full_name,/);
+    expect(onSuccessCall).toMatch(/state: finalProfile\.state \|\| payload\.state,/);
+  });
+
+  it('detects a username or phone save failure and builds a specific, honest warning message', () => {
+    expect(authScreenSrc).toMatch(/const usernameSaveFailed = !!payload\.username && !finalProfile\.username;/);
+    expect(authScreenSrc).toMatch(/const phoneSaveFailed = !!payload\.phone_number && !finalProfile\.phone_number;/);
+    expect(authScreenSrc).toMatch(/couldn't be saved — it was already taken by another account/);
+  });
+
+  it('the warning is passed through onSuccess, not just logged', () => {
+    const onSuccessCall = authScreenSrc.match(/onSuccess\(\{\s*\n\s*id: userId,[\s\S]*?\n\s{8}\}\);/)?.[0] ?? '';
+    expect(onSuccessCall).toMatch(/profileWarning,/);
+  });
+
+  it('App.tsx surfaces profileWarning via the existing toast, and never persists it onto currentUser', () => {
+    const handlerBlock = appSrc.match(/const handleAuthSuccess = useCallback\(async \(userProfile:[\s\S]*?setCurrentUser\(enriched\);/)?.[0] ?? '';
+    expect(handlerBlock).toMatch(/const \{ profileWarning, \.\.\.profileFields \} = userProfile;/);
+    expect(handlerBlock).toMatch(/if \(profileWarning\) setAppToastError\(profileWarning\);/);
+    expect(handlerBlock).toMatch(/\.\.\.profileFields,/); // enriched is built from profileFields, not raw userProfile
   });
 });

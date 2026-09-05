@@ -2159,9 +2159,17 @@ export default function App() {
     return () => removeListener?.();
   }, [hydrateAuth]);
 
-  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string; profileWarning?: string }) => {
+    // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): a
+    // username/phone that couldn't be saved at signup (a genuine unique-
+    // constraint collision, e.g. someone else already has it) used to be
+    // silently swallowed -- AuthScreen.tsx now surfaces it here instead of
+    // masking it. Shown once via the existing toast, not persisted on
+    // currentUser (it's a one-time notice, not profile data).
+    const { profileWarning, ...profileFields } = userProfile;
+    if (profileWarning) setAppToastError(profileWarning);
     const enriched = {
-      ...userProfile,
+      ...profileFields,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
     setCurrentUser(enriched);

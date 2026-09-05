@@ -53,7 +53,7 @@ interface AuthScreenProps {
   // which events the account can see or buy tickets for.
   selectedCountryIso?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string; profileWarning?: string }) => void;
   resetToken?: string;
   // Set when the user arrived via the "Verify Account" link in the
   // verification email (?verify_email=) or is resuming a signup that was
@@ -607,6 +607,32 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         // shows the trigger-assigned 'attendee' rather than masking it.
         const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'attendee';
 
+        // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): the
+        // onSuccess payload below used to fall back to the client's own
+        // typed value (`payload.username`/`payload.phone_number`) whenever
+        // the verified DB row came back without one -- e.g. because the
+        // corrective update above hit a genuine unique-constraint collision
+        // (someone else has that exact username/phone). That made the
+        // user's own session display a username/phone that was NEVER
+        // actually saved, with zero indication anything went wrong --
+        // exactly the same silent-mismatch shape as the admin-console bug,
+        // just surfacing in the user's own client instead of the DB. Only
+        // username/phone need this treatment (they're the only two
+        // unique-constrained, collision-prone fields here); full_name/
+        // state/country have no such constraint and can't silently fail to
+        // persist, so their existing `|| payload.x` fallback (a defensive
+        // read-after-write safety net, not a masking risk) is unchanged.
+        const usernameSaveFailed = !!payload.username && !finalProfile.username;
+        const phoneSaveFailed = !!payload.phone_number && !finalProfile.phone_number;
+        let profileWarning: string | undefined;
+        if (usernameSaveFailed && phoneSaveFailed) {
+          profileWarning = "Your username and phone number couldn't be saved — both were already taken by another account. Please set new ones in Settings.";
+        } else if (usernameSaveFailed) {
+          profileWarning = "Your username couldn't be saved — it was already taken by another account. Please set one in Settings.";
+        } else if (phoneSaveFailed) {
+          profileWarning = "Your phone number couldn't be saved — it was already registered to another account. Please set one in Settings.";
+        }
+
         // Apply referral code if user signed up via ?ref= link. Awaited and
         // only cleared from sessionStorage once we get a definitive
         // response — a transient failure now leaves the code in place to
@@ -628,8 +654,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           email: userEmail,
           full_name: finalProfile.full_name || payload.full_name,
           role: verifiedRole,
-          username: finalProfile.username || payload.username,
-          phone_number: finalProfile.phone_number || payload.phone_number,
+          // Trust the verified DB row alone for these two — no fallback to
+          // the unsaved local value (see profileWarning above).
+          username: finalProfile.username || undefined,
+          phone_number: finalProfile.phone_number || undefined,
           state: finalProfile.state || payload.state,
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
           cover_url: finalProfile.cover_url,
@@ -638,6 +666,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           vc_badge: finalProfile.vc_badge,
           is_service_provider: finalProfile.is_service_provider === true,
           country: finalProfile.country || payload.country || undefined,
+          profileWarning,
         });
         return;
       }
