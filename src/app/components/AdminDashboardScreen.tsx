@@ -6,7 +6,7 @@ import {
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
   Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
-  Briefcase,
+  Briefcase, Plus, Pencil,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -18,6 +18,15 @@ import { AdminActionsTab } from './AdminActionsTab';
 import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
 import { appVersionLabel } from '../../lib/appVersion';
+import { SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
+import { COUNTRY_CODES } from '../../lib/countries';
+import { CURRENCIES } from '../../lib/currencies';
+import {
+  fetchOwnServicesForProvider as fetchServicesForProviderId,
+  createProviderService, updateProviderService, setProviderServiceActive, deleteProviderService,
+  ProviderServiceInput,
+} from '../../lib/providerServices';
+import { ProviderService } from './types';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -48,7 +57,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'import-events' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'import-events' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -726,6 +735,32 @@ export function AdminDashboardScreen({
   const [spRequests, setSpRequests] = useState<any[]>([]);
   const [spRequestsLoading, setSpRequestsLoading] = useState(false);
 
+  // Services (Admin/Sub-Admin management surface, Services Stage 3) --
+  // list/search/filter service_providers, drill into one, and manage its
+  // provider_services rows. Every read/write here goes through the SAME
+  // RLS this whole feature already relies on (service_providers_admin_*,
+  // provider_services_admin_*, both is_admin()-gated, 0034/0045/0048) --
+  // this tab adds no new server-side surface at all, purely a client UI
+  // over existing admin-bypass policies. A non-admin session reaching this
+  // tab's code would still get empty results / RLS-denied writes; nothing
+  // here is a client-side-only security boundary.
+  const [svcProviders, setSvcProviders] = useState<any[] | null>(null);
+  const [svcProvidersLoading, setSvcProvidersLoading] = useState(false);
+  const [svcProvidersError, setSvcProvidersError] = useState<string | null>(null);
+  const [svcSearch, setSvcSearch] = useState('');
+  const [svcCountryFilter, setSvcCountryFilter] = useState('');
+  const [svcCategoryFilter, setSvcCategoryFilter] = useState('');
+  const [svcStatusFilter, setSvcStatusFilter] = useState<'all' | 'draft' | 'approved' | 'rejected'>('all');
+  const [svcServiceStatusFilter, setSvcServiceStatusFilter] = useState<'all' | 'has-active' | 'no-active'>('all');
+  const [svcSelectedProviderId, setSvcSelectedProviderId] = useState<string | null>(null);
+  const [svcServices, setSvcServices] = useState<ProviderService[] | null>(null);
+  const [svcServicesLoading, setSvcServicesLoading] = useState(false);
+  const [svcServicesError, setSvcServicesError] = useState<string | null>(null);
+  const [svcServiceForm, setSvcServiceForm] = useState<null | { editing: ProviderService | null; input: ProviderServiceInput }>(null);
+  const [svcServiceFormError, setSvcServiceFormError] = useState('');
+  const [svcServiceSaving, setSvcServiceSaving] = useState(false);
+  const [svcServiceBusyId, setSvcServiceBusyId] = useState<string | null>(null);
+
   // Import Events tab state
   const [importText, setImportText] = useState('');
   const [importLoading, setImportLoading] = useState(false);
@@ -1291,6 +1326,176 @@ export function AdminDashboardScreen({
     }
   };
 
+  // ── Services (Admin/Sub-Admin management surface) ──────────────────────
+  // service_providers_admin_select (is_admin(), 0034) lets an admin session
+  // read every listing regardless of status -- the same server-side gate
+  // that protects provider self-management already covers this tab.
+  const loadSvcProviders = useCallback(async () => {
+    if (!isAdminOrSubAdmin) return;
+    setSvcProvidersLoading(true);
+    setSvcProvidersError(null);
+    try {
+      let q = supabase
+        .from('service_providers')
+        .select('id, user_id, business_name, category, country, status, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (svcCountryFilter) q = q.eq('country', svcCountryFilter);
+      if (svcCategoryFilter) q = q.eq('category', svcCategoryFilter);
+      if (svcStatusFilter !== 'all') q = q.eq('status', svcStatusFilter);
+      if (svcSearch.trim()) {
+        const like = escapePostgrestOrValue(`%${svcSearch.trim()}%`);
+        q = q.ilike('business_name', like);
+      }
+      const { data: rows, error } = await q;
+      if (error) throw error;
+      const providerRows = rows || [];
+
+      const ownerIds = [...new Set(providerRows.map((r: any) => r.user_id).filter(Boolean))];
+      let ownersMap: Record<string, any> = {};
+      if (ownerIds.length > 0) {
+        const { data: owners } = await supabase.from('users').select('id, username, full_name, email').in('id', ownerIds);
+        (owners || []).forEach((u: any) => { ownersMap[u.id] = u; });
+      }
+
+      // Service-status filter needs to know, per provider, whether it has
+      // at least one active service -- one batch query across every
+      // provider on this page rather than N+1 per-row queries.
+      const providerIds = providerRows.map((r: any) => r.id);
+      let activeServiceProviderIds = new Set<string>();
+      if (providerIds.length > 0) {
+        const { data: activeRows } = await supabase
+          .from('provider_services')
+          .select('provider_id')
+          .eq('is_active', true)
+          .in('provider_id', providerIds);
+        activeServiceProviderIds = new Set((activeRows || []).map((r: any) => r.provider_id));
+      }
+
+      let merged = providerRows.map((r: any) => ({
+        ...r,
+        owner: ownersMap[r.user_id] || null,
+        hasActiveService: activeServiceProviderIds.has(r.id),
+      }));
+      if (svcServiceStatusFilter === 'has-active') merged = merged.filter((r: any) => r.hasActiveService);
+      if (svcServiceStatusFilter === 'no-active') merged = merged.filter((r: any) => !r.hasActiveService);
+
+      setSvcProviders(merged);
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setSvcProvidersError(err?.message || 'Failed to load service providers.');
+      setSvcProviders([]);
+    } finally {
+      setSvcProvidersLoading(false);
+    }
+  }, [isAdminOrSubAdmin, svcCountryFilter, svcCategoryFilter, svcStatusFilter, svcServiceStatusFilter, svcSearch]);
+
+  useEffect(() => {
+    if (tab !== 'services-admin' || svcSelectedProviderId) return;
+    loadSvcProviders();
+  }, [tab, svcSelectedProviderId, loadSvcProviders]);
+
+  const loadSvcServices = useCallback(async (providerId: string) => {
+    setSvcServicesLoading(true);
+    setSvcServicesError(null);
+    try {
+      // Same helper the provider's own management screen uses -- returns
+      // every service regardless of active status; for an admin caller,
+      // provider_services_admin_select (is_admin(), 0048) is what actually
+      // authorizes seeing a provider that isn't the caller's own.
+      const rows = await fetchServicesForProviderId(providerId);
+      setSvcServices(rows);
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setSvcServicesError(err?.message || 'Failed to load services for this provider.');
+      setSvcServices([]);
+    } finally {
+      setSvcServicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!svcSelectedProviderId) { setSvcServices(null); return; }
+    loadSvcServices(svcSelectedProviderId);
+  }, [svcSelectedProviderId, loadSvcServices]);
+
+  const svcSelectedProvider = svcProviders?.find((p) => p.id === svcSelectedProviderId) || null;
+
+  const openSvcServiceForm = (existing: ProviderService | null) => {
+    setSvcServiceFormError('');
+    setSvcServiceForm({
+      editing: existing,
+      input: existing
+        ? {
+            name: existing.name, description: existing.description || '', price: existing.price,
+            currency: existing.currency, durationMinutes: existing.durationMinutes ?? null,
+            category: existing.category || svcSelectedProvider?.category || '', isActive: existing.isActive,
+          }
+        : {
+            name: '', description: '', price: 0, currency: CURRENCIES[0]?.code || 'NGN',
+            durationMinutes: null, category: svcSelectedProvider?.category || '', isActive: true,
+          },
+    });
+  };
+
+  const handleSvcServiceSubmit = async () => {
+    if (!svcServiceForm || !svcSelectedProviderId) return;
+    const { editing, input } = svcServiceForm;
+    if (!input.name.trim()) { setSvcServiceFormError('Service name is required.'); return; }
+    if (!(input.price >= 0)) { setSvcServiceFormError('A valid price is required.'); return; }
+    if (!/^[A-Z]{3}$/.test(input.currency)) { setSvcServiceFormError('A valid currency is required.'); return; }
+    setSvcServiceSaving(true);
+    setSvcServiceFormError('');
+    try {
+      if (editing) {
+        await updateProviderService(editing.id, input);
+      } else {
+        await createProviderService(svcSelectedProviderId, input);
+      }
+      setSvcServiceForm(null);
+      await loadSvcServices(svcSelectedProviderId);
+      flash(true, editing ? 'Service updated.' : 'Service added.');
+    } catch (err: any) {
+      setSvcServiceFormError(err?.message || 'Failed to save this service.');
+    } finally {
+      setSvcServiceSaving(false);
+    }
+  };
+
+  const handleSvcToggleActive = async (svc: ProviderService) => {
+    setSvcServiceBusyId(svc.id);
+    try {
+      await setProviderServiceActive(svc.id, !svc.isActive);
+      if (svcSelectedProviderId) await loadSvcServices(svcSelectedProviderId);
+    } catch (err: any) {
+      flash(false, err?.message || 'Failed to update this service.');
+    } finally {
+      setSvcServiceBusyId(null);
+    }
+  };
+
+  const handleSvcDeleteService = (svc: ProviderService) => {
+    setConfirmModal({
+      title: 'Delete this service?',
+      message: `"${svc.name}" will be permanently removed from this provider's listing. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setSvcServiceBusyId(svc.id);
+        try {
+          await deleteProviderService(svc.id);
+          if (svcSelectedProviderId) await loadSvcServices(svcSelectedProviderId);
+          flash(true, 'Service deleted.');
+        } catch (err: any) {
+          flash(false, err?.message || 'Failed to delete this service.');
+        } finally {
+          setSvcServiceBusyId(null);
+        }
+      },
+    });
+  };
+
   const loadEvents = useCallback(async (filter: 'active' | 'deleted') => {
     setEventsLoading(true);
     try {
@@ -1807,6 +2012,7 @@ export function AdminDashboardScreen({
     ...(isSuperAdmin ? [{ key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> }] : []),
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
     { key: 'sp-requests' as Tab, label: 'SP Reqs', icon: <Briefcase size={14} /> },
+    { key: 'services-admin' as Tab, label: 'Services', icon: <Wrench size={14} /> },
     { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
@@ -2899,6 +3105,253 @@ export function AdminDashboardScreen({
               );
             })
           )}
+        </div>
+      )}
+
+      {/* ════════════════ SERVICES (ADMIN) TAB ═══════════════
+          Two sub-views in one tab: a filterable provider list, and (once a
+          provider is selected) that provider's profile summary + its
+          service catalog. Every read/write here is the same is_admin()-
+          gated RLS path (0034/0045/0048) the rest of this feature already
+          uses -- this is a client UI over that, never a bypass of it. */}
+      {tab === 'services-admin' && !svcSelectedProviderId && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>
+            Service Providers &amp; Services
+          </p>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <Search size={14} color="#6B7280" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                value={svcSearch}
+                onChange={(e) => setSvcSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') loadSvcProviders(); }}
+                placeholder="Search business name..."
+                style={{ width: '100%', boxSizing: 'border-box', height: '36px', paddingLeft: '32px', paddingRight: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+            </div>
+            <button onClick={() => loadSvcProviders()} style={{ height: '36px', padding: '0 14px', borderRadius: '10px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+              Search
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <select value={svcCountryFilter} onChange={(e) => setSvcCountryFilter(e.target.value)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
+              <option value="">All countries</option>
+              {COUNTRY_CODES.map((c) => <option key={c.iso} value={c.iso}>{c.name}</option>)}
+            </select>
+            <select value={svcCategoryFilter} onChange={(e) => setSvcCategoryFilter(e.target.value)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
+              <option value="">All categories</option>
+              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <select value={svcStatusFilter} onChange={(e) => setSvcStatusFilter(e.target.value as any)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
+              <option value="all">All provider statuses</option>
+              <option value="draft">Draft</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+            <select value={svcServiceStatusFilter} onChange={(e) => setSvcServiceStatusFilter(e.target.value as any)} style={{ height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 8px' }}>
+              <option value="all">All service statuses</option>
+              <option value="has-active">Has active service(s)</option>
+              <option value="no-active">No active services</option>
+            </select>
+          </div>
+
+          {svcProvidersError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcProvidersError}</p>}
+
+          {svcProvidersLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : !svcProviders || svcProviders.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No service providers match these filters.</p>
+          ) : (
+            svcProviders.map((p: any) => {
+              const ownerName = p.owner?.full_name || p.owner?.username || p.owner?.email || p.user_id;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setSvcSelectedProviderId(p.id)}
+                  style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{p.business_name}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: p.status === 'approved' ? 'rgba(16,185,129,0.15)' : p.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)', color: p.status === 'approved' ? '#10B981' : p.status === 'rejected' ? '#EF4444' : '#94A3B8', textTransform: 'uppercase' as const }}>
+                      {p.status}
+                    </span>
+                  </div>
+                  <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 4px' }}>
+                    {[p.category, p.country].filter(Boolean).join(' · ')}
+                  </p>
+                  <p style={{ color: '#6B7280', fontSize: '11px', margin: 0 }}>
+                    Owner: {ownerName}
+                  </p>
+                  <p style={{ color: p.hasActiveService ? '#10B981' : '#6B7280', fontSize: '11px', margin: '6px 0 0', fontWeight: 600 }}>
+                    {p.hasActiveService ? 'Has active service(s)' : 'No active services'}
+                  </p>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {tab === 'services-admin' && svcSelectedProviderId && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <button
+            onClick={() => setSvcSelectedProviderId(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: '14px' }}
+          >
+            <ArrowLeft size={14} /> Back to all providers
+          </button>
+
+          {svcSelectedProvider && (
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>{svcSelectedProvider.business_name}</span>
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: svcSelectedProvider.status === 'approved' ? 'rgba(16,185,129,0.15)' : svcSelectedProvider.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)', color: svcSelectedProvider.status === 'approved' ? '#10B981' : svcSelectedProvider.status === 'rejected' ? '#EF4444' : '#94A3B8', textTransform: 'uppercase' as const }}>
+                  {svcSelectedProvider.status}
+                </span>
+              </div>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 4px' }}>
+                {[svcSelectedProvider.category, svcSelectedProvider.country].filter(Boolean).join(' · ')}
+              </p>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: 0 }}>
+                Owner: {svcSelectedProvider.owner?.full_name || svcSelectedProvider.owner?.username || svcSelectedProvider.owner?.email || svcSelectedProvider.user_id}
+                {' · '}Listing ID: {svcSelectedProvider.id}
+              </p>
+              {svcSelectedProvider.status !== 'approved' && (
+                <p style={{ color: '#F59E0B', fontSize: '11px', margin: '8px 0 0' }}>
+                  This listing is not approved -- none of its services (active or not) are visible to customers regardless of their own status.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>Services</p>
+            <button
+              onClick={() => openSvcServiceForm(null)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '8px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Plus size={13} /> Add Service
+            </button>
+          </div>
+
+          {svcServicesError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcServicesError}</p>}
+
+          {svcServicesLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '30px' }}>Loading...</p>
+          ) : !svcServices || svcServices.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '30px' }}>No services yet for this provider.</p>
+          ) : (
+            svcServices.map((svc) => (
+              <div key={svc.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', marginBottom: '10px', opacity: svc.isActive ? 1 : 0.6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
+                    {svc.category && <p style={{ color: '#6B7280', fontSize: '11px', margin: '2px 0 0' }}>{svc.category}</p>}
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: svc.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(148,163,184,0.15)', color: svc.isActive ? '#10B981' : '#94A3B8', flexShrink: 0 }}>
+                    {svc.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </span>
+                </div>
+                {svc.description && <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '8px 0 0', lineHeight: 1.4 }}>{svc.description}</p>}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+                  <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>
+                    {svc.currency} {svc.price.toLocaleString('en-US')}
+                    {svc.durationMinutes ? <span style={{ color: '#8B8FA8', fontWeight: 500 }}> · {svc.durationMinutes} min</span> : null}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => handleSvcToggleActive(svc)} disabled={svcServiceBusyId === svc.id} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '6px 10px', color: '#C4C9E0', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                      {svc.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onClick={() => openSvcServiceForm(svc)} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Pencil size={12} color="#C4C9E0" />
+                    </button>
+                    {/* Delete kept visually separated (red, own spacing) from
+                        Activate/Edit -- the only destructive action here. */}
+                    <button onClick={() => handleSvcDeleteService(svc)} disabled={svcServiceBusyId === svc.id} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Trash2 size={12} color="#EF4444" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {svcServiceForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9998, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => !svcServiceSaving && setSvcServiceForm(null)}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '20px', width: '100%', maxWidth: '460px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>
+              {svcServiceForm.editing ? 'Edit Service' : 'Add Service'}
+            </h3>
+            <input
+              value={svcServiceForm.input.name}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, name: e.target.value } })}
+              placeholder="Service name"
+              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <textarea
+              value={svcServiceForm.input.description}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, description: e.target.value } })}
+              placeholder="Description (optional)"
+              rows={3}
+              style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', resize: 'none' }}
+            />
+            <select
+              value={svcServiceForm.input.category || ''}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, category: e.target.value } })}
+              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px' }}
+            >
+              <option value="">No category</option>
+              {SERVICE_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input
+                type="number" min="0"
+                value={svcServiceForm.input.price || ''}
+                onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, price: Number(e.target.value) } })}
+                placeholder="Price"
+                style={{ flex: 1, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+              <select
+                value={svcServiceForm.input.currency}
+                onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, currency: e.target.value } })}
+                style={{ width: '100px', flexShrink: 0, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 8px', color: '#F0F0FF', fontSize: '13px' }}
+              >
+                {CURRENCIES.map((c) => <option key={c.code} value={c.code}>{c.code}</option>)}
+              </select>
+            </div>
+            <input
+              type="number" min="1"
+              value={svcServiceForm.input.durationMinutes ?? ''}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, durationMinutes: e.target.value ? Number(e.target.value) : null } })}
+              placeholder="Duration in minutes (optional)"
+              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px' }}>
+              <span style={{ color: '#C4C9E0', fontSize: '12px', fontWeight: 600 }}>Published (visible to customers)</span>
+              <div
+                onClick={() => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, isActive: !svcServiceForm.input.isActive } })}
+                style={{ width: '38px', height: '22px', borderRadius: '11px', background: svcServiceForm.input.isActive ? '#7B2FBE' : '#1A1625', cursor: 'pointer', position: 'relative' }}
+              >
+                <div style={{ position: 'absolute', top: '2px', left: svcServiceForm.input.isActive ? '18px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+              </div>
+            </div>
+
+            {svcServiceFormError && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{svcServiceFormError}</p>}
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+              <button onClick={() => setSvcServiceForm(null)} disabled={svcServiceSaving} style={{ flex: 1, height: '42px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#C4C9E0', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleSvcServiceSubmit} disabled={svcServiceSaving} style={{ flex: 1, height: '42px', borderRadius: '10px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: svcServiceSaving ? 'wait' : 'pointer', opacity: svcServiceSaving ? 0.7 : 1 }}>
+                {svcServiceSaving ? 'Saving...' : svcServiceForm.editing ? 'Save Changes' : 'Add Service'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
