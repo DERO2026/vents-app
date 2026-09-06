@@ -1551,38 +1551,78 @@ export function HomeScreen({
           )}
         </div>
 
-        {/* Row 2: the ONE location control, plus the Filters entry point
-            (state/price/category all live inside that sheet now -- see
-            below -- instead of a permanently-visible category row). */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 0' }}>
-          <button
-            onClick={() => setShowCountryPicker(true)}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
-          >
-            <MapPin size={11} color="#A855F7" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '12px', fontWeight: 600, color: '#C4C9E0' }}>
-              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
-            </span>
-            <ChevronDown size={11} color="#8B8FA8" />
-          </button>
-          <button
-            onClick={openFilterSheet}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px',
-              background: hasActiveFilters ? 'rgba(123,47,247,0.18)' : 'none',
-              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.4)' : 'none',
-              borderRadius: '999px', padding: '4px 10px', cursor: 'pointer', position: 'relative',
-            }}
-          >
-            <SlidersHorizontal size={12} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
-            <span style={{ fontSize: '12px', fontWeight: 600, color: hasActiveFilters ? '#A78BFA' : '#8B8FA8' }}>Filters</span>
-          </button>
-        </div>
-
         <div style={{ position: 'relative', padding: '10px 16px 0' }}>
           <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2 }}>
             Events. Services. <span style={{ color: '#A855F7' }}>Real Experiences.</span>
           </h1>
+        </div>
+
+        {/* ONE compact control row: Nigeria (location, pinned left) |
+            Trending / Near You / This Weekend / Free Events (horizontally
+            scrollable, fills the middle) | Filters (pinned right, opens
+            the existing sheet which still holds Today/This Week/All/
+            Music/Tech/Food/etc -- State and Price, all unchanged). This
+            replaces both the old separate location+filters row AND the
+            old separate quick-action row below the Events/Services
+            cards -- there is exactly one such row now, directly above
+            Events/Services. */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px 0' }}>
+          <button
+            onClick={() => setShowCountryPicker(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+              background: 'rgba(9,5,20,0.6)', border: '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '999px', padding: '7px 12px', cursor: 'pointer',
+            }}
+          >
+            <MapPin size={12} color="#A855F7" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#F0F0FF', whiteSpace: 'nowrap' }}>
+              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
+            </span>
+            <ChevronDown size={11} color="#8B8FA8" />
+          </button>
+
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+            {[
+              { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+              { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+              { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
+              { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
+            ].map(({ label, icon: Icon, onClick }) => {
+              const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
+              return (
+                <button
+                  key={label}
+                  onClick={onClick}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                    background: active ? 'rgba(123,47,190,0.22)' : 'rgba(9,5,20,0.6)',
+                    border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
+                  }}
+                >
+                  <Icon size={12} color={active ? '#C4B5FD' : '#8B8FA8'} />
+                  <span style={{ color: active ? '#F0F0FF' : '#C4C9E0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={openFilterSheet}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
+              background: hasActiveFilters ? 'rgba(123,47,247,0.22)' : 'rgba(9,5,20,0.6)',
+              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
+              borderRadius: '999px', padding: '7px 13px', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <SlidersHorizontal size={12} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? '#F0F0FF' : '#C4C9E0', whiteSpace: 'nowrap' }}>Filters</span>
+            {hasActiveFilters && (
+              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: '#A78BFA', border: '2px solid #020005' }} />
+            )}
+          </button>
         </div>
 
         {/* Events / Services quick-switch -- both verticals as equal, premium
@@ -1640,40 +1680,6 @@ export function HomeScreen({
             )}
           </div>
         )}
-
-        {/* Quick-action row (Trending / Near You / This Weekend / Free
-            Events) -- from the approved mockup, added as a layer ABOVE the
-            existing category filter bar rather than replacing it: each
-            chip is honest about what it actually does with real state/
-            sections already in this screen (no fake "near you" event geo-
-            filtering, since events don't have that data yet -- it jumps to
-            the real Providers Near You section instead). */}
-        <div style={{ display: 'flex', gap: '8px', padding: '0 16px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-          {[
-            { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-            { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-            { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
-            { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
-          ].map(({ label, icon: Icon, onClick }) => {
-            const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
-            return (
-              <button
-                key={label}
-                onClick={onClick}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                  background: active ? 'rgba(123,47,190,0.22)' : '#090514',
-                  border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.08)',
-                  borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
-                }}
-              >
-                <Icon size={13} color={active ? '#C4B5FD' : '#8B8FA8'} />
-                <span style={{ color: active ? '#F0F0FF' : '#C4C9E0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
-              </button>
-            );
-          })}
-        </div>
-
 
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load
