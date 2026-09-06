@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight, Plus } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
 import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
@@ -286,20 +286,11 @@ export function ExploreScreen({
         </div>
       )}
       {/* ── Header ── */}
-      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div>
-          <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
-            Chats
-          </h1>
-          <p style={{ color: '#9CA0BC', fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
-        </div>
-        <button
-          onClick={() => { haptics.light(); searchRef.current?.focus(); }}
-          aria-label="Find people to chat with"
-          style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.3)', flexShrink: 0 }}
-        >
-          <Plus size={20} color="#fff" />
-        </button>
+      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0 }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          Chats
+        </h1>
+        <p style={{ color: '#9CA0BC', fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
       </div>
 
       {/* ── Search bar ── */}

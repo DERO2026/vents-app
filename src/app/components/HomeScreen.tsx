@@ -1553,16 +1553,12 @@ export function HomeScreen({
         </div>
 
 
-        {/* ONE compact control row: Nigeria (location, pinned left) |
-            Trending / Near You / This Weekend / Free Events (horizontally
-            scrollable, fills the middle) | Filters (pinned right, opens
-            the existing sheet which still holds Today/This Week/All/
-            Music/Tech/Food/etc -- State and Price, all unchanged). This
-            replaces both the old separate location+filters row AND the
-            old separate quick-action row below the Events/Services
-            cards -- there is exactly one such row now, directly above
-            Events/Services. */}
-        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px 0' }}>
+        {/* ONE single horizontally scrollable control row -- Nigeria,
+            Trending/Near You/This Weekend/Free Events, and Filters are all
+            direct children of the same overflowX:auto container, so the
+            whole row scrolls together as one strip (no pinned/fixed ends,
+            no second row, no separate section). */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px 0', overflowX: 'auto', scrollbarWidth: 'none' }}>
           <button
             onClick={() => setShowCountryPicker(true)}
             style={{
@@ -1579,32 +1575,30 @@ export function HomeScreen({
             <ChevronDown size={11} color="#C4C9E0" />
           </button>
 
-          <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
-            {[
-              { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-              { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
-              { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
-              { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
-            ].map(({ label, icon: Icon, onClick }) => {
-              const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
-              return (
-                <button
-                  key={label}
-                  onClick={onClick}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                    background: active ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.07)',
-                    backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-                    border: active ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.13)',
-                    borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
-                  }}
-                >
-                  <Icon size={12} color={active ? '#D8B4FE' : '#C4C9E0'} />
-                  <span style={{ color: active ? '#F0F0FF' : '#E4E4F0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
-                </button>
-              );
-            })}
-          </div>
+          {[
+            { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
+            { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
+          ].map(({ label, icon: Icon, onClick }) => {
+            const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
+            return (
+              <button
+                key={label}
+                onClick={onClick}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                  background: active ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.07)',
+                  backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  border: active ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.13)',
+                  borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
+                }}
+              >
+                <Icon size={12} color={active ? '#D8B4FE' : '#C4C9E0'} />
+                <span style={{ color: active ? '#F0F0FF' : '#E4E4F0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+              </button>
+            );
+          })}
 
           <button
             onClick={openFilterSheet}
@@ -1669,7 +1663,16 @@ export function HomeScreen({
             control -- and there's exactly one "clear everything" action in
             this screen now, in the Filters sheet below, rather than a
             second one duplicated here. */}
-        {hasActiveFilters && (
+        {/* priceFilter deliberately has no chip here when it was set via the
+            Free Events quick chip above -- that chip already shows its own
+            active state (tap it again to clear), so a second "Free ×" chip
+            immediately below it read as redundant filter UI reappearing
+            rather than the feed just... showing free events. A price
+            filter set via the Filters sheet itself still needs no separate
+            chip either, for the same reason -- the sheet's own Apply/Clear
+            already covers it, and the section heading above now names
+            "Free Events" directly. */}
+        {(activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') || stateFilter !== 'all' ? (
           <div className="px-4 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
             {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
               <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
@@ -1677,11 +1680,8 @@ export function HomeScreen({
             {stateFilter !== 'all' && (
               <FilterChip label={stateFilter} onClear={() => setStateFilter('all')} />
             )}
-            {priceFilter !== 'all' && (
-              <FilterChip label={priceFilter === 'free' ? 'Free' : 'Paid'} onClear={() => setPriceFilter('all')} />
-            )}
           </div>
-        )}
+        ) : null}
 
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load
@@ -1802,7 +1802,19 @@ export function HomeScreen({
             <div className="px-4">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  {isDefaultState ? 'Explore Events' : 'Search Results'}
+                  {isDefaultState
+                    ? 'Explore Events'
+                    // Name the section after what's actually applied when
+                    // that's the ONLY thing narrowing it (the Free Events/
+                    // This Weekend quick chips), rather than the generic
+                    // "Search Results" label -- so tapping Free Events
+                    // visibly shows "Free Events" with the matching feed
+                    // below it, not an ambiguous relabeled search view.
+                    : (!searchQuery.trim() && stateFilter === 'all' && activeCategory === 'all' && priceFilter === 'free')
+                    ? 'Free Events'
+                    : (!searchQuery.trim() && stateFilter === 'all' && activeCategory === 'week' && priceFilter === 'all')
+                    ? 'This Weekend'
+                    : 'Search Results'}
                 </h3>
                 <span style={{ color: '#94A3B8', fontSize: '11px' }}>
                   {searchActive && searchLoading ? 'Searching…' : filtersActive && filterLoading ? 'Loading…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
