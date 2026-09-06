@@ -151,6 +151,10 @@ export interface UserProfile {
   isOrganizer?: boolean;
   isVerified?: boolean;
   vc_badge?: string;
+  // Whether this user has an approved service_providers row -- real,
+  // publicly-readable capability data (service_providers_public_select_
+  // approved RLS policy), not a role-column value.
+  isServiceProvider?: boolean;
 }
 
 export interface Notification {

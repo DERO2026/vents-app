@@ -731,112 +731,67 @@ export function EventDetailsScreen({
           </div>
         </div>
 
-        {/* Section navigation -- About / Tickets / Organizer / More scroll
-            to the corresponding section already on this page (same
-            anchor-scroll pattern as Home's Trending/Near You chips); no
-            conditional rendering, so nothing below moves or unmounts. */}
+        {/* Organizer -- moved directly under the title/attendee row (matches
+            reference layout); also serves as the "Organizer" tab's scroll
+            target below. */}
         <div
-          className="no-scrollbar"
+          ref={organizerRef}
+          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
           style={{
-            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
-            background: 'rgba(255,255,255,0.05)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.09)',
-            borderRadius: '999px',
-            padding: '4px',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '16px',
+            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
           }}
         >
-          {[
-            { label: 'About', ref: aboutRef },
-            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
-            { label: 'Organizer', ref: organizerRef },
-            { label: 'More', ref: moreRef },
-          ].filter((t) => t.show !== false).map((t) => {
-            const active = activeSection === t.label;
-            return (
-              <button
-                key={t.label}
-                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                style={{
-                  flex: 1,
-                  flexShrink: 0,
-                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '999px',
-                  padding: '9px 14px',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ color: active ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Organizer Tools — door-staff scanner access. Only ever visible to
-            the event's own organizer, a Sub-Admin, or Root/platform admin;
-            regular attendees never see this section at all. Placed at the
-            very top of the content so it's the first thing door staff hit,
-            no scrolling required. */}
-        {canManageDoor && onOpenDoorScanner && (
           <div
             style={{
-              background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(34,211,238,0.12))',
-              border: '1px solid rgba(167,139,250,0.35)',
-              borderRadius: '18px',
-              padding: '14px',
-              marginBottom: '16px',
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              position: 'relative',
+              overflow: 'hidden',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-              <Shield size={13} color="#A78BFA" />
-              <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                Organizer Tools
-              </span>
-            </div>
-            <button
-              onClick={onOpenDoorScanner}
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '10px',
-                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-                border: 'none',
-                borderRadius: '14px',
-                padding: '16px',
-                cursor: 'pointer',
-                boxShadow: '0 4px 20px rgba(123,47,190,0.4)',
-              }}
-            >
-              <ScanLine size={20} color="#fff" />
-              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
-            </button>
-            {onOpenDoorManager && (
-              <button
-                onClick={onOpenDoorManager}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: '10px',
-                  background: 'rgba(255,255,255,0.05)',
-                  border: '1px solid rgba(167,139,250,0.3)',
-                  borderRadius: '14px',
-                  padding: '14px',
-                  cursor: 'pointer',
-                  marginTop: '10px',
-                }}
-              >
-                <LayoutDashboard size={18} color="#A78BFA" />
-                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
-              </button>
+            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
+            </span>
+            {organizerProfile?.avatar_url && (
+              <img
+                src={organizerProfile.avatar_url}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
             )}
           </div>
-        )}
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+              <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
+                {organizerProfile?.full_name || event.organizer}
+              </span>
+              {(event.organizerVerified || organizerProfile?.is_verified) && (
+                <CheckCircle size={14} fill="#4F46E5" color="#fff" />
+              )}
+              <BadgeChip tier={organizerProfile?.vc_badge} />
+            </div>
+            <span style={{ color: '#8B8FA8', fontSize: '12px', textTransform: 'capitalize' }}>
+              {organizerProfile?.role || 'Event Organizer'}
+            </span>
+          </div>
+        </div>
 
         {/* Info cards */}
         <div ref={aboutRef} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
@@ -930,6 +885,114 @@ export function EventDetailsScreen({
           />
         </div>
 
+        {/* Section navigation -- About / Tickets / Organizer / More scroll
+            to the corresponding section already on this page (same
+            anchor-scroll pattern as Home's Trending/Near You chips); no
+            conditional rendering, so nothing below moves or unmounts. */}
+        <div
+          className="no-scrollbar"
+          style={{
+            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: '999px',
+            padding: '4px',
+          }}
+        >
+          {[
+            { label: 'About', ref: aboutRef },
+            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
+            { label: 'Organizer', ref: organizerRef },
+            { label: 'More', ref: moreRef },
+          ].filter((t) => t.show !== false).map((t) => {
+            const active = activeSection === t.label;
+            return (
+              <button
+                key={t.label}
+                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                style={{
+                  flex: 1,
+                  flexShrink: 0,
+                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '9px 14px',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: active ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Organizer Tools — door-staff scanner access. Only ever visible to
+            the event's own organizer, a Sub-Admin, or Root/platform admin;
+            regular attendees never see this section at all. Now placed
+            below the segmented nav (with the rest of the organizer-facing
+            content) instead of dominating the very top of every attendee's
+            view of their own event. */}
+        {canManageDoor && onOpenDoorScanner && (
+          <div
+            style={{
+              background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(34,211,238,0.12))',
+              border: '1px solid rgba(167,139,250,0.35)',
+              borderRadius: '18px',
+              padding: '14px',
+              marginBottom: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+              <Shield size={13} color="#A78BFA" />
+              <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+                Organizer Tools
+              </span>
+            </div>
+            <button
+              onClick={onOpenDoorScanner}
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px',
+                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '16px',
+                cursor: 'pointer',
+                boxShadow: '0 4px 20px rgba(123,47,190,0.4)',
+              }}
+            >
+              <ScanLine size={20} color="#fff" />
+              <span style={{ color: '#fff', fontSize: '15px', fontWeight: 800 }}>Open Door Scanner</span>
+            </button>
+            {onOpenDoorManager && (
+              <button
+                onClick={onOpenDoorManager}
+                style={{
+                  width: '100%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '10px',
+                  background: 'rgba(255,255,255,0.05)',
+                  border: '1px solid rgba(167,139,250,0.3)',
+                  borderRadius: '14px',
+                  padding: '14px',
+                  cursor: 'pointer',
+                  marginTop: '10px',
+                }}
+              >
+                <LayoutDashboard size={18} color="#A78BFA" />
+                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Add to Calendar — <a download> is a browser-only mechanism that
             silently no-ops inside a Capacitor WebView release build (no
             download manager to hand it to). downloadBlob() (ticketImage.ts)
@@ -998,66 +1061,6 @@ export function EventDetailsScreen({
             </span>
             <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
               {(event.capacity ?? 0).toLocaleString()} total capacity
-            </span>
-          </div>
-        </div>
-
-        {/* Organizer */}
-        <div
-          ref={organizerRef}
-          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
-          style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '16px',
-            padding: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
-          }}
-        >
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
-            </span>
-            {organizerProfile?.avatar_url && (
-              <img
-                src={organizerProfile.avatar_url}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            )}
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
-                {organizerProfile?.full_name || event.organizer}
-              </span>
-              {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill="#4F46E5" color="#fff" />
-              )}
-              <BadgeChip tier={organizerProfile?.vc_badge} />
-            </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', textTransform: 'capitalize' }}>
-              {organizerProfile?.role || 'Event Organizer'}
             </span>
           </div>
         </div>

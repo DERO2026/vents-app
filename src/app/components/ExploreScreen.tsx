@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight, Plus, Users } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight, Plus } from 'lucide-react';
 import { UserProfile } from './types';
 import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
@@ -51,7 +51,26 @@ export function ExploreScreen({
 }: ExploreScreenProps) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
-  const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'organizers' | 'attendees'>('all');
+  const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'organizers' | 'providers' | 'attendees'>('all');
+
+  // Real approved-service-provider ids for whichever users are currently
+  // shown (conversations + search results) -- service_providers has a
+  // public RLS policy for status='approved' rows
+  // (service_providers_public_select_approved), so this is genuine,
+  // queryable capability data, not a guess.
+  const fetchServiceProviderIds = useCallback(async (userIds: string[]): Promise<Set<string>> => {
+    if (userIds.length === 0) return new Set();
+    try {
+      const { data } = await supabase
+        .from('service_providers')
+        .select('user_id')
+        .eq('status', 'approved')
+        .in('user_id', userIds);
+      return new Set((data || []).map((r: any) => r.user_id));
+    } catch {
+      return new Set();
+    }
+  }, []);
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -118,10 +137,13 @@ export function ExploreScreen({
           }
           const partnerIds = [...new Set([...seen.keys(), ...pendingIncoming.map((r: any) => r.requester_id)])];
           if (partnerIds.length === 0) { setConversations([]); setRequests([]); return; }
-          const { data: profiles } = await supabase
-            .from('public_profiles')
-            .select('id, full_name, username, avatar_url, vc_badge, role, last_active_at')
-            .in('id', partnerIds);
+          const [{ data: profiles }, spIds] = await Promise.all([
+            supabase
+              .from('public_profiles')
+              .select('id, full_name, username, avatar_url, vc_badge, role, last_active_at')
+              .in('id', partnerIds),
+            fetchServiceProviderIds(partnerIds),
+          ]);
           const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
           const isOnline = (id: string) => {
             const t = profileMap.get(id)?.last_active_at;
@@ -133,6 +155,7 @@ export function ExploreScreen({
             profile: profileMap.get(pid) || null,
             unreadCount: unreadCounts.get(pid) || 0,
             online: isOnline(pid),
+            isServiceProvider: spIds.has(pid),
           })));
           setRequests(pendingIncoming.map((r: any) => ({
             requesterId: r.requester_id,
@@ -146,7 +169,7 @@ export function ExploreScreen({
           setLoadingChats(false);
         }
       }, (err) => { console.error('Direct messages fetch error:', err); setLoadingChats(false); });
-  }, [currentUserId]);
+  }, [currentUserId, fetchServiceProviderIds]);
 
   useEffect(() => { loadConversations(); }, [loadConversations, chatRefreshKey, localRefreshKey]);
 
@@ -182,20 +205,25 @@ export function ExploreScreen({
           .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
           .limit(20);
-        setSearchedUsers((data || []).map(mapDbUserToUserProfile));
+        const rows = data || [];
+        const spIds = await fetchServiceProviderIds(rows.map((r: any) => r.id));
+        setSearchedUsers(rows.map((r: any) => ({ ...mapDbUserToUserProfile(r), isServiceProvider: spIds.has(r.id) })));
       } catch { /* ignore */ } finally { setLoadingUsers(false); }
     }, 300);
     return () => clearTimeout(t);
-  }, [query]);
+  }, [query, fetchServiceProviderIds]);
 
-  // Account-relationship label, derived only from the profile's real `role`
-  // column (never a manual/hardcoded per-row label). public_profiles does
-  // not currently expose is_service_provider, so a "Vendor" label isn't
-  // shown here yet -- adding it would require exposing that column on the
-  // view, a backend change outside this pass's scope.
-  const roleBadge = (role?: string): { label: string; color: string; bg: string } | null => {
+  // Account-relationship label, derived only from real data: the profile's
+  // `role` column, or an approved row in service_providers (VENTS' one real
+  // "Service Provider" / "Vendor" capability -- the app doesn't model these
+  // as two separate identities, so this badge covers both terms). Never a
+  // manual/hardcoded per-row label. A user who is both an organizer and an
+  // approved provider shows Organizer first (their account role takes
+  // precedence over the secondary capability).
+  const roleBadge = (role?: string, isServiceProvider?: boolean): { label: string; color: string; bg: string } | null => {
     if (role === 'organizer' || role === 'organiser') return { label: 'Organizer', color: '#D8B4FE', bg: 'rgba(168,85,247,0.16)' };
     if (role === 'admin' || role === 'sub-admin') return { label: 'Admin', color: '#FCA5A5', bg: 'rgba(239,68,68,0.14)' };
+    if (isServiceProvider) return { label: 'Service Provider', color: '#67E8F9', bg: 'rgba(34,211,238,0.14)' };
     return null;
   };
 
@@ -222,14 +250,17 @@ export function ExploreScreen({
     : conversations;
 
   // Real filter chips over the actual conversation list -- Unread checks
-  // unreadCount, Organizers/Attendees check the partner's real
-  // public_profiles.role. No "Vendors" chip: public_profiles doesn't
-  // currently expose is_service_provider, so there's no real data to filter
-  // on yet (adding one would either always be empty or require guessing).
+  // unreadCount, Organizers checks public_profiles.role, Service Providers
+  // checks the real approved service_providers row (fetched above),
+  // Attendees is everyone left over (no organizer/admin role, no approved
+  // provider row).
   const filteredConvos = searchedConvos.filter((c) => {
+    const isOrg = c.profile?.role === 'organizer' || c.profile?.role === 'organiser';
+    const isAdmin = c.profile?.role === 'admin' || c.profile?.role === 'sub-admin';
     if (chatFilter === 'unread') return c.unreadCount > 0;
-    if (chatFilter === 'organizers') return c.profile?.role === 'organizer' || c.profile?.role === 'organiser';
-    if (chatFilter === 'attendees') return !c.profile?.role || (c.profile.role !== 'organizer' && c.profile.role !== 'organiser' && c.profile.role !== 'admin' && c.profile.role !== 'sub-admin');
+    if (chatFilter === 'organizers') return isOrg;
+    if (chatFilter === 'providers') return !!c.isServiceProvider;
+    if (chatFilter === 'attendees') return !isOrg && !isAdmin && !c.isServiceProvider;
     return true;
   });
   const unreadTotal = conversations.reduce((sum, c) => sum + (c.unreadCount > 0 ? 1 : 0), 0);
@@ -299,6 +330,7 @@ export function ExploreScreen({
             { key: 'all' as const, label: 'All' },
             { key: 'unread' as const, label: 'Unread', count: unreadTotal },
             { key: 'organizers' as const, label: 'Organizers' },
+            { key: 'providers' as const, label: 'Service Providers' },
             { key: 'attendees' as const, label: 'Attendees' },
           ]).map((f) => {
             const active = chatFilter === f.key;
@@ -324,30 +356,6 @@ export function ExploreScreen({
         </div>
       )}
 
-      {/* ── Find people to chat with -- routes into the same real people
-          search above, not a fake discovery feed. ── */}
-      {!isSearching && (
-        <div style={{ padding: '0 16px 14px', flexShrink: 0 }}>
-          <button
-            onClick={() => { haptics.light(); searchRef.current?.focus(); }}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left',
-              background: 'rgba(168,85,247,0.1)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-              border: '1px solid rgba(196,181,253,0.25)', borderRadius: '16px', padding: '14px', cursor: 'pointer',
-            }}
-          >
-            <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(168,85,247,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Users size={18} color="#D8B4FE" />
-            </div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Find people to chat with</p>
-              <p style={{ margin: '2px 0 0', color: '#9CA0BC', fontSize: '12px' }}>Connect with organizers and attendees</p>
-            </div>
-            <ChevronRight size={16} color="#9CA0BC" style={{ flexShrink: 0 }} />
-          </button>
-        </div>
-      )}
-
       {/* ── Content ── */}
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
@@ -366,7 +374,7 @@ export function ExploreScreen({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {searchedUsers.map(u => {
-                      const badge = roleBadge(u.role);
+                      const badge = roleBadge(u.role, u.isServiceProvider);
                       return (
                       <div
                         key={u.id}
@@ -442,12 +450,12 @@ export function ExploreScreen({
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount, online }: any) => {
+                  {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount, online, isServiceProvider }: any) => {
                     const name = profile?.full_name || profile?.username || 'User';
                     const avatarUrl = profile?.avatar_url;
                     const initial = name[0]?.toUpperCase() || 'U';
                     const isUnread = unreadCount > 0;
-                    const badge = roleBadge(profile?.role);
+                    const badge = roleBadge(profile?.role, isServiceProvider);
                     return (
                       <div
                         key={partnerId}

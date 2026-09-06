@@ -35,7 +35,7 @@ const STACK_CARDS = [
   },
 ];
 
-export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickState, onBrowseGuest: _onBrowseGuest }: WelcomeScreenProps) {
+export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickState, onBrowseGuest }: WelcomeScreenProps) {
   return (
     <div
       style={{
@@ -56,11 +56,11 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
         <VentsLogo size={30} />
       </div>
 
-      <div style={{ position: 'relative', padding: '14px 24px 0', flexShrink: 0 }}>
+      <div style={{ position: 'relative', padding: '14px 24px 0', flexShrink: 0, textAlign: 'center' }}>
         <span style={{ color: '#A97FD4', fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em' }}>EVENTS &middot; SERVICES &middot; REAL EXPERIENCES</span>
       </div>
 
-      <div style={{ position: 'relative', padding: '12px 24px 0', flexShrink: 0 }}>
+      <div style={{ position: 'relative', padding: '12px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '30px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.16, letterSpacing: '-0.01em' }}>
           More Than Events.
           <br />
@@ -151,6 +151,26 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
         >
           Sign in
         </button>
+
+        {onBrowseGuest && (
+          <button
+            onClick={onBrowseGuest}
+            style={{
+              width: '100%',
+              background: 'none',
+              border: 'none',
+              padding: '10px 26px',
+              color: '#7C8199',
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              textAlign: 'center',
+              marginBottom: '10px',
+            }}
+          >
+            Browse as guest
+          </button>
+        )}
 
         <p style={{ textAlign: 'center', color: '#3A3D52', fontSize: '10px', margin: 0 }}>
           {appVersionLabel()}
