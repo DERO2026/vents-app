@@ -31,7 +31,7 @@
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
 import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAdminDb.js';
-import { finalizeAndConfirmPurchase } from '../_lib/finalizePaystackPayment.js';
+import { finalizeAndConfirmPurchase, finalizeAndConfirmServiceBooking } from '../_lib/finalizePaystackPayment.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
@@ -93,6 +93,7 @@ async function handleClientVerify(req, res) {
   // than a new serverless function (Vercel Hobby's 12-function cap is
   // already exactly hit, see this file's header comment).
   const isTransferFeeRef = reference.startsWith('txf_');
+  const isServiceBookingRef = reference.startsWith('BKG-');
 
   try {
     // Ownership check: confirm the caller actually owns the payment this
@@ -106,6 +107,8 @@ async function handleClientVerify(req, res) {
     // demonstrably belongs to someone else.
     const ownerId = isTransferFeeRef
       ? await callProjectAdminRpc('get_transfer_fee_payment_owner', [reference])
+      : isServiceBookingRef
+      ? await callProjectAdminRpc('get_service_booking_owner', [reference])
       : await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
     if (ownerId && ownerId !== session.userId) {
       return res.status(403).json({ error: 'Not authorized for this payment reference' });
@@ -161,6 +164,20 @@ async function handleClientVerify(req, res) {
       // ownership has moved (confirm_transfer_fee_payment does both
       // atomically), so this is a success from the client's perspective.
       await notifyTransferFeeOutcome(reference);
+      return res.status(200).json({ status: 'success' });
+    }
+
+    if (isServiceBookingRef) {
+      const bookingStatus = await finalizeAndConfirmServiceBooking(reference, amountKobo);
+
+      if (bookingStatus.status === 'amount_mismatch') {
+        console.error('[webhook/paystack?action=verify] SERVICE BOOKING AMOUNT MISMATCH for reference', reference, '-', bookingStatus.expectedKobo, 'vs', bookingStatus.gotKobo);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected booking total.' });
+      }
+      if (bookingStatus.status === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching booking was found for this payment.' });
+      }
+
       return res.status(200).json({ status: 'success' });
     }
 
@@ -250,6 +267,24 @@ async function handleWebhook(req, res) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_transfer_fee_payment:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('BKG-')) {
+      // Services marketplace booking payment -- same authoritative-webhook
+      // reasoning as the ticket branch below, sharing finalizeAndConfirm
+      // ServiceBooking with the ?action=verify path so both can never
+      // drift out of sync.
+      try {
+        const bookingStatus = await finalizeAndConfirmServiceBooking(reference, amountKobo);
+        if (bookingStatus.status === 'amount_mismatch') {
+          console.error('[Paystack webhook] SERVICE BOOKING AMOUNT MISMATCH for reference', reference, '-', bookingStatus.expectedKobo, 'vs', bookingStatus.gotKobo);
+        } else {
+          console.log('[Paystack webhook] service booking', bookingStatus.status, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_service_booking_payment:', err?.message || err);
       }
       return res.status(200).json({ received: true });
     }

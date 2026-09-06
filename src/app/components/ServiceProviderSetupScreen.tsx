@@ -14,6 +14,7 @@ import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
 import { fetchOwnServiceProvider, saveAndPublishServiceProvider, ServiceProviderInput } from '../../lib/serviceProviders';
+import { fetchServiceProviderCategories, setServiceProviderCategories } from '../../lib/serviceProviderCategories';
 import { ServiceProvider } from './types';
 
 const MAX_PHOTOS = 5;
@@ -137,7 +138,15 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
 
   const [photos, setPhotos] = useState<string[]>([]);
   const [businessName, setBusinessName] = useState('');
-  const [category, setCategory] = useState<string>('');
+  // Multiple categories a provider can offer under (Beauty & Grooming +
+  // Weddings + Photography, etc). categories[0] is the PRIMARY category,
+  // mirrored into service_providers.category (0034, unchanged column) via
+  // set_service_provider_categories -- every existing single-category
+  // reader (search filter, categoryAccents lookups) keeps working off that
+  // one column; the full set is additive, stored in
+  // service_provider_categories (0054).
+  const [categories, setCategories] = useState<string[]>([]);
+  const category = categories[0] || '';
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
   const [countryIso, setCountryIso] = useState<string>('');
@@ -166,7 +175,10 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           setExisting(provider);
           setPhotos(provider.photoUrls);
           setBusinessName(provider.businessName);
-          setCategory(provider.category);
+          setCategories([provider.category]);
+          fetchServiceProviderCategories(provider.id)
+            .then((cats) => { if (!cancelled && cats.length) setCategories(cats); })
+            .catch(() => {});
           setDescription(provider.description || '');
           setLocation(provider.location || '');
           setCountryIso(provider.country || currentUser.country || '');
@@ -260,7 +272,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
 
   const missingFields: string[] = [];
   if (!businessName.trim()) missingFields.push('Business name');
-  if (!category) missingFields.push('Category');
+  if (categories.length === 0) missingFields.push('Category');
   if (!countryIso) missingFields.push('Country');
   if (startingPrice.trim() && !currencyCode) missingFields.push('Currency');
   const priceValue = startingPrice.trim() ? Number(startingPrice) : null;
@@ -321,6 +333,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         offersSameDay,
       };
       const saved = await saveAndPublishServiceProvider(currentUser.id, input);
+      await setServiceProviderCategories(saved.id, categories);
       onSaved(saved);
     } catch (err: any) {
       setError(err?.message || 'Failed to save your profile. Please try again.');
@@ -437,17 +450,23 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           <TextField value={businessName} onChange={setBusinessName} placeholder="e.g. Glow Beauty Studio" />
         </div>
 
-        {/* Category */}
-        <SectionLabel>Category</SectionLabel>
+        {/* Category -- select up to 5. The first one selected is your
+            primary category (shown on your card and used for search). */}
+        <SectionLabel>Category (select up to 5, first is primary)</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
           {SERVICE_CATEGORIES.map((cat) => {
             const Icon = CATEGORY_ICONS[cat] || Sparkles;
             const accent = categoryAccents[cat];
-            const active = category === cat;
+            const active = categories.includes(cat);
+            const isPrimary = categories[0] === cat;
             return (
               <button
                 key={cat}
-                onClick={() => setCategory(cat)}
+                onClick={() => setCategories((prev) => {
+                  if (prev.includes(cat)) return prev.filter((c) => c !== cat);
+                  if (prev.length >= 5) return prev;
+                  return [...prev, cat];
+                })}
                 style={{
                   display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
                   borderRadius: servicesRadii.md, cursor: 'pointer', textAlign: 'left',
@@ -456,7 +475,10 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
                 }}
               >
                 <Icon size={18} color={accent} />
-                <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700 }}>{cat}</span>
+                <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700, flex: 1 }}>{cat}</span>
+                {isPrimary && (
+                  <span style={{ fontSize: '9px', fontWeight: 700, color: accent, textTransform: 'uppercase' as const }}>Primary</span>
+                )}
               </button>
             );
           })}

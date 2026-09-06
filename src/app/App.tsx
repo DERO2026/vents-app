@@ -2492,6 +2492,8 @@ export default function App() {
             <ServiceProviderProfileScreen
               providerId={selectedServiceProvider.id}
               initialProvider={selectedServiceProvider}
+              currentUserId={currentUser?.id}
+              currentUserEmail={currentUser?.email}
               onBack={goBack}
               onContactProvider={currentUser ? async (provider) => {
                 try {

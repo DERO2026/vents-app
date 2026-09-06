@@ -65,3 +65,26 @@ export async function finalizeAndConfirmPurchase(reference: string, amountKobo: 
 
   return { status: status === 'already_paid' ? 'already_paid' : 'confirmed', ticketIds };
 }
+
+export type ServiceBookingFinalizeResult =
+  | { status: 'confirmed' | 'already_paid' }
+  | { status: 'amount_mismatch'; expectedKobo: number; gotKobo: number }
+  | { status: 'not_found' };
+
+// Services marketplace equivalent of finalizeAndConfirmPurchase, for
+// 'BKG-' prefixed references (create_service_booking,
+// 0054_service_bookings_marketplace.sql). No separate "finalize" step is
+// needed here (unlike tickets) -- create_service_booking already writes the
+// full service_bookings/service_booking_items rows synchronously before
+// Paystack ever opens, so there's nothing left to recover; only the
+// pending->paid transition itself needs confirming.
+export async function finalizeAndConfirmServiceBooking(reference: string, amountKobo: number): Promise<ServiceBookingFinalizeResult> {
+  const status = await callProjectAdminRpc<string>('confirm_service_booking_payment', [reference, amountKobo]);
+
+  if (typeof status === 'string' && status.startsWith('amount_mismatch')) {
+    const [, expected, got] = status.split(':');
+    return { status: 'amount_mismatch', expectedKobo: Number(expected), gotKobo: Number(got) };
+  }
+  if (status === 'not_found') return { status: 'not_found' };
+  return { status: status === 'already_paid' ? 'already_paid' : 'confirmed' };
+}

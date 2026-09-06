@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, Pencil, Trash2 } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
-import { CURRENCIES, currencyForCountry } from '../../lib/currencies';
+import { currencyForCountry } from '../../lib/currencies';
 import {
   fetchOwnServicesForProvider, createProviderService, updateProviderService,
   setProviderServiceActive, deleteProviderService, ProviderServiceInput,
@@ -38,6 +38,13 @@ function emptyForm(defaultCategory?: string, defaultCurrency?: string): Provider
   };
 }
 
+// Currency source of truth: the provider's own VENTS account/profile
+// currency (accountCountry -> currencyForCountry), never an arbitrary
+// per-service pick -- a provider should never be able to price one service
+// in USD and another in NGN out of confusion, and the booking/payment flow
+// (create_service_booking, 0054) only accepts NGN for now regardless of
+// what's stored here.
+
 export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack }: ManageProviderServicesScreenProps) {
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +52,6 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderServiceInput>(emptyForm(providerCategory, currencyForCountry(accountCountry)));
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
-  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -73,7 +79,10 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
       name: svc.name,
       description: svc.description || '',
       price: svc.price,
-      currency: svc.currency,
+      // Always normalized to the account's own currency on edit too --
+      // never preserves a stale/mismatched currency from before this was
+      // locked to the profile currency.
+      currency: currencyForCountry(accountCountry),
       durationMinutes: svc.durationMinutes ?? null,
       category: svc.category || '',
       isActive: svc.isActive,
@@ -207,14 +216,13 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
               onOpen={() => setShowCategoryPicker(true)}
             />
 
-            <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
+            <div style={{ display: 'flex', gap: '8px', minWidth: 0, alignItems: 'center' }}>
               <input style={{ ...inputStyle, flex: 1, minWidth: 0 }} type="number" min="0" placeholder="Price" value={form.price || ''} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} />
-              <div style={{ width: '110px', flexShrink: 0 }}>
-                <PickerField
-                  value={form.currency}
-                  placeholder="Currency"
-                  onOpen={() => setShowCurrencyPicker(true)}
-                />
+              {/* Locked to the account's profile currency -- not an
+                  arbitrary per-service pick, see currencyForCountry note
+                  above emptyForm(). */}
+              <div style={{ minWidth: '64px', flexShrink: 0, padding: '12px 14px', background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, color: servicesColors.textSecondary, fontSize: '14px', fontWeight: 700, textAlign: 'center' }}>
+                {form.currency}
               </div>
             </div>
 
@@ -257,16 +265,6 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
         />
       )}
 
-      {showCurrencyPicker && (
-        <PickerSheet
-          title="Select Currency"
-          options={CURRENCIES.map((c) => ({ value: c.code, label: c.code }))}
-          value={form.currency}
-          onSelect={(v) => { setForm({ ...form, currency: v }); setShowCurrencyPicker(false); }}
-          onClose={() => setShowCurrencyPicker(false)}
-          zIndex={10000}
-        />
-      )}
     </div>
   );
 }
