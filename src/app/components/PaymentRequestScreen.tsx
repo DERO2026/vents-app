@@ -68,6 +68,16 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
   };
 
   useEffect(() => {
+    // get_payment_request_details is scoped to the caller's own auth.uid()
+    // (payer or recipient) -- with no session at all it correctly returns
+    // no row, which must not be shown as "this request doesn't exist": a
+    // logged-out payer following the link needs to log in, not be told the
+    // request is missing.
+    if (!currentUser) {
+      setLoading(false);
+      setLoadError(null);
+      return;
+    }
     let cancelled = false;
     (async () => {
       setLoading(true);
@@ -83,7 +93,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
       setLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [paymentRef]);
+  }, [paymentRef, currentUser?.id]);
 
   const handlePay = async () => {
     if (!details || paying) return;
@@ -157,7 +167,17 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
       <div style={{ flex: 1, padding: '4px 16px 140px' }}>
         {loading && <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '40px' }}>Loading request…</p>}
 
-        {!loading && loadError && (
+        {!loading && !currentUser && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginTop: '40px', textAlign: 'center' }}>
+            <Lock size={28} color="#A78BFA" />
+            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700 }}>Log in to view this request</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', maxWidth: '260px' }}>
+              This payment request is tied to a VENTS account. Log in with the account it was sent to, then reopen this link.
+            </p>
+          </div>
+        )}
+
+        {!loading && currentUser && loadError && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginTop: '40px' }}>
             <AlertCircle size={28} color="#EF4444" />
             <p style={{ color: '#EF4444', fontSize: '14px', textAlign: 'center' }}>{loadError}</p>

@@ -3173,7 +3173,14 @@ export default function App() {
 
           {/* ── PAYMENT REQUESTS (payer receipts) ── */}
           {screen === 'payment-requests' && (
-            <PaymentRequestsScreen currentUser={currentUser} onBack={goBack} />
+            <PaymentRequestsScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              onOpenRequest={(paymentRef) => {
+                setViewingPaymentRequestRef(paymentRef);
+                navigateTo('payment-request');
+              }}
+            />
           )}
 
           {/* ── CONVERSATION ── */}
