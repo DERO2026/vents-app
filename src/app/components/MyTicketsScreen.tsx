@@ -411,7 +411,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
-        background: '#020005',
+        background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',

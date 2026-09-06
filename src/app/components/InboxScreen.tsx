@@ -200,7 +200,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   return (
     <div
-      style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {
         if (pullStartY.current === null) return;

@@ -1500,54 +1500,83 @@ export function HomeScreen({
           behind a small icon button. */}
       <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.22) 0%, #050010 55%, #020005 100%)' }}>
         <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.16) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
+        {/* Row 1: logo | compact search pill | notifications (+ create).
+            One location control total lives in Row 2 below -- the old
+            duplicate country pill that sat under the logo, and the second
+            one in the discovery row further down, are both gone. */}
         <div
           style={{
-            position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: 'calc(14px + env(safe-area-inset-top)) 16px 4px',
+            position: 'relative', display: 'flex', alignItems: 'center', gap: '10px',
+            padding: 'calc(14px + env(safe-area-inset-top)) 16px 0',
           }}
         >
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-            <VentsLogo size={28} />
-            <button
-              onClick={() => setShowCountryPicker(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', padding: '2px 0 0', cursor: 'pointer' }}
-            >
-              <MapPin size={10} color="#A855F7" style={{ flexShrink: 0 }} />
-              <span style={{ fontSize: '11px', fontWeight: 600, color: '#C4C9E0' }}>
-                {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
-              </span>
-              <ChevronDown size={10} color="#8B8FA8" />
-            </button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <button
-              onClick={onNotificationsPress}
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(9,5,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
-            >
-              <Bell size={16} color="#C4C9E0" />
-              {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
-                <span
-                  style={{
-                    position: 'absolute', top: '-4px', right: '-4px',
-                    minWidth: '16px', height: '16px', padding: '0 4px',
-                    borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
-                  }}
-                >
-                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
-                </span>
-              )}
-            </button>
-            {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
-              <button
-                onClick={onCreatePress}
-                style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
+          <VentsLogo size={26} />
+          <button
+            onClick={() => setSearchOpen(true)}
+            style={{
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'rgba(9,5,20,0.6)', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
+            }}
+          >
+            <Search size={14} color="#8B8FA8" style={{ flexShrink: 0 }} />
+            <span style={{ color: '#8B8FA8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
+          </button>
+          <button
+            onClick={onNotificationsPress}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(9,5,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
+          >
+            <Bell size={16} color="#C4C9E0" />
+            {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute', top: '-4px', right: '-4px',
+                  minWidth: '16px', height: '16px', padding: '0 4px',
+                  borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
+                }}
               >
-                <Plus size={17} color="#fff" strokeWidth={2.5} />
-              </button>
+                {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+              </span>
             )}
-          </div>
+          </button>
+          {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
+            <button
+              onClick={onCreatePress}
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)', flexShrink: 0 }}
+            >
+              <Plus size={17} color="#fff" strokeWidth={2.5} />
+            </button>
+          )}
+        </div>
+
+        {/* Row 2: the ONE location control, plus the Filters entry point
+            (state/price/category all live inside that sheet now -- see
+            below -- instead of a permanently-visible category row). */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 16px 0' }}>
+          <button
+            onClick={() => setShowCountryPicker(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+          >
+            <MapPin size={11} color="#A855F7" style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '12px', fontWeight: 600, color: '#C4C9E0' }}>
+              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
+            </span>
+            <ChevronDown size={11} color="#8B8FA8" />
+          </button>
+          <button
+            onClick={openFilterSheet}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px',
+              background: hasActiveFilters ? 'rgba(123,47,247,0.18)' : 'none',
+              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.4)' : 'none',
+              borderRadius: '999px', padding: '4px 10px', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <SlidersHorizontal size={12} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
+            <span style={{ fontSize: '12px', fontWeight: 600, color: hasActiveFilters ? '#A78BFA' : '#8B8FA8' }}>Filters</span>
+          </button>
         </div>
 
         <div style={{ position: 'relative', padding: '10px 16px 0' }}>
@@ -1589,61 +1618,6 @@ export function HomeScreen({
 
       {/* Scrollable content */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-
-        {/* Discovery control cluster -- Search + Country + Filters, grouped
-            as one row instead of scattered across the header and a
-            separate pill row. The country pill always shows one specific
-            country (never written back to users.country, and there is no
-            "All Countries" option -- Home always browses a specific
-            country, defaulting to the account's own); the state/region
-            filter it feeds is single-sourced from countrySubdivisions.ts
-            (see the Filters sheet below), never a hardcoded Nigeria list. */}
-        <div className="px-4 mb-2" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => setSearchOpen(true)}
-            style={{
-              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px',
-              background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
-            }}
-          >
-            <Search size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#8B8FA8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, people…</span>
-          </button>
-          <button
-            onClick={() => setShowCountryPicker(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '5px', background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)', borderRadius: '999px', padding: '9px 12px',
-              cursor: 'pointer', flexShrink: 0, maxWidth: '120px',
-            }}
-          >
-            <MapPin size={13} color="#8B8FA8" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || countryFilter}
-            </span>
-            <ChevronDown size={12} color="#8B8FA8" style={{ flexShrink: 0 }} />
-          </button>
-          <button
-            onClick={openFilterSheet}
-            style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '38px', height: '38px', flexShrink: 0,
-              background: hasActiveFilters ? 'rgba(123,47,247,0.18)' : '#090514',
-              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '50%', cursor: 'pointer', position: 'relative',
-            }}
-          >
-            <SlidersHorizontal size={15} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
-            {hasActiveFilters && (
-              <span style={{
-                position: 'absolute', top: '-2px', right: '-2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#A78BFA', border: '2px solid #020005',
-              }} />
-            )}
-          </button>
-        </div>
 
         {/* Combined active-filter summary -- one place to see (and clear)
             category/state/price filters narrowing the feed. Country is
@@ -1700,46 +1674,6 @@ export function HomeScreen({
           })}
         </div>
 
-        {/* Category icon bar */}
-        <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
-          {ICON_CATEGORIES.map((cat) => {
-            const active = activeCategory === cat.id;
-            const IconComp = cat.icon;
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
-                style={{
-                  width: '64px', minWidth: '64px', padding: '8px 4px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
-                }}
-              >
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '12px',
-                  background: active
-                    ? (cat.id === 'today' ? 'rgba(160,160,160,0.2)' : cat.color)
-                    : 'rgba(255,255,255,0.06)',
-                  boxShadow: active && cat.id !== 'today' ? `0 0 12px ${cat.color}66` : 'none',
-                  border: active && cat.id === 'today' ? '1.5px solid rgba(255,255,255,0.3)' : 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.2s, box-shadow 0.2s',
-                }}>
-                  <IconComp size={20} color={active ? '#FFFFFF' : cat.color} />
-                </div>
-                <span style={{
-                  fontSize: '10px', fontWeight: 600,
-                  color: active ? '#FFFFFF' : '#AAAAAA',
-                  marginTop: '6px', maxWidth: '62px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  textAlign: 'center',
-                }}>
-                  {cat.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
 
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load
@@ -1991,6 +1925,33 @@ export function HomeScreen({
 
             {/* Scrollable content */}
             <div style={{ overflowY: 'auto', flex: 1, scrollbarWidth: 'none', padding: '0 20px' }}>
+              {/* CATEGORY -- moved here from a permanently-visible icon row
+                  on the main screen (the redesign's whole point: a clean,
+                  uncrowded Home) into this existing Filters sheet. Same
+                  ids/logic as before (tempCategory -> applyFilters ->
+                  setActiveCategory), just presented as compact wrapped
+                  chips instead of a horizontal icon rail. */}
+              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>CATEGORY</p>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                {ICON_CATEGORIES.map((cat) => {
+                  const active = tempCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => setTempCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
+                      style={{
+                        padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
+                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
+                        background: active ? cat.color : 'transparent',
+                        color: active ? '#fff' : '#888',
+                      }}
+                    >
+                      {cat.label}
+                    </button>
+                  );
+                })}
+              </div>
+
               {/* SUBDIVISION -- Nigeria states, Rwanda provinces, Qatar
                   municipalities, driven entirely by countrySubdivisions.ts
                   for whichever country is currently being browsed. No

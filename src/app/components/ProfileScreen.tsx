@@ -437,7 +437,7 @@ export function ProfileScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#020005', position: 'relative' }}
+      style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
