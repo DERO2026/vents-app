@@ -1,5 +1,3 @@
-import { useState, useEffect } from 'react';
-import { Zap, Ticket, Globe } from 'lucide-react';
 import { VentsLogo } from './VentsLogo';
 import { appVersionLabel } from '../../lib/appVersion';
 
@@ -10,236 +8,151 @@ interface WelcomeScreenProps {
   onBrowseGuest?: () => void;
 }
 
-const SLIDES = [
-  'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800&fit=crop&crop=center',
+const STACK_CARDS = [
+  {
+    src: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=600&fit=crop&crop=center',
+    title: 'Services',
+    subtitle: 'Beauty, home, photo and more',
+    rotate: -9,
+    top: 26,
+    side: 'left' as const,
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600&fit=crop&crop=center',
+    title: 'Experiences',
+    subtitle: 'Discover, connect and enjoy',
+    rotate: 8,
+    top: 34,
+    side: 'right' as const,
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=700&fit=crop&crop=center',
+    title: 'Events',
+    subtitle: 'Concerts, parties, festivals and more',
+    rotate: 0,
+    top: 0,
+    side: 'center' as const,
+  },
 ];
 
-export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGuest }: WelcomeScreenProps) {
-  const [slide, setSlide] = useState(0);
-  const [fading, setFading] = useState(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFading(true);
-      setTimeout(() => {
-        setSlide(s => (s + 1) % SLIDES.length);
-        setFading(false);
-      }, 400);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, []);
-
+export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickState, onBrowseGuest: _onBrowseGuest }: WelcomeScreenProps) {
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
+        background: '#08050F',
         width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         position: 'relative',
+        color: '#F0F0FF',
       }}
     >
-      <style>{`
-        @keyframes ctaPulse {
-          0%   { box-shadow: 0 8px 36px rgba(168,85,247,0.6), 0 0 0 0 rgba(168,85,247,0.5); }
-          50%  { box-shadow: 0 8px 36px rgba(168,85,247,0.9), 0 0 0 16px rgba(168,85,247,0); }
-          100% { box-shadow: 0 8px 36px rgba(168,85,247,0.6), 0 0 0 0 rgba(168,85,247,0); }
-        }
-        @keyframes arrowBounce {
-          0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(0); }
-        }
-        @keyframes neonPulse {
-          0%, 100% { opacity: 0.7; }
-          50%       { opacity: 1; }
-        }
-      `}</style>
+      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 420px 300px at 20% 5%, rgba(123,47,190,0.10) 0%, transparent 60%)', pointerEvents: 'none' }} />
 
-      {/* Background glow orbs */}
-      <div style={{ position: 'absolute', width: '350px', height: '350px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%)', top: '-120px', right: '-120px', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%)', bottom: '100px', left: '-80px', pointerEvents: 'none' }} />
-
-      {/* Hero slideshow — clamped so it can never crowd out the CTAs below
-          it on a short device (older iPhone SE, small Android phones):
-          scales down toward 30vh instead of staying a fixed 310px+ on
-          every screen size. */}
-      <div style={{ position: 'relative', height: 'clamp(200px, 34vh, calc(310px + env(safe-area-inset-top)))', flexShrink: 0 }}>
-        {/* Slide images — cross-fade */}
-        {SLIDES.map((src, idx) => (
-          <img
-            key={src}
-            src={src}
-            alt="Events"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              opacity: idx === slide ? (fading ? 0 : 1) : 0,
-              transition: 'opacity 0.4s ease',
-            }}
-          />
-        ))}
-        {/* Dark overlay */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.0) 35%, rgba(0,0,0,0.95) 95%)' }} />
-
-        {/* Logo */}
-        <div style={{ position: 'absolute', top: 'calc(28px + env(safe-area-inset-top))', left: '24px', zIndex: 2 }}>
-          <VentsLogo size={38} />
-        </div>
-
-        {/* Slide indicators */}
-        <div style={{ position: 'absolute', bottom: '40px', right: '24px', display: 'flex', gap: '5px', zIndex: 2 }}>
-          {SLIDES.map((_, i) => (
-            <div key={i} style={{ width: i === slide ? '16px' : '5px', height: '5px', borderRadius: '3px', background: i === slide ? '#A855F7' : 'rgba(255,255,255,0.3)', transition: 'all 0.3s ease' }} />
-          ))}
-        </div>
-
-        {/* Welcome pill */}
-        <div style={{ position: 'absolute', bottom: '28px', left: '24px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '50px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 2 }}>
-          <span style={{ color: '#C4C9E0', fontSize: '12px', fontWeight: 500 }}>
-            Welcome to <span style={{ color: '#A855F7', fontWeight: 700 }}>Vents</span>
-          </span>
-        </div>
+      {/* Header */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
+        <VentsLogo size={30} />
       </div>
 
-      {/* Content — scrolls as a fallback (never clips the guest CTA/footer
-          off the bottom of a short/zoomed screen) and always reserves the
-          real home-indicator/gesture-bar safe area, not just a flat 28px
-          that happened to be enough on the devices this was tested on. */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehavior: 'contain',
-          padding: '20px 24px calc(20px + env(safe-area-inset-bottom))',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          zIndex: 1,
-        }}
-      >
-        <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
-          Events. Services.
-          <br />
-          <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Real Experiences.</span>
-        </h1>
+      <div style={{ position: 'relative', padding: '14px 24px 0', flexShrink: 0 }}>
+        <span style={{ color: '#A97FD4', fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em' }}>EVENTS &middot; SERVICES &middot; REAL EXPERIENCES</span>
+      </div>
 
-        <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
+      <div style={{ position: 'relative', padding: '12px 24px 0', flexShrink: 0 }}>
+        <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '30px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.16, letterSpacing: '-0.01em' }}>
+          More Than Events.
+          <br />
+          <span style={{ color: '#A855F7' }}>Real Experiences.</span>
+        </h1>
+        <p style={{ margin: '12px 0 0', color: '#9CA0BC', fontSize: '13.5px', lineHeight: 1.6, maxWidth: '280px' }}>
           Find events, book trusted services, and make it happen — all in one app.
         </p>
+      </div>
 
-        {/* Feature chips -- Location Based / Two Worlds / Instant Access,
-            the three pillars of the redesign (a bigger world than just
-            ticketing now that Services is real) condensed to fit this
-            screen's existing compact chip row. */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '22px' }}>
+      {/* Phone stack visual */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '18px 0 0' }}>
+        {STACK_CARDS.map(card => (
           <div
-            style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1, cursor: 'pointer', boxShadow: '0 0 12px rgba(168,85,247,0.15)' }}
+            key={card.title}
+            style={{
+              position: 'absolute',
+              top: `${card.top}px`,
+              left: card.side === 'left' ? '26px' : card.side === 'center' ? '50%' : undefined,
+              right: card.side === 'right' ? '22px' : undefined,
+              transform: card.side === 'center' ? `translateX(-50%) rotate(${card.rotate}deg)` : `rotate(${card.rotate}deg)`,
+              width: card.side === 'center' ? '172px' : '150px',
+              height: card.side === 'center' ? '246px' : card.side === 'left' ? '220px' : '210px',
+              borderRadius: card.side === 'center' ? '22px' : '20px',
+              overflow: 'hidden',
+              border: card.side === 'center' ? '1px solid rgba(168,85,247,0.22)' : '1px solid rgba(255,255,255,0.08)',
+              boxShadow: card.side === 'center' ? '0 20px 40px rgba(88,28,135,0.28)' : '0 16px 30px rgba(0,0,0,0.35)',
+              zIndex: card.side === 'center' ? 2 : 1,
+            }}
           >
-            <Globe size={12} color="#A855F7" />
-            <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 600, lineHeight: 1.3 }}>Near You</span>
-          </div>
-          {[
-            { icon: Zap, text: 'Events & Services' },
-            { icon: Ticket, text: 'Instant booking' },
-          ].map(({ icon: Icon, text }) => (
-            <div key={text} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1 }}>
-              <Icon size={12} color="#A855F7" />
-              <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 500, lineHeight: 1.3 }}>{text}</span>
+            <img src={card.src} alt={card.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 45%, rgba(0,0,0,0.85) 100%)' }} />
+            <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '16px' }}>
+              <p style={{ margin: 0, color: '#FFFFFF', fontSize: card.side === 'center' ? '15px' : '13px', fontWeight: 700, fontFamily: card.side === 'center' ? 'Space Grotesk, sans-serif' : undefined, textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>{card.title}</p>
+              <p style={{ margin: '4px 0 0', color: '#C4C9E0', fontSize: '9.5px', lineHeight: 1.4, textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>{card.subtitle}</p>
             </div>
-          ))}
-        </div>
+          </div>
+        ))}
+      </div>
 
-        {/* TAP indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '10px' }}>
-          <div style={{ height: '1px', flex: 1, background: 'rgba(168,85,247,0.2)' }} />
-          <span style={{ color: 'rgba(168,85,247,0.8)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', animation: 'neonPulse 2s ease-in-out infinite' }}>TAP TO BEGIN</span>
-          <div style={{ height: '1px', flex: 1, background: 'rgba(168,85,247,0.2)' }} />
-        </div>
+      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', gap: '5px', padding: '12px 0 0', flexShrink: 0 }}>
+        <div style={{ width: '16px', height: '5px', borderRadius: '3px', background: '#A855F7' }} />
+        <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
+        <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
+      </div>
 
-        {/* Get Started — liquid glass button */}
+      {/* Actions */}
+      <div style={{ position: 'relative', padding: '16px 24px calc(24px + env(safe-area-inset-bottom))', flexShrink: 0 }}>
         <button
           onClick={onGetStarted}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+            background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)',
             border: 'none',
             borderRadius: '100px',
-            padding: '16px 32px',
+            padding: '15px 26px',
             color: '#fff',
-            fontSize: '20px',
-            fontWeight: 900,
+            fontSize: '16px',
+            fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
             cursor: 'pointer',
-            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
-            marginBottom: '12px',
-            letterSpacing: '0.01em',
+            boxShadow: '0 8px 20px rgba(88,42,143,0.32)',
+            marginBottom: '10px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
           }}
         >
           <span>Get Started</span>
-          <span style={{ fontSize: '22px', animation: 'arrowBounce 1.2s ease-in-out infinite' }}>→</span>
+          <span style={{ fontSize: '18px' }}>→</span>
         </button>
 
-        {/* Sign in */}
         <button
           onClick={onSignIn}
           style={{
             width: '100%',
-            background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.15)',
+            background: 'rgba(255,255,255,0.05)',
+            border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '100px',
-            padding: '16px 32px',
-            color: 'rgba(255,255,255,0.45)',
+            padding: '13px 26px',
+            color: '#C4C9E0',
             fontSize: '14px',
-            fontWeight: 400,
+            fontWeight: 600,
             cursor: 'pointer',
             textAlign: 'center',
-            marginBottom: '12px',
+            marginBottom: '16px',
           }}
         >
-          Already have an account?{' '}
-          <span style={{ color: '#A855F7', fontWeight: 600 }}>Sign in</span>
+          Sign in
         </button>
 
-        {/* Browse as guest — a real tappable row (not a bare underlined
-            text line easy to mistake for decoration/miss entirely), so it
-            reads as a genuine third option alongside Get Started/Sign in. */}
-        {onBrowseGuest && (
-          <button
-            onClick={onBrowseGuest}
-            style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.04)',
-              border: 'none',
-              borderRadius: '100px',
-              padding: '12px 32px',
-              color: '#94A3B8',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              textAlign: 'center',
-              marginTop: '4px',
-              flexShrink: 0,
-            }}
-          >
-            Browse as guest
-          </button>
-        )}
-
-        {/* Footer */}
-        <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px', marginBottom: 0, flexShrink: 0 }}>
+        <p style={{ textAlign: 'center', color: '#3A3D52', fontSize: '10px', margin: 0 }}>
           {appVersionLabel()}
         </p>
       </div>

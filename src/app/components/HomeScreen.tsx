@@ -1498,8 +1498,8 @@ export function HomeScreen({
           actions, and a clear Events/Services quick-switch -- the two
           verticals surfaced as equals right under the logo, not one hidden
           behind a small icon button. */}
-      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.22) 0%, #050010 55%, #020005 100%)' }}>
-        <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.16) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
+      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)' }}>
+        <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.09) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
         {/* Row 1: logo | compact search pill | notifications (+ create).
             One location control total lives in Row 2 below -- the old
             duplicate country pill that sat under the logo, and the second
@@ -1515,16 +1515,17 @@ export function HomeScreen({
             onClick={() => setSearchOpen(true)}
             style={{
               flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px',
-              background: 'rgba(9,5,20,0.6)', border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
+              background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
             }}
           >
-            <Search size={14} color="#8B8FA8" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#8B8FA8', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
+            <Search size={14} color="#9CA0BC" style={{ flexShrink: 0 }} />
+            <span style={{ color: '#9CA0BC', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
           </button>
           <button
             onClick={onNotificationsPress}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(9,5,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
           >
             <Bell size={16} color="#C4C9E0" />
             {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
@@ -1544,18 +1545,13 @@ export function HomeScreen({
           {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button
               onClick={onCreatePress}
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)', flexShrink: 0 }}
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}
             >
               <Plus size={17} color="#fff" strokeWidth={2.5} />
             </button>
           )}
         </div>
 
-        <div style={{ position: 'relative', padding: '10px 16px 0' }}>
-          <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2 }}>
-            Events. Services. <span style={{ color: '#A855F7' }}>Real Experiences.</span>
-          </h1>
-        </div>
 
         {/* ONE compact control row: Nigeria (location, pinned left) |
             Trending / Near You / This Weekend / Free Events (horizontally
@@ -1571,7 +1567,8 @@ export function HomeScreen({
             onClick={() => setShowCountryPicker(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
-              background: 'rgba(9,5,20,0.6)', border: '1px solid rgba(255,255,255,0.1)',
+              background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.14)',
               borderRadius: '999px', padding: '7px 12px', cursor: 'pointer',
             }}
           >
@@ -1579,7 +1576,7 @@ export function HomeScreen({
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#F0F0FF', whiteSpace: 'nowrap' }}>
               {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
             </span>
-            <ChevronDown size={11} color="#8B8FA8" />
+            <ChevronDown size={11} color="#C4C9E0" />
           </button>
 
           <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
@@ -1596,13 +1593,14 @@ export function HomeScreen({
                   onClick={onClick}
                   style={{
                     display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                    background: active ? 'rgba(123,47,190,0.22)' : 'rgba(9,5,20,0.6)',
-                    border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                    background: active ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.07)',
+                    backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                    border: active ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.13)',
                     borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
                   }}
                 >
-                  <Icon size={12} color={active ? '#C4B5FD' : '#8B8FA8'} />
-                  <span style={{ color: active ? '#F0F0FF' : '#C4C9E0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                  <Icon size={12} color={active ? '#D8B4FE' : '#C4C9E0'} />
+                  <span style={{ color: active ? '#F0F0FF' : '#E4E4F0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
                 </button>
               );
             })}
@@ -1612,13 +1610,14 @@ export function HomeScreen({
             onClick={openFilterSheet}
             style={{
               display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
-              background: hasActiveFilters ? 'rgba(123,47,247,0.22)' : 'rgba(9,5,20,0.6)',
-              border: hasActiveFilters ? '1px solid rgba(123,47,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
+              background: hasActiveFilters ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: hasActiveFilters ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.14)',
               borderRadius: '999px', padding: '7px 13px', cursor: 'pointer', position: 'relative',
             }}
           >
-            <SlidersHorizontal size={12} color={hasActiveFilters ? '#A78BFA' : '#8B8FA8'} />
-            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? '#F0F0FF' : '#C4C9E0', whiteSpace: 'nowrap' }}>Filters</span>
+            <SlidersHorizontal size={12} color={hasActiveFilters ? '#D8B4FE' : '#C4C9E0'} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? '#F0F0FF' : '#E4E4F0', whiteSpace: 'nowrap' }}>Filters</span>
             {hasActiveFilters && (
               <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: '#A78BFA', border: '2px solid #020005' }} />
             )}
@@ -1630,7 +1629,7 @@ export function HomeScreen({
             "active" surface here (this is the Events home), Services hands
             off to the existing ServicesHomeScreen via onServicesPress. */}
         <div style={{ position: 'relative', display: 'flex', gap: '10px', padding: '12px 16px 14px' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(123,47,190,0.35), rgba(79,70,229,0.35))', border: '1px solid rgba(168,85,247,0.5)', borderRadius: '16px', padding: '12px 14px' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(123,47,190,0.28), rgba(79,70,229,0.24))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '12px 14px' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <CalendarDays size={17} color="#fff" />
             </div>
