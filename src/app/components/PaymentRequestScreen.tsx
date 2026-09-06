@@ -113,23 +113,47 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
     setPaying(true);
     setPayError(null);
 
+    // Mint a fresh, disposable Paystack reference for this attempt --
+    // paymentRef stays the stable request identity (used to fetch these
+    // details, and to cancel), but Paystack must never see the same
+    // reference twice. This is exactly why revisiting the same persisted
+    // request and hitting Pay more than once (a genuinely normal thing to
+    // do with a stable, revisitable request) used to fail with "Duplicate
+    // Transaction Reference" -- see initiate_ticket_payment_attempt
+    // (0060), mirroring the existing ticket-transfer-fee pattern.
+    let paystackRef: string;
+    let chargeAmountKobo: number;
+    try {
+      const { data: attemptData, error: attemptError } = await supabase.rpc('initiate_ticket_payment_attempt', {
+        p_payment_ref: paymentRef,
+      });
+      if (attemptError) throw attemptError;
+      paystackRef = (attemptData as any)?.reference;
+      chargeAmountKobo = Number((attemptData as any)?.amount_kobo);
+      if (!paystackRef || !chargeAmountKobo || chargeAmountKobo <= 0) throw new Error('Could not start this payment attempt.');
+    } catch (err: any) {
+      setPaying(false);
+      setPayError(err?.message || 'Could not start payment. Please try again.');
+      return;
+    }
+
     try {
       openPaystackPopup({
         email: currentUser.email,
-        amountKobo: details.amount_kobo,
-        ref: paymentRef,
+        amountKobo: chargeAmountKobo,
+        ref: paystackRef,
         label: currentUser.full_name || currentUser.username || '',
         metadata: {
           payment_request: true,
           event_title: details.event_title,
         },
-        onSuccess: async () => {
+        onSuccess: async (response) => {
           try {
             const token = await getAuthToken();
             const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-              body: JSON.stringify({ reference: paymentRef }),
+              body: JSON.stringify({ reference: response.reference }),
             });
             const verifyJson = await verifyRes.json().catch(() => null);
             if (!verifyRes.ok || verifyJson?.status !== 'success') {

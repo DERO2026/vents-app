@@ -94,6 +94,12 @@ async function handleClientVerify(req, res) {
   // already exactly hit, see this file's header comment).
   const isTransferFeeRef = reference.startsWith('txf_');
   const isServiceBookingRef = reference.startsWith('BKG-');
+  // Resolved below (ticket-purchase branch only) from the incoming
+  // reference -- which since 0060 may be a disposable per-attempt
+  // paystack_ref, not pending_purchases' own stable payment_ref -- to the
+  // stable payment_ref that finalize_pending_purchase/confirm_ticket_
+  // payment/get_tickets_for_payment_ref all still key off, unchanged.
+  let ticketPurchasePaymentRef = reference;
 
   try {
     // Ownership check: confirm the caller actually owns the payment this
@@ -116,17 +122,28 @@ async function handleClientVerify(req, res) {
         return res.status(403).json({ error: 'Not authorized for this payment reference' });
       }
     } else {
-      // get_pending_purchase_owner now returns a row (not a bare uuid) since
-      // migration 0058: {owner_id, payer_id}. Either the recipient (owner_id)
-      // OR the resolved authenticated payer (payer_id, "someone else is
-      // paying") may complete this payment -- never anyone else. A reference
-      // with no matching row (already finalized, or unknown) is still not an
-      // error here, per the original comment above.
-      const rows = await callProjectAdminTableRpc<{ owner_id: string; payer_id: string | null }>('get_pending_purchase_owner', [reference]);
+      // get_pending_purchase_owner (0060) now resolves EITHER a disposable
+      // per-attempt paystack_ref (every payment initiated via
+      // initiate_ticket_payment_attempt, i.e. everything going forward) OR
+      // a bare payment_ref (any pending_purchases row whose live Paystack
+      // reference literally equalled its own payment_ref from BEFORE that
+      // migration shipped) back to {payment_ref, owner_id, payer_id}.
+      // reference itself is never assumed to already BE the stable
+      // payment_ref from here on -- ticketPurchasePaymentRef (resolved
+      // here) is what every downstream ticket-purchase call below uses
+      // instead. Either the recipient (owner_id) OR the resolved
+      // authenticated payer (payer_id, "someone else is paying") may
+      // complete this payment -- never anyone else. A reference with no
+      // matching row (already finalized, or unknown) is still not an error
+      // here, per the original comment above -- ticketPurchasePaymentRef
+      // falls back to the raw reference so finalizeAndConfirmPurchase's own
+      // "not_found" handling still applies unchanged for a truly unknown one.
+      const rows = await callProjectAdminTableRpc<{ payment_ref: string; owner_id: string; payer_id: string | null }>('get_pending_purchase_owner', [reference]);
       const row = rows[0];
       if (row && row.owner_id && session.userId !== row.owner_id && session.userId !== row.payer_id) {
         return res.status(403).json({ error: 'Not authorized for this payment reference' });
       }
+      ticketPurchasePaymentRef = row?.payment_ref || reference;
     }
 
     const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
@@ -196,10 +213,10 @@ async function handleClientVerify(req, res) {
       return res.status(200).json({ status: 'success' });
     }
 
-    const result = await finalizeAndConfirmPurchase(reference, amountKobo);
+    const result = await finalizeAndConfirmPurchase(ticketPurchasePaymentRef, amountKobo);
 
     if (result.status === 'amount_mismatch') {
-      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
+      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', ticketPurchasePaymentRef, '-', result.expectedKobo, 'vs', result.gotKobo);
       return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected order amount.' });
     }
     if (result.status === 'not_found') {
@@ -314,7 +331,19 @@ async function handleWebhook(req, res) {
       // finalizeAndConfirmPurchase so the two can never drift out of sync;
       // whichever runs first wins, the other no-ops against the same
       // locked rows.
-      const result = await finalizeAndConfirmPurchase(reference, amountKobo);
+      //
+      // reference here is whatever Paystack itself echoes back on the
+      // charge -- since 0060 that's the disposable per-attempt
+      // paystack_ref, not pending_purchases' own stable payment_ref.
+      // Resolve it the same way the ?action=verify path does before
+      // calling finalizeAndConfirmPurchase, which still expects the stable
+      // payment_ref. get_pending_purchase_owner (0060) also matches a bare
+      // payment_ref for any pre-0060 row, so this stays correct for a
+      // payment that was already in flight when this migration shipped.
+      const ownerRows = await callProjectAdminTableRpc<{ payment_ref: string }>('get_pending_purchase_owner', [reference]);
+      const resolvedPaymentRef = ownerRows[0]?.payment_ref || reference;
+
+      const result = await finalizeAndConfirmPurchase(resolvedPaymentRef, amountKobo);
 
       if (result.status === 'amount_mismatch') {
         console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);

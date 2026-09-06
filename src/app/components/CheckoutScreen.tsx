@@ -342,11 +342,38 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
+    // Mint a fresh, disposable Paystack reference for THIS attempt --
+    // reference stays the stable VENTS order identity forever (used by
+    // finalize/confirm/tickets), but Paystack must never see the same
+    // reference twice (it initializes a real transaction the moment the
+    // popup opens, so reusing one -- e.g. on a retry after a closed/failed
+    // popup -- is rejected as a duplicate). Mirrors initiate_transfer_fee_
+    // payment's exact pattern (0043_ticket_transfer_fee.sql): called fresh
+    // on every attempt, returns a brand-new unrelated UUID each time. Also
+    // returns the row's own amount_kobo again so the popup always charges
+    // a server-fresh number, not whatever this component cached earlier.
+    let paystackRef: string;
+    let chargeAmountKobo: number;
+    try {
+      const { data: attemptData, error: attemptError } = await supabase.rpc('initiate_ticket_payment_attempt', {
+        p_payment_ref: reference,
+      });
+      if (attemptError) throw attemptError;
+      paystackRef = (attemptData as any)?.reference;
+      chargeAmountKobo = Number((attemptData as any)?.amount_kobo);
+      if (!paystackRef || !chargeAmountKobo || chargeAmountKobo <= 0) throw new Error('Could not start this payment attempt.');
+    } catch (err: any) {
+      payingRef.current = false;
+      setPaymentLoading(false);
+      setPayError(err?.message || 'Could not start payment. Please try again.');
+      return;
+    }
+
     try {
       openPaystackPopup({
         email: payerEmail,
-        amountKobo,
-        ref: reference,
+        amountKobo: chargeAmountKobo,
+        ref: paystackRef,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
         channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
         // NOT setting callback_url here — confirmed against Paystack's own
