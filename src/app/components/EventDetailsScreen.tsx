@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
 import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
@@ -301,6 +301,10 @@ export function EventDetailsScreen({
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
+  const aboutRef = useRef<HTMLDivElement>(null);
+  const ticketsRef = useRef<HTMLDivElement>(null);
+  const organizerRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
   const [realAttendeeCount, setRealAttendeeCount] = useState(event.attendees);
   const [organizerProfile, setOrganizerProfile] = useState<any>(null);
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
@@ -525,7 +529,7 @@ export function EventDetailsScreen({
   return (
     <div
       style={{
-        background: '#020005',
+        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -593,9 +597,10 @@ export function EventDetailsScreen({
               position: 'absolute',
               top: '16px',
               left: '16px',
-              background: 'rgba(0,0,0,0.4)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(16px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.16)',
               borderRadius: '50%',
               width: '40px',
               height: '40px',
@@ -613,9 +618,10 @@ export function EventDetailsScreen({
             <button
               onClick={(e) => { e.stopPropagation(); handleShare(); }}
               style={{
-                background: 'rgba(0,0,0,0.4)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.16)',
                 borderRadius: '50%',
                 width: '38px',
                 height: '38px',
@@ -630,9 +636,10 @@ export function EventDetailsScreen({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
               style={{
-                background: 'rgba(0,0,0,0.4)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.16)',
                 borderRadius: '50%',
                 width: '38px',
                 height: '38px',
@@ -650,9 +657,10 @@ export function EventDetailsScreen({
               <button
                 onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
                 style={{
-                  background: 'rgba(0,0,0,0.4)',
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(16px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                  border: '1px solid rgba(255,255,255,0.16)',
                   borderRadius: '50%',
                   width: '38px',
                   height: '38px',
@@ -722,6 +730,36 @@ export function EventDetailsScreen({
           </div>
         </div>
 
+        {/* Section navigation -- About / Tickets / Organizer / More scroll
+            to the corresponding section already on this page (same
+            anchor-scroll pattern as Home's Trending/Near You chips); no
+            conditional rendering, so nothing below moves or unmounts. */}
+        <div className="no-scrollbar" style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none' }}>
+          {[
+            { label: 'About', ref: aboutRef },
+            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
+            { label: 'Organizer', ref: organizerRef },
+            { label: 'More', ref: moreRef },
+          ].filter((t) => t.show !== false).map((t) => (
+            <button
+              key={t.label}
+              onClick={() => t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              style={{
+                flexShrink: 0,
+                background: 'rgba(255,255,255,0.07)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.13)',
+                borderRadius: '999px',
+                padding: '8px 16px',
+                cursor: 'pointer',
+              }}
+            >
+              <span style={{ color: '#E4E4F0', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+            </button>
+          ))}
+        </div>
+
         {/* Organizer Tools — door-staff scanner access. Only ever visible to
             the event's own organizer, a Sub-Admin, or Root/platform admin;
             regular attendees never see this section at all. Placed at the
@@ -787,7 +825,7 @@ export function EventDetailsScreen({
         )}
 
         {/* Info cards */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+        <div ref={aboutRef} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           {[
             {
               icon: Calendar,
@@ -800,8 +838,10 @@ export function EventDetailsScreen({
               key={label}
               style={{
                 flex: 1,
-                background: '#090514',
-                border: '1px solid rgba(255,255,255,0.06)',
+                background: 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                border: '1px solid rgba(255,255,255,0.08)',
                 borderRadius: '20px',
                 padding: '16px',
                 display: 'flex',
@@ -834,8 +874,10 @@ export function EventDetailsScreen({
         {/* Location */}
         <div
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '20px',
             padding: '16px',
             marginBottom: '16px',
@@ -900,8 +942,10 @@ export function EventDetailsScreen({
         {/* Capacity */}
         <div
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '20px',
             padding: '16px',
             marginBottom: '16px',
@@ -946,11 +990,14 @@ export function EventDetailsScreen({
 
         {/* Organizer */}
         <div
+          ref={organizerRef}
           onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '14px',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
             padding: '14px',
             display: 'flex',
             alignItems: 'center',
@@ -1154,7 +1201,7 @@ export function EventDetailsScreen({
             an attendee who already has a ticket can still buy more (extra
             tickets for friends, a different tier, etc). */}
         {ticketTypes.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
+          <div ref={ticketsRef} style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
                 Select Tickets
@@ -1268,7 +1315,7 @@ export function EventDetailsScreen({
         )}
 
         {/* Related Events Section */}
-        <div style={{ marginTop: '24px', marginBottom: '16px' }}>
+        <div ref={moreRef} style={{ marginTop: '24px', marginBottom: '16px' }}>
             <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
               Related Events
             </p>
@@ -1408,9 +1455,10 @@ export function EventDetailsScreen({
           bottom: 0,
           left: 0,
           right: 0,
-          background: 'rgba(2,0,5,0.85)',
-          backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
+          background: 'rgba(10,6,18,0.88)',
+          backdropFilter: 'blur(24px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+          borderTop: '1px solid rgba(255,255,255,0.09)',
           padding: '14px 16px 24px',
           display: 'flex',
           alignItems: 'center',

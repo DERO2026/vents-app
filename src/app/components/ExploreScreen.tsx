@@ -119,7 +119,7 @@ export function ExploreScreen({
           if (partnerIds.length === 0) { setConversations([]); setRequests([]); return; }
           const { data: profiles } = await supabase
             .from('public_profiles')
-            .select('id, full_name, username, avatar_url, vc_badge, last_active_at')
+            .select('id, full_name, username, avatar_url, vc_badge, role, last_active_at')
             .in('id', partnerIds);
           const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
           const isOnline = (id: string) => {
@@ -187,6 +187,17 @@ export function ExploreScreen({
     return () => clearTimeout(t);
   }, [query]);
 
+  // Account-relationship label, derived only from the profile's real `role`
+  // column (never a manual/hardcoded per-row label). public_profiles does
+  // not currently expose is_service_provider, so a "Vendor" label isn't
+  // shown here yet -- adding it would require exposing that column on the
+  // view, a backend change outside this pass's scope.
+  const roleBadge = (role?: string): { label: string; color: string; bg: string } | null => {
+    if (role === 'organizer' || role === 'organiser') return { label: 'Organizer', color: '#D8B4FE', bg: 'rgba(168,85,247,0.16)' };
+    if (role === 'admin' || role === 'sub-admin') return { label: 'Admin', color: '#FCA5A5', bg: 'rgba(239,68,68,0.14)' };
+    return null;
+  };
+
   const timeAgo = (iso: string) => {
     const diff = Date.now() - new Date(iso).getTime();
     const m = Math.floor(diff / 60000);
@@ -211,7 +222,7 @@ export function ExploreScreen({
 
   return (
     <div
-      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#020005', position: 'relative' }}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -231,15 +242,15 @@ export function ExploreScreen({
       )}
       {/* ── Header ── */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
-          Messages
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          Chats
         </h1>
       </div>
 
       {/* ── Search bar ── */}
       <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', height: '48px', padding: '0 14px', boxSizing: 'border-box' }}>
-          <Search size={16} color="#94A3B8" />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '100px', height: '48px', padding: '0 14px', boxSizing: 'border-box' }}>
+          <Search size={16} color="#9CA0BC" />
           <input
             ref={searchRef}
             value={query}
@@ -249,7 +260,7 @@ export function ExploreScreen({
           />
           {query && (
             <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-              <X size={15} color="#94A3B8" />
+              <X size={15} color="#9CA0BC" />
             </button>
           )}
         </div>
@@ -271,28 +282,34 @@ export function ExploreScreen({
                 ) : searchedUsers.length === 0 ? (
                   <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No people found</p>
                 ) : (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                    {searchedUsers.map(u => (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {searchedUsers.map(u => {
+                      const badge = roleBadge(u.role);
+                      return (
                       <div
                         key={u.id}
                         onClick={() => onUserPress(u)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onUserPress(u); } }}
                         role="button" tabIndex={0}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: '#090514' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box' }}>
+                        <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: u.avatar_url ? 'transparent' : u.avatarColor, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box' }}>
                           {u.avatar_url ? <img src={u.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{u.avatarInitials}</span>}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flexWrap: 'wrap' }}>
+                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
                             {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" style={{ flexShrink: 0 }} />}
                             <span style={{ flexShrink: 0 }}><BadgeChip tier={u.vc_badge} /></span>
+                            {badge && (
+                              <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
+                            )}
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{u.username}</span>
+                          <span style={{ color: '#9CA0BC', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{u.username}</span>
                         </div>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
                 {filteredConvos.length > 0 && (
@@ -306,7 +323,7 @@ export function ExploreScreen({
               <div style={{ padding: '0 16px 12px' }}>
                 <button
                   onClick={() => { haptics.light(); setShowRequests(true); }}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px', padding: '12px 14px', cursor: 'pointer' }}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(168,85,247,0.1)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(196,181,253,0.25)', borderRadius: '14px', padding: '12px 14px', cursor: 'pointer' }}
                 >
                   <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <MessageCircle size={15} color="#A78BFA" />
@@ -321,7 +338,7 @@ export function ExploreScreen({
             {/* ── Conversations ── */}
             <div style={{ padding: '0 16px' }}>
               {!isSearching && (
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>CONVERSATIONS</p>
+                <p style={{ color: '#9CA0BC', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>RECENT</p>
               )}
               {loadingChats && conversations.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -331,49 +348,53 @@ export function ExploreScreen({
                 </div>
               ) : filteredConvos.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
-                  <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(167,139,250,0.08)', border: '1px solid rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={28} color="#94A3B8" />
+                  <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <MessageCircle size={28} color="#C4C9E0" />
                   </div>
-                  <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 700, margin: 0 }}>
+                  <p style={{ color: '#E4E4F0', fontSize: '14px', fontWeight: 700, margin: 0 }}>
                     {isSearching ? 'No matching messages' : 'No conversations yet'}
                   </p>
-                  <p style={{ color: '#94A3B8', fontSize: '14px', margin: 0 }}>
+                  <p style={{ color: '#9CA0BC', fontSize: '14px', margin: 0 }}>
                     {isSearching ? 'Try a different search term' : 'Message an organizer or attendee to start'}
                   </p>
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {filteredConvos.map(({ partnerId, lastMsg, profile, unreadCount, online }: any) => {
                     const name = profile?.full_name || profile?.username || 'User';
                     const avatarUrl = profile?.avatar_url;
                     const initial = name[0]?.toUpperCase() || 'U';
                     const isUnread = unreadCount > 0;
+                    const badge = roleBadge(profile?.role);
                     return (
                       <div
                         key={partnerId}
                         onClick={() => onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge)}
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenConversation?.(partnerId, name, avatarUrl, profile?.vc_badge); } }}
                         role="button" tabIndex={0}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px', borderRadius: '0', cursor: 'pointer', background: 'transparent', borderBottom: '1px solid rgba(255,255,255,0.05)' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                       >
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.07)', boxSizing: 'border-box', position: 'relative' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
                           {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
-                          {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #020005' }} />}
+                          {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #0A0612' }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
-                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexWrap: 'wrap' }}>
+                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
                               <span style={{ flexShrink: 0 }}><BadgeChip tier={profile?.vc_badge} /></span>
+                              {badge && (
+                                <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
+                              )}
                             </div>
-                            <span style={{ color: '#94A3B8', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                            <span style={{ color: '#7C8199', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '13px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: isUnread ? '#E4E4F0' : '#9CA0BC', fontSize: '13px', fontWeight: isUnread ? 600 : 400, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
                           </span>
                         </div>
                         {isUnread && (
-                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
+                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
                             <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                           </div>
                         )}
@@ -389,7 +410,7 @@ export function ExploreScreen({
 
       {/* ── Message Requests overlay ── */}
       {showRequests && (
-        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px 16px' }}>
             <button onClick={() => setShowRequests(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               <X size={22} color="#A78BFA" />
