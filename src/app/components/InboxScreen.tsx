@@ -200,7 +200,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   return (
     <div
-      style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
+      style={{ background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {
         if (pullStartY.current === null) return;
@@ -221,38 +221,43 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       <div style={{
         display: 'flex', alignItems: 'center', gap: '12px',
         padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
         flexShrink: 0, position: 'relative',
       }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1 }}>
-          <ArrowLeft size={24} color="#A78BFA" />
+        <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <ArrowLeft size={18} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Space Grotesk, sans-serif' }}>
           Messages
         </h1>
       </div>
 
       {/* Tabs */}
-      <div style={{ display: 'flex', gap: '8px', padding: '12px 16px 0', flexShrink: 0 }}>
-        {(['messages', 'requests'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => { haptics.light(); setTab(t); }}
-            style={{
-              flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-              background: tab === t ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(255,255,255,0.05)',
-              border: 'none', borderRadius: '12px', padding: '10px', cursor: 'pointer',
-              color: tab === t ? '#fff' : '#8B8FA8', fontSize: '13px', fontWeight: 700,
-            }}
-          >
-            {t === 'messages' ? 'Messages' : 'Requests'}
-            {t === 'requests' && requests.length > 0 && (
-              <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : '#A78BFA', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
-                {requests.length}
-              </span>
-            )}
-          </button>
-        ))}
+      <div style={{ padding: '2px 16px 0', flexShrink: 0 }}>
+        <div style={{
+          display: 'flex', gap: '3px', padding: '4px',
+          background: 'rgba(255,255,255,0.06)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+          border: '1px solid rgba(255,255,255,0.1)', borderRadius: '100px',
+        }}>
+          {(['messages', 'requests'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => { haptics.light(); setTab(t); }}
+              style={{
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                background: tab === t ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                border: 'none', borderRadius: '100px', padding: '9px', cursor: 'pointer',
+                color: tab === t ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700,
+              }}
+            >
+              {t === 'messages' ? 'Messages' : 'Requests'}
+              {t === 'requests' && requests.length > 0 && (
+                <span style={{ background: tab === t ? 'rgba(255,255,255,0.25)' : '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>
+                  {requests.length}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {toast && (
@@ -263,7 +268,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
+      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '10px 16px calc(110px + env(safe-area-inset-bottom))' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px 16px' }}>Loading…</p>
         ) : tab === 'requests' ? (
@@ -277,31 +282,35 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
                 New conversations from people you haven't talked to yet show up here first.
               </p>
             </div>
-          ) : requests.map((r, i) => (
-            <div key={r.requesterId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
-              <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: r.avatarUrl ? 'transparent' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
-                {r.avatarUrl ? <img src={r.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#A78BFA', fontSize: '18px', fontWeight: 700 }}>{r.name[0]?.toUpperCase()}</span>}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>{r.name}</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>wants to message you · {timeAgo(r.createdAt)}</p>
-              </div>
-              <button
-                onClick={() => respondToRequest(r, 'decline')}
-                disabled={respondingId === r.requesterId}
-                style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <X size={15} color="#8B8FA8" />
-              </button>
-              <button
-                onClick={() => respondToRequest(r, 'accept')}
-                disabled={respondingId === r.requesterId}
-                style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
-              >
-                <Check size={15} color="#fff" />
-              </button>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              {requests.map((r, i) => (
+                <div key={r.requesterId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: r.avatarUrl ? 'transparent' : 'rgba(168,85,247,0.18)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                    {r.avatarUrl ? <img src={r.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#D8B4FE', fontSize: '18px', fontWeight: 700 }}>{r.name[0]?.toUpperCase()}</span>}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0 }}>{r.name}</p>
+                    <p style={{ color: '#9CA0BC', fontSize: '12px', margin: '2px 0 0' }}>wants to message you · {timeAgo(r.createdAt)}</p>
+                  </div>
+                  <button
+                    onClick={() => respondToRequest(r, 'decline')}
+                    disabled={respondingId === r.requesterId}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <X size={15} color="#9CA0BC" />
+                  </button>
+                  <button
+                    onClick={() => respondToRequest(r, 'accept')}
+                    disabled={respondingId === r.requesterId}
+                    style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <Check size={15} color="#fff" />
+                  </button>
+                </div>
+              ))}
             </div>
-          ))
+          )
         ) : threads.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>
             <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(167,139,250,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -312,39 +321,43 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               Message an organiser from an event page or their profile.
             </p>
           </div>
-        ) : threads.map((t, i) => (
-          <div key={t.otherUserId} style={{ width: '100%', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', gap: '8px', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
-            <button
-              onClick={() => onOpenConversation({ id: t.otherUserId, name: t.otherUserName, avatarUrl: t.otherUserAvatar })}
-              style={{ flex: 1, background: 'none', border: 'none', padding: '14px 4px 14px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', minWidth: 0 }}
-            >
-              <div style={{ width: '44px', height: '44px', borderRadius: '50%', flexShrink: 0, background: t.otherUserAvatar ? 'transparent' : 'rgba(167,139,250,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
-                {t.otherUserAvatar
-                  ? <img src={t.otherUserAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  : <span style={{ color: '#A78BFA', fontSize: '18px', fontWeight: 700 }}>{t.otherUserName[0]?.toUpperCase()}</span>
-                }
-                {t.online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #020005' }} />}
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {threads.map((t, i) => (
+              <div key={t.otherUserId} style={{ width: '100%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '4px', animation: `rowIn 0.2s ease ${i * 0.03}s backwards` }}>
+                <button
+                  onClick={() => onOpenConversation({ id: t.otherUserId, name: t.otherUserName, avatarUrl: t.otherUserAvatar })}
+                  style={{ flex: 1, background: 'none', border: 'none', padding: '12px 4px 12px 12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left', minWidth: 0 }}
+                >
+                  <div style={{ width: '46px', height: '46px', borderRadius: '50%', flexShrink: 0, background: t.otherUserAvatar ? 'transparent' : 'rgba(168,85,247,0.18)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', position: 'relative' }}>
+                    {t.otherUserAvatar
+                      ? <img src={t.otherUserAvatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <span style={{ color: '#D8B4FE', fontSize: '18px', fontWeight: 700 }}>{t.otherUserName[0]?.toUpperCase()}</span>
+                    }
+                    {t.online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #0A0612' }} />}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '3px', gap: '8px' }}>
+                      <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.otherUserName}</span>
+                      <span style={{ color: '#7C8199', fontSize: '11px', flexShrink: 0 }}>{timeAgo(t.lastAt)}</span>
+                    </div>
+                    <p style={{ color: t.unread > 0 ? '#E4E4F0' : '#8B8FA8', fontSize: '12.5px', fontWeight: t.unread > 0 ? 600 : 400, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.lastBody}
+                    </p>
+                  </div>
+                  {t.unread > 0 && (
+                    <div style={{ background: '#A855F7', color: '#fff', fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      {t.unread > 9 ? '9+' : t.unread}
+                    </div>
+                  )}
+                </button>
+                <button onClick={() => setMenuThread(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 12px 8px 4px', flexShrink: 0 }}>
+                  <MoreVertical size={18} color="#7C8199" />
+                </button>
               </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                  <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{t.otherUserName}</span>
-                  <span style={{ color: '#8B8FA8', fontSize: '11px', flexShrink: 0 }}>{timeAgo(t.lastAt)}</span>
-                </div>
-                <p style={{ color: t.unread > 0 ? '#F0F0FF' : '#8B8FA8', fontSize: '12px', fontWeight: t.unread > 0 ? 600 : 400, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {t.lastBody}
-                </p>
-              </div>
-              {t.unread > 0 && (
-                <div style={{ background: '#A78BFA', color: '#fff', fontSize: '11px', fontWeight: 700, width: '20px', height: '20px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {t.unread > 9 ? '9+' : t.unread}
-                </div>
-              )}
-            </button>
-            <button onClick={() => setMenuThread(t)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 16px 8px 4px', flexShrink: 0 }}>
-              <MoreVertical size={18} color="#8B8FA8" />
-            </button>
+            ))}
           </div>
-        ))}
+        )}
       </div>
 
       {/* 3-dot action menu */}

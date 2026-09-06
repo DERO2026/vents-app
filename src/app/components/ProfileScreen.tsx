@@ -437,7 +437,7 @@ export function ProfileScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)', position: 'relative' }}
+      style={{ background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -471,15 +471,18 @@ export function ProfileScreen({
         </h1>
       </div>
 
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(96px + env(safe-area-inset-bottom))' }}>
+      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(110px + env(safe-area-inset-bottom))' }}>
         {/* Profile card */}
         <div className="px-4 mb-4">
           <div
             className="p-5"
             style={{
-              background: 'linear-gradient(135deg, #1A0D2E 0%, #0D1429 100%)',
-              borderRadius: '20px',
-              border: '1px solid rgba(123,47,190,0.25)',
+              background: 'linear-gradient(135deg, rgba(123,47,190,0.16), rgba(79,70,229,0.1))',
+              backdropFilter: 'blur(20px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              borderRadius: '22px',
+              border: '1px solid rgba(255,255,255,0.1)',
+              boxShadow: '0 10px 26px rgba(0,0,0,0.28)',
               position: 'relative',
               overflow: 'hidden',
             }}
@@ -515,9 +518,9 @@ export function ProfileScreen({
                 <div
                   className="w-16 h-16 rounded-full flex items-center justify-center overflow-hidden"
                   style={{
-                    background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-                    boxShadow: '0 8px 24px rgba(123,47,190,0.4)',
-                    border: '2px solid #7B2FBE',
+                    background: 'linear-gradient(135deg, #7B2FBE 0%, #5B3FCB 100%)',
+                    boxShadow: '0 6px 18px rgba(0,0,0,0.3)',
+                    border: '2px solid rgba(255,255,255,0.14)',
                     boxSizing: 'border-box',
                   }}
                 >
@@ -636,9 +639,11 @@ export function ProfileScreen({
         <div className="px-4 mb-4">
           <div
             style={{
-              background: '#090514',
-              borderRadius: '16px',
-              border: '1px solid rgba(255,255,255,0.05)',
+              background: 'rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(20px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              borderRadius: '18px',
+              border: '1px solid rgba(255,255,255,0.08)',
               overflow: 'hidden',
             }}
           >
@@ -652,22 +657,22 @@ export function ProfileScreen({
                   style={{
                     borderBottom:
                       index < filteredMenuItems.length - 1
-                        ? '1px solid rgba(255,255,255,0.04)'
+                        ? '1px solid rgba(255,255,255,0.05)'
                         : 'none',
                     cursor: item.screen ? 'pointer' : 'default',
                   }}
                 >
                   <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: 'rgba(123,47,190,0.15)' }}
+                    style={{ background: 'rgba(168,85,247,0.14)', border: '1px solid rgba(255,255,255,0.06)' }}
                   >
-                    <Icon size={17} color="#7B2FBE" />
+                    <Icon size={17} color="#C4B5FD" />
                   </div>
                   <div className="flex-1">
-                    <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 600 }}>
                       {item.label}
                     </p>
-                    <p style={{ color: '#94A3B8', fontSize: '12px' }}>{item.sublabel}</p>
+                    <p style={{ color: '#9CA0BC', fontSize: '12px' }}>{item.sublabel}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {item.badge && (
@@ -703,13 +708,15 @@ export function ProfileScreen({
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'linear-gradient(135deg, rgba(79,70,229,0.15), rgba(168,85,247,0.1))',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
-                border: '1px solid rgba(168,85,247,0.3)',
+                border: '1px solid rgba(196,181,253,0.28)',
                 cursor: 'pointer',
               }}
             >
-              <Wallet size={16} color="#A855F7" />
-              <span style={{ color: '#A855F7', fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
+              <Wallet size={16} color="#D8B4FE" />
+              <span style={{ color: '#D8B4FE', fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
             </button>
           </div>
         )}
@@ -722,10 +729,11 @@ export function ProfileScreen({
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
-                border: '1px solid rgba(239,68,68,0.35)',
+                border: '1px solid rgba(239,68,68,0.3)',
                 cursor: 'pointer',
-                boxShadow: '0 0 18px rgba(239,68,68,0.18)',
               }}
             >
               <Shield size={16} color="#EF4444" />
@@ -753,6 +761,8 @@ export function ProfileScreen({
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'rgba(34,211,238,0.08)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
                 border: '1px solid rgba(34,211,238,0.25)',
                 cursor: 'pointer',
@@ -780,6 +790,8 @@ export function ProfileScreen({
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: spRequestStatus === 'pending' ? 'rgba(34,211,238,0.04)' : 'rgba(34,211,238,0.08)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
                 border: `1px solid ${spRequestStatus === 'pending' ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.25)'}`,
                 cursor: 'pointer',
@@ -808,7 +820,7 @@ export function ProfileScreen({
               <div className="px-4 mb-3">
                 <div
                   className="w-full flex items-center justify-center gap-2 p-4"
-                  style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '14px' }}
+                  style={{ background: 'rgba(16,185,129,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '14px' }}
                 >
                   <ShieldCheck size={16} color="#10B981" />
                   <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
@@ -819,7 +831,7 @@ export function ProfileScreen({
                 <button
                   onClick={() => setShowCacVerify(true)}
                   className="w-full flex items-center justify-center gap-2 p-4"
-                  style={{ background: 'rgba(124,58,237,0.08)', borderRadius: '14px', border: '1px solid rgba(168,85,247,0.35)', cursor: 'pointer' }}
+                  style={{ background: 'rgba(124,58,237,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', borderRadius: '14px', border: '1px solid rgba(168,85,247,0.3)', cursor: 'pointer' }}
                 >
                   <ShieldCheck size={16} color="#A78BFA" />
                   <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</span>
@@ -833,6 +845,8 @@ export function ProfileScreen({
                 className="w-full flex items-center justify-center gap-2 p-4"
                 style={{
                   background: orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
+                  backdropFilter: 'blur(20px) saturate(160%)',
+                  WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                   borderRadius: '14px',
                   border: `1px solid ${orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
                   cursor: 'pointer',

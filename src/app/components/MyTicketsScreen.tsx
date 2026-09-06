@@ -411,7 +411,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
-        background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.14) 0%, #050010 45%, #020005 100%)',
+        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -463,8 +463,10 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           <button
             onClick={handleRefresh}
             style={{
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
+              background: 'rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(20px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.13)',
               borderRadius: '50%',
               width: '36px',
               height: '36px',
@@ -491,7 +493,10 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           style={{
             position: 'relative',
             display: 'flex',
-            background: '#090514',
+            background: 'rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '100px',
             padding: '4px',
             gap: '3px',
@@ -505,7 +510,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               bottom: '4px',
               width: 'calc((100% - 8px) / 3)',
               borderRadius: '100px',
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)',
               transform: `translateX(${(['upcoming', 'past', 'transfers'] as const).indexOf(activeTab) * 100}%)`,
               transition: 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
             }}
@@ -555,7 +560,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           // padding — a flat 24px left the last ticket card partially hidden
           // behind it on shorter-safe-area devices. Matches the same
           // clearance convention already used by Home/Explore/Profile/Saved.
-          padding: '0 16px calc(90px + env(safe-area-inset-bottom))',
+          padding: '0 16px calc(110px + env(safe-area-inset-bottom))',
           scrollbarWidth: 'none',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
@@ -809,85 +814,94 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 key={ticket.ticketId}
                 onClick={() => onViewTicket(ticket)}
                 style={{
-                  background: '#090514',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '20px',
+                  background: '#0A0612',
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '22px',
                   overflow: 'hidden',
                   cursor: 'pointer',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
                 }}
               >
                 {/* Event image strip */}
-                <div style={{ position: 'relative', height: '100px' }}>
+                <div style={{ position: 'relative', height: '130px' }}>
                   <img
                     src={ticket.event.image}
                     alt={ticket.event.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '20px 20px 0 0' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: 'linear-gradient(to bottom, transparent, rgba(19,22,41,0.9))',
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 40%, rgba(10,6,18,0.95) 100%)',
                     }}
                   />
                   <div
                     style={{
                       position: 'absolute',
-                      top: '10px',
+                      top: '12px',
                       left: '12px',
-                      background: 'rgba(123,47,190,0.15)',
-                      border: '1px solid #7B2FBE',
+                      background: 'rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(16px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                      border: '1px solid rgba(196,181,253,0.35)',
                       borderRadius: '100px',
-                      padding: '3px 8px',
+                      padding: '4px 10px',
                     }}
                   >
-                    <span style={{ color: '#C084FC', fontSize: '10px', fontWeight: 700 }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
                       {ticket.ticketType.name.toUpperCase()}
                     </span>
                   </div>
                   <div
                     style={{
                       position: 'absolute',
-                      top: '10px',
+                      top: '12px',
                       right: '12px',
-                      background: 'rgba(0,0,0,0.5)',
-                      backdropFilter: 'blur(8px)',
-                      borderRadius: '8px',
-                      padding: '5px 8px',
+                      background: 'rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(16px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                      border: '1px solid rgba(255,255,255,0.16)',
+                      borderRadius: '100px',
+                      padding: '5px 10px',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '5px',
                     }}
                   >
-                    <QrCode size={13} color="#7B2FBE" />
-                    <span style={{ color: '#7B2FBE', fontSize: '14px', fontWeight: 600 }}>
+                    <QrCode size={13} color="#F0F0FF" />
+                    <span style={{ color: '#F0F0FF', fontSize: '11px', fontWeight: 700 }}>
                       View QR
                     </span>
+                  </div>
+                  <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '10px' }}>
+                    <h3
+                      style={{
+                        color: '#FFFFFF',
+                        fontSize: '16px',
+                        fontWeight: 800,
+                        fontFamily: 'Space Grotesk, sans-serif',
+                        margin: 0,
+                        textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                      }}
+                    >
+                      {ticket.event.title}
+                    </h3>
                   </div>
                 </div>
 
                 {/* Ticket info */}
                 <div style={{ padding: '14px' }}>
-                  <h3
-                    style={{
-                      color: '#FFFFFF',
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      marginBottom: '8px',
-                    }}
-                  >
-                    {ticket.event.title}
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Calendar size={12} color="#94A3B8" />
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                      <Calendar size={12} color="#9CA0BC" />
+                      <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
                         {ticket.event.date} · {ticket.event.time}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <MapPin size={12} color="#94A3B8" />
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                      <MapPin size={12} color="#9CA0BC" />
+                      <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
                         {ticket.event.venue}, {ticket.event.city}
                       </span>
                     </div>
@@ -904,11 +918,11 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     }}
                   >
                     <div>
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                      <span style={{ color: '#9CA0BC', fontSize: '13px', fontWeight: 500 }}>
                         {ticket.quantity} × {ticket.ticketType.name}
                       </span>
                     </div>
-                    <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
@@ -916,17 +930,18 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   {/* Ticket ID */}
                   <div
                     style={{
-                      marginTop: '8px',
-                      background: 'rgba(255,255,255,0.04)',
-                      borderRadius: '8px',
-                      padding: '6px 10px',
+                      marginTop: '10px',
+                      background: 'rgba(255,255,255,0.05)',
+                      border: '1px solid rgba(255,255,255,0.08)',
+                      borderRadius: '10px',
+                      padding: '8px 12px',
                       display: 'flex',
                       justifyContent: 'space-between',
                       alignItems: 'center',
                     }}
                   >
                     <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</span>
-                    <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                    <span style={{ color: '#D8B4FE', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
                       {ticketDisplayCode(ticket.ticketId)}
                     </span>
                   </div>

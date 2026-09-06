@@ -1624,11 +1624,18 @@ export function HomeScreen({
           </button>
         </div>
 
+      </div>
+
+      {/* Scrollable content -- Events/Services quick-switch now lives here,
+          as the first thing in the normal scroll flow, so it moves with the
+          rest of Home instead of staying pinned in the fixed hero above. */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+
         {/* Events / Services quick-switch -- both verticals as equal, premium
-            entry points right under the hero headline. Events is always the
+            entry points right under the hero header. Events is always the
             "active" surface here (this is the Events home), Services hands
             off to the existing ServicesHomeScreen via onServicesPress. */}
-        <div style={{ position: 'relative', display: 'flex', gap: '10px', padding: '12px 16px 14px' }}>
+        <div style={{ display: 'flex', gap: '10px', padding: '14px 16px 16px' }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(123,47,190,0.28), rgba(79,70,229,0.24))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '12px 14px' }}>
             <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <CalendarDays size={17} color="#fff" />
@@ -1653,10 +1660,6 @@ export function HomeScreen({
             </button>
           )}
         </div>
-      </div>
-
-      {/* Scrollable content */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
         {/* Combined active-filter summary -- one place to see (and clear)
             category/state/price filters narrowing the feed. Country is
