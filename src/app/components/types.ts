@@ -184,6 +184,11 @@ export interface ServiceProvider {
   // location, which is never persisted anywhere.
   latitude?: number | null;
   longitude?: number | null;
+  // From service_provider_ratings (0057_provider_rating_aggregate.sql) --
+  // undefined until fetched/merged in by the caller; a real 0/null
+  // reviewCount means no reviews yet, never fabricated.
+  avgRating?: number | null;
+  reviewCount?: number | null;
   // ISO 3166-1 alpha-2 code (e.g. 'NG', 'QA', 'US'), or '' for a listing
   // saved before this field existed / before onboarding sets it -- the
   // structured field discovery filters on (see 0036_service_providers_

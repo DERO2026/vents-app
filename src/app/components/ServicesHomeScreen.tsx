@@ -4,7 +4,7 @@ import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
-import { fetchApprovedServiceProviders, fetchNearbyServiceProviders } from '../../lib/serviceProviders';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings } from '../../lib/serviceProviders';
 import { useGeolocation } from '../../lib/useGeolocation';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
@@ -95,6 +95,7 @@ export function ServicesHomeScreen({
     if (geo.status === 'granted' && geo.lat != null && geo.lng != null) {
       setUsingGps(true);
       fetchNearbyServiceProviders(geo.lat, geo.lng, { limit: 20 })
+        .then((rows) => withProviderRatings(rows))
         .then((rows) => { if (!cancelled) setProviders(rows); })
         .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
       return () => { cancelled = true; };
@@ -104,6 +105,7 @@ export function ServicesHomeScreen({
     // proximity discovery.
     setUsingGps(false);
     fetchApprovedServiceProviders({ limit: 20, country: activeIso })
+      .then((rows) => withProviderRatings(rows))
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };

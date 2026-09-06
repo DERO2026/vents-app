@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import { Event, ServiceProvider } from './types';
 import { supabase } from '../../lib/supabase';
-import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, NearbyServiceProvider } from '../../lib/serviceProviders';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings, NearbyServiceProvider } from '../../lib/serviceProviders';
 import { useGeolocation } from '../../lib/useGeolocation';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { analytics } from '../../lib/analyticsEvents';
@@ -111,6 +111,33 @@ function useCardCountdown(eventDate?: string): string | null {
 }
 
 const CATEGORIES = [{ id: 'all', label: 'All', icon: '' }, ...CATEGORY_LIST];
+
+// Compact "SEP 12" style date badge for the top-left corner of an event
+// image (matches the approved landing/Home mockup's card treatment) --
+// purely a display parse of event_date, no new data. Renders nothing if
+// event_date can't be parsed rather than showing a broken/blank badge.
+function DateBadge({ eventDate }: { eventDate?: string }) {
+  const parsed = useMemo(() => {
+    if (!eventDate) return null;
+    const d = new Date(eventDate);
+    if (isNaN(d.getTime())) return null;
+    return {
+      month: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
+      day: d.getDate(),
+    };
+  }, [eventDate]);
+  if (!parsed) return null;
+  return (
+    <div style={{
+      position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,255,255,0.95)',
+      borderRadius: '10px', padding: '4px 8px', textAlign: 'center', lineHeight: 1.1,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.35)', minWidth: '34px',
+    }}>
+      <div style={{ fontSize: '8px', fontWeight: 800, color: '#7B2FBE', letterSpacing: '0.03em' }}>{parsed.month}</div>
+      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0A0A0F' }}>{parsed.day}</div>
+    </div>
+  );
+}
 
 // end_time is stored as a raw 24h "HH:MM" (straight from <input type="time">)
 // — reformatted to match event.time's 12h "h:mm AM/PM" so the two never
@@ -240,9 +267,10 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           showDots={cardImages.length > 1}
           style={{ width: '100%', height: '100%' }}
         />
-        {/* FOMO tag */}
+        <DateBadge eventDate={event.event_date} />
+        {/* FOMO tag -- offset below the date badge so the two never overlap */}
         {isSelling && (
-          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.18)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '999px', padding: '3px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          <div style={{ position: 'absolute', top: '46px', left: '8px', background: 'rgba(255,0,110,0.18)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '999px', padding: '3px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}>
             <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>Selling Fast!</span>
           </div>
         )}
@@ -456,11 +484,12 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             }
           }}
         />
+        <DateBadge eventDate={event.event_date} />
         {badgeText && (
           <div
             style={{
               position: 'absolute',
-              top: '8px',
+              top: '46px',
               left: '8px',
               background: badgeColor || 'rgba(168,85,247,0.9)',
               backdropFilter: 'blur(4px)',
@@ -828,16 +857,23 @@ export function HomeScreen({
     if (homeGeo.status === 'requesting' || homeGeo.status === 'idle') return;
     if (homeGeo.status === 'granted' && homeGeo.lat != null && homeGeo.lng != null) {
       fetchNearbyServiceProviders(homeGeo.lat, homeGeo.lng, { limit: 10 })
+        .then((rows) => withProviderRatings(rows))
         .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
         .catch(() => { if (!cancelled) setNearbyProviders([]); });
     } else {
       fetchApprovedServiceProviders({ limit: 10, country: countryFilter })
+        .then((rows) => withProviderRatings(rows))
         .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
         .catch(() => { if (!cancelled) setNearbyProviders([]); });
     }
     return () => { cancelled = true; };
   }, [homeGeo.status, homeGeo.lat, homeGeo.lng, countryFilter]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Scroll anchors for the new quick-action row's "Trending"/"Near You"
+  // chips -- both sections already exist further down; these chips jump to
+  // the real thing rather than duplicating it as a separate filtered view.
+  const trendingSectionRef = useRef<HTMLDivElement>(null);
+  const nearbyProvidersRef = useRef<HTMLDivElement>(null);
   // Skip the very first signal value (mount) — only an actual tap-while-on-
   // Home should scroll; landing on Home fresh shouldn't jump anything.
   const scrollSignalMounted = useRef(false);
@@ -1631,6 +1667,39 @@ export function HomeScreen({
           </div>
         )}
 
+        {/* Quick-action row (Trending / Near You / This Weekend / Free
+            Events) -- from the approved mockup, added as a layer ABOVE the
+            existing category filter bar rather than replacing it: each
+            chip is honest about what it actually does with real state/
+            sections already in this screen (no fake "near you" event geo-
+            filtering, since events don't have that data yet -- it jumps to
+            the real Providers Near You section instead). */}
+        <div style={{ display: 'flex', gap: '8px', padding: '0 16px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {[
+            { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
+            { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
+          ].map(({ label, icon: Icon, onClick }) => {
+            const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
+            return (
+              <button
+                key={label}
+                onClick={onClick}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                  background: active ? 'rgba(123,47,190,0.22)' : '#090514',
+                  border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                  borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
+                }}
+              >
+                <Icon size={13} color={active ? '#C4B5FD' : '#8B8FA8'} />
+                <span style={{ color: active ? '#F0F0FF' : '#C4C9E0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Category icon bar */}
         <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
           {ICON_CATEGORIES.map((cat) => {
@@ -1733,7 +1802,7 @@ export function HomeScreen({
 
                 {/* Trending Events */}
                 {trendingEvents.length > 0 && (
-                  <div className="mb-6">
+                  <div className="mb-6" ref={trendingSectionRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Trending Events
@@ -1760,7 +1829,7 @@ export function HomeScreen({
                     home screen uses, so a provider looks identical
                     wherever it's shown. */}
                 {nearbyProviders && nearbyProviders.length > 0 && (
-                  <div className="mb-6">
+                  <div className="mb-6" ref={nearbyProvidersRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         {homeGeo.status === 'granted' ? 'Providers Near You' : 'Top Service Providers'}

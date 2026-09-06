@@ -34,6 +34,30 @@ export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
 const SERVICE_PROVIDER_COLUMNS =
   'id, user_id, business_name, category, description, location, latitude, longitude, country, photo_urls, starting_price, starting_price_currency, services_offered, offers_home_service, offers_delivery, offers_same_day, status, created_at, updated_at';
 
+// Merges in real ratings from service_provider_ratings
+// (0057_provider_rating_aggregate.sql) for a given set of already-fetched
+// providers. Silently no-ops (leaves avgRating/reviewCount unset) if the
+// view isn't there yet (e.g. this migration hasn't been applied to this
+// environment) or the query fails -- ratings are a display enhancement,
+// never something that should break provider discovery.
+export async function withProviderRatings<T extends ServiceProvider>(providers: T[]): Promise<T[]> {
+  if (providers.length === 0) return providers;
+  try {
+    const { data, error } = await supabase
+      .from('service_provider_ratings')
+      .select('provider_id, avg_rating, review_count')
+      .in('provider_id', providers.map((p) => p.id));
+    if (error) throw error;
+    const byId = new Map((data || []).map((r: any) => [r.provider_id, r]));
+    return providers.map((p) => {
+      const r = byId.get(p.id);
+      return r ? { ...p, avgRating: Number(r.avg_rating), reviewCount: Number(r.review_count) } : p;
+    });
+  } catch {
+    return providers;
+  }
+}
+
 // "Providers near you" / category browsing: public discovery, RLS already
 // restricts this to status='approved' rows for anon/authenticated (see
 // service_providers_public_select_approved, 0034). Ordered by created_at
