@@ -2630,6 +2630,10 @@ export default function App() {
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
               onServicesPress={() => navigateTo('services-home')}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}

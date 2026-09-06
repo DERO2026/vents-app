@@ -52,6 +52,13 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- "Providers Near You" (Services) -- distance-sorted discovery via
+         the WebView's own navigator.geolocation, not a separate native
+         plugin. COARSE is enough for city/neighborhood-level provider
+         discovery; FINE is declared too so the OS offers precise location
+         if the user grants it, but the app never requires it. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <!-- RECORD_AUDIO intentionally NOT declared here. Chat voice notes
          (getUserMedia/MediaRecorder in the WebView) are gated off by
          app_config.voice_notes_enabled (DEFAULT false — see

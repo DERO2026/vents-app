@@ -4,7 +4,8 @@ import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
-import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders } from '../../lib/serviceProviders';
+import { useGeolocation } from '../../lib/useGeolocation';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
@@ -77,15 +78,36 @@ export function ServicesHomeScreen({
   const activeIso = discoveryCountryIso || accountCountryIso;
   const activeCountry = COUNTRY_CODES.find((c) => c.iso === activeIso);
 
+  // Real GPS-distance discovery, with an automatic fallback to country
+  // proximity (already-implemented, unchanged) the moment location is
+  // denied/unavailable/still resolving -- "Near You" never blocks on
+  // permission and never shows an empty screen while waiting for it.
+  const geo = useGeolocation(true);
+  const [usingGps, setUsingGps] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
     setProviders(null);
     setLoadError(false);
+
+    if (geo.status === 'requesting' || geo.status === 'idle') return;
+
+    if (geo.status === 'granted' && geo.lat != null && geo.lng != null) {
+      setUsingGps(true);
+      fetchNearbyServiceProviders(geo.lat, geo.lng, { limit: 20 })
+        .then((rows) => { if (!cancelled) setProviders(rows); })
+        .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
+      return () => { cancelled = true; };
+    }
+
+    // denied / unavailable -- fall back to the existing country/city
+    // proximity discovery.
+    setUsingGps(false);
     fetchApprovedServiceProviders({ limit: 20, country: activeIso })
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };
-  }, [activeIso]);
+  }, [activeIso, geo.status, geo.lat, geo.lng]);
 
   const filteredNearYou = useMemo(() => {
     if (!providers) return [];
@@ -168,7 +190,7 @@ export function ServicesHomeScreen({
 
         {/* Providers near you */}
         <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 12px' }}>
-          Providers Near You
+          {usingGps ? 'Providers Near You' : `Providers in ${activeCountry?.name || 'your area'}`}
         </p>
 
         {providers === null ? (

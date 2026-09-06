@@ -128,27 +128,29 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGue
         }}
       >
         <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
-          Discover Your
+          Events. Services.
           <br />
-          <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Best Events</span>
+          <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Real Experiences.</span>
         </h1>
 
         <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
-          Book tickets to concerts, tech summits, food festivals and more — wherever you are.
+          Find events, book trusted services, and make it happen — all in one app.
         </p>
 
-        {/* Feature chips */}
+        {/* Feature chips -- Location Based / Two Worlds / Instant Access,
+            the three pillars of the redesign (a bigger world than just
+            ticketing now that Services is real) condensed to fit this
+            screen's existing compact chip row. */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '22px' }}>
-          {/* All States chip */}
           <div
             style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1, cursor: 'pointer', boxShadow: '0 0 12px rgba(168,85,247,0.15)' }}
           >
             <Globe size={12} color="#A855F7" />
-            <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 600, lineHeight: 1.3 }}>All States</span>
+            <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 600, lineHeight: 1.3 }}>Near You</span>
           </div>
           {[
-            { icon: Zap, text: 'Instant booking' },
-            { icon: Ticket, text: 'Digital tickets' },
+            { icon: Zap, text: 'Events & Services' },
+            { icon: Ticket, text: 'Instant booking' },
           ].map(({ icon: Icon, text }) => (
             <div key={text} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1 }}>
               <Icon size={12} color="#A855F7" />

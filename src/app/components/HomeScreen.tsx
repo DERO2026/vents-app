@@ -6,8 +6,11 @@ import {
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
   ChevronDown,
 } from 'lucide-react';
-import { Event } from './types';
+import { Event, ServiceProvider } from './types';
 import { supabase } from '../../lib/supabase';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, NearbyServiceProvider } from '../../lib/serviceProviders';
+import { useGeolocation } from '../../lib/useGeolocation';
+import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
@@ -39,6 +42,7 @@ interface HomeScreenProps {
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
   onServicesPress?: () => void;
+  onProviderPress?: (provider: ServiceProvider) => void;
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
@@ -223,9 +227,9 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
       style={{
         width: '100%',
         background: '#090514',
-        borderRadius: '28px',
-        border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.25)',
+        borderRadius: '22px',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 20px 40px rgba(88,28,135,0.16), 0 2px 10px rgba(0,0,0,0.3)',
       }}
     >
       <div style={{ aspectRatio: EVENT_CARD_ASPECT_CSS, position: 'relative' }}>
@@ -238,7 +242,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
         />
         {/* FOMO tag */}
         {isSelling && (
-          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.15)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '6px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.18)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '999px', padding: '3px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}>
             <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>Selling Fast!</span>
           </div>
         )}
@@ -262,12 +266,14 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <span
             style={{
               fontSize: '9px',
-              color: '#A78BFA',
+              color: '#C4B5FD',
               fontWeight: 700,
-              background: 'rgba(167,139,250,0.12)',
-              padding: '2px 6px',
-              borderRadius: '4px',
+              background: 'rgba(167,139,250,0.14)',
+              border: '1px solid rgba(167,139,250,0.3)',
+              padding: '3px 9px',
+              borderRadius: '999px',
               width: 'fit-content',
+              letterSpacing: '0.03em',
             }}
           >
             {event.category.toUpperCase()}
@@ -281,7 +287,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
                 padding: '2px 5px',
-                borderRadius: '4px',
+                borderRadius: '999px',
                 letterSpacing: '0.05em',
               }}
             >
@@ -425,10 +431,10 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
       style={{
         width: '162px',
         background: '#090514',
-        borderRadius: '18px',
-        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.08)',
         flexShrink: 0,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+        boxShadow: '0 10px 26px rgba(88,28,135,0.14), 0 2px 8px rgba(0,0,0,0.25)',
       }}
     >
       <div style={{ height: '110px', position: 'relative' }}>
@@ -458,8 +464,8 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
               left: '8px',
               background: badgeColor || 'rgba(168,85,247,0.9)',
               backdropFilter: 'blur(4px)',
-              padding: '3px 8px',
-              borderRadius: '6px',
+              padding: '3px 9px',
+              borderRadius: '999px',
               display: 'flex',
               alignItems: 'center',
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
@@ -490,12 +496,14 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           <span
             style={{
               fontSize: '9px',
-              color: '#A78BFA',
+              color: '#C4B5FD',
               fontWeight: 700,
-              background: 'rgba(167,139,250,0.12)',
-              padding: '2px 6px',
-              borderRadius: '4px',
+              background: 'rgba(167,139,250,0.14)',
+              border: '1px solid rgba(167,139,250,0.3)',
+              padding: '3px 9px',
+              borderRadius: '999px',
               width: 'fit-content',
+              letterSpacing: '0.03em',
             }}
           >
             {event.category.toUpperCase()}
@@ -509,7 +517,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
                 padding: '2px 5px',
-                borderRadius: '4px',
+                borderRadius: '999px',
                 letterSpacing: '0.05em',
               }}
             >
@@ -706,7 +714,7 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '32px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 24px 48px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3)' }}>
+        <div style={{ borderRadius: '28px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 24px 48px rgba(88,28,135,0.22), 0 4px 12px rgba(0,0,0,0.35)' }}>
           {/* This card's own swipe (above) switches between featured EVENTS;
               a single event's own image list rarely has more than one entry
               today (events only store one image_url), so ImageCarousel's own
@@ -722,7 +730,7 @@ function FeaturedCarousel({
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
           {/* FEATURED badge */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
-            <span style={{ background: 'rgba(167,139,250,0.92)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.05em' }}>FEATURED</span>
+            <span style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 11px', borderRadius: '999px', letterSpacing: '0.05em', boxShadow: '0 2px 10px rgba(123,47,190,0.5)' }}>FEATURED</span>
           </div>
           {/* Save button */}
           <button
@@ -793,6 +801,7 @@ export function HomeScreen({
   onUserPress,
   onLiveMapPress,
   onServicesPress,
+  onProviderPress,
   dbEvents,
   loading,
   fetchEvents,
@@ -806,6 +815,28 @@ export function HomeScreen({
   onCountryFilterChange,
 }: HomeScreenProps) {
   const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
+
+  // Providers Near You (Services surfaced directly on Home, per the
+  // redesign) -- real GPS-distance discovery when granted
+  // (get_nearby_service_providers, 0056_service_provider_geolocation.sql),
+  // falling back to the account's country the same way Services' own home
+  // screen does when location is denied/unavailable/still resolving.
+  const homeGeo = useGeolocation(true);
+  const [nearbyProviders, setNearbyProviders] = useState<(ServiceProvider | NearbyServiceProvider)[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (homeGeo.status === 'requesting' || homeGeo.status === 'idle') return;
+    if (homeGeo.status === 'granted' && homeGeo.lat != null && homeGeo.lng != null) {
+      fetchNearbyServiceProviders(homeGeo.lat, homeGeo.lng, { limit: 10 })
+        .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
+        .catch(() => { if (!cancelled) setNearbyProviders([]); });
+    } else {
+      fetchApprovedServiceProviders({ limit: 10, country: countryFilter })
+        .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
+        .catch(() => { if (!cancelled) setNearbyProviders([]); });
+    }
+    return () => { cancelled = true; };
+  }, [homeGeo.status, homeGeo.lat, homeGeo.lng, countryFilter]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   // Skip the very first signal value (mount) — only an actual tap-while-on-
   // Home should scroll; landing on Home fresh shouldn't jump anything.
@@ -1425,69 +1456,96 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Header -- logo + a country-aware (never hardcoded-Nigeria) one-line
-          tagline on the left; account-level actions (notifications, create)
-          on the right. Discovery controls (search/country/filters) live in
-          their own cluster below, not mixed in here. */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-          <VentsLogo size={28} />
-          <div style={{ fontSize: '9px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
-            {`Discover the best events in ${COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}`}
+      {/* Hero header -- premium gradient band (same radial-glow language as
+          WelcomeScreen, so Home reads as a continuation of the landing
+          screen, not a different app) carrying brand, location, account
+          actions, and a clear Events/Services quick-switch -- the two
+          verticals surfaced as equals right under the logo, not one hidden
+          behind a small icon button. */}
+      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse at 30% 0%, rgba(123,47,190,0.22) 0%, #050010 55%, #020005 100%)' }}>
+        <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.16) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
+        <div
+          style={{
+            position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            padding: 'calc(14px + env(safe-area-inset-top)) 16px 4px',
+          }}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+            <VentsLogo size={28} />
+            <button
+              onClick={() => setShowCountryPicker(true)}
+              style={{ display: 'flex', alignItems: 'center', gap: '3px', background: 'none', border: 'none', padding: '2px 0 0', cursor: 'pointer' }}
+            >
+              <MapPin size={10} color="#A855F7" style={{ flexShrink: 0 }} />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: '#C4C9E0' }}>
+                {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
+              </span>
+              <ChevronDown size={10} color="#8B8FA8" />
+            </button>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={onNotificationsPress}
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(9,5,20,0.7)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+            >
+              <Bell size={16} color="#C4C9E0" />
+              {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
+                <span
+                  style={{
+                    position: 'absolute', top: '-4px', right: '-4px',
+                    minWidth: '16px', height: '16px', padding: '0 4px',
+                    borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
+                  }}
+                >
+                  {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+                </span>
+              )}
+            </button>
+            {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
+              <button
+                onClick={onCreatePress}
+                style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
+              >
+                <Plus size={17} color="#fff" strokeWidth={2.5} />
+              </button>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Services entry point (Stage C) -- moved here from a banner
-              below the event feed. Same premium, low-noise treatment as
-              the other header icon buttons (36x36 circle) rather than a
-              second, competing full-width surface -- Services is one tap
-              away without taking any space from the event grid.
-              Store (a simple storefront glyph) instead of Sparkles -- a
-              sparkle/starburst reads as an "AI" icon (Gemini-style) in
-              this exact size/weight/color, not as "Services"; a plain
-              geometric storefront is unambiguous at a glance and matches
-              the flat, minimal line weight already used by the Bell icon
-              next to it. */}
+
+        <div style={{ position: 'relative', padding: '10px 16px 0' }}>
+          <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2 }}>
+            Events. Services. <span style={{ color: '#A855F7' }}>Real Experiences.</span>
+          </h1>
+        </div>
+
+        {/* Events / Services quick-switch -- both verticals as equal, premium
+            entry points right under the hero headline. Events is always the
+            "active" surface here (this is the Events home), Services hands
+            off to the existing ServicesHomeScreen via onServicesPress. */}
+        <div style={{ position: 'relative', display: 'flex', gap: '10px', padding: '12px 16px 14px' }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(123,47,190,0.35), rgba(79,70,229,0.35))', border: '1px solid rgba(168,85,247,0.5)', borderRadius: '16px', padding: '12px 14px' }}>
+            <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <CalendarDays size={17} color="#fff" />
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <p style={{ margin: 0, color: '#fff', fontSize: '13px', fontWeight: 800 }}>Events</p>
+              <p style={{ margin: 0, color: 'rgba(255,255,255,0.65)', fontSize: '10px', fontWeight: 500 }}>Concerts, parties & more</p>
+            </div>
+          </div>
           {onServicesPress && (
             <button
               onClick={onServicesPress}
-              aria-label="Services"
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
             >
-              <Store size={15} color="#C4C9E0" />
-            </button>
-          )}
-          <button
-            onClick={onNotificationsPress}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
-          >
-            <Bell size={16} color="#C4C9E0" />
-            {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
-              <span
-                style={{
-                  position: 'absolute', top: '-4px', right: '-4px',
-                  minWidth: '16px', height: '16px', padding: '0 4px',
-                  borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
-                }}
-              >
-                {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
-              </span>
-            )}
-          </button>
-          {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
-            <button
-              onClick={onCreatePress}
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
-            >
-              <Plus size={17} color="#fff" strokeWidth={2.5} />
+              <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(34,211,238,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Store size={17} color="#22D3EE" />
+              </div>
+              <div style={{ minWidth: 0 }}>
+                <p style={{ margin: 0, color: '#F0F0FF', fontSize: '13px', fontWeight: 800 }}>Services</p>
+                <p style={{ margin: 0, color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>Beauty, home, photo & more</p>
+              </div>
             </button>
           )}
         </div>
@@ -1689,6 +1747,36 @@ export function HomeScreen({
                           onPress={onEventPress}
                           isSaved={savedEventsSet.has(event.id)}
                           onToggleSave={onToggleSave}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Providers Near You -- Services surfaced directly on
+                    Home (redesign requirement: Events + Services clearly
+                    integrated, not siloed behind a header icon). Reuses
+                    the exact same compact card component Services' own
+                    home screen uses, so a provider looks identical
+                    wherever it's shown. */}
+                {nearbyProviders && nearbyProviders.length > 0 && (
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between px-4 mb-3">
+                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        {homeGeo.status === 'granted' ? 'Providers Near You' : 'Top Service Providers'}
+                      </h3>
+                      {onServicesPress && (
+                        <button onClick={onServicesPress} style={{ background: 'none', border: 'none', color: '#A855F7', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                          See all
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px', paddingLeft: '16px', paddingRight: '0' }}>
+                      {nearbyProviders.map((provider) => (
+                        <ServiceProviderCompactCard
+                          key={provider.id}
+                          provider={provider}
+                          onPress={onProviderPress || (() => onServicesPress?.())}
                         />
                       ))}
                     </div>

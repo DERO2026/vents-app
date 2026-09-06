@@ -16,6 +16,7 @@ import {
 } from '../../lib/servicesDesignTokens';
 import { fetchOwnServiceProvider, saveAndPublishServiceProvider, ServiceProviderInput } from '../../lib/serviceProviders';
 import { fetchServiceProviderCategories, setServiceProviderCategories } from '../../lib/serviceProviderCategories';
+import { LocationPicker, LocationValue } from './LocationPicker';
 import { ServiceProvider } from './types';
 
 const MAX_PHOTOS = 5;
@@ -156,6 +157,12 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
   const category = categories[0] || '';
   const [description, setDescription] = useState('');
   const [location, setLocation] = useState('');
+  // Geocoded coordinates for "Providers Near You" distance sorting
+  // (0056_service_provider_geolocation.sql) -- only ever set by an actual
+  // LocationPicker selection/drag, never inferred from free-typed text, so
+  // a stale lat/lng can't silently point at the wrong place.
+  const [latitude, setLatitude] = useState<number | null>(null);
+  const [longitude, setLongitude] = useState<number | null>(null);
   const [countryIso, setCountryIso] = useState<string>('');
   const [startingPrice, setStartingPrice] = useState('');
   const [currencyCode, setCurrencyCode] = useState('');
@@ -188,6 +195,8 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             .catch(() => {});
           setDescription(provider.description || '');
           setLocation(provider.location || '');
+          setLatitude(provider.latitude ?? null);
+          setLongitude(provider.longitude ?? null);
           setCountryIso(provider.country || currentUser.country || '');
           setStartingPrice(provider.startingPrice != null ? String(provider.startingPrice) : '');
           setCurrencyCode(provider.startingPriceCurrency || currencyForCountry(currentUser.country));
@@ -330,6 +339,8 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         category,
         description: description.trim(),
         location: location.trim(),
+        latitude,
+        longitude,
         country: countryIso,
         photoUrls: photos,
         startingPrice: startingPrice.trim() ? Number(startingPrice) : null,
@@ -504,10 +515,23 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           <p style={{ color: servicesColors.textTertiary, fontSize: '11px', textAlign: 'right', margin: '6px 0 0' }}>{description.length}/{DESCRIPTION_LIMIT}</p>
         </div>
 
-        {/* Location */}
+        {/* Location -- geocoded (reuses the same LocationPicker/Google
+            Places pattern events use) so this listing gets real
+            coordinates for distance-sorted "Providers Near You" discovery.
+            Free-typed text alone (no selection) still saves as a plain
+            address with no lat/lng, same as before -- this never blocks
+            saving without a picked location. */}
         <SectionLabel>Location</SectionLabel>
         <div style={{ marginBottom: servicesSpacing.xl }}>
-          <TextField value={location} onChange={setLocation} placeholder="e.g. Lekki, Lagos" />
+          <LocationPicker
+            value={{ address: location, lat: latitude, lng: longitude }}
+            onChange={(v: LocationValue) => {
+              setLocation(v.address);
+              setLatitude(v.lat);
+              setLongitude(v.lng);
+            }}
+            placeholder="e.g. Lekki, Lagos"
+          />
         </div>
 
         {/* Country */}

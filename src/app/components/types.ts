@@ -177,6 +177,13 @@ export interface ServiceProvider {
   category: string;
   description?: string | null;
   location?: string | null;
+  // Geocoded via LocationPicker at setup (0056_service_provider_geolocation.sql)
+  // -- null for a listing saved before this existed, or one whose free-text
+  // location was never resolved to a real place. Used only for distance
+  // sorting in get_nearby_service_providers; never a customer's own
+  // location, which is never persisted anywhere.
+  latitude?: number | null;
+  longitude?: number | null;
   // ISO 3166-1 alpha-2 code (e.g. 'NG', 'QA', 'US'), or '' for a listing
   // saved before this field existed / before onboarding sets it -- the
   // structured field discovery filters on (see 0036_service_providers_

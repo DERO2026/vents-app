@@ -113,6 +113,7 @@ export function ServiceProviderCompactCard({ provider, onPress }: ServiceProvide
         width: '160px', flexShrink: 0, display: 'flex', flexDirection: 'column',
         borderRadius: servicesRadii.md, overflow: 'hidden',
         background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`,
+        boxShadow: '0 10px 26px rgba(88,28,135,0.14), 0 2px 8px rgba(0,0,0,0.25)',
         cursor: 'pointer', textAlign: 'left', transition: 'transform 0.15s ease, opacity 0.15s ease',
       }}
       onPointerDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; e.currentTarget.style.opacity = '0.9'; }}

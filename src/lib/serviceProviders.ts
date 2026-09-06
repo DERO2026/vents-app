@@ -15,6 +15,8 @@ export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
     category: row.category,
     description: row.description ?? null,
     location: row.location ?? null,
+    latitude: row.latitude ?? null,
+    longitude: row.longitude ?? null,
     country: row.country || '',
     photoUrls: row.photo_urls || [],
     startingPrice: row.starting_price ?? null,
@@ -30,7 +32,7 @@ export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
 }
 
 const SERVICE_PROVIDER_COLUMNS =
-  'id, user_id, business_name, category, description, location, country, photo_urls, starting_price, starting_price_currency, services_offered, offers_home_service, offers_delivery, offers_same_day, status, created_at, updated_at';
+  'id, user_id, business_name, category, description, location, latitude, longitude, country, photo_urls, starting_price, starting_price_currency, services_offered, offers_home_service, offers_delivery, offers_same_day, status, created_at, updated_at';
 
 // "Providers near you" / category browsing: public discovery, RLS already
 // restricts this to status='approved' rows for anon/authenticated (see
@@ -79,6 +81,35 @@ export async function fetchApprovedServiceProviders(opts: {
   return (data || []).map(mapDbServiceProviderToFrontend);
 }
 
+export interface NearbyServiceProvider extends ServiceProvider {
+  distanceKm: number;
+}
+
+// Real GPS-distance-sorted discovery (get_nearby_service_providers,
+// 0056_service_provider_geolocation.sql). The caller's lat/lng are only
+// ever passed as transient RPC parameters for this one read -- never
+// stored here or server-side. Only returns providers that have geocoded
+// coordinates themselves (set via LocationPicker at Service Provider
+// setup); a provider with no coordinates yet is simply absent from this
+// result, not shown at some fabricated distance.
+export async function fetchNearbyServiceProviders(
+  lat: number,
+  lng: number,
+  opts: { category?: string; limit?: number } = {}
+): Promise<NearbyServiceProvider[]> {
+  const { data, error } = await supabase.rpc('get_nearby_service_providers', {
+    p_lat: lat,
+    p_lng: lng,
+    p_category: opts.category || null,
+    p_limit: opts.limit || 20,
+  });
+  if (error) throw error;
+  return (data || []).map((row: any) => ({
+    ...mapDbServiceProviderToFrontend(row),
+    distanceKm: Number(row.distance_km),
+  }));
+}
+
 export async function fetchServiceProviderById(id: string): Promise<ServiceProvider | null> {
   const { data, error } = await supabase
     .from('service_providers')
@@ -109,6 +140,8 @@ export interface ServiceProviderInput {
   category: string;
   description: string;
   location: string;
+  latitude: number | null;
+  longitude: number | null;
   country: string;
   photoUrls: string[];
   startingPrice: number | null;
@@ -135,6 +168,8 @@ export async function saveAndPublishServiceProvider(userId: string, input: Servi
         category: input.category,
         description: input.description || null,
         location: input.location || null,
+        latitude: input.latitude,
+        longitude: input.longitude,
         country: input.country,
         photo_urls: input.photoUrls,
         starting_price: input.startingPrice,
