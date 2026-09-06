@@ -105,13 +105,28 @@ async function handleClientVerify(req, res) {
     // confirm_transfer_fee_payment's own idempotency and lookups below
     // handle that; this only blocks a caller asking about a reference that
     // demonstrably belongs to someone else.
-    const ownerId = isTransferFeeRef
-      ? await callProjectAdminRpc('get_transfer_fee_payment_owner', [reference])
-      : isServiceBookingRef
-      ? await callProjectAdminRpc('get_service_booking_owner', [reference])
-      : await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
-    if (ownerId && ownerId !== session.userId) {
-      return res.status(403).json({ error: 'Not authorized for this payment reference' });
+    if (isTransferFeeRef) {
+      const ownerId = await callProjectAdminRpc('get_transfer_fee_payment_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else if (isServiceBookingRef) {
+      const ownerId = await callProjectAdminRpc('get_service_booking_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else {
+      // get_pending_purchase_owner now returns a row (not a bare uuid) since
+      // migration 0058: {owner_id, payer_id}. Either the recipient (owner_id)
+      // OR the resolved authenticated payer (payer_id, "someone else is
+      // paying") may complete this payment -- never anyone else. A reference
+      // with no matching row (already finalized, or unknown) is still not an
+      // error here, per the original comment above.
+      const rows = await callProjectAdminTableRpc<{ owner_id: string; payer_id: string | null }>('get_pending_purchase_owner', [reference]);
+      const row = rows[0];
+      if (row && row.owner_id && session.userId !== row.owner_id && session.userId !== row.payer_id) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
     }
 
     const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {

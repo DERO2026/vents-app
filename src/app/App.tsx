@@ -42,6 +42,8 @@ import { ConversationScreen } from './components/ConversationScreen';
 import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
+import { PaymentRequestScreen } from './components/PaymentRequestScreen';
+import { PaymentRequestsScreen } from './components/PaymentRequestsScreen';
 import { PaymentSuccessScreen } from './components/PaymentSuccessScreen';
 import { PaymentFailedScreen } from './components/PaymentFailedScreen';
 import { OrganizerDashboard } from './components/OrganizerDashboard';
@@ -196,6 +198,11 @@ export default function App() {
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
   const [pendingResetEmail, setPendingResetEmail] = useState<string | undefined>(undefined);
   const [pendingPaymentRef, setPendingPaymentRef] = useState<string | undefined>(undefined);
+  // "Someone else is paying": the reference of the request the payer is
+  // currently viewing (PaymentRequestScreen), and the confirmation shown to
+  // the recipient right after create_pending_purchase resolves a payer.
+  const [viewingPaymentRequestRef, setViewingPaymentRequestRef] = useState<string | undefined>(undefined);
+  const [paymentRequestSentInfo, setPaymentRequestSentInfo] = useState<{ paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType } | null>(null);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -516,6 +523,19 @@ export default function App() {
           setPendingPaymentRef(paystackRef);
           const cleanUrl = window.location.pathname + window.location.hash;
           window.history.replaceState({}, document.title, cleanUrl);
+        }
+
+        // "Someone else is paying" -- the shareable link sent to the payer:
+        // ?payment_request=<payment_ref>. Opens PaymentRequestScreen, which
+        // fetches get_payment_request_details itself (payer or recipient
+        // only, per its RLS-backed RPC) -- this just navigates there.
+        const paymentRequestRef = params.get('payment_request');
+        if (paymentRequestRef) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+          setViewingPaymentRequestRef(paymentRequestRef);
+          setScreenStack([]);
+          setScreen('payment-request');
         }
 
         // Store referral code from ?ref= so it can be claimed after signup
@@ -1806,6 +1826,17 @@ export default function App() {
     }
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
+  // "Someone else is paying": create_pending_purchase already resolved a
+  // real VENTS account as payer and persisted the request server-side.
+  // Nothing to verify or finalize here — no payment happened yet, no ticket
+  // is created, and this recipient never sees Paystack. Just show them the
+  // request was sent.
+  const handlePaymentRequestSent = useCallback((info: { paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType }) => {
+    setPaymentRequestSentInfo(info);
+    setScreenStack([]);
+    setScreen('payment-request-sent');
+  }, []);
+
   // Resolves a payment reference that arrived via Paystack's own post-
   // payment redirect (?reference=/?trxref= on web, vents://payment?ref= on
   // native — see the URL/deep-link handling above) rather than through
@@ -2895,7 +2926,59 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onSuccess={handleCheckoutSuccess}
+              onPaymentRequestSent={handlePaymentRequestSent}
             />
+          )}
+          {screen === 'payment-request' && viewingPaymentRequestRef && (
+            <PaymentRequestScreen
+              paymentRef={viewingPaymentRequestRef}
+              currentUser={currentUser}
+              onBack={goBack}
+              onPaid={() => {
+                setAppToastSuccess('Payment confirmed! A receipt is on its way.');
+              }}
+            />
+          )}
+          {screen === 'payment-request-sent' && paymentRequestSentInfo && (
+            <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', gap: '16px', textAlign: 'center' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>✅</div>
+              <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700 }}>Payment Request Sent</h1>
+              <p style={{ color: '#8B8FA8', fontSize: '14px', maxWidth: '320px', lineHeight: 1.6 }}>
+                We've notified {paymentRequestSentInfo.payerIdentifier} to pay for your {paymentRequestSentInfo.ticketType.name} ticket to {paymentRequestSentInfo.event.title}. You'll get your ticket and QR code the moment they pay — expires in 48 hours if unpaid.
+              </p>
+              <button
+                onClick={async () => {
+                  const link = `${window.location.origin}${window.location.pathname}?payment_request=${encodeURIComponent(paymentRequestSentInfo.paymentRef)}`;
+                  try {
+                    if (navigator.share) {
+                      await navigator.share({ title: 'Pay for my VENTS ticket', url: link });
+                    } else {
+                      await navigator.clipboard.writeText(link);
+                      setAppToastSuccess('Payment link copied to clipboard.');
+                    }
+                  } catch { /* user cancelled share sheet — not an error */ }
+                }}
+                style={{ height: '48px', padding: '0 28px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Share Payment Link
+              </button>
+              <button
+                onClick={() => {
+                  setViewingPaymentRequestRef(paymentRequestSentInfo.paymentRef);
+                  setScreenStack([]);
+                  setScreen('payment-request');
+                }}
+                style={{ height: '44px', padding: '0 28px', background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '100px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                View / Manage Request
+              </button>
+              <button
+                onClick={() => { setScreenStack([]); setScreen('home'); }}
+                style={{ height: '36px', padding: '0 20px', background: 'transparent', border: 'none', color: '#6B7280', fontSize: '13px', cursor: 'pointer' }}
+              >
+                Done
+              </button>
+            </div>
           )}
           {screen === 'payment-success' && purchasedTicket && (
             <PaymentSuccessScreen
@@ -3086,6 +3169,11 @@ export default function App() {
           {/* ── WALLET ── */}
           {screen === 'wallet' && (
             <WalletScreen currentUser={currentUser} onBack={goBack} />
+          )}
+
+          {/* ── PAYMENT REQUESTS (payer receipts) ── */}
+          {screen === 'payment-requests' && (
+            <PaymentRequestsScreen currentUser={currentUser} onBack={goBack} />
           )}
 
           {/* ── CONVERSATION ── */}

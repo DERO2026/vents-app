@@ -380,6 +380,13 @@ export function ProfileScreen({
       screen: 'referral',
     },
     {
+      icon: Ticket,
+      label: 'Payment Requests',
+      sublabel: 'Tickets you sent or paid for someone',
+      color: '#A78BFA',
+      screen: 'payment-requests',
+    },
+    {
       icon: Settings,
       label: 'Settings',
       sublabel: 'Account & preferences',

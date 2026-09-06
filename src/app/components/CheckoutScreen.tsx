@@ -17,6 +17,11 @@ interface CheckoutScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; username?: string } | null;
   onBack: () => void;
   onSuccess: (ticket: PurchasedTicket) => void;
+  // "Someone else is paying": called instead of onSuccess once
+  // create_pending_purchase has resolved a real payer_id — the recipient
+  // never sees Paystack in this case, only a "request sent" confirmation.
+  // The actual payment happens later, on the payer's own device/session.
+  onPaymentRequestSent?: (info: { paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType }) => void;
 }
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -89,7 +94,7 @@ function Field({
   );
 }
 
-export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess }: CheckoutScreenProps) {
+export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess, onPaymentRequestSent }: CheckoutScreenProps) {
   const [name, setName] = useState(currentUser?.full_name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -111,6 +116,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // drives the visual disabled state; this ref is the actual re-entrancy lock.
   const payingRef = useRef(false);
   const [payError, setPayError] = useState<string | null>(null);
+  // "Someone else is paying" -- 'self' preserves today's checkout exactly.
+  const [payMode, setPayMode] = useState<'self' | 'someone-else'>('self');
+  const [payerIdentifier, setPayerIdentifier] = useState('');
+  const [payerNotFound, setPayerNotFound] = useState(false);
 
   // Group purchases (quantity > 1) need one distinct name+email per ticket
   // -- each row gets its own QR code, and the door scanner needs to know
@@ -224,8 +233,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
     haptics.medium();
     setPayError(null);
+    setPayerNotFound(false);
     setAttendeesTouched(true);
     setPhoneTouched(true);
+
+    const payerIdentifierTrimmed = payerIdentifier.trim();
+    if (payMode === 'someone-else' && !payerIdentifierTrimmed) {
+      setPayError("Enter the payer's VENTS email or username.");
+      return;
+    }
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
 
     const payerEmail = email.trim() || currentUser?.email || '';
@@ -295,8 +311,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         p_ticket_type: ticketType.name,
         p_attendees: attendees,
         p_promo_code: promoApplied ? promoCode.trim() : null,
+        ...(payMode === 'someone-else' ? { p_payer_identifier: payerIdentifierTrimmed } : {}),
       });
       if (error) throw error;
+      if ((data as any)?.payer_not_found) {
+        payingRef.current = false;
+        setPaymentLoading(false);
+        setPayerNotFound(true);
+        return;
+      }
       reference = (data as any)?.payment_ref;
       amountKobo = Number((data as any)?.amount_kobo);
       if (!reference || !amountKobo || amountKobo <= 0) throw new Error('Could not prepare this purchase.');
@@ -304,6 +327,18 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       payingRef.current = false;
       setPaymentLoading(false);
       setPayError(err?.message || 'Could not start checkout. Please try again.');
+      return;
+    }
+
+    // Someone else is paying: the request is now persisted server-side with
+    // a resolved payer_id. This screen (the recipient's) never opens
+    // Paystack -- the payer pays later, on their own device/session, via
+    // the payment-request link. Nothing here creates a ticket or charges
+    // anyone; it only confirms the request was created.
+    if (payMode === 'someone-else') {
+      payingRef.current = false;
+      setPaymentLoading(false);
+      onPaymentRequestSent?.({ paymentRef: reference, payerIdentifier: payerIdentifierTrimmed, event, ticketType });
       return;
     }
 
@@ -489,6 +524,56 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
         </div>
 
+        {/* Who's paying — only meaningful for a real payment; free tickets
+            (total === 0) always self-checkout, no toggle shown. */}
+        {total > 0 && (
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Who's Paying?</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: payMode === 'someone-else' ? '14px' : 0 }}>
+              {(['self', 'someone-else'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => { setPayMode(mode); setPayerNotFound(false); setPayError(null); }}
+                  style={{
+                    flex: 1,
+                    height: '44px',
+                    borderRadius: '12px',
+                    border: `1px solid ${payMode === mode ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
+                    background: payMode === mode ? 'rgba(124,58,237,0.18)' : 'transparent',
+                    color: payMode === mode ? '#C4B5FD' : '#8B8FA8',
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mode === 'self' ? "I'm paying" : 'Someone else is paying'}
+                </button>
+              ))}
+            </div>
+            {payMode === 'someone-else' && (
+              <>
+                <Field
+                  label="Payer's VENTS email or username"
+                  placeholder="name@gmail.com or @username"
+                  value={payerIdentifier}
+                  onChange={(v) => { setPayerIdentifier(v); setPayerNotFound(false); }}
+                />
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '8px', lineHeight: 1.5 }}>
+                  You stay the ticket holder — you'll get the ticket and QR code once they pay. They'll get a payment link and a receipt, never the ticket itself.
+                </p>
+                {payerNotFound && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
+                    <AlertCircle size={14} color="#EF4444" />
+                    <span style={{ color: '#EF4444', fontSize: '13px' }}>
+                      No VENTS account found for "{payerIdentifier.trim()}". They need to create a VENTS account before you can send them a payment request.
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
         {/* Additional attendees — one card per extra ticket in the group.
             Attendee 1 is the purchaser above; each of these gets its own
             distinct QR code, so the door scanner can check each person in
@@ -666,7 +751,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           ) : (
             <>
               <Lock size={16} color="#fff" />
-              {total === 0 ? 'Get Free Ticket' : `Pay ${formatPrice(total)}`}
+              {total === 0 ? 'Get Free Ticket' : payMode === 'someone-else' ? `Send Payment Request (${formatPrice(total)})` : `Pay ${formatPrice(total)}`}
             </>
           )}
         </button>
