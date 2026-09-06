@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Search, ChevronDown, Sparkles, Scissors, PartyPopper, Shirt, Wrench } from 'lucide-react';
+import { ArrowLeft, Search, ChevronDown, Sparkles, Scissors, PartyPopper, Shirt, Wrench, Heart, Camera, UtensilsCrossed, Music, Palette, Car } from 'lucide-react';
 import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
@@ -12,9 +12,15 @@ import { PickerSheet } from './shared/PickerSheet';
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   'Beauty & Grooming': Scissors,
+  'Weddings': Heart,
   'Events': PartyPopper,
+  'Photography': Camera,
   'Fashion': Shirt,
   'Home Services': Wrench,
+  'Catering & Food': UtensilsCrossed,
+  'Entertainment': Music,
+  'Decor & Design': Palette,
+  'Transportation': Car,
 };
 
 interface ServicesHomeScreenProps {

@@ -8,7 +8,7 @@ import { REGION } from '../../lib/regionConfig';
 import {
   ArrowLeft, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
-  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
+  Smartphone, X, ExternalLink, Copy, ThumbsUp,
   Eye, EyeOff, Check, Clock, MessageSquare,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
@@ -39,7 +39,7 @@ interface SettingsScreenProps {
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
 }
 
-type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
+type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -313,7 +313,7 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
   );
 }
 
-function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { currentUser: any; onBack: () => void; onContactSupport?: () => void }) {
+export function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { currentUser: any; onBack: () => void; onContactSupport?: () => void }) {
   const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
   const [verification, setVerification] = useState<VerificationRow | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
@@ -1786,7 +1786,6 @@ export function SettingsScreen({
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
-  if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onContactSupport={() => setSubScreen('help')} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
@@ -1832,28 +1831,10 @@ export function SettingsScreen({
           </button>
         </div>
 
-        {currentUser?.role === 'organizer' && (
-          currentUser?.is_verified ? (
-            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck size={20} color="#10B981" />
-              <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
-            </div>
-          ) : (
-            <div
-              onClick={() => setSubScreen('cac-verify')}
-              style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(79,70,229,0.18))', border: '1px solid rgba(168,85,247,0.35)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-            >
-              <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <ShieldCheck size={19} color="#fff" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</p>
-                <p style={{ margin: '2px 0 0', color: '#A78BFA', fontSize: '12px' }}>Submit your CAC details for a verified badge</p>
-              </div>
-              <ChevronRight size={16} color="#A78BFA" />
-            </div>
-          )
-        )}
+        {/* Become an Organizer / Get Verified as an Organizer moved to
+            ProfileScreen, directly below Become a Service Provider -- one
+            authoritative location for both capability entry points instead
+            of a duplicate here. */}
 
         <Section title="ACCOUNT">
           {/* "Profile Details" row removed — it duplicated the Edit button on the

@@ -37,6 +37,15 @@ export function getCachedTicketToken(ticketId: string | null | undefined): strin
   return readTokenCache()[ticketId] || null;
 }
 
+// On a shared device, this cache otherwise keeps a signed-out user's ticket
+// QR tokens sitting in localStorage indefinitely -- readable by anyone with
+// devtools access to that browser, even after they've signed out. Call this
+// on sign-out so the next person to sign in on the same device starts with
+// nothing of the previous user's left behind.
+export function clearTicketTokenCache(): void {
+  try { localStorage.removeItem(TOKEN_CACHE_KEY); } catch { /* storage unavailable */ }
+}
+
 // Mint one token with a couple of quick retries (transient network / cold auth).
 async function mintToken(ticketId: string, attempts = 3): Promise<string | null> {
   for (let i = 0; i < attempts; i++) {

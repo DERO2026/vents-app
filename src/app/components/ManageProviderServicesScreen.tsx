@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, Pencil, Trash2 } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
-import { currencyForCountry } from '../../lib/currencies';
+import { servicesPayableCurrencyForCountry } from '../../lib/currencies';
 import {
   fetchOwnServicesForProvider, createProviderService, updateProviderService,
   setProviderServiceActive, deleteProviderService, ProviderServiceInput,
@@ -39,18 +39,20 @@ function emptyForm(defaultCategory?: string, defaultCurrency?: string): Provider
 }
 
 // Currency source of truth: the provider's own VENTS account/profile
-// currency (accountCountry -> currencyForCountry), never an arbitrary
-// per-service pick -- a provider should never be able to price one service
-// in USD and another in NGN out of confusion, and the booking/payment flow
-// (create_service_booking, 0054) only accepts NGN for now regardless of
-// what's stored here.
+// currency (accountCountry -> servicesPayableCurrencyForCountry, which
+// defaults to NGN rather than USD for an account with no country set --
+// unlike the general currencyForCountry default, USD is never payable here
+// anyway), never an arbitrary per-service pick -- a provider should never
+// be able to price one service in USD and another in NGN out of confusion,
+// and the booking/payment flow (create_service_booking, 0054) only accepts
+// NGN for now regardless of what's stored here.
 
 export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack }: ManageProviderServicesScreenProps) {
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<ProviderService | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState<ProviderServiceInput>(emptyForm(providerCategory, currencyForCountry(accountCountry)));
+  const [form, setForm] = useState<ProviderServiceInput>(emptyForm(providerCategory, servicesPayableCurrencyForCountry(accountCountry)));
   const [showCategoryPicker, setShowCategoryPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
@@ -68,7 +70,7 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm(providerCategory, currencyForCountry(accountCountry)));
+    setForm(emptyForm(providerCategory, servicesPayableCurrencyForCountry(accountCountry)));
     setFormError('');
     setShowForm(true);
   };
@@ -82,7 +84,7 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
       // Always normalized to the account's own currency on edit too --
       // never preserves a stale/mismatched currency from before this was
       // locked to the profile currency.
-      currency: currencyForCountry(accountCountry),
+      currency: servicesPayableCurrencyForCountry(accountCountry),
       durationMinutes: svc.durationMinutes ?? null,
       category: svc.category || '',
       isActive: svc.isActive,

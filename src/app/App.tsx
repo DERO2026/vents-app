@@ -10,7 +10,8 @@ import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
-import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
+import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken, clearTicketTokenCache } from '../lib/ticketToken';
+import { invalidateVcBalanceCache } from '../lib/vcBalanceCache';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
@@ -2186,6 +2187,14 @@ export default function App() {
       ...profileFields,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
+    // Defense in depth for a shared device where a previous session wasn't
+    // cleanly signed out first (e.g. the app was killed): never let a NEW
+    // login on this browser inherit a DIFFERENT previous user's cached
+    // ticket tokens/VC balance.
+    if (currentUser && currentUser.id !== userProfile.id) {
+      clearTicketTokenCache();
+      invalidateVcBalanceCache();
+    }
     setCurrentUser(enriched);
     // Register this device for native push (no-op on web); token is synced to
     // the backend keyed to the user.
@@ -2199,7 +2208,7 @@ export default function App() {
         setShowInterests(true);
       }
     } catch { /* ignore — don't block login on interests check failure */ }
-  }, []);
+  }, [currentUser]);
 
   // toForgotPassword: used by ChangePasswordScreen's "I don't remember my
   // current password" link -- signs out (a user who doesn't know their
@@ -2223,6 +2232,12 @@ export default function App() {
     setUserRole('attendee');
     setScreenStack([]);
     setActiveTab('home');
+    // On a shared device, these client-side caches would otherwise keep the
+    // signed-out user's data (ticket QR tokens, VC balance) reachable to
+    // whoever signs in next on the same browser -- clear them here, not
+    // just rely on each cache's own userId check.
+    clearTicketTokenCache();
+    invalidateVcBalanceCache();
     // Strict === true, not a truthy check -- this is the one call this
     // function makes that decides whether a sign-out lands on Welcome/Login
     // (the only correct destination for a plain Sign Out) or detours into

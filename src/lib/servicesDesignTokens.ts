@@ -36,16 +36,28 @@ export const servicesGradients = {
 // in this token set is which hue represents which category.
 export const categoryAccents: Record<string, string> = {
   'Beauty & Grooming': '#F107A3',
+  'Weddings': '#EC4899',
   'Events': '#A855F7',
+  'Photography': '#0EA5E9',
   'Fashion': '#4F46E5',
   'Home Services': '#06D6A0',
+  'Catering & Food': '#F59E0B',
+  'Entertainment': '#F97316',
+  'Decor & Design': '#D946EF',
+  'Transportation': '#3B82F6',
 };
 
 export const SERVICE_CATEGORIES = [
   'Beauty & Grooming',
+  'Weddings',
   'Events',
+  'Photography',
   'Fashion',
   'Home Services',
+  'Catering & Food',
+  'Entertainment',
+  'Decor & Design',
+  'Transportation',
 ] as const;
 
 export type ServiceCategory = (typeof SERVICE_CATEGORIES)[number];

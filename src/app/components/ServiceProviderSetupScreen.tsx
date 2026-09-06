@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft, Search, Camera, X, Plus, Scissors, PartyPopper, Shirt, Wrench, Sparkles,
+  Heart, UtensilsCrossed, Music, Palette, Car,
 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { pickImage } from '../../lib/pickImage';
@@ -22,9 +23,15 @@ const DESCRIPTION_LIMIT = 500;
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   'Beauty & Grooming': Scissors,
+  'Weddings': Heart,
   'Events': PartyPopper,
+  'Photography': Camera,
   'Fashion': Shirt,
   'Home Services': Wrench,
+  'Catering & Food': UtensilsCrossed,
+  'Entertainment': Music,
+  'Decor & Design': Palette,
+  'Transportation': Car,
 };
 
 interface ServiceProviderSetupScreenProps {

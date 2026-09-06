@@ -25,12 +25,12 @@ beforeAll(() => {
 
 describe('Become an Organizer: capability state machine', () => {
   it('a normal user (idle, no request) sees "Become an Organizer"', () => {
-    expect(profileScreenSrc).toMatch(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \(/);
+    expect(profileScreenSrc).toMatch(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/);
     expect(profileScreenSrc).toMatch(/'Application Submitted' : orgRequestStatus === 'rejected' \? 'Apply Again' : 'Become an Organizer'/);
   });
 
   it('a pending applicant sees an accessible (clickable, non-dead-end) "Application Submitted" state', () => {
-    const block = profileScreenSrc.match(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \([\s\S]*?<\/div>\s*\)\}\n\n\s*\{\/\* Become Organizer modal/)?.[0] ?? '';
+    const block = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \([\s\S]*?\{\/\* Become Organizer modal/)?.[0] ?? '';
     expect(block).toMatch(/onClick=\{\(\) => setShowOrgRequestModal\(true\)\}/);
     // The old dead-click bug pattern (same class as the SP one).
     expect(block).not.toMatch(/if \(orgRequestStatus === 'already' \|\| orgRequestStatus === 'sent'\) return;/);
@@ -52,7 +52,7 @@ describe('Become an Organizer: capability state machine', () => {
   it('being a Service Provider does not block or hide the Become-an-Organizer capability (independent capabilities)', () => {
     const gate = profileScreenSrc.match(/const isOrganizerEffective = [^\n]+;/)?.[0] ?? '';
     expect(gate).not.toMatch(/is_service_provider/);
-    const ctaGate = profileScreenSrc.match(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \(/)?.[0] ?? '';
+    const ctaGate = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/)?.[0] ?? '';
     expect(ctaGate).not.toMatch(/is_service_provider/);
   });
 
@@ -62,7 +62,7 @@ describe('Become an Organizer: capability state machine', () => {
   });
 
   it('admin/sub-admin/root never see the Become-an-Organizer application CTA', () => {
-    const ctaGate = profileScreenSrc.match(/\{!isOrganizerEffective && !isAdmin && !isSubAdmin && \(/)?.[0] ?? '';
+    const ctaGate = profileScreenSrc.match(/\{!isAdmin && !isSubAdmin && \(\s*\n\s*isOrganizerEffective \? \(/)?.[0] ?? '';
     expect(ctaGate).toMatch(/!isAdmin && !isSubAdmin/);
   });
 });

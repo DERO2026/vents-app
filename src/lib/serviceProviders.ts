@@ -55,7 +55,22 @@ export async function fetchApprovedServiceProviders(opts: {
     .eq('status', 'approved')
     .order('created_at', { ascending: false });
 
-  if (opts.category) query = query.eq('category', opts.category);
+  if (opts.category) {
+    // A provider can offer multiple categories (service_provider_categories,
+    // 0054) -- matching only service_providers.category (the primary one)
+    // would hide a provider under every category EXCEPT the first one they
+    // picked. Resolve the full set of matching provider ids first, then
+    // filter on that, so a provider appears under every category they
+    // actually selected.
+    const { data: catRows, error: catError } = await supabase
+      .from('service_provider_categories')
+      .select('provider_id')
+      .eq('category', opts.category);
+    if (catError) throw catError;
+    const providerIds = (catRows || []).map((r: any) => r.provider_id);
+    if (providerIds.length === 0) return [];
+    query = query.in('id', providerIds);
+  }
   if (opts.country) query = query.eq('country', opts.country);
   if (opts.limit) query = query.limit(opts.limit);
 
