@@ -109,10 +109,20 @@ export async function setProviderServiceActive(serviceId: string, isActive: bool
   if (error) throw error;
 }
 
-export async function deleteProviderService(serviceId: string): Promise<void> {
-  const { error } = await supabase
-    .from('provider_services')
-    .delete()
-    .eq('id', serviceId);
+// Root-caused on Preview: a service that already has a booking (even a
+// past/completed one) can never be hard-deleted -- service_booking_items.
+// service_id references provider_services with no ON DELETE clause
+// (RESTRICT), and stays that way deliberately so a booking's row can never
+// dangle. That's not a loss of booking history either way: the booking
+// already snapshots its own service name/price/quantity at booking time
+// (0054), so it never needs to read this row back. delete_provider_service_
+// safe (0055) hard-deletes when nothing references the service, and
+// otherwise archives it (is_active=false, same as the Deactivate toggle)
+// instead of surfacing a raw FK violation.
+export type DeleteProviderServiceResult = 'deleted' | 'archived';
+
+export async function deleteProviderService(serviceId: string): Promise<DeleteProviderServiceResult> {
+  const { data, error } = await supabase.rpc('delete_provider_service_safe', { p_service_id: serviceId });
   if (error) throw error;
+  return data as DeleteProviderServiceResult;
 }

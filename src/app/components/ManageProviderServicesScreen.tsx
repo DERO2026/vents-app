@@ -50,6 +50,7 @@ function emptyForm(defaultCategory?: string, defaultCurrency?: string): Provider
 export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack }: ManageProviderServicesScreenProps) {
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [editing, setEditing] = useState<ProviderService | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState<ProviderServiceInput>(emptyForm(providerCategory, servicesPayableCurrencyForCountry(accountCountry)));
@@ -81,10 +82,14 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
       name: svc.name,
       description: svc.description || '',
       price: svc.price,
-      // Always normalized to the account's own currency on edit too --
-      // never preserves a stale/mismatched currency from before this was
-      // locked to the profile currency.
-      currency: servicesPayableCurrencyForCountry(accountCountry),
+      // ROOT-CAUSE FIX (Preview testing found existing services silently
+      // flipping to USD on edit): this previously recomputed the currency
+      // from the account's country on every edit, discarding whatever the
+      // service was ACTUALLY saved with. An existing service's currency
+      // must never be overwritten -- only a brand-new service (emptyForm,
+      // openCreate) defaults from the account's currency; editing an
+      // existing one always shows its real stored value.
+      currency: svc.currency,
       durationMinutes: svc.durationMinutes ?? null,
       category: svc.category || '',
       isActive: svc.isActive,
@@ -130,8 +135,16 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
     if (!confirmDeleteId) return;
     setBusyId(confirmDeleteId);
     try {
-      await deleteProviderService(confirmDeleteId);
+      const result = await deleteProviderService(confirmDeleteId);
       setConfirmDeleteId(null);
+      if (result === 'archived') {
+        setError(null);
+        // Not a failure -- a service with booking history is deactivated
+        // instead of deleted (see providerServices.ts), so surface that as
+        // an informational note rather than silently doing something other
+        // than what the provider asked for.
+        setInfo('This service has past bookings, so it was deactivated instead of deleted. It will no longer be visible to customers.');
+      }
       load();
     } catch (err: any) {
       setError(err?.message || 'Failed to delete this service.');
@@ -153,6 +166,7 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(100px + env(safe-area-inset-bottom))` }}>
         {error && <p style={{ color: '#EF4444', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        {info && <p style={{ color: '#F59E0B', fontSize: '13px', margin: '0 0 12px' }}>{info}</p>}
 
         {services === null ? (
           <p style={{ color: servicesColors.textSecondary, textAlign: 'center', marginTop: '40px', fontSize: '13px' }}>Loading…</p>
