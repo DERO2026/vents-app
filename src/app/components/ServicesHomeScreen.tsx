@@ -31,6 +31,7 @@ interface ServicesHomeScreenProps {
   accountCountryIso?: string;
   discoveryCountryIso: string | undefined;
   onDiscoveryCountryChange: (iso: string) => void;
+  onMyBookingsPress?: () => void;
 }
 
 function CardSkeleton() {
@@ -68,7 +69,7 @@ function DiscoveryCountryPicker({ selectedIso, onSelect, onClose }: { selectedIs
 }
 
 export function ServicesHomeScreen({
-  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange,
+  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress,
 }: ServicesHomeScreenProps) {
   const [search, setSearch] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -159,6 +160,18 @@ export function ServicesHomeScreen({
             style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
           />
         </div>
+
+        {onMyBookingsPress && (
+          <button
+            onClick={onMyBookingsPress}
+            style={{
+              marginTop: '10px', background: 'none', border: 'none', padding: 0,
+              color: servicesColors.accentPurple, fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+            }}
+          >
+            My Bookings &rsaquo;
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>

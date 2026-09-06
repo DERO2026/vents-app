@@ -280,7 +280,9 @@ export type Screen =
   | 'service-provider-profile'
   | 'service-provider-setup'
   | 'service-provider-verify'
-  | 'manage-provider-services';
+  | 'manage-provider-services'
+  | 'service-bookings'
+  | 'provider-service-bookings';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

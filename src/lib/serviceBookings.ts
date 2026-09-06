@@ -91,6 +91,8 @@ export interface ServiceBookingRow {
   providerId: string;
   providerBusinessName?: string;
   customerId: string;
+  customerName?: string;
+  customerAvatarUrl?: string;
   status: string;
   paymentStatus: string;
   scheduledDate: string | null;
@@ -144,7 +146,11 @@ export async function fetchMyServiceBookings(): Promise<ServiceBookingRow[]> {
 }
 
 // RLS (service_bookings_select_own_provider, 0054) already restricts this
-// to bookings against the caller's own listing.
+// to bookings against the caller's own listing. customer_id has no FK
+// PostgREST can embed through (public_profiles is a view), so the
+// customer's display name/avatar is resolved with a second, real query
+// against public_profiles -- same two-step pattern InboxScreen/ExploreScreen
+// already use for a message partner's profile -- never a fabricated name.
 export async function fetchProviderServiceBookings(providerId: string): Promise<ServiceBookingRow[]> {
   const { data, error } = await supabase
     .from('service_bookings')
@@ -152,7 +158,22 @@ export async function fetchProviderServiceBookings(providerId: string): Promise<
     .eq('provider_id', providerId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data || []).map(mapBookingRow);
+  const rows = (data || []).map(mapBookingRow);
+
+  const customerIds = [...new Set(rows.map((r) => r.customerId))];
+  if (customerIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('public_profiles')
+      .select('id, full_name, username, avatar_url')
+      .in('id', customerIds);
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    rows.forEach((r) => {
+      const p = profileMap.get(r.customerId);
+      r.customerName = p?.full_name || p?.username || undefined;
+      r.customerAvatarUrl = p?.avatar_url || undefined;
+    });
+  }
+  return rows;
 }
 
 export async function logServiceMarketplaceEvent(

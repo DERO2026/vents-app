@@ -22,6 +22,7 @@ interface ManageProviderServicesScreenProps {
   providerCategory?: string;
   accountCountry?: string;
   onBack: () => void;
+  onViewBookings?: () => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -47,7 +48,7 @@ function emptyForm(defaultCategory?: string, defaultCurrency?: string): Provider
 // and the booking/payment flow (create_service_booking, 0054) only accepts
 // NGN for now regardless of what's stored here.
 
-export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack }: ManageProviderServicesScreenProps) {
+export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack, onViewBookings }: ManageProviderServicesScreenProps) {
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -159,9 +160,14 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0, flex: 1 }}>
           Your Services & Prices
         </h1>
+        {onViewBookings && (
+          <button onClick={onViewBookings} style={{ background: 'none', border: 'none', padding: 0, color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+            Bookings &rsaquo;
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(100px + env(safe-area-inset-bottom))` }}>

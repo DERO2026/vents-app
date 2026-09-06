@@ -24,6 +24,7 @@ import { ServiceProviderProfileScreen } from './components/ServiceProviderProfil
 import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
 import { ServiceProviderVerificationScreen } from './components/ServiceProviderVerificationScreen';
 import { ManageProviderServicesScreen } from './components/ManageProviderServicesScreen';
+import { ServiceBookingsScreen } from './components/ServiceBookingsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -2491,6 +2492,7 @@ export default function App() {
                 setSelectedServiceProvider(provider);
                 navigateTo('service-provider-profile');
               }}
+              onMyBookingsPress={currentUser ? () => navigateTo('service-bookings') : undefined}
             />
           )}
           {screen === 'services-category' && selectedServiceCategory && (
@@ -2565,7 +2567,14 @@ export default function App() {
               providerId={manageServicesProviderId}
               accountCountry={currentUser?.country}
               onBack={goBack}
+              onViewBookings={() => navigateTo('provider-service-bookings')}
             />
+          )}
+          {screen === 'service-bookings' && currentUser && (
+            <ServiceBookingsScreen mode="customer" onBack={goBack} />
+          )}
+          {screen === 'provider-service-bookings' && manageServicesProviderId && (
+            <ServiceBookingsScreen mode="provider" providerId={manageServicesProviderId} onBack={goBack} />
           )}
           {screen === 'auth' && (
             <AuthScreen
