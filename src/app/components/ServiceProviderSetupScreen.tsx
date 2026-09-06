@@ -10,7 +10,7 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { ImageCropperModal } from './ImageCropperModal';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
-import { CURRENCIES, CurrencyOption, currencyForCountry } from '../../lib/currencies';
+import { CURRENCIES, CurrencyOption, servicesPayableCurrencyForCountry } from '../../lib/currencies';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
@@ -199,14 +199,22 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           setLongitude(provider.longitude ?? null);
           setCountryIso(provider.country || currentUser.country || '');
           setStartingPrice(provider.startingPrice != null ? String(provider.startingPrice) : '');
-          setCurrencyCode(provider.startingPriceCurrency || currencyForCountry(currentUser.country));
+          // Root cause of "starting price still shows USD": this used
+          // currencyForCountry (defaults to USD when country is unset),
+          // the general-purpose helper -- not servicesPayableCurrencyForCountry
+          // (defaults to NGN), the one already used for actual per-service
+          // pricing in ManageProviderServicesScreen. Services payments are
+          // NGN-only (0054), so the starting-price display shown publicly
+          // on ServiceProviderCard/ServiceProviderProfileScreen must use
+          // the same NGN-defaulting helper, not the informational one.
+          setCurrencyCode(provider.startingPriceCurrency || servicesPayableCurrencyForCountry(currentUser.country));
           setServicesOffered(provider.servicesOffered);
           setOffersHomeService(provider.offersHomeService);
           setOffersDelivery(provider.offersDelivery);
           setOffersSameDay(provider.offersSameDay);
         } else {
           setCountryIso(currentUser.country || '');
-          setCurrencyCode(currencyForCountry(currentUser.country));
+          setCurrencyCode(servicesPayableCurrencyForCountry(currentUser.country));
         }
       })
       .catch((err) => { if (!cancelled) setError(err?.message || 'Failed to load your profile.'); })
@@ -223,7 +231,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
     // one explicitly different from the previous country's default --
     // simplest correct behavior for v1: re-defaulting on every country
     // change is fine since the provider can still change it afterward.
-    setCurrencyCode(currencyForCountry(country.iso));
+    setCurrencyCode(servicesPayableCurrencyForCountry(country.iso));
   };
 
   const processPhotoFile = (file: File) => {
