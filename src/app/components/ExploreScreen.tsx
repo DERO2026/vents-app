@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import BadgeChip from './BadgeChip';
-import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
+import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight, Plus, Users } from 'lucide-react';
 import { UserProfile } from './types';
 import { supabase } from '../../lib/supabase';
 import { SkeletonCard } from './SkeletonCard';
@@ -51,6 +51,7 @@ export function ExploreScreen({
 }: ExploreScreenProps) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
+  const [chatFilter, setChatFilter] = useState<'all' | 'unread' | 'organizers' | 'attendees'>('all');
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -211,7 +212,7 @@ export function ExploreScreen({
   const isSearching = query.trim().length > 0;
 
   // Filtered conversations when searching
-  const filteredConvos = isSearching
+  const searchedConvos = isSearching
     ? conversations.filter(c => {
         const name = (c.profile?.full_name || c.profile?.username || '').toLowerCase();
         const msg = (c.lastMsg?.body || '').toLowerCase();
@@ -219,6 +220,19 @@ export function ExploreScreen({
         return name.includes(q) || msg.includes(q);
       })
     : conversations;
+
+  // Real filter chips over the actual conversation list -- Unread checks
+  // unreadCount, Organizers/Attendees check the partner's real
+  // public_profiles.role. No "Vendors" chip: public_profiles doesn't
+  // currently expose is_service_provider, so there's no real data to filter
+  // on yet (adding one would either always be empty or require guessing).
+  const filteredConvos = searchedConvos.filter((c) => {
+    if (chatFilter === 'unread') return c.unreadCount > 0;
+    if (chatFilter === 'organizers') return c.profile?.role === 'organizer' || c.profile?.role === 'organiser';
+    if (chatFilter === 'attendees') return !c.profile?.role || (c.profile.role !== 'organizer' && c.profile.role !== 'organiser' && c.profile.role !== 'admin' && c.profile.role !== 'sub-admin');
+    return true;
+  });
+  const unreadTotal = conversations.reduce((sum, c) => sum + (c.unreadCount > 0 ? 1 : 0), 0);
 
   return (
     <div
@@ -241,10 +255,20 @@ export function ExploreScreen({
         </div>
       )}
       {/* ── Header ── */}
-      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
-          Chats
-        </h1>
+      <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div>
+          <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+            Chats
+          </h1>
+          <p style={{ color: '#9CA0BC', fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
+        </div>
+        <button
+          onClick={() => { haptics.light(); searchRef.current?.focus(); }}
+          aria-label="Find people to chat with"
+          style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,0,0,0.3)', flexShrink: 0 }}
+        >
+          <Plus size={20} color="#fff" />
+        </button>
       </div>
 
       {/* ── Search bar ── */}
@@ -265,6 +289,64 @@ export function ExploreScreen({
           )}
         </div>
       </div>
+
+      {/* ── Filter chips ── real filters over the actual conversation list,
+          not decoration -- see chatFilter above. Hidden while searching
+          (search already narrows both people and messages). */}
+      {!isSearching && (
+        <div className="no-scrollbar" style={{ display: 'flex', gap: '8px', padding: '0 16px 12px', overflowX: 'auto', flexShrink: 0, scrollbarWidth: 'none' }}>
+          {([
+            { key: 'all' as const, label: 'All' },
+            { key: 'unread' as const, label: 'Unread', count: unreadTotal },
+            { key: 'organizers' as const, label: 'Organizers' },
+            { key: 'attendees' as const, label: 'Attendees' },
+          ]).map((f) => {
+            const active = chatFilter === f.key;
+            return (
+              <button
+                key={f.key}
+                onClick={() => { haptics.light(); setChatFilter(f.key); }}
+                style={{
+                  flexShrink: 0, display: 'flex', alignItems: 'center', gap: '6px',
+                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'rgba(255,255,255,0.07)',
+                  backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  border: active ? '1px solid rgba(196,181,253,0.4)' : '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: active ? '#fff' : '#E4E4F0', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
+                {!!f.count && (
+                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Find people to chat with -- routes into the same real people
+          search above, not a fake discovery feed. ── */}
+      {!isSearching && (
+        <div style={{ padding: '0 16px 14px', flexShrink: 0 }}>
+          <button
+            onClick={() => { haptics.light(); searchRef.current?.focus(); }}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: '12px', textAlign: 'left',
+              background: 'rgba(168,85,247,0.1)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              border: '1px solid rgba(196,181,253,0.25)', borderRadius: '16px', padding: '14px', cursor: 'pointer',
+            }}
+          >
+            <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'rgba(168,85,247,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Users size={18} color="#D8B4FE" />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Find people to chat with</p>
+              <p style={{ margin: '2px 0 0', color: '#9CA0BC', fontSize: '12px' }}>Connect with organizers and attendees</p>
+            </div>
+            <ChevronRight size={16} color="#9CA0BC" style={{ flexShrink: 0 }} />
+          </button>
+        </div>
+      )}
 
       {/* ── Content ── */}
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>

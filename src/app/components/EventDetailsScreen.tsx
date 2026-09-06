@@ -305,6 +305,7 @@ export function EventDetailsScreen({
   const ticketsRef = useRef<HTMLDivElement>(null);
   const organizerRef = useRef<HTMLDivElement>(null);
   const moreRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState<'About' | 'Tickets' | 'Organizer' | 'More'>('About');
   const [realAttendeeCount, setRealAttendeeCount] = useState(event.attendees);
   const [organizerProfile, setOrganizerProfile] = useState<any>(null);
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
@@ -734,30 +735,43 @@ export function EventDetailsScreen({
             to the corresponding section already on this page (same
             anchor-scroll pattern as Home's Trending/Near You chips); no
             conditional rendering, so nothing below moves or unmounts. */}
-        <div className="no-scrollbar" style={{ display: 'flex', gap: '8px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none' }}>
+        <div
+          className="no-scrollbar"
+          style={{
+            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: '999px',
+            padding: '4px',
+          }}
+        >
           {[
             { label: 'About', ref: aboutRef },
             { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
             { label: 'Organizer', ref: organizerRef },
             { label: 'More', ref: moreRef },
-          ].filter((t) => t.show !== false).map((t) => (
-            <button
-              key={t.label}
-              onClick={() => t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              style={{
-                flexShrink: 0,
-                background: 'rgba(255,255,255,0.07)',
-                backdropFilter: 'blur(20px) saturate(180%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-                border: '1px solid rgba(255,255,255,0.13)',
-                borderRadius: '999px',
-                padding: '8px 16px',
-                cursor: 'pointer',
-              }}
-            >
-              <span style={{ color: '#E4E4F0', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
-            </button>
-          ))}
+          ].filter((t) => t.show !== false).map((t) => {
+            const active = activeSection === t.label;
+            return (
+              <button
+                key={t.label}
+                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                style={{
+                  flex: 1,
+                  flexShrink: 0,
+                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '9px 14px',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: active ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Organizer Tools — door-staff scanner access. Only ever visible to
