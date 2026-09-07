@@ -26,6 +26,11 @@ interface MyTicketsScreenProps {
   // across tab switches instead of remounting, so its internally-fetched
   // transfers list needs an explicit trigger to refresh on switch-in.
   refreshSignal?: number;
+  // Bumped by App.tsx's shared notification-routing function when a
+  // ticket-transfer notification is tapped -- jumps straight to the
+  // existing Transfers tab below instead of leaving it buried under
+  // whichever tab was already active.
+  focusTransfersSignal?: number;
 }
 
 // Short, consistent date/time format for transfer cards -- expiry, sent-at,
@@ -69,11 +74,19 @@ function TransferEmptyState({ text }: { text: string }) {
   );
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+  // Skips the initial mount so a default/undefined signal never forces the
+  // tab open on first render -- only an actual bump (a real notification
+  // tap) does.
+  const focusTransfersFirstRunRef = useRef(true);
+  useEffect(() => {
+    if (focusTransfersFirstRunRef.current) { focusTransfersFirstRunRef.current = false; return; }
+    setActiveTab('transfers');
+  }, [focusTransfersSignal]);
 
   // Warm the signed-token cache for every visible ticket the moment the list
   // loads, so tapping a ticket renders its QR instantly instead of showing

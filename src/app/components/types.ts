@@ -157,14 +157,31 @@ export interface UserProfile {
   isServiceProvider?: boolean;
 }
 
+// Mirrors notifications.push_data (jsonb, nullable) -- shape varies by
+// notification type (see NOTIFICATION_ROUTING_AUDIT / App.tsx's routing
+// function for the exact fields each type actually carries). Every field
+// optional and typed as unknown-ish primitives rather than `any`, since a
+// given row only ever has a subset of these depending on its type.
+export interface NotificationPushData {
+  eventId?: string;
+  userId?: string;
+  screen?: string;
+  paymentRef?: string;
+  transferId?: string;
+  ticketId?: string;
+  bookingId?: string;
+  [key: string]: string | undefined;
+}
+
 export interface Notification {
   id: string;
-  type: 'reminder' | 'booking' | 'promo' | 'social';
+  type: 'reminder' | 'booking' | 'promo' | 'social' | 'broadcast' | 'message' | 'sale' | 'event_update';
   title: string;
   body: string;
   time: string;
   read: boolean;
   icon: string;
+  push_data: NotificationPushData | null;
 }
 
 // Frontend-shape mirror of a public.service_providers row (see

@@ -266,6 +266,11 @@ export default function App() {
   // stays mounted across tab switches (myTicketsEverMounted) instead of
   // remounting (which used to refetch everything for free).
   const [myTicketsRefreshSignal, setMyTicketsRefreshSignal] = useState(0);
+  // Bumped by the shared notification-routing function when a ticket-
+  // transfer notification is tapped, so MyTicketsScreen can jump straight
+  // to its existing Transfers tab instead of landing on Upcoming with the
+  // transfer buried in a different tab.
+  const [myTicketsFocusTransfersSignal, setMyTicketsFocusTransfersSignal] = useState(0);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -2016,6 +2021,56 @@ export default function App() {
     // a "sale" push carries both eventId and screen:'sales-analytics', and a
     // "message" push carries userId + screen:'chat'; without this ordering
     // they'd fall into the generic event-details/user-profile routes instead.
+    if (data.paymentRef) {
+      // "Someone else is paying" -- same screen/state PaymentRequestScreen.tsx
+      // and the ?payment_request= deep link already use; get_payment_request_
+      // details itself scopes this to whichever of payer/recipient the
+      // current session actually is.
+      setViewingPaymentRequestRef(data.paymentRef);
+      setScreenStack([]);
+      setScreen('payment-request');
+      return;
+    }
+    if (data.transferId) {
+      // Real existing destination: My Tickets' own Transfers tab
+      // (MyTicketsScreen.tsx) -- not a new screen. ticketId travels
+      // alongside transferId in every transfer notification's push_data
+      // but isn't needed here; the Transfers tab itself resolves the
+      // specific transfer from ticket_transfers, scoped by RLS to rows this
+      // user is actually a party to.
+      setMyTicketsFocusTransfersSignal((s) => s + 1);
+      setScreenStack([]);
+      setScreen('my-tickets');
+      return;
+    }
+    if (data.bookingId && currentUser?.id) {
+      // Real existing destinations: ServiceBookingsScreen in either
+      // 'customer' or 'provider' mode (both already built, already routed
+      // to elsewhere in this file) -- never a new booking-detail screen.
+      // Neither booking-confirmed notification (customer's or provider's
+      // copy) says which side the recipient is on, so that's resolved here
+      // from the booking's own real customer_id/provider row, never
+      // guessed. Falls through to a no-op if the row can't be read (RLS
+      // already scopes this correctly) rather than opening a wrong list.
+      const bookingId = data.bookingId;
+      supabase
+        .from('service_bookings')
+        .select('customer_id, provider_id, service_providers(user_id)')
+        .eq('id', bookingId)
+        .maybeSingle()
+        .then(({ data: row, error: rowError }: any) => {
+          if (rowError || !row) return;
+          if (row.customer_id === currentUser.id) {
+            setScreenStack([]);
+            setScreen('service-bookings');
+          } else if (row.service_providers?.user_id === currentUser.id) {
+            setManageServicesProviderId(row.provider_id);
+            setScreenStack([]);
+            setScreen('provider-service-bookings');
+          }
+        });
+      return;
+    }
     if (data.screen === 'sales-analytics' && data.eventId) {
       supabase
         .from('events')
@@ -2085,6 +2140,15 @@ export default function App() {
     if (data.screen === 'my-tickets') { setScreenStack([]); setScreen('my-tickets'); return; }
     if (data.screen === 'wallet') { setScreenStack([]); setScreen('wallet'); return; }
   };
+
+  // Stable identity (never recreated) wrapping the always-current
+  // pushActionRef.current -- this is the one function both a native push
+  // tap (via setPushActionHandler below) and an in-app NotificationsScreen
+  // tap (passed down as a prop) ever call, so the two can never resolve the
+  // same notification to two different destinations.
+  const routeNotification = useCallback((data: Record<string, any>) => {
+    pushActionRef.current(data);
+  }, []);
 
   useEffect(() => {
     setPushActionHandler((data) => pushActionRef.current(data));
@@ -2599,6 +2663,7 @@ export default function App() {
               accountCountry={currentUser?.country}
               onBack={goBack}
               onViewBookings={() => navigateTo('provider-service-bookings')}
+              onEditLocation={() => navigateTo('service-provider-setup')}
             />
           )}
           {screen === 'service-bookings' && currentUser && (
@@ -2822,6 +2887,7 @@ export default function App() {
               onBack={goBack}
               currentUser={currentUser}
               onRefreshUnread={fetchUnreadCount}
+              onRouteNotification={routeNotification}
             />
           )}
           {myTicketsEverMounted && (
@@ -2838,6 +2904,7 @@ export default function App() {
                 currentUserId={currentUser?.id}
                 currentUserEmail={currentUser?.email}
                 refreshSignal={myTicketsRefreshSignal}
+                focusTransfersSignal={myTicketsFocusTransfersSignal}
               />
             </div>
           )}

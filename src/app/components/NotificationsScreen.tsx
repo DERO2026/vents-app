@@ -23,16 +23,25 @@ const TYPE_COLORS: Record<string, string> = {
   booking: '#10B981',
   promo: '#F59E0B',
   social: '#3B82F6',
+  broadcast: '#F59E0B',
+  message: '#3B82F6',
+  sale: '#10B981',
+  event_update: '#A855F7',
 };
 
 export function NotificationsScreen({
   onBack,
   currentUser,
   onRefreshUnread,
+  onRouteNotification,
 }: {
   onBack: () => void;
   currentUser?: { id: string } | null;
   onRefreshUnread?: () => void;
+  // The exact same function App.tsx uses to route a native push tap --
+  // deliberately not reimplemented here, so an in-app tap and a push tap
+  // can never resolve a notification to two different destinations.
+  onRouteNotification?: (data: Record<string, any>) => void;
 }) {
   const PAGE_SIZE = 50;
   const [items, setItems] = useState<Notification[]>([]);
@@ -61,6 +70,7 @@ export function NotificationsScreen({
     read: n.read,
     icon: n.icon,
     time: formatRelativeTime(n.created_at),
+    push_data: n.push_data ?? null,
   });
 
   const fetchNotifications = async () => {
@@ -427,8 +437,18 @@ export function NotificationsScreen({
                     </div>
                   )}
                   <div
-                    onClick={() => { if (offsetX === 0) markRead(notif.id); }}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (offsetX === 0) markRead(notif.id); } }}
+                    onClick={() => {
+                      if (offsetX !== 0) return;
+                      markRead(notif.id);
+                      if (notif.push_data) onRouteNotification?.(notif.push_data);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key !== 'Enter' && e.key !== ' ') return;
+                      e.preventDefault();
+                      if (offsetX !== 0) return;
+                      markRead(notif.id);
+                      if (notif.push_data) onRouteNotification?.(notif.push_data);
+                    }}
                     role="button" tabIndex={0}
                     onTouchStart={(e) => handleSwipeStart(notif.id, e.touches[0].clientX)}
                     onTouchMove={(e) => handleSwipeMove(notif.id, e.touches[0].clientX)}
