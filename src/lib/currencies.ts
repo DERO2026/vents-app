@@ -204,17 +204,22 @@ export function currencyForCountry(iso?: string | null): string {
 }
 
 // Services marketplace payment is NGN-only for this pass (see
-// 0054_service_bookings_marketplace.sql) -- a provider whose account has no
-// country set yet (common for an older/incompletely-onboarded account)
-// should never have their payable service price default to an unrelated
-// currency (USD) that VENTS can't even charge in. NGN is VENTS' home
-// market and the only currency the payment flow accepts right now, so it's
-// the correct default here specifically -- unlike currencyForCountry's
-// neutral USD default, which is still right for the informational,
-// non-payable "starting price" display on the provider's own listing.
-export function servicesPayableCurrencyForCountry(iso?: string | null): string {
-  if (!iso) return 'NGN';
-  return COUNTRY_TO_CURRENCY[iso.toUpperCase()] || 'NGN';
+// 0054_service_bookings_marketplace.sql, create_service_booking's own
+// `IF v_currency IS DISTINCT FROM 'NGN' THEN RAISE EXCEPTION` gate) --
+// unconditionally NGN regardless of country, not just when a provider's
+// account has no country set. This used to fall back to the country's own
+// local currency (COUNTRY_TO_CURRENCY[iso]) for every mapped country --
+// e.g. a US or UK provider's new service silently defaulted to USD/GBP,
+// which create_service_booking can never actually charge, leaving the
+// provider with an unbookable listing and no in-app way to fix it (the
+// currency field is read-only once a service exists -- see
+// ManageProviderServicesScreen.tsx). iso is intentionally still accepted
+// (signature unchanged) so this can be restored to real per-country
+// currencies later, once Services payments support more than NGN --
+// currencyForCountry above remains the right helper for the informational,
+// non-payable "starting price" display, which isn't gated by this.
+export function servicesPayableCurrencyForCountry(_iso?: string | null): string {
+  return 'NGN';
 }
 
 export function currencyByCode(code?: string | null): CurrencyOption | undefined {
