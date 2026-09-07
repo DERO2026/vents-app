@@ -56,6 +56,46 @@ async function notifyTransferFeeOutcome(reference: string) {
   }
 }
 
+// Called only when confirm_transfer_fee_payment's return value carries the
+// ':refund_claimed' suffix (0064_ticket_transfer_fee_refund.sql) -- that
+// suffix IS the idempotency gate: only the one caller that claimed
+// ticket_transfers.fee_refund_needed_at (under the row lock confirm_
+// transfer_fee_payment already holds) ever reaches this function, so this
+// never creates two Paystack refunds for the same payment. Reuses the
+// EXACT existing refund mechanism (api/wallet/refund-ticket.ts's own
+// POST https://api.paystack.co/refund + PAYSTACK_SECRET_KEY) -- no new
+// Paystack API call, no new secret. Async completion (refund.processed/
+// refund.failed) is handled below in handleWebhook, mirroring finalize_
+// ticket_refund/fail_ticket_refund exactly.
+async function attemptTransferFeeRefund(reference: string, amountKobo: number, note: string) {
+  try {
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    if (!paystackSecret) {
+      console.error('[Paystack webhook] Cannot auto-refund transfer fee (PAYSTACK_SECRET_KEY not set) for reference', reference);
+      return;
+    }
+    const refundRes = await fetch('https://api.paystack.co/refund', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${paystackSecret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transaction: reference, amount: amountKobo, merchant_note: note }),
+    });
+    const refundJson = await refundRes.json().catch(() => null);
+    const refundId = refundJson?.data?.id != null ? String(refundJson.data.id) : null;
+
+    if (!refundRes.ok || !refundJson?.status || !refundId) {
+      console.error('[Paystack webhook] Transfer fee auto-refund initiation FAILED for reference', reference, '-', refundJson?.message || `HTTP ${refundRes.status}`);
+      await callProjectAdminRpc('mark_transfer_fee_refund_initiation_failed', [reference, refundJson?.message || `HTTP ${refundRes.status}`]).catch(() => {});
+      return;
+    }
+
+    await callProjectAdminRpc('attach_transfer_fee_refund_id', [reference, refundId]);
+    console.log('[Paystack webhook] Transfer fee auto-refund initiated:', refundId, 'for reference', reference);
+  } catch (err: any) {
+    console.error('[Paystack webhook] attemptTransferFeeRefund threw for reference', reference, ':', err?.message || err);
+    await callProjectAdminRpc('mark_transfer_fee_refund_initiation_failed', [reference, err?.message || 'unknown error']).catch(() => {});
+  }
+}
+
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
@@ -172,7 +212,13 @@ async function handleClientVerify(req, res) {
     }
 
     if (isTransferFeeRef) {
-      const feeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+      const rawFeeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+      // 0064_ticket_transfer_fee_refund.sql: a ':refund_claimed' suffix
+      // means THIS call is the one that must actually initiate the
+      // Paystack refund (see attemptTransferFeeRefund's own header comment
+      // for why that can never happen twice for the same payment).
+      const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
+      const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
 
       if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
         const [, expected, got] = feeStatus.split(':');
@@ -182,14 +228,22 @@ async function handleClientVerify(req, res) {
       if (feeStatus === 'not_found') {
         return res.status(200).json({ status: 'error', error: 'No matching transfer was found for this payment.' });
       }
-      if (feeStatus === 'expired') {
-        return res.status(200).json({ status: 'error', error: 'This transfer request has expired.' });
-      }
-      if (feeStatus === 'ticket_ineligible') {
-        return res.status(200).json({ status: 'error', error: 'This ticket is no longer eligible for transfer.' });
-      }
-      if (typeof feeStatus === 'string' && feeStatus.startsWith('transfer_not_pending')) {
-        return res.status(200).json({ status: 'error', error: 'This transfer is no longer pending.' });
+      // These three all mean the same thing to the recipient: the fee
+      // payment itself succeeded, but the transfer could no longer be
+      // completed -- explicit about the charge and the refund in progress,
+      // never the old generic "this transfer is no longer pending" wording
+      // that left a charged user with no idea what happens next.
+      if (feeStatus === 'expired' || feeStatus === 'ticket_ineligible' || (typeof feeStatus === 'string' && feeStatus.startsWith('transfer_not_pending'))) {
+        if (refundClaimed) await attemptTransferFeeRefund(reference, amountKobo, 'Ticket transfer could not complete after fee payment');
+        const reasonText = feeStatus === 'expired'
+          ? 'This transfer request expired'
+          : feeStatus === 'ticket_ineligible'
+            ? 'This ticket is no longer eligible for transfer'
+            : 'This transfer is no longer pending';
+        return res.status(200).json({
+          status: 'error',
+          error: `${reasonText}. You were charged for the transfer fee — a refund has been started automatically and should appear on your statement shortly.`,
+        });
       }
 
       // 'confirmed' or 'already_paid' -- either way the fee is paid and
@@ -288,13 +342,23 @@ async function handleWebhook(req, res) {
       // (fee_paid_at IS NOT NULL short-circuits to 'already_paid'), so
       // whichever of the two paths runs first wins and the other no-ops.
       try {
-        const feeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+        const rawFeeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+        const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
+        const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
+
         if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
           console.error('[Paystack webhook] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', feeStatus);
         } else {
           console.log('[Paystack webhook] transfer fee', feeStatus, 'for reference', reference);
           if (feeStatus === 'confirmed' || feeStatus === 'already_paid') {
             await notifyTransferFeeOutcome(reference);
+          } else if (refundClaimed) {
+            // Same recovery-path reasoning as the ticket-purchase branch:
+            // this is the authoritative confirmation if the client's own
+            // ?action=verify call never fired (app closed, network drop) --
+            // whichever of the two paths runs first claims the refund, per
+            // attemptTransferFeeRefund's own idempotency guard.
+            await attemptTransferFeeRefund(reference, amountKobo, 'Ticket transfer could not complete after fee payment');
           }
         }
       } catch (err: any) {
@@ -443,11 +507,24 @@ async function handleWebhook(req, res) {
             amountNaira: fmtNaira(Number(row.refunded_amount_kobo) || 0),
             reason: row.reason || 'Refund requested by the organizer.',
           }).catch((e) => console.error('[Paystack webhook] refund email failed:', e?.message || e));
+        } else if (row?.status === 'not_found') {
+          // Paystack refund ids are one global sequence, not scoped by what
+          // kind of refund created them -- this refund.processed event just
+          // isn't for a ticket refund. Try the transfer-fee refund flow
+          // (0064_ticket_transfer_fee_refund.sql) before giving up on it.
+          const tRows = await callProjectAdminTableRpc<any>('finalize_transfer_fee_refund', [refundId]);
+          const tRow = tRows[0];
+          console.log('[Paystack webhook] refund.processed -> finalize_transfer_fee_refund result:', tRow?.status, 'for', refundId);
         }
       } else {
         const rows = await callProjectAdminTableRpc<any>('fail_ticket_refund', [refundId, event.data?.message || event.event]);
         const row = rows[0];
         console.log('[Paystack webhook] refund.failed -> fail_ticket_refund result:', row?.status, 'for', refundId);
+
+        if (row?.status === 'not_found') {
+          const tStatus = await callProjectAdminRpc<string>('fail_transfer_fee_refund', [refundId, event.data?.message || event.event]);
+          console.log('[Paystack webhook] refund.failed -> fail_transfer_fee_refund result:', tStatus, 'for', refundId);
+        }
       }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);
