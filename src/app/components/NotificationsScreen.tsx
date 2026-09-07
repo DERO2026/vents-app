@@ -239,12 +239,13 @@ export function NotificationsScreen({
   return (
     <div
       style={{
-        background: '#020005',
+        background: 'radial-gradient(ellipse 520px 300px at 50% -8%, rgba(123,47,190,0.09) 0%, rgba(5,2,10,1) 40%, #050208 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
+        fontFamily: 'Inter, sans-serif',
       }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {
@@ -259,7 +260,7 @@ export function NotificationsScreen({
     >
       {pullRefreshing && (
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200 }}>
-          <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid rgba(123,47,247,0.2)', borderTop: '3px solid #7B2FF7', animation: 'spin 0.8s linear infinite' }} />
+          <div style={{ width: '34px', height: '34px', borderRadius: '50%', border: '2.5px solid rgba(168,85,247,0.15)', borderTop: '2.5px solid #A855F7', animation: 'spin 0.8s linear infinite' }} />
         </div>
       )}
       {/* Header */}
@@ -274,12 +275,15 @@ export function NotificationsScreen({
       >
         <button
           onClick={onBack}
+          aria-label="Back"
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.08)',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.07)',
             borderRadius: '50%',
-            width: '36px',
-            height: '36px',
+            width: '34px',
+            height: '34px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -287,7 +291,7 @@ export function NotificationsScreen({
             flexShrink: 0,
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={15} color="#C4C9E0" />
         </button>
 
         <div
@@ -302,28 +306,45 @@ export function NotificationsScreen({
             alignItems: 'center',
             justifyContent: 'center',
             pointerEvents: 'none',
+            gap: '4px',
           }}
         >
-          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>Notifications</h1>
+          <h1
+            style={{
+              color: '#F5F5FA',
+              fontSize: '17px',
+              fontWeight: 700,
+              fontFamily: 'Space Grotesk, sans-serif',
+              margin: 0,
+              letterSpacing: '0.01em',
+            }}
+          >
+            Notifications
+          </h1>
           {unreadCount > 0 && (
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-              {unreadCount} unread
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#A855F7', boxShadow: '0 0 5px rgba(168,85,247,0.8)' }} />
+              <span style={{ color: '#8B8FA8', fontSize: '11px', letterSpacing: '0.02em' }}>
+                {unreadCount} new
+              </span>
+            </div>
           )}
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', position: 'relative', zIndex: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', position: 'relative', zIndex: 1 }}>
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
               title="Mark all read"
               aria-label="Mark all read"
               style={{
-                background: 'rgba(167,139,250,0.1)',
-                border: '1px solid rgba(167,139,250,0.2)',
+                background: 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: '50%',
-                width: '36px',
-                height: '36px',
+                width: '34px',
+                height: '34px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -331,7 +352,7 @@ export function NotificationsScreen({
                 flexShrink: 0,
               }}
             >
-              <CheckCheck size={16} color="#A78BFA" />
+              <CheckCheck size={15} color="#B9A6E8" />
             </button>
           )}
           {items.length > 0 && (
@@ -341,11 +362,13 @@ export function NotificationsScreen({
               title="Clear all"
               aria-label="Clear all"
               style={{
-                background: 'rgba(239,68,68,0.1)',
-                border: '1px solid rgba(239,68,68,0.25)',
+                background: 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: '50%',
-                width: '36px',
-                height: '36px',
+                width: '34px',
+                height: '34px',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -354,7 +377,7 @@ export function NotificationsScreen({
                 flexShrink: 0,
               }}
             >
-              <Trash2 size={15} color="#EF4444" />
+              <Trash2 size={14} color="#8B8FA8" />
             </button>
           )}
         </div>
@@ -369,8 +392,8 @@ export function NotificationsScreen({
         }}
       >
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: '#8B8FA8' }}>
-            <Loader size={20} className="animate-spin" />
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: '#6B7089' }}>
+            <Loader size={18} className="animate-spin" />
             <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading notifications...</span>
           </div>
         ) : items.length === 0 ? (
@@ -379,32 +402,38 @@ export function NotificationsScreen({
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              paddingTop: '80px',
-              gap: '12px',
+              paddingTop: '96px',
+              gap: '18px',
             }}
           >
             <div
               style={{
-                width: '72px',
-                height: '72px',
-                borderRadius: '20px',
-                background: '#090514',
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.03)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.06)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Bell size={32} color="#2A2D3E" />
+              <Bell size={24} color="#4A4E63" strokeWidth={1.5} />
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '15px' }}>No notifications yet</p>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
+              <p style={{ color: '#D8D8E4', fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>You're all caught up</p>
+              <p style={{ color: '#6B7089', fontSize: '12.5px', margin: 0 }}>New activity will show up here</p>
+            </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {items.map((notif) => {
               const accent = TYPE_COLORS[notif.type] ?? '#A855F7';
               const offsetX = swipe?.id === notif.id ? swipe.offsetX : 0;
               return (
-                <div key={notif.id} style={{ position: 'relative', borderRadius: '16px', overflow: 'hidden' }}>
+                <div key={notif.id} style={{ position: 'relative', borderRadius: '18px', overflow: 'hidden' }}>
                   {/* Delete-reveal background — only exists in the DOM for
                       the row actually mid-swipe, rather than being rendered
                       for every row and relying solely on the parent's
@@ -416,23 +445,25 @@ export function NotificationsScreen({
                       mode entirely instead of depending on clipping. */}
                   {offsetX !== 0 && (
                     <div style={{
-                      position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.15)',
+                      position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.12)',
                       display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '0 22px',
                     }}>
                       <div
                         style={{
-                          width: '34px',
-                          height: '34px',
+                          width: '32px',
+                          height: '32px',
                           borderRadius: '50%',
-                          background: 'rgba(239,68,68,0.2)',
-                          border: '1px solid rgba(239,68,68,0.35)',
+                          background: 'rgba(255,255,255,0.04)',
+                          backdropFilter: 'blur(20px) saturate(180%)',
+                          WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                          border: '1px solid rgba(255,255,255,0.07)',
                           display: 'flex',
                           alignItems: 'center',
                           justifyContent: 'center',
                           flexShrink: 0,
                         }}
                       >
-                        <Trash2 size={15} color="#EF4444" />
+                        <Trash2 size={14} color="#8B8FA8" />
                       </div>
                     </div>
                   )}
@@ -454,32 +485,34 @@ export function NotificationsScreen({
                     onTouchMove={(e) => handleSwipeMove(notif.id, e.touches[0].clientX)}
                     onTouchEnd={() => handleSwipeEnd(notif.id)}
                     style={{
-                      background: notif.read ? '#131629' : 'rgba(168,85,247,0.07)',
+                      background: notif.read ? 'rgba(255,255,255,0.025)' : 'rgba(168,85,247,0.045)',
+                      backdropFilter: 'blur(20px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(20px) saturate(180%)',
                       border: notif.read
-                        ? '1px solid rgba(255,255,255,0.05)'
-                        : '1px solid rgba(168,85,247,0.22)',
-                      borderRadius: '16px',
-                      padding: '14px',
+                        ? '1px solid rgba(255,255,255,0.045)'
+                        : '1px solid rgba(168,85,247,0.16)',
+                      borderRadius: '18px',
+                      padding: '16px',
                       display: 'flex',
-                      gap: '12px',
+                      gap: '13px',
                       cursor: 'pointer',
                       position: 'relative',
                       transform: `translateX(${offsetX}px)`,
                       transition: swipe?.id === notif.id ? 'none' : 'transform 0.2s ease, opacity 0.15s ease',
                     }}
                   >
-                  {/* Icon bubble */}
+                  {/* Icon — small and contextual, not a large colorful bubble */}
                   <div
                     style={{
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '13px',
-                      background: `${accent}18`,
-                      border: `1px solid ${accent}30`,
+                      width: '34px',
+                      height: '34px',
+                      borderRadius: '50%',
+                      background: 'rgba(255,255,255,0.04)',
+                      border: notif.read ? '1px solid rgba(255,255,255,0.06)' : `1px solid ${accent}35`,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
-                      fontSize: '20px',
+                      fontSize: '14px',
                       flexShrink: 0,
                     }}
                   >
@@ -492,35 +525,36 @@ export function NotificationsScreen({
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'flex-start',
-                        marginBottom: '4px',
+                        marginBottom: '3px',
                         gap: '8px',
                       }}
                     >
                       <span
                         style={{
-                          color: '#F0F0FF',
+                          color: notif.read ? '#B8BBCC' : '#F0F0FA',
                           fontSize: '14px',
-                          fontWeight: notif.read ? 500 : 700,
+                          fontWeight: notif.read ? 500 : 650,
+                          letterSpacing: '0.001em',
                         }}
                       >
                         {notif.title}
                       </span>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0, marginTop: '2px' }}>
                         {!notif.read && (
                           <div
                             style={{
-                              width: '8px',
-                              height: '8px',
+                              width: '5px',
+                              height: '5px',
                               borderRadius: '50%',
-                              background: accent,
-                              boxShadow: `0 0 6px ${accent}`,
+                              background: '#A855F7',
+                              boxShadow: '0 0 4px rgba(168,85,247,0.7)',
                               flexShrink: 0,
                             }}
                           />
                         )}
                         <span
                           style={{
-                            color: '#8B8FA8',
+                            color: '#5C6079',
                             fontSize: '11px',
                             whiteSpace: 'nowrap',
                           }}
@@ -531,16 +565,15 @@ export function NotificationsScreen({
                     </div>
                     <p
                       style={{
-                        color: notif.read ? '#8B8FA8' : '#C4C9E0',
-                        fontSize: '13px',
-                        lineHeight: 1.45,
+                        color: notif.read ? '#6B7089' : '#9A9DB5',
+                        fontSize: '12.5px',
+                        lineHeight: 1.5,
+                        margin: 0,
                       }}
                     >
                       {notif.body}
                     </p>
                   </div>
-
-                  {/* Unread dot moved inline with timestamp above */}
                   </div>
                 </div>
               );
@@ -550,9 +583,10 @@ export function NotificationsScreen({
                 onClick={loadMore}
                 disabled={loadingMore}
                 style={{
-                  marginTop: '4px', padding: '12px', borderRadius: '14px',
-                  background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-                  color: '#A78BFA', fontSize: '13px', fontWeight: 600,
+                  marginTop: '4px', padding: '13px', borderRadius: '16px',
+                  background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  color: '#9A9DB5', fontSize: '13px', fontWeight: 600,
                   cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1,
                 }}
               >
