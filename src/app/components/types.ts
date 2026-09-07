@@ -296,6 +296,7 @@ export type Screen =
   | 'inbox'
   | 'conversation'
   | 'wallet'
+  | 'user-wallet'
   | 'services-home'
   | 'services-category'
   | 'service-provider-profile'

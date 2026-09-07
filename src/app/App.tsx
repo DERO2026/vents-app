@@ -51,6 +51,7 @@ import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { WalletScreen } from './components/WalletScreen';
+import { UserWalletScreen } from './components/UserWalletScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
@@ -3287,9 +3288,14 @@ export default function App() {
             />
           )}
 
-          {/* ── WALLET ── */}
+          {/* ── WALLET (organizer/provider earnings) ── */}
           {screen === 'wallet' && (
             <WalletScreen currentUser={currentUser} onBack={goBack} />
+          )}
+
+          {/* ── VENTS WALLET (customer deposit/spend balance) ── */}
+          {screen === 'user-wallet' && (
+            <UserWalletScreen currentUser={currentUser} onBack={goBack} />
           )}
 
           {/* ── PAYMENT REQUESTS (payer receipts) ── */}

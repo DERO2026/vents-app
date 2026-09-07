@@ -134,6 +134,9 @@ async function handleClientVerify(req, res) {
   // already exactly hit, see this file's header comment).
   const isTransferFeeRef = reference.startsWith('txf_');
   const isServiceBookingRef = reference.startsWith('BKG-');
+  // Customer wallet deposits (0065_user_wallets.sql) -- distinct prefix,
+  // cannot collide with either of the above.
+  const isWalletDepositRef = reference.startsWith('wdep_');
   // Resolved below (ticket-purchase branch only) from the incoming
   // reference -- which since 0060 may be a disposable per-attempt
   // paystack_ref, not pending_purchases' own stable payment_ref -- to the
@@ -158,6 +161,11 @@ async function handleClientVerify(req, res) {
       }
     } else if (isServiceBookingRef) {
       const ownerId = await callProjectAdminRpc('get_service_booking_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else if (isWalletDepositRef) {
+      const ownerId = await callProjectAdminRpc('get_wallet_deposit_owner', [reference]);
       if (ownerId && ownerId !== session.userId) {
         return res.status(403).json({ error: 'Not authorized for this payment reference' });
       }
@@ -264,6 +272,31 @@ async function handleClientVerify(req, res) {
         return res.status(200).json({ status: 'error', error: 'No matching booking was found for this payment.' });
       }
 
+      return res.status(200).json({ status: 'success' });
+    }
+
+    if (isWalletDepositRef) {
+      // p_amount_kobo is Paystack's own verified amount -- confirm_wallet_
+      // deposit reconciles it against the amount initiate_wallet_deposit
+      // locked in server-side for this exact reference (0065_user_wallets.sql)
+      // and refuses to credit on any mismatch.
+      const depositStatus = await callProjectAdminRpc<string>('confirm_wallet_deposit', [reference, amountKobo]);
+
+      if (depositStatus === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching deposit was found for this payment.' });
+      }
+      if (depositStatus === 'invalid_amount') {
+        return res.status(200).json({ status: 'error', error: 'Paystack returned an invalid amount for this deposit.' });
+      }
+      if (typeof depositStatus === 'string' && depositStatus.startsWith('amount_mismatch')) {
+        const [, expected, got] = depositStatus.split(':');
+        console.error('[webhook/paystack?action=verify] WALLET DEPOSIT AMOUNT MISMATCH for reference', reference, '-', expected, 'vs', got);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected deposit amount.' });
+      }
+
+      // 'confirmed' or 'already_credited' -- either way the deposit has
+      // landed in the wallet exactly once, so this is a success from the
+      // client's perspective.
       return res.status(200).json({ status: 'success' });
     }
 
@@ -381,6 +414,25 @@ async function handleWebhook(req, res) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_service_booking_payment:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('wdep_')) {
+      // Customer wallet deposit -- same authoritative-webhook recovery
+      // reasoning as every other branch here. confirm_wallet_deposit is
+      // idempotent (user_wallet_transactions_deposit_ref_idx, 0065), so
+      // whichever of this webhook or the client's ?action=verify call runs
+      // first credits the wallet; the other is a guaranteed no-op.
+      try {
+        const depositStatus = await callProjectAdminRpc<string>('confirm_wallet_deposit', [reference, amountKobo]);
+        if (typeof depositStatus === 'string' && depositStatus.startsWith('amount_mismatch')) {
+          console.error('[Paystack webhook] WALLET DEPOSIT AMOUNT MISMATCH for reference', reference, '-', depositStatus);
+        } else {
+          console.log('[Paystack webhook] wallet deposit', depositStatus, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_wallet_deposit:', err?.message || err);
       }
       return res.status(200).json({ received: true });
     }

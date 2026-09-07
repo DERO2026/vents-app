@@ -15,6 +15,7 @@ import {
   Gift,
   Camera,
   Wallet,
+  WalletCards,
   Briefcase,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
@@ -357,6 +358,13 @@ export function ProfileScreen({
   }
 
   const menuItems = [
+    {
+      icon: WalletCards,
+      label: 'VENTS Wallet',
+      sublabel: 'Deposit & spend balance',
+      color: '#A855F7',
+      screen: 'user-wallet',
+    },
     {
       icon: Bell,
       label: 'Notifications',
