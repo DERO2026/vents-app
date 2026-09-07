@@ -254,7 +254,11 @@ export function UserProfileScreen({
             // a /user/:id link only ever resolves to index.html with no
             // matching route and dead-ends at home. App.tsx already parses
             // ?event=/?user= off window.location.search on load.
-            const shareUrl = `${window.location.origin}/?user=${user.id}`;
+            // Always the real public domain, never window.location.origin --
+            // inside the native app that resolves to the WebView's own
+            // internal origin (capacitor://localhost on iOS, https://localhost
+            // on Android), meaningless to anyone the link is shared with.
+            const shareUrl = `https://getvents.com/?user=${user.id}`;
             const result = await shareLink({ title: `${user.username || user.name} on Vents`, url: shareUrl });
             if (result === 'copied') {
               setCopiedToast(true);

@@ -2193,20 +2193,34 @@ export default function App() {
   }, []);
 
   // Native deep links (a shared https://getvents.com/?event=… or vents://
-  // link opened while the app is installed) previously had no handler at
-  // all — there was no @capacitor/app listener anywhere in the codebase, so
-  // App.tsx's URL parsing (which only runs once, off window.location.search
-  // during the initial hydrateAuth pass) never saw these: a Capacitor
-  // WebView's window.location is the local bundle URL, not the link that
-  // opened the app. This requires the platform-side association to route
-  // getvents.com/vents:// links to the app in the first place — Android's
-  // intent-filter is set up in AndroidManifest.xml; a full domain-verified
-  // Android App Link additionally needs a hosted
-  // /.well-known/assetlinks.json with the release signing certificate's
-  // SHA-256 fingerprint, and iOS Universal Links need an
-  // apple-app-site-association file plus the Associated Domains
-  // entitlement — neither is wired up yet (no iOS project exists in this
-  // repo yet, and the Android release fingerprint isn't available here).
+  // link opened while the app is installed) -- handled here via @capacitor/
+  // app's appUrlOpen, since App.tsx's URL parsing (which only runs once, off
+  // window.location.search during the initial hydrateAuth pass) never sees
+  // these: a Capacitor WebView's window.location is the local bundle URL,
+  // not the link that opened the app.
+  //
+  // This requires the platform-side association to route getvents.com/
+  // vents:// links to the app in the first place. Current repo-side state:
+  //   - Android: the vents:// intent-filter and an autoVerify="true" https://
+  //     getvents.com intent-filter both exist in AndroidManifest.xml;
+  //     public/.well-known/assetlinks.json is checked in with a
+  //     sha256_cert_fingerprints value. That fingerprint has NOT been
+  //     verified from this repo alone -- it must actually match the real
+  //     release signing certificate, and the file must actually be reachable
+  //     at https://getvents.com/.well-known/assetlinks.json in production,
+  //     neither of which this codebase can confirm on its own.
+  //   - iOS: the App target now has an Associated Domains entitlement
+  //     (ios/App/App/App.entitlements, applinks:getvents.com) wired into
+  //     ios/App/App.xcodeproj/project.pbxproj via CODE_SIGN_ENTITLEMENTS, and
+  //     public/.well-known/apple-app-site-association is checked in with
+  //     event/user link paths. Its appIDs entry still has a literal
+  //     REPLACE_WITH_APPLE_TEAM_ID placeholder -- the real Apple Developer
+  //     Team ID isn't available anywhere in this repo and must never be
+  //     guessed; swap it in before this can work.
+  // Until both are genuinely verified end-to-end (not just present in the
+  // repo), a getvents.com link falls back to opening in the browser -- safe,
+  // but not yet the native-app experience. vents:// (this listener's other
+  // branch) works today on both platforms independent of any of the above.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     let removeListener: (() => void) | undefined;

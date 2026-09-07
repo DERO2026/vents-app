@@ -412,7 +412,13 @@ export function EventDetailsScreen({
 
   const handleShare = async () => {
     analytics.eventShared(event.id, event.title);
-    const deepLink = `${window.location.origin}/?event=${event.id}`;
+    // Always the real public domain, never window.location.origin -- inside
+    // the native app that resolves to the WebView's own internal origin
+    // (capacitor://localhost on iOS, https://localhost on Android per
+    // capacitor.config.ts's androidScheme/hostname), which is meaningless
+    // to anyone the link is shared with. Same pattern PaymentSuccessScreen's
+    // ticket-share link already uses.
+    const deepLink = `https://getvents.com/?event=${event.id}`;
     const text =
       `🎟️ ${event.title}\n` +
       `📅 ${event.date} · ${event.time}\n` +

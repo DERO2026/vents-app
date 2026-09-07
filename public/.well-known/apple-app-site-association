@@ -1,0 +1,13 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.getvents.app"],
+        "components": [
+          { "/": "/", "?": { "event": "*" } },
+          { "/": "/", "?": { "user": "*" } }
+        ]
+      }
+    ]
+  }
+}

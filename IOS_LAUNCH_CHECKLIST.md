@@ -61,7 +61,16 @@ In **Signing & Capabilities**, click **+ Capability** and add:
 - **Background Modes** → check **Remote notifications**
 - **Associated Domains** → add `applinks:getvents.com` (for the deep-link
   Universal Links support already wired in `App.tsx`'s `appUrlOpen`
-  listener — inert until this is added and the AASA file below is hosted)
+  listener — inert until this is added and the AASA file below is hosted).
+  Since `ios/` is regenerated locally and untracked (see its own `.gitignore`
+  comment), this capability must be re-added by hand every time the iOS
+  project is regenerated — it does not persist in git. A reference
+  implementation (an `ios/App/App/App.entitlements` file with
+  `com.apple.developer.associated-domains: [applinks:getvents.com]`, wired
+  into the target via `CODE_SIGN_ENTITLEMENTS` in Xcode's build settings)
+  was verified to work correctly in one working iOS checkout — redo the same
+  two steps (add the capability in Xcode, or manually add the entitlements
+  file + build setting) on whichever machine builds for release.
 
 ## 5. Push notifications (Firebase/APNs) — code done, Firebase console setup remains
 
@@ -92,23 +101,42 @@ code changes needed for this:
 
 ## 6. Universal Links (deep links) — required for the getvents.com links to open the app
 
-1. Host a file at `https://getvents.com/.well-known/apple-app-site-association`
-   (no file extension, served as `application/json`) containing your Team
-   ID + `com.getvents.app`. Format:
+1. The AASA file is now committed at
+   `public/.well-known/apple-app-site-association` (no file extension —
+   already the case, matching the same pattern `public/.well-known/
+   assetlinks.json` uses for Android App Links; Vercel serves it as a static
+   file, no separate hosting step needed). It currently supports the
+   existing `?event=<id>` and `?user=<id>` deep-link paths:
    ```json
    {
      "applinks": {
-       "apps": [],
        "details": [
-         { "appID": "TEAMID.com.getvents.app", "paths": ["*"] }
+         {
+           "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.getvents.app"],
+           "components": [
+             { "/": "/", "?": { "event": "*" } },
+             { "/": "/", "?": { "user": "*" } }
+           ]
+         }
        ]
      }
    }
    ```
-2. This must be reachable over HTTPS with no redirects before Xcode's
-   Associated Domains capability (step 4) will actually work.
-3. Until this is live, `vents://` custom-scheme links still work (Android
-   already has this; iOS gets it from the `CFBundleURLTypes` entry above).
+2. **Before release**, replace `REPLACE_WITH_APPLE_TEAM_ID` in that file with
+   the real Apple Developer Team ID (Apple Developer → Membership, or the
+   top-left of Xcode's Signing & Capabilities pane once a team is selected).
+   This value cannot be guessed or derived from this repo — do not ship with
+   the placeholder still in place, the file will simply fail Apple's
+   verification and Universal Links stay inert (safe failure — see point 4).
+3. This file must be reachable over HTTPS with no redirects at
+   `https://getvents.com/.well-known/apple-app-site-association` before
+   Xcode's Associated Domains capability (step 4) will actually work —
+   verify with a plain `curl` after deploying.
+4. Until the real Team ID is in place and verified live, `vents://`
+   custom-scheme links still work (Android already has this; iOS gets it
+   from the `CFBundleURLTypes` entry above) — a `getvents.com` link falls
+   back to opening in the browser rather than failing, so this is a safe,
+   non-blocking gap until closed.
 
 ## 7. Google Maps / Places API key — iOS referrer restriction
 

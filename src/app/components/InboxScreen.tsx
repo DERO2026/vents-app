@@ -191,7 +191,11 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   }
 
   async function handleShare(thread: Thread) {
-    const deepLink = `${window.location.origin}/?user=${thread.otherUserId}`;
+    // Always the real public domain, never window.location.origin -- inside
+    // the native app that resolves to the WebView's own internal origin
+    // (capacitor://localhost on iOS, https://localhost on Android),
+    // meaningless to anyone the link is shared with.
+    const deepLink = `https://getvents.com/?user=${thread.otherUserId}`;
     const text = `Check out ${thread.otherUserName} on Vents 👇\n${deepLink}`;
     const result = await shareLink({ title: thread.otherUserName, text, url: deepLink });
     if (result === 'copied') flash('Profile link copied.');
