@@ -15,6 +15,14 @@ interface ExploreScreenProps {
   chatRefreshKey?: number;
   initialTab?: 'people' | 'chats';
   onTabChange?: (tab: 'people' | 'chats') => void;
+  // Bumped by App.tsx's shared notification-routing function when a "wants
+  // to message you" request notification is tapped -- opens the Message
+  // Requests overlay below directly, instead of leaving the user to find
+  // it themselves.
+  openRequestsSignal?: number;
+  // The specific requester_id that notification pointed at, so the exact
+  // request row can be highlighted inside the (single, real) overlay below.
+  highlightRequesterId?: string;
 }
 
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
@@ -48,6 +56,8 @@ export function ExploreScreen({
   currentUserId,
   onOpenConversation,
   chatRefreshKey,
+  openRequestsSignal,
+  highlightRequesterId,
 }: ExploreScreenProps) {
   const [query, setQuery] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
@@ -96,6 +106,15 @@ export function ExploreScreen({
   const [requests, setRequests] = useState<any[]>([]);
   const [showRequests, setShowRequests] = useState(false);
   const [respondingId, setRespondingId] = useState<string | null>(null);
+
+  // Skips the initial mount so a default/undefined signal never forces the
+  // overlay open on first render -- only an actual bump (a real
+  // notification tap) does.
+  const openRequestsFirstRunRef = useRef(true);
+  useEffect(() => {
+    if (openRequestsFirstRunRef.current) { openRequestsFirstRunRef.current = false; return; }
+    setShowRequests(true);
+  }, [openRequestsSignal]);
 
   const loadConversations = useCallback(() => {
     if (!currentUserId) return;
@@ -504,8 +523,19 @@ export function ExploreScreen({
             ) : requests.map((r) => {
               const name = r.profile?.full_name || r.profile?.username || 'User';
               const avatarUrl = r.profile?.avatar_url;
+              const isHighlighted = !!highlightRequesterId && r.requesterId === highlightRequesterId;
               return (
-                <div key={r.requesterId} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 16px' }}>
+                <div
+                  key={r.requesterId}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    padding: '12px 16px',
+                    background: isHighlighted ? 'rgba(168,85,247,0.1)' : 'transparent',
+                    borderLeft: isHighlighted ? '2px solid #A855F7' : '2px solid transparent',
+                  }}
+                >
                   <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                     {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
                   </div>

@@ -31,6 +31,11 @@ interface MyTicketsScreenProps {
   // existing Transfers tab below instead of leaving it buried under
   // whichever tab was already active.
   focusTransfersSignal?: number;
+  // Set by App.tsx's shared notification-routing function when a ticket
+  // notification (confirmed/refunded) is tapped -- resolved against the
+  // `tickets` prop below and opened via the same onViewTicket every ticket
+  // card already calls. nonce forces a retrigger even for the same ticket.
+  focusTicket?: { ticketId: string; nonce: number } | null;
 }
 
 // Short, consistent date/time format for transfer cards -- expiry, sent-at,
@@ -74,7 +79,7 @@ function TransferEmptyState({ text }: { text: string }) {
   );
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal, focusTicket }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -87,6 +92,23 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     if (focusTransfersFirstRunRef.current) { focusTransfersFirstRunRef.current = false; return; }
     setActiveTab('transfers');
   }, [focusTransfersSignal]);
+
+  // Opens the exact ticket a notification pointed at, the moment it's
+  // available in `tickets` -- covers both the common case (already loaded
+  // by the time this screen mounts) and a cold tap where the list is still
+  // being fetched. consumedFocusTicketNonceRef prevents re-opening the same
+  // ticket again on every later `tickets` refresh while focusTicket is
+  // still set to that same notification's value.
+  const consumedFocusTicketNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusTicket) return;
+    if (consumedFocusTicketNonceRef.current === focusTicket.nonce) return;
+    const match = tickets.find((t) => t.ticketId === focusTicket.ticketId);
+    if (match) {
+      consumedFocusTicketNonceRef.current = focusTicket.nonce;
+      onViewTicket(match);
+    }
+  }, [focusTicket, tickets, onViewTicket]);
 
   // Warm the signed-token cache for every visible ticket the moment the list
   // loads, so tapping a ticket renders its QR instantly instead of showing

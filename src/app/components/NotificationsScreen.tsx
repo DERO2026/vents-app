@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, Bell, Loader, Trash2, CheckCheck } from 'lucide-react';
+import { ArrowLeft, Bell, Loader, Trash2, CheckCheck, ChevronRight } from 'lucide-react';
 import { Notification } from './types';
 import { supabase } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
@@ -52,6 +52,9 @@ export function NotificationsScreen({
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [swipe, setSwipe] = useState<{ id: string; offsetX: number } | null>(null);
   const swipeStartX = useRef<number | null>(null);
+  // Press feedback only -- purely visual, no effect on markRead/routing/
+  // swipe-to-delete below.
+  const [pressedId, setPressedId] = useState<string | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const pullStartY = useRef<number | null>(null);
   // Guards fetchNotifications against out-of-order responses: the initial
@@ -481,9 +484,12 @@ export function NotificationsScreen({
                       if (notif.push_data) onRouteNotification?.(notif.push_data);
                     }}
                     role="button" tabIndex={0}
-                    onTouchStart={(e) => handleSwipeStart(notif.id, e.touches[0].clientX)}
+                    onTouchStart={(e) => { handleSwipeStart(notif.id, e.touches[0].clientX); setPressedId(notif.id); }}
                     onTouchMove={(e) => handleSwipeMove(notif.id, e.touches[0].clientX)}
-                    onTouchEnd={() => handleSwipeEnd(notif.id)}
+                    onTouchEnd={() => { handleSwipeEnd(notif.id); setPressedId(null); }}
+                    onMouseDown={() => setPressedId(notif.id)}
+                    onMouseUp={() => setPressedId(null)}
+                    onMouseLeave={() => setPressedId((id) => (id === notif.id ? null : id))}
                     style={{
                       background: notif.read ? 'rgba(255,255,255,0.025)' : 'rgba(168,85,247,0.045)',
                       backdropFilter: 'blur(20px) saturate(180%)',
@@ -494,11 +500,13 @@ export function NotificationsScreen({
                       borderRadius: '18px',
                       padding: '16px',
                       display: 'flex',
+                      alignItems: 'center',
                       gap: '13px',
                       cursor: 'pointer',
                       position: 'relative',
-                      transform: `translateX(${offsetX}px)`,
-                      transition: swipe?.id === notif.id ? 'none' : 'transform 0.2s ease, opacity 0.15s ease',
+                      transform: `translateX(${offsetX}px) scale(${pressedId === notif.id && offsetX === 0 ? 0.985 : 1})`,
+                      opacity: pressedId === notif.id && offsetX === 0 ? 0.88 : 1,
+                      transition: swipe?.id === notif.id ? 'none' : 'transform 0.15s ease, opacity 0.15s ease',
                     }}
                   >
                   {/* Icon — small and contextual, not a large colorful bubble */}
@@ -574,6 +582,13 @@ export function NotificationsScreen({
                       {notif.body}
                     </p>
                   </div>
+
+                  {/* Chevron only on notifications that actually go
+                      somewhere -- an informational/non-navigational
+                      notification (no push_data) shouldn't look tappable. */}
+                  {notif.push_data && (
+                    <ChevronRight size={15} color="#4A4E63" style={{ flexShrink: 0 }} />
+                  )}
                   </div>
                 </div>
               );

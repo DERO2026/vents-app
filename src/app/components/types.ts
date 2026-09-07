@@ -170,6 +170,7 @@ export interface NotificationPushData {
   transferId?: string;
   ticketId?: string;
   bookingId?: string;
+  requestId?: string;
   [key: string]: string | undefined;
 }
 

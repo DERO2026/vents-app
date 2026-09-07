@@ -271,6 +271,20 @@ export default function App() {
   // to its existing Transfers tab instead of landing on Upcoming with the
   // transfer buried in a different tab.
   const [myTicketsFocusTransfersSignal, setMyTicketsFocusTransfersSignal] = useState(0);
+  // Set by the shared notification-routing function when a ticket
+  // notification (confirmed/refunded) is tapped -- MyTicketsScreen resolves
+  // this against its own already-fetched `tickets` list and opens the exact
+  // ticket via its existing onViewTicket (the same handler its own ticket
+  // cards call), never a new ticket-detail screen. nonce forces the effect
+  // to re-fire even if the same ticket is tapped again from a notification.
+  const [myTicketsFocusTicket, setMyTicketsFocusTicket] = useState<{ ticketId: string; nonce: number } | null>(null);
+  // Set by the shared notification-routing function when a "wants to
+  // message you" request notification is tapped -- opens ExploreScreen's
+  // own existing Message Requests overlay (never a second Requests UI) and
+  // highlights the specific requester it points at. nonce forces the
+  // overlay open again even if the same request is tapped a second time.
+  const [exploreOpenRequestsSignal, setExploreOpenRequestsSignal] = useState(0);
+  const [exploreHighlightRequesterId, setExploreHighlightRequesterId] = useState<string | undefined>(undefined);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -2043,6 +2057,29 @@ export default function App() {
       setScreen('my-tickets');
       return;
     }
+    if (data.ticketId) {
+      // Real existing destination: the same QR/detail view any ticket card
+      // in MyTicketsScreen already opens (App.tsx's own onViewTicket ->
+      // 'payment-success' screen) -- MyTicketsScreen resolves the id
+      // against its own tickets list, never a new ticket-detail screen.
+      setMyTicketsFocusTicket({ ticketId: data.ticketId, nonce: Date.now() });
+      setScreenStack([]);
+      setScreen('my-tickets');
+      return;
+    }
+    if (data.requestId && data.userId) {
+      // Real existing destination: ExploreScreen's own Message Requests
+      // overlay (the actual production Chats screen) -- never a second
+      // Requests UI. respond_to_message_request (Accept/Decline) stays the
+      // only way the request itself ever changes state; this only opens
+      // the overlay and highlights the row for data.userId (the sender),
+      // which the overlay already keys its rows by.
+      setExploreHighlightRequesterId(data.userId);
+      setExploreOpenRequestsSignal((s) => s + 1);
+      setScreenStack([]);
+      setScreen('explore');
+      return;
+    }
     if (data.bookingId && currentUser?.id) {
       // Real existing destinations: ServiceBookingsScreen in either
       // 'customer' or 'provider' mode (both already built, already routed
@@ -2768,6 +2805,8 @@ export default function App() {
               chatRefreshKey={chatRefreshKey}
               initialTab={exploreTab}
               onTabChange={setExploreTab}
+              openRequestsSignal={exploreOpenRequestsSignal}
+              highlightRequesterId={exploreHighlightRequesterId}
             />
           )}
           {screen === 'saved' && (
@@ -2905,6 +2944,7 @@ export default function App() {
                 currentUserEmail={currentUser?.email}
                 refreshSignal={myTicketsRefreshSignal}
                 focusTransfersSignal={myTicketsFocusTransfersSignal}
+                focusTicket={myTicketsFocusTicket}
               />
             </div>
           )}
