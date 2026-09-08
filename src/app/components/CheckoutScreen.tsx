@@ -5,6 +5,7 @@ import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
 import { supabase } from '../../lib/supabase';
+import { fetchMyWalletBalanceKobo, payTicketWithWallet } from '../../lib/userWallet';
 import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
@@ -120,6 +121,26 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const [payMode, setPayMode] = useState<'self' | 'someone-else'>('self');
   const [payerIdentifier, setPayerIdentifier] = useState('');
   const [payerNotFound, setPayerNotFound] = useState(false);
+
+  // Wallet payment option -- self-pay only (see 0066_wallet_payments.sql's
+  // header comment on why Someone Else Pays isn't wired to Wallet in this
+  // pass). Defaults to Paystack; the balance is fetched once per screen
+  // visit (not polled) purely to inform the choice/insufficient-balance
+  // state below, never trusted as anything authoritative -- the actual
+  // balance check happens server-side, under a row lock, at confirm time.
+  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
+  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWalletBalanceLoading(true);
+    fetchMyWalletBalanceKobo()
+      .then((kobo) => { if (!cancelled) setWalletBalanceKobo(kobo); })
+      .catch(() => { if (!cancelled) setWalletBalanceKobo(null); })
+      .finally(() => { if (!cancelled) setWalletBalanceLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Group purchases (quantity > 1) need one distinct name+email per ticket
   // -- each row gets its own QR code, and the door scanner needs to know
@@ -342,6 +363,44 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
+    // Wallet payment -- confirm_ticket_payment_via_wallet (0066) does the
+    // Paystack-equivalent job (verify server-authoritative total, debit
+    // the wallet, grant the ticket) as one atomic server call; no popup,
+    // no separate verify round-trip.
+    if (paymentMethod === 'wallet') {
+      try {
+        const result = await payTicketWithWallet(reference);
+        if (result.status === 'success') {
+          const ticket: PurchasedTicket = {
+            event,
+            ticketType,
+            quantity,
+            ticketId: reference,
+            purchasedAt: new Date().toISOString(),
+            totalAmount: total,
+            holderName: purchaserName,
+            holderEmail: payerEmail,
+            attendees,
+            promoCode: promoApplied ? promoCode.trim() : undefined,
+          };
+          onSuccess(ticket);
+          return;
+        }
+        payingRef.current = false;
+        setPaymentLoading(false);
+        if (result.status === 'insufficient_balance') {
+          setPayError('Insufficient Wallet balance. Choose Paystack or top up your Wallet first.');
+        } else {
+          setPayError(result.error || 'Wallet payment could not be completed.');
+        }
+      } catch (err: any) {
+        payingRef.current = false;
+        setPaymentLoading(false);
+        setPayError(err?.message || 'Wallet payment could not be completed.');
+      }
+      return;
+    }
+
     // Mint a fresh, disposable Paystack reference for THIS attempt --
     // reference stays the stable VENTS order identity forever (used by
     // finalize/confirm/tickets), but Paystack must never see the same
@@ -560,7 +619,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
               {(['self', 'someone-else'] as const).map((mode) => (
                 <button
                   key={mode}
-                  onClick={() => { setPayMode(mode); setPayerNotFound(false); setPayError(null); }}
+                  onClick={() => { setPayMode(mode); setPayerNotFound(false); setPayError(null); if (mode === 'someone-else') setPaymentMethod('paystack'); }}
                   style={{
                     flex: 1,
                     height: '44px',
@@ -598,6 +657,58 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 )}
               </>
             )}
+          </div>
+        )}
+
+        {/* Payment method -- Wallet is only offered for self-pay (Someone
+            Else Pays always uses Paystack, see 0066_wallet_payments.sql's
+            header comment). Balance shown is informational only; the real
+            sufficiency check happens server-side at confirm time. */}
+        {total > 0 && payMode === 'self' && (
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Payment Method</p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {(['paystack', 'wallet'] as const).map((method) => {
+                const insufficientForWallet = method === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
+                return (
+                  <button
+                    key={method}
+                    onClick={() => setPaymentMethod(method)}
+                    disabled={method === 'wallet' && walletBalanceLoading}
+                    style={{
+                      flex: 1,
+                      minHeight: '52px',
+                      borderRadius: '12px',
+                      border: `1px solid ${paymentMethod === method ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
+                      background: paymentMethod === method ? 'rgba(124,58,237,0.18)' : 'transparent',
+                      color: paymentMethod === method ? '#C4B5FD' : '#8B8FA8',
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '2px',
+                    }}
+                  >
+                    <span>{method === 'paystack' ? 'Card / Bank / USSD' : 'VENTS Wallet'}</span>
+                    {method === 'wallet' && (
+                      <span style={{ fontSize: '11px', color: insufficientForWallet ? '#EF4444' : '#8B8FA8' }}>
+                        {walletBalanceLoading
+                          ? 'Loading balance…'
+                          : walletBalanceKobo === null
+                          ? 'Balance unavailable'
+                          : insufficientForWallet
+                          ? `Insufficient (${formatPrice(walletBalanceKobo / 100)} available)`
+                          : `${formatPrice(walletBalanceKobo / 100)} available`}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -747,41 +858,53 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
         )}
 
-        <button
-          onClick={handlePay}
-          disabled={paymentLoading}
-          style={{
-            width: '100%',
-            height: '52px',
-            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-            border: 'none',
-            borderRadius: '100px',
-            padding: '0 24px',
-            color: '#fff',
-            fontSize: '16px',
-            fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
-            cursor: paymentLoading ? 'not-allowed' : 'pointer',
-            opacity: paymentLoading ? 0.6 : 1,
-            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          {paymentLoading ? (
-            <>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-              Processing...
-            </>
-          ) : (
-            <>
-              <Lock size={16} color="#fff" />
-              {total === 0 ? 'Get Free Ticket' : payMode === 'someone-else' ? `Send Payment Request (${formatPrice(total)})` : `Pay ${formatPrice(total)}`}
-            </>
-          )}
-        </button>
+        {(() => {
+          const walletInsufficient = payMode === 'self' && paymentMethod === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
+          const disabled = paymentLoading || walletInsufficient;
+          return (
+            <button
+              onClick={handlePay}
+              disabled={disabled}
+              style={{
+                width: '100%',
+                height: '52px',
+                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                border: 'none',
+                borderRadius: '100px',
+                padding: '0 24px',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: 700,
+                fontFamily: 'Space Grotesk, sans-serif',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.6 : 1,
+                boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              {paymentLoading ? (
+                <>
+                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Lock size={16} color="#fff" />
+                  {total === 0
+                    ? 'Get Free Ticket'
+                    : payMode === 'someone-else'
+                    ? `Send Payment Request (${formatPrice(total)})`
+                    : walletInsufficient
+                    ? 'Insufficient Wallet Balance'
+                    : `Pay ${formatPrice(total)}`}
+                </>
+              )}
+            </button>
+          );
+        })()}
         <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
           By purchasing you agree to our{' '}
           <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>

@@ -7,6 +7,7 @@ import { fetchServiceProviderCategories } from '../../lib/serviceProviderCategor
 import { fetchActiveServicesForProvider } from '../../lib/providerServices';
 import { createServiceBooking, verifyServiceBookingPayment, logServiceMarketplaceEvent } from '../../lib/serviceBookings';
 import { openPaystackPopup } from '../../lib/paystack';
+import { fetchMyWalletBalanceKobo, payServiceBookingWithWallet } from '../../lib/userWallet';
 
 interface ServiceProviderProfileScreenProps {
   providerId: string;
@@ -62,6 +63,22 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   const [booking, setBooking] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState(false);
+  // Wallet payment option for Services bookings, same shape as
+  // CheckoutScreen.tsx's ticket flow (0066_wallet_payments.sql). Balance is
+  // informational only -- the real sufficiency check happens server-side.
+  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
+  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWalletBalanceLoading(true);
+    fetchMyWalletBalanceKobo()
+      .then((kobo) => { if (!cancelled) setWalletBalanceKobo(kobo); })
+      .catch(() => { if (!cancelled) setWalletBalanceKobo(null); })
+      .finally(() => { if (!cancelled) setWalletBalanceLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (initialProvider && initialProvider.id === providerId) return;
@@ -150,6 +167,25 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         selectedServices.map((s) => ({ serviceId: s.id, quantity: selection[s.id] || 1 }))
       );
       logServiceMarketplaceEvent('checkout_started', { providerId, bookingId: result.bookingId });
+
+      if (paymentMethod === 'wallet') {
+        logServiceMarketplaceEvent('payment_attempted', { providerId, bookingId: result.bookingId });
+        const walletResult = await payServiceBookingWithWallet(result.paymentRef);
+        if (walletResult.status !== 'success') {
+          setBooking(false);
+          setBookingError(
+            walletResult.status === 'insufficient_balance'
+              ? 'Insufficient Wallet balance. Choose Paystack or top up your Wallet first.'
+              : walletResult.error || 'Wallet payment could not be completed.'
+          );
+          return;
+        }
+        logServiceMarketplaceEvent('payment_completed', { providerId, bookingId: result.bookingId });
+        setBooking(false);
+        setBookingSuccess(true);
+        setSelection({});
+        return;
+      }
 
       openPaystackPopup({
         email: currentUserEmail || '',
@@ -355,22 +391,68 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           </div>
         )}
 
-        {selectedServices.length > 0 && (
-          <button
-            onClick={handleBookAndPay}
-            disabled={booking}
-            style={{
-              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-              background: 'linear-gradient(135deg, #10B981, #059669)',
-              border: 'none', borderRadius: servicesRadii.md, padding: '16px',
-              color: '#fff', fontSize: '16px', fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif', cursor: booking ? 'wait' : 'pointer',
-              boxShadow: '0 8px 28px rgba(16,185,129,0.4)', opacity: booking ? 0.7 : 1,
-            }}
-          >
-            {booking ? 'Processing…' : `Book & Pay ${cartCurrency || ''} ${subtotal.toLocaleString('en-US')}`}
-          </button>
-        )}
+        {selectedServices.length > 0 && canPayCurrency && (() => {
+          const totalKobo = Math.round(subtotal * 1.05 * 100);
+          const insufficientForWallet = walletBalanceKobo !== null && walletBalanceKobo < totalKobo;
+          return (
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {(['paystack', 'wallet'] as const).map((method) => (
+                <button
+                  key={method}
+                  onClick={() => setPaymentMethod(method)}
+                  disabled={method === 'wallet' && walletBalanceLoading}
+                  style={{
+                    flex: 1, minHeight: '44px', borderRadius: servicesRadii.md, padding: '6px',
+                    border: `1px solid ${paymentMethod === method ? accent : servicesColors.border}`,
+                    background: paymentMethod === method ? `${accent}22` : 'transparent',
+                    color: paymentMethod === method ? accent : servicesColors.textSecondary,
+                    fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '2px',
+                  }}
+                >
+                  <span>{method === 'paystack' ? 'Card / Bank / USSD' : 'VENTS Wallet'}</span>
+                  {method === 'wallet' && (
+                    <span style={{ fontSize: '10px', color: insufficientForWallet ? '#EF4444' : servicesColors.textTertiary }}>
+                      {walletBalanceLoading
+                        ? 'Loading…'
+                        : walletBalanceKobo === null
+                        ? 'Unavailable'
+                        : insufficientForWallet
+                        ? `Insufficient (₦${(walletBalanceKobo / 100).toLocaleString('en-US')})`
+                        : `₦${(walletBalanceKobo / 100).toLocaleString('en-US')} available`}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          );
+        })()}
+
+        {selectedServices.length > 0 && (() => {
+          const totalKobo = Math.round(subtotal * 1.05 * 100);
+          const walletInsufficient = canPayCurrency && paymentMethod === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < totalKobo;
+          const disabled = booking || walletInsufficient;
+          return (
+            <button
+              onClick={handleBookAndPay}
+              disabled={disabled}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                background: 'linear-gradient(135deg, #10B981, #059669)',
+                border: 'none', borderRadius: servicesRadii.md, padding: '16px',
+                color: '#fff', fontSize: '16px', fontWeight: 700,
+                fontFamily: 'Space Grotesk, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',
+                boxShadow: '0 8px 28px rgba(16,185,129,0.4)', opacity: disabled ? 0.7 : 1,
+              }}
+            >
+              {booking
+                ? 'Processing…'
+                : walletInsufficient
+                ? 'Insufficient Wallet Balance'
+                : `Book & Pay ${cartCurrency || ''} ${subtotal.toLocaleString('en-US')}`}
+            </button>
+          );
+        })()}
 
         <button
           onClick={() => onContactProvider?.(provider)}

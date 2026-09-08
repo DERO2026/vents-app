@@ -95,3 +95,45 @@ export async function depositToWallet(email: string, amountKobo: number): Promis
     });
   });
 }
+
+export interface WalletPaymentResult {
+  status: 'success' | 'insufficient_balance' | 'error';
+  /** Only set for status === 'insufficient_balance'. */
+  balanceKobo?: number;
+  neededKobo?: number;
+  error?: string;
+}
+
+function parseWalletConfirmStatus(raw: string): WalletPaymentResult {
+  if (raw === 'confirmed' || raw === 'already_paid') return { status: 'success' };
+  if (raw === 'not_found') return { status: 'error', error: 'No matching purchase was found for this payment.' };
+  if (typeof raw === 'string' && raw.startsWith('insufficient_balance')) {
+    const [, have, need] = raw.split(':');
+    return { status: 'insufficient_balance', balanceKobo: Number(have), neededKobo: Number(need) };
+  }
+  return { status: 'error', error: 'Wallet payment could not be completed.' };
+}
+
+// Pay for an existing ticket purchase (payment_ref from create_pending_
+// purchase) directly out of the caller's own VENTS Wallet balance --
+// 0066_wallet_payments.sql's confirm_ticket_payment_via_wallet. No
+// Paystack popup involved: the wallet balance itself, checked and debited
+// server-side under a row lock, is the proof of payment. Scoped to the
+// ticket owner paying for themselves -- not available for a "Someone Else
+// Pays" request (see that migration's header comment for why).
+export async function payTicketWithWallet(paymentRef: string): Promise<WalletPaymentResult> {
+  const { data, error } = await supabase.rpc('confirm_ticket_payment_via_wallet', { p_payment_ref: paymentRef });
+  if (error) return { status: 'error', error: error.message };
+  return parseWalletConfirmStatus(data as string);
+}
+
+// Pay for an existing Services marketplace booking (payment_ref from
+// create_service_booking) directly out of the caller's own VENTS Wallet
+// balance -- 0066_wallet_payments.sql's
+// confirm_service_booking_payment_via_wallet. Same reasoning as
+// payTicketWithWallet above.
+export async function payServiceBookingWithWallet(paymentRef: string): Promise<WalletPaymentResult> {
+  const { data, error } = await supabase.rpc('confirm_service_booking_payment_via_wallet', { p_reference: paymentRef });
+  if (error) return { status: 'error', error: error.message };
+  return parseWalletConfirmStatus(data as string);
+}
