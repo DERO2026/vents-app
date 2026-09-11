@@ -6,7 +6,21 @@
 // identifier) stays the sole authority on who actually gets picked; this
 // is purely a UX layer that fills the same text value a manually-typed
 // identifier already would have.
+//
+// The dropdown is rendered via a portal to document.body, positioned with
+// `fixed` coordinates measured from the input's own bounding box, rather
+// than as a normal `position: absolute` child of the input wrapper.
+// CheckoutScreen's "Who's Paying" card sits inside that screen's own
+// overflow-y: auto scrolling body -- an absolutely-positioned dropdown
+// nested inside it gets clipped by the scroll container's own bounds per
+// the CSS overflow spec (setting overflow-y non-visible makes a box clip
+// in both axes), which is a real, confirmed way this could render
+// invisibly regardless of the data actually loading correctly. Portaling
+// to the document body sidesteps that whole category of parent
+// overflow/z-index/stacking-context hazards everywhere this component is
+// used, not just in the one place it was found.
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { AlertCircle, User as UserIcon } from 'lucide-react';
 import { searchUsers, UserSearchResult } from '../../../lib/userSearch';
 
@@ -27,12 +41,14 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
   // Tracks the identifier of the last *selected* suggestion so re-opening
   // the dropdown on every keystroke doesn't immediately re-fire a search
   // for a value the user just picked (onChange still fires once on select
   // to keep the input controlled).
   const lastSelectedRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const trimmed = value.trim();
@@ -65,6 +81,30 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
     return () => clearTimeout(timer);
   }, [value]);
 
+  const showDropdown = open && value.trim().length >= 2;
+
+  // Measures the input field's own position in the viewport whenever the
+  // dropdown should be visible, and keeps it in sync with scrolling/resize
+  // of whatever ancestor container the field lives in (e.g. CheckoutScreen's
+  // scrollable body, or the page itself) -- since the dropdown is portaled
+  // out of that container, it no longer scrolls/reflows with it for free.
+  useEffect(() => {
+    if (!showDropdown) return;
+    const measure = () => {
+      const el = fieldRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      setDropdownRect({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+    };
+    measure();
+    window.addEventListener('scroll', measure, true);
+    window.addEventListener('resize', measure);
+    return () => {
+      window.removeEventListener('scroll', measure, true);
+      window.removeEventListener('resize', measure);
+    };
+  }, [showDropdown]);
+
   const handleSelect = (user: UserSearchResult) => {
     // Only username is a valid identifier for the downstream resolution
     // RPCs (create_pending_purchase/initiate_ticket_transfer match against
@@ -81,12 +121,11 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
     setResults([]);
   };
 
-  const showDropdown = open && value.trim().length >= 2;
-
   return (
-    <div style={{ width: '100%', minWidth: 0, position: 'relative' }}>
+    <div style={{ width: '100%', minWidth: 0 }}>
       <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
       <div
+        ref={fieldRef}
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -132,19 +171,18 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
         <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px', lineHeight: 1.5 }}>{helperText}</p>
       )}
 
-      {showDropdown && (
+      {showDropdown && dropdownRect && createPortal(
         <div
           style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            right: 0,
-            marginTop: '6px',
+            position: 'fixed',
+            top: dropdownRect.top,
+            left: dropdownRect.left,
+            width: dropdownRect.width,
             background: '#12101C',
             border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '14px',
             overflow: 'hidden',
-            zIndex: 20,
+            zIndex: 10000,
             maxHeight: '260px',
             overflowY: 'auto',
             boxShadow: '0 12px 30px rgba(0,0,0,0.4)',
@@ -193,7 +231,8 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
               </div>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
