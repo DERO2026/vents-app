@@ -963,6 +963,26 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     </span>
                   </div>
 
+                  {/* Provenance -- display-only, from get_ticket_provenance
+                      (0071). Never implies ownership: ticket.user_id (this
+                      list is already scoped to the current user's own
+                      tickets) is the sole authority on who holds this
+                      ticket. Both can show at once. */}
+                  {(ticket.paidByName || ticket.transferredFromName) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
+                      {ticket.paidByName && (
+                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                          Paid by <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.paidByName}</span>
+                        </span>
+                      )}
+                      {ticket.transferredFromName && (
+                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                          Transferred to you from <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.transferredFromName}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
                   {/* Ticket ID */}
                   <div
                     style={{

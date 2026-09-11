@@ -41,7 +41,7 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
-  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [dropdownRect, setDropdownRect] = useState<{ top: number; left: number; width: number; maxHeight: number } | null>(null);
   // Tracks the identifier of the last *selected* suggestion so re-opening
   // the dropdown on every keystroke doesn't immediately re-fire a search
   // for a value the user just picked (onChange still fires once on select
@@ -88,13 +88,38 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
   // of whatever ancestor container the field lives in (e.g. CheckoutScreen's
   // scrollable body, or the page itself) -- since the dropdown is portaled
   // out of that container, it no longer scrolls/reflows with it for free.
+  //
+  // Also picks below-vs-above placement and caps the dropdown's height to
+  // whichever side actually has room: on Ticket Transfer's bottom sheet
+  // (a short modal, not a full screen), the field sits close to the
+  // sheet's bottom edge, so a fixed 260px-tall dropdown opening downward
+  // would cover the Cancel/Send Request buttons beneath it. Flipping above
+  // the field when there's more room there, and never claiming more height
+  // than the viewport actually has on whichever side is used, keeps every
+  // suggestion row and the surrounding form both fully visible.
+  const MARGIN = 6;
+  const MIN_DROPDOWN_HEIGHT = 120;
+  const MAX_DROPDOWN_HEIGHT = 260;
+
   useEffect(() => {
     if (!showDropdown) return;
     const measure = () => {
       const el = fieldRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      setDropdownRect({ top: rect.bottom + 6, left: rect.left, width: rect.width });
+      const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+      const spaceAbove = rect.top - MARGIN;
+
+      const openBelow = spaceBelow >= MIN_DROPDOWN_HEIGHT || spaceBelow >= spaceAbove;
+      const available = openBelow ? spaceBelow : spaceAbove;
+      const maxHeight = Math.max(MIN_DROPDOWN_HEIGHT, Math.min(MAX_DROPDOWN_HEIGHT, available));
+
+      setDropdownRect({
+        top: openBelow ? rect.bottom + MARGIN : rect.top - MARGIN - maxHeight,
+        left: rect.left,
+        width: rect.width,
+        maxHeight,
+      });
     };
     measure();
     window.addEventListener('scroll', measure, true);
@@ -183,7 +208,7 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
             borderRadius: '14px',
             overflow: 'hidden',
             zIndex: 10000,
-            maxHeight: '260px',
+            maxHeight: dropdownRect.maxHeight,
             overflowY: 'auto',
             boxShadow: '0 12px 30px rgba(0,0,0,0.4)',
           }}

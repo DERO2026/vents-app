@@ -99,6 +99,11 @@ export interface PurchasedTicket {
   // (initiate_ticket_transfer/accept_ticket_transfer both re-check this
   // server-side; this only drives the UI gate, see 0040_ticket_transfer.sql).
   checkedIn?: boolean;
+  // From get_ticket_provenance (0071) -- display-only context for the
+  // ticket/QR screen. Never affects ownership: tickets.user_id (not these)
+  // is the sole authority on who holds/can check in this ticket.
+  paidByName?: string;
+  transferredFromName?: string;
 }
 
 export type TicketTransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';

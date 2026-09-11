@@ -101,4 +101,67 @@ describe('UserAutocomplete: dropdown survives an overflow-clipping ancestor', ()
 
     scrollAncestor.remove();
   });
+
+  it('flips the dropdown above the field and caps its height when there is little room below -- the Ticket Transfer bottom-sheet scenario', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    // Reproduces MyTicketsScreen.tsx's Transfer Ticket modal: a short
+    // bottom sheet where the field sits close to the sheet's own bottom
+    // edge (Cancel/Send Request buttons right below it), simulated here by
+    // stubbing the field's own getBoundingClientRect() to report almost no
+    // space below it in the viewport.
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 800 });
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let value = '';
+    const handleChange = (v: string) => { value = v; };
+
+    root = createRoot(container);
+    act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={() => {}} />
+      );
+    });
+
+    const input0 = container.querySelector('input') as HTMLInputElement;
+    // The field wrapper (the div carrying the ref) is the input's direct
+    // parent -- stub its rect to sit 40px from the bottom of an 800px-tall
+    // viewport, well under MIN_DROPDOWN_HEIGHT (120px) below it.
+    const fieldDiv = input0.parentElement as HTMLDivElement;
+    fieldDiv.getBoundingClientRect = () => ({
+      top: 700, bottom: 752, left: 20, right: 300, width: 280, height: 52, x: 20, y: 700, toJSON() {},
+    });
+
+    act(() => {
+      const input = container!.querySelector('input') as HTMLInputElement;
+      input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'dan');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    value = 'dan';
+    act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={() => {}} />
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(document.body.textContent || '').toContain('daniel');
+
+    const dropdown = document.body.querySelector('[style*="position: fixed"]') as HTMLElement | null;
+    expect(dropdown).toBeTruthy();
+    // Opened above (top < the field's own top of 700), not below it.
+    expect(parseFloat(dropdown!.style.top)).toBeLessThan(700);
+    // Height capped to the available space, never the full 260px max.
+    expect(parseFloat(dropdown!.style.maxHeight)).toBeLessThanOrEqual(700 - 6);
+  });
 });

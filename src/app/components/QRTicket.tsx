@@ -304,6 +304,27 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   </div>
                 </div>
 
+                {/* Provenance -- display-only, from get_ticket_provenance
+                    (0071). Never implies ownership: tickets.user_id (this
+                    ticket's holder, shown above as "Ticket Holder") is the
+                    sole authority on who actually holds/can check in this
+                    ticket. Both can show at once (paid by someone else AND
+                    received via transfer). */}
+                {(ticket.paidByName || ticket.transferredFromName) && (
+                  <div className="flex flex-col gap-1.5 px-1 mb-4">
+                    {ticket.paidByName && (
+                      <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                        Paid by <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.paidByName}</span>
+                      </p>
+                    )}
+                    {ticket.transferredFromName && (
+                      <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
+                        Transferred to you from <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.transferredFromName}</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+
                 {/* Ticket reference number — matches the wording used in the
                     Refund Policy so support requests can be matched to a ticket. */}
                 <div className="flex items-center justify-between px-1 mb-4">

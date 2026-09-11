@@ -1208,6 +1208,27 @@ export default function App() {
           };
         });
 
+        // Display-only "Paid by X" / "Transferred to you from X" context
+        // (get_ticket_provenance, 0071) -- never affects ownership, only
+        // adds two names to already-fetched tickets. Best-effort: a
+        // failure here shouldn't block the ticket list itself from showing.
+        try {
+          const ticketIds = mappedTickets.map((t) => t.ticketId);
+          if (ticketIds.length > 0) {
+            const { data: provenance } = await supabase.rpc('get_ticket_provenance', { p_ticket_ids: ticketIds });
+            const byId: Record<string, { paidByName?: string; transferredFromName?: string }> = {};
+            (provenance || []).forEach((row: any) => {
+              byId[row.ticket_id] = { paidByName: row.paid_by_name || undefined, transferredFromName: row.transferred_from_name || undefined };
+            });
+            mappedTickets.forEach((t) => {
+              const p = byId[t.ticketId];
+              if (p) { t.paidByName = p.paidByName; t.transferredFromName = p.transferredFromName; }
+            });
+          }
+        } catch (err) {
+          Sentry.captureException(err, { tags: { area: 'get_ticket_provenance' } });
+        }
+
         setAllTickets(mappedTickets);
         // Warm the signed-token cache for every ticket as soon as the list is
         // known — so opening any pass (a fresh purchase, or a past/upcoming
