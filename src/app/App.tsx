@@ -1715,6 +1715,31 @@ export default function App() {
         });
         if (insertError) throw insertError;
         rows = Array.isArray(tokenRows) ? tokenRows : [];
+      } else if (ticket.skipPaymentVerification) {
+        // Wallet payment (CheckoutScreen.tsx) -- confirm_ticket_payment_via_
+        // wallet already verified the total and issued the ticket
+        // atomically server-side. ticket.ticketId here is the wallet
+        // payment_ref, never a real Paystack reference, so calling
+        // ?action=verify on it would always fail with Paystack's own
+        // "Transaction reference not found." (real production incident:
+        // Sentry JAVASCRIPT-REACT-1G). Read the already-paid ticket rows
+        // back directly instead -- select_tickets' RLS policy already
+        // scopes this to the caller's own rows.
+        const { data: ticketRows, error: ticketsError } = await supabase
+          .from('tickets')
+          .select('id')
+          .eq('payment_ref', ticket.ticketId)
+          .eq('user_id', currentUser.id);
+        if (ticketsError) throw ticketsError;
+        const ticketIds = (ticketRows || []).map((r: any) => r.id);
+        if (ticketIds.length === 0) {
+          throw new Error('Payment confirmed, but no ticket was found for this order. Contact support with your reference.');
+        }
+        rows = await Promise.all(ticketIds.map(async (id) => {
+          const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
+          if (tokErr) throw tokErr;
+          return { ticket_id: id, token: tok as string };
+        }));
       } else {
         // Paid purchases: NEVER treat "the Paystack popup called back" as
         // proof of payment — that's just the client's own JS reporting

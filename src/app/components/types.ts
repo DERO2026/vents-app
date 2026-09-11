@@ -95,6 +95,19 @@ export interface PurchasedTicket {
   // (purchase_ticket_with_tokens) so the QR renders instantly with no mint delay.
   token?: string;
   vcDiscountNgn?: number;
+  // Set only by CheckoutScreen's Wallet payment branch, where
+  // confirm_ticket_payment_via_wallet (0066) already atomically verified
+  // the payment and issued the ticket server-side -- there is no Paystack
+  // transaction behind ticketId at all in that case. Without this flag,
+  // App.tsx's handleCheckoutSuccess unconditionally re-verified EVERY
+  // non-free ticket via api/webhook/paystack.ts's ?action=verify, passing
+  // it the wallet payment_ref as if it were a real Paystack reference --
+  // Paystack correctly has no record of it, so verify failed with
+  // "Transaction reference not found." and threw, even though the ticket
+  // was already successfully paid and issued. Real production incident:
+  // Sentry JAVASCRIPT-REACT-1G, confirmed via Supabase (ticket paid via
+  // wallet at 01:42:14 UTC, error thrown 3s later for the same order).
+  skipPaymentVerification?: boolean;
   // tickets.checked_in -- a checked-in ticket can never be transferred
   // (initiate_ticket_transfer/accept_ticket_transfer both re-check this
   // server-side; this only drives the UI gate, see 0040_ticket_transfer.sql).

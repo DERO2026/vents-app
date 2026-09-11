@@ -383,6 +383,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             holderEmail: payerEmail,
             attendees,
             promoCode: promoApplied ? promoCode.trim() : undefined,
+            // Already verified + issued atomically by confirm_ticket_payment_
+            // via_wallet (0066) -- never a real Paystack reference, so the
+            // caller must not re-verify this via Paystack.
+            skipPaymentVerification: true,
           };
           onSuccess(ticket);
           return;
