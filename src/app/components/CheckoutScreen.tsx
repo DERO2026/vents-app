@@ -10,6 +10,7 @@ import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
+import { UserAutocomplete } from './shared/UserAutocomplete';
 
 interface CheckoutScreenProps {
   event: Event;
@@ -638,15 +639,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </div>
             {payMode === 'someone-else' && (
               <>
-                <Field
+                <UserAutocomplete
                   label="Payer's VENTS email or username"
                   placeholder="name@gmail.com or @username"
                   value={payerIdentifier}
                   onChange={(v) => { setPayerIdentifier(v); setPayerNotFound(false); }}
+                  onSelect={() => setPayerNotFound(false)}
+                  helperText="You stay the ticket holder — you'll get the ticket and QR code once they pay. They'll get a payment link and a receipt, never the ticket itself."
                 />
-                <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '8px', lineHeight: 1.5 }}>
-                  You stay the ticket holder — you'll get the ticket and QR code once they pay. They'll get a payment link and a receipt, never the ticket itself.
-                </p>
                 {payerNotFound && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
                     <AlertCircle size={14} color="#EF4444" />

@@ -10,6 +10,7 @@ import { haptics } from '../../lib/haptics';
 import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { triggerPushDelivery } from '../../lib/pushNotifications';
+import { UserAutocomplete } from './shared/UserAutocomplete';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -1037,14 +1038,15 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>
                   Enter the VENTS email or username of the person you're transferring "{transferTicket.event.title}" to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
                 </p>
-                <input
-                  placeholder="Recipient email or username"
-                  value={transferIdentifier}
-                  onChange={e => setTransferIdentifier(e.target.value)}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
-                />
+                <div style={{ marginBottom: '12px' }}>
+                  <UserAutocomplete
+                    label="Recipient"
+                    placeholder="Recipient email or username"
+                    value={transferIdentifier}
+                    onChange={setTransferIdentifier}
+                    onSelect={() => {}}
+                  />
+                </div>
                 {initiateError && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                     <AlertCircle size={14} color="#EF4444" />

@@ -3070,7 +3070,14 @@ export default function App() {
               </p>
               <button
                 onClick={async () => {
-                  const link = `${window.location.origin}${window.location.pathname}?payment_request=${encodeURIComponent(paymentRequestSentInfo.paymentRef)}`;
+                  // Always the real public domain, never window.location.origin --
+                  // that resolves to a Vercel Preview branch URL (or, inside the
+                  // native app, capacitor://localhost/https://localhost) on
+                  // every build except Production web, none of which a payer
+                  // opening this link on a different device could ever reach.
+                  // Same fixed-domain pattern EventDetailsScreen.tsx's own Share
+                  // Event link already uses.
+                  const link = `https://getvents.com/?payment_request=${encodeURIComponent(paymentRequestSentInfo.paymentRef)}`;
                   try {
                     if (navigator.share) {
                       await navigator.share({ title: 'Pay for my VENTS ticket', url: link });
