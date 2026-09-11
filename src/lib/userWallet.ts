@@ -7,7 +7,6 @@
 import { supabase, getAuthToken } from './supabase';
 import { openPaystackPopup } from './paystack';
 import { apiUrl } from './apiBase';
-import { Sentry } from './sentry';
 
 export interface UserWalletTransaction {
   id: string;
@@ -56,36 +55,14 @@ export interface DepositResult {
 // proven for ticket-transfer fee payments, just for a deposit instead of
 // a fixed purchase price.
 export async function depositToWallet(email: string, amountKobo: number): Promise<DepositResult> {
-  // Server-durable diagnostics for the Wallet Deposit flow -- replaces the
-  // earlier browser-console-only logging, which produced no evidence once
-  // the tab closed. Every breadcrumb below is attached to the Sentry event
-  // fired at the bottom of this function on any non-success outcome, so
-  // the full sequence survives past the browser session. Never includes
-  // secrets, card data, auth tokens, or PII -- only the reference, amounts,
-  // and HTTP-level facts already visible to this client itself.
-  Sentry.addBreadcrumb({ category: 'wallet_deposit', message: 'requested', level: 'info', data: { amountKobo } });
-
   const { data, error } = await supabase.rpc('initiate_wallet_deposit', { p_amount_kobo: amountKobo });
   if (error) {
-    Sentry.captureException(error, { tags: { flow: 'wallet_deposit', step: 'initiate_wallet_deposit' } });
     throw new Error(error.message);
   }
   const reference: string = data?.reference;
   const chargeAmountKobo: number = Number(data?.amountKobo) || amountKobo;
 
-  Sentry.addBreadcrumb({
-    category: 'wallet_deposit',
-    message: 'initiate_wallet_deposit response',
-    level: 'info',
-    data: { reference, rawAmountKoboFromRpc: data?.amountKobo, resolvedChargeAmountKobo: chargeAmountKobo },
-  });
-
   if (!reference) {
-    Sentry.captureMessage('wallet_deposit: initiate_wallet_deposit returned no reference', {
-      level: 'error',
-      tags: { flow: 'wallet_deposit', step: 'initiate_wallet_deposit' },
-      extra: { amountKobo, rpcData: data },
-    });
     throw new Error('Could not start the deposit.');
   }
 
@@ -98,8 +75,6 @@ export async function depositToWallet(email: string, amountKobo: number): Promis
       metadata: { kind: 'wallet_deposit' },
       onSuccess: async () => {
         try {
-          Sentry.addBreadcrumb({ category: 'wallet_deposit', message: 'paystack callback fired, calling verify', level: 'info', data: { reference } });
-
           const token = await getAuthToken();
           const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
             method: 'POST',
@@ -108,59 +83,20 @@ export async function depositToWallet(email: string, amountKobo: number): Promis
           });
           const verifyJson = await verifyRes.json().catch(() => null);
 
-          Sentry.addBreadcrumb({
-            category: 'wallet_deposit',
-            message: 'verify response',
-            level: 'info',
-            data: { reference, httpStatus: verifyRes.status, responseStatus: verifyJson?.status, responseError: verifyJson?.error },
-          });
-
           if (!verifyRes.ok || verifyJson?.status !== 'success') {
             const resolvedError = verifyJson?.error || 'Could not verify your deposit. If you were charged, contact support with your reference.';
-            // This is the exact server-observed outcome for this deposit --
-            // captured as its own event (not just a breadcrumb) so it shows
-            // up as a distinct, searchable issue in Sentry, carrying every
-            // breadcrumb logged above with it.
-            Sentry.captureMessage('wallet_deposit: verify did not return success', {
-              level: 'error',
-              tags: { flow: 'wallet_deposit', step: 'verify' },
-              extra: { reference, requestedAmountKobo: amountKobo, chargeAmountKobo, httpStatus: verifyRes.status, verifyResponse: verifyJson },
-            });
             resolve({ status: 'error', error: resolvedError });
             return;
           }
-          Sentry.addBreadcrumb({ category: 'wallet_deposit', message: 'verify succeeded', level: 'info', data: { reference } });
           resolve({ status: 'success' });
         } catch (e: any) {
-          Sentry.captureException(e, {
-            tags: { flow: 'wallet_deposit', step: 'verify_fetch' },
-            extra: { reference, requestedAmountKobo: amountKobo, chargeAmountKobo },
-          });
           resolve({ status: 'error', error: e?.message || 'Could not verify your deposit.' });
         }
       },
       onClose: () => {
-        // Popup closed with no callback ever firing -- either the user
-        // cancelled, or Paystack's own checkout UI rejected/errored the
-        // transaction before completion. Captured as its own event (not
-        // just a breadcrumb) specifically so this case is distinguishable
-        // in Sentry from a verify-endpoint failure: if the next real
-        // deposit attempt logs THIS event and nothing from the "verify
-        // response" breadcrumb above, that on its own proves the failure
-        // is inside Paystack's popup/SDK, not this app's server code.
-        Sentry.captureMessage('wallet_deposit: Paystack popup closed without a successful callback', {
-          level: 'info',
-          tags: { flow: 'wallet_deposit', step: 'paystack_popup_closed' },
-          extra: { reference, requestedAmountKobo: amountKobo, chargeAmountKobo },
-        });
         resolve({ status: 'error', error: 'cancelled' });
       },
       onError: (message) => {
-        Sentry.captureMessage('wallet_deposit: Paystack popup setup error', {
-          level: 'error',
-          tags: { flow: 'wallet_deposit', step: 'paystack_popup_error' },
-          extra: { reference, requestedAmountKobo: amountKobo, chargeAmountKobo, message },
-        });
         resolve({ status: 'error', error: message });
       },
     });

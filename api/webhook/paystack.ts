@@ -126,18 +126,6 @@ async function handleClientVerify(req, res) {
     return res.status(500).json({ error: 'Payment verification not configured' });
   }
 
-  // TEMPORARY DIAGNOSTIC -- resolving the Wallet Deposit "Transaction
-  // reference not found" investigation. Never logs the secret value itself,
-  // only whether it exists and its sk_test_/sk_live_/other prefix + length,
-  // so we can confirm it's paired with the confirmed-good pk_test_ key
-  // without ever exposing either. Remove once resolved.
-  console.log('[webhook/paystack?action=verify] DIAGNOSTIC secret key shape:', {
-    exists: true,
-    prefix: secret.startsWith('sk_test_') ? 'sk_test_' : secret.startsWith('sk_live_') ? 'sk_live_' : 'other',
-    length: secret.length,
-    vercelEnv: process.env.VERCEL_ENV || 'unknown',
-  });
-
   // Ticket-transfer fee payments use the same Paystack-verify machinery as
   // a ticket purchase, distinguished only by their reference prefix
   // (initiate_transfer_fee_payment, 0043_ticket_transfer_fee.sql, always

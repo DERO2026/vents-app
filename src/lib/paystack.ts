@@ -5,8 +5,6 @@
  * on `window`). Amounts must be in KOBO (Naira × 100).
  */
 
-import { Sentry } from './sentry';
-
 declare global {
   interface Window {
     PaystackPop?: {
@@ -102,20 +100,6 @@ export function openPaystackPopup(opts: OpenPaystackOptions): void {
 
   const resolvedRef = opts.ref || `vents_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  // Server-durable diagnostics -- see userWallet.ts's depositToWallet for
-  // the full rationale. keyMode logs only the pk_test_/pk_live_ prefix
-  // (public keys are meant to be client-visible; the value itself is
-  // still never logged, only which mode it's operating in) so a Sentry
-  // event can directly answer "was this a test/live key mismatch"
-  // without ever exposing the key.
-  const keyMode = publicKey.startsWith('pk_live_') ? 'live' : publicKey.startsWith('pk_test_') ? 'test' : 'unknown';
-  Sentry.addBreadcrumb({
-    category: 'paystack_popup',
-    message: 'setup() call',
-    level: 'info',
-    data: { inputAmountKobo: opts.amountKobo, inputAmountNaira: opts.amountNaira, resolvedAmountKobo: amount, resolvedRef, keyMode },
-  });
-
   const handler = window.PaystackPop.setup({
     key: publicKey,
     email: opts.email,
@@ -126,12 +110,6 @@ export function openPaystackPopup(opts: OpenPaystackOptions): void {
     channels: opts.channels || ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
     metadata: opts.metadata || {},
     callback(response) {
-      Sentry.addBreadcrumb({
-        category: 'paystack_popup',
-        message: 'callback() response',
-        level: 'info',
-        data: { callbackReference: response.reference, expectedReference: resolvedRef, matchesExpected: response.reference === resolvedRef },
-      });
       opts.onSuccess({ reference: response.reference });
     },
     onClose() {
