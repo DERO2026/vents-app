@@ -126,6 +126,18 @@ async function handleClientVerify(req, res) {
     return res.status(500).json({ error: 'Payment verification not configured' });
   }
 
+  // TEMPORARY DIAGNOSTIC -- resolving the Wallet Deposit "Transaction
+  // reference not found" investigation. Never logs the secret value itself,
+  // only whether it exists and its sk_test_/sk_live_/other prefix + length,
+  // so we can confirm it's paired with the confirmed-good pk_test_ key
+  // without ever exposing either. Remove once resolved.
+  console.log('[webhook/paystack?action=verify] DIAGNOSTIC secret key shape:', {
+    exists: true,
+    prefix: secret.startsWith('sk_test_') ? 'sk_test_' : secret.startsWith('sk_live_') ? 'sk_live_' : 'other',
+    length: secret.length,
+    vercelEnv: process.env.VERCEL_ENV || 'unknown',
+  });
+
   // Ticket-transfer fee payments use the same Paystack-verify machinery as
   // a ticket purchase, distinguished only by their reference prefix
   // (initiate_transfer_fee_payment, 0043_ticket_transfer_fee.sql, always
@@ -200,6 +212,15 @@ async function handleClientVerify(req, res) {
     const pJson = await pRes.json().catch(() => null);
 
     if (!pRes.ok || !pJson?.status) {
+      // Never a silent 502 -- this exact branch was previously indistinguishable
+      // from a platform-level crash in the logs (no application output at all),
+      // which cost real debugging time. Paystack's own verify API returning
+      // status:false with a message (e.g. "Transaction reference not found" --
+      // typically a test/live key mismatch between the public key that opened
+      // the popup and the secret key used here to verify) is a normal, expected
+      // outcome, not a crash -- log it plainly, with the reference for
+      // correlation but no secret values.
+      console.error('[webhook/paystack?action=verify] Paystack verify non-success:', { reference, httpStatus: pRes.status, paystackMessage: pJson?.message });
       return res.status(502).json({ status: 'error', error: pJson?.message || 'Could not reach Paystack to verify this payment.' });
     }
 
