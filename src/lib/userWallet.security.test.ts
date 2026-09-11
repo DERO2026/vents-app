@@ -9,10 +9,15 @@ import { join } from 'node:path';
 // points) -- see that migration's own header comment.
 
 let m0065: string;
+let m0068: string;
 
 beforeAll(() => {
   const dir = join(__dirname, '..', '..', 'supabase', 'migrations');
   m0065 = readFileSync(join(dir, '0065_user_wallets.sql'), 'utf8');
+  // confirm_wallet_deposit is CREATE OR REPLACE'd again in 0068 (accepts
+  // Paystack's fee-inflated overpayment, credits only the intended amount)
+  // -- tests against its current, deployed behavior read m0068 instead.
+  m0068 = readFileSync(join(dir, '0068_wallet_deposit_allow_overpayment.sql'), 'utf8');
 });
 
 describe('user_wallets: creation/access, own-row RLS, no negative balance', () => {
@@ -76,21 +81,24 @@ describe('Wallet deposit: idempotent, server-authoritative amount, dedicated non
     expect(fn).toMatch(/INSERT INTO public\.wallet_deposit_attempts \(reference, user_id, amount_kobo\) VALUES \(v_ref, v_uid, p_amount_kobo\);/);
   });
 
-  it('confirm_wallet_deposit reconciles the Paystack-verified amount against the server-recorded amount and rejects a mismatch (defense-in-depth, not just caller trust)', () => {
-    const fn = m0065.match(/CREATE OR REPLACE FUNCTION public\.confirm_wallet_deposit[\s\S]*?\$function\$\s*;/)?.[0] ?? '';
-    expect(fn).toMatch(/IF p_amount_kobo IS DISTINCT FROM v_attempt\.amount_kobo THEN\s*\n\s*RETURN 'amount_mismatch:' \|\| v_attempt\.amount_kobo::text \|\| ':' \|\| p_amount_kobo::text;\s*\n\s*END IF;/);
+  it('confirm_wallet_deposit rejects genuine underpayment against the server-recorded amount (defense-in-depth, not just caller trust)', () => {
+    const fn = m0068.match(/CREATE OR REPLACE FUNCTION public\.confirm_wallet_deposit[\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+    expect(fn).toMatch(/IF p_amount_kobo < v_attempt\.amount_kobo THEN\s*\n\s*RETURN 'amount_mismatch:' \|\| v_attempt\.amount_kobo::text \|\| ':' \|\| p_amount_kobo::text;\s*\n\s*END IF;/);
     // The mismatch check runs BEFORE the ledger insert/credit -- a
-    // fabricated amount is rejected before any money-moving statement runs.
+    // fabricated (too-low) amount is rejected before any money-moving
+    // statement runs.
     const mismatchIdx = fn.indexOf('amount_mismatch');
     const insertIdx = fn.indexOf('INSERT INTO public.user_wallet_transactions');
     expect(mismatchIdx).toBeGreaterThan(-1);
     expect(insertIdx).toBeGreaterThan(mismatchIdx);
   });
 
-  it('a matching amount still credits the recorded user_id and the locked-in amount', () => {
-    const fn = m0065.match(/CREATE OR REPLACE FUNCTION public\.confirm_wallet_deposit[\s\S]*?\$function\$\s*;/)?.[0] ?? '';
-    expect(fn).toMatch(/VALUES \(v_attempt\.user_id, 'deposit', p_amount_kobo,/);
-    expect(fn).toMatch(/VALUES \(v_attempt\.user_id, p_amount_kobo\)/);
+  it('accepts Paystack overpayment (its own fee passed to the customer) but credits only the intended deposit amount, never the inflated verified amount', () => {
+    const fn = m0068.match(/CREATE OR REPLACE FUNCTION public\.confirm_wallet_deposit[\s\S]*?\$function\$\s*;/)?.[0] ?? '';
+    expect(fn).toMatch(/VALUES \(v_attempt\.user_id, 'deposit', v_attempt\.amount_kobo,/);
+    expect(fn).toMatch(/VALUES \(v_attempt\.user_id, v_attempt\.amount_kobo\)/);
+    expect(fn).not.toMatch(/VALUES \(v_attempt\.user_id, 'deposit', p_amount_kobo,/);
+    expect(fn).not.toMatch(/VALUES \(v_attempt\.user_id, p_amount_kobo\)/);
   });
 
   it('wallet_deposit_attempts.amount_kobo is itself constrained positive at the database level', () => {
