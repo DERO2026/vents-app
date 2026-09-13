@@ -20,6 +20,12 @@
 //   the webhook is slow or the app closed before the popup's JS callback
 //   could fire (common for bank_transfer/ussd/mobile_money channels, which
 //   don't complete inside the iframe at all).
+// - POST /api/webhook/paystack?action=verify-deposit -- same authoritative-
+//   verification pattern as ?action=verify above, but for VENTS Wallet
+//   top-ups (initiate_wallet_deposit / confirm_wallet_deposit) instead of
+//   ticket purchases. Kept in this same file rather than a new api/wallet/
+//   deposit.ts for the same Hobby-plan 12-function-cap reason noted above --
+//   this repo is already at exactly 12 serverless functions.
 //
 // Both paths funnel into finalizeAndConfirmPurchase (finalize_pending_
 // purchase + confirm_ticket_payment, project_admin-only per
@@ -42,7 +48,83 @@ function fmtNaira(kobo) {
 
 export default async function handler(req, res) {
   if (req.query?.action === 'verify') return handleClientVerify(req, res);
+  if (req.query?.action === 'verify-deposit') return handleClientVerifyDeposit(req, res);
   return handleWebhook(req, res);
+}
+
+// ── Wallet deposit verify path ────────────────────────────────────────────
+// Never trusts the client's own success callback or any client-supplied
+// amount: verifies with Paystack server-side (same call as handleClientVerify
+// above), then hands Paystack's own verified amount to confirm_wallet_deposit
+// (project_admin-only per its EXECUTE grants -- not callable directly by an
+// authenticated client), which re-checks it against the amount recorded by
+// initiate_wallet_deposit before crediting anything.
+async function handleClientVerifyDeposit(req, res) {
+  applyCors(req, res);
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  const session = await verifyInsforgeSession(req.headers.authorization);
+  if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+  const { reference } = req.body || {};
+  if (!reference || typeof reference !== 'string') {
+    return res.status(400).json({ error: 'reference is required' });
+  }
+
+  const secret = process.env.PAYSTACK_SECRET_KEY;
+  if (!secret) {
+    console.error('[webhook/paystack?action=verify-deposit] PAYSTACK_SECRET_KEY not set');
+    return res.status(500).json({ error: 'Payment verification not configured' });
+  }
+
+  try {
+    const ownerId = await callProjectAdminRpc('get_wallet_deposit_owner', [reference]);
+    if (!ownerId) {
+      return res.status(200).json({ status: 'error', error: 'No matching deposit was found for this reference.' });
+    }
+    if (ownerId !== session.userId) {
+      return res.status(403).json({ error: 'Not authorized for this deposit reference' });
+    }
+
+    const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      headers: { Authorization: `Bearer ${secret}` },
+    });
+    const pJson = await pRes.json().catch(() => null);
+
+    if (!pRes.ok || !pJson?.status) {
+      return res.status(502).json({ status: 'error', error: pJson?.message || 'Could not reach Paystack to verify this payment.' });
+    }
+
+    const txStatus = pJson.data?.status;
+    const amountKobo = pJson.data?.amount;
+
+    if (txStatus !== 'success') {
+      return res.status(200).json({ status: txStatus === 'abandoned' ? 'abandoned' : 'failed' });
+    }
+
+    if (typeof amountKobo !== 'number' || amountKobo <= 0) {
+      return res.status(502).json({ status: 'error', error: 'Paystack returned no amount for this transaction.' });
+    }
+
+    const result = await callProjectAdminRpc('confirm_wallet_deposit', [reference, amountKobo]);
+
+    if (typeof result === 'string' && result.startsWith('amount_mismatch')) {
+      console.error('[webhook/paystack?action=verify-deposit] AMOUNT MISMATCH for reference', reference, '-', result);
+      return res.status(200).json({ status: 'error', error: 'Payment amount did not match the requested deposit amount.' });
+    }
+    if (result === 'not_found' || result === 'invalid_amount') {
+      return res.status(200).json({ status: 'error', error: 'No matching deposit was found for this reference.' });
+    }
+
+    // 'confirmed' or 'already_credited' both mean the wallet is credited
+    // exactly once for this reference -- both report success so a retried
+    // verify call after a dropped response is never shown as a failure.
+    return res.status(200).json({ status: 'success', result });
+  } catch (err: any) {
+    console.error('[webhook/paystack?action=verify-deposit] error:', err?.message || err);
+    return res.status(500).json({ status: 'error', error: 'Deposit verification failed. Please try again or contact support.' });
+  }
 }
 
 // ── Client-triggered verify path (formerly api/payments/verify.ts) ───────

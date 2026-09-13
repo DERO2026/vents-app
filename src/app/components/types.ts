@@ -90,6 +90,12 @@ export interface PurchasedTicket {
   // (purchase_ticket_with_tokens) so the QR renders instantly with no mint delay.
   token?: string;
   vcDiscountNgn?: number;
+  // 'wallet' when paid from the VENTS Wallet balance rather than Paystack —
+  // set only by CheckoutScreen's wallet-pay path. Callers must branch on
+  // this rather than always re-verifying through Paystack: a wallet payment
+  // is already confirmed server-side by confirm_ticket_payment_via_wallet
+  // and has no matching Paystack transaction to verify.
+  paymentMethod?: 'paystack' | 'wallet';
 }
 
 export interface UserProfile {
@@ -156,7 +162,8 @@ export type Screen =
   | 'door-manager'
   | 'inbox'
   | 'conversation'
-  | 'wallet';
+  | 'wallet'
+  | 'customer-wallet';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

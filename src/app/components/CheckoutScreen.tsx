@@ -9,6 +9,11 @@ import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
+import { computeTicketWalletChargeKobo, hasSufficientBalance } from '../../lib/walletMath';
+
+function fmtNgn(kobo: number) {
+  return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
 
 interface CheckoutScreenProps {
   event: Event;
@@ -17,6 +22,14 @@ interface CheckoutScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; username?: string } | null;
   onBack: () => void;
   onSuccess: (ticket: PurchasedTicket) => void;
+  // Distinct completion path for a wallet-paid ticket -- MUST NOT be routed
+  // through the same handler as onSuccess. A wallet payment is confirmed
+  // server-side by confirm_ticket_payment_via_wallet before this ever fires,
+  // and has no Paystack transaction to verify; App.handleCheckoutSuccess's
+  // generic path always calls api/webhook/paystack?action=verify, which
+  // would be a stale/incorrect verification attempt for a purchase that was
+  // never sent to Paystack at all.
+  onWalletSuccess: (ticket: PurchasedTicket) => void;
 }
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -89,7 +102,9 @@ function Field({
   );
 }
 
-export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess }: CheckoutScreenProps) {
+export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess, onWalletSuccess }: CheckoutScreenProps) {
+  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
+  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
   const [name, setName] = useState(currentUser?.full_name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -129,6 +144,32 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   const serviceFee = Math.round(subtotal * 0.05);
   const discount = promoApplied ? Math.round(subtotal * (promoDiscountPct / 100)) : 0;
   const total = Math.max(0, subtotal + serviceFee - discount);
+  // Matches confirm_ticket_payment_via_wallet's own expected-amount formula
+  // exactly (subtotal, not the discount-then-round `total` above, which can
+  // differ by a kobo from double-rounding) -- used only to preview/gate the
+  // wallet payment option; the server always recomputes and enforces this.
+  const totalKobo = computeTicketWalletChargeKobo(subtotal, promoApplied ? promoDiscountPct : 0);
+
+  // Wallet balance, fetched once a paid checkout is shown -- purely
+  // informational (which payment method to default/offer, insufficient-
+  // balance messaging); the actual debit amount is always recomputed
+  // server-side by confirm_ticket_payment_via_wallet from the real ticket
+  // rows, never from this client-side `total`.
+  useEffect(() => {
+    if (!currentUser?.id || total <= 0) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('get_my_wallet');
+        if (!alive) return;
+        const row = Array.isArray(data) ? data[0] : data;
+        setWalletBalanceKobo(typeof row?.balance_kobo === 'number' ? row.balance_kobo : 0);
+      } catch { /* informational only */ }
+    })();
+    return () => { alive = false; };
+  }, [currentUser?.id, total]);
+
+  const hasSufficientWalletBalance = walletBalanceKobo != null && hasSufficientBalance(walletBalanceKobo, totalKobo);
 
   const emailError = emailTouched && email.length > 0 && !isValidEmail(email)
     ? 'Enter a valid email (e.g. name@gmail.com)'
@@ -261,6 +302,62 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       payingRef.current = true;
       setPaymentLoading(true);
       handleFreeTicket();
+      return;
+    }
+
+    if (paymentMethod === 'wallet') {
+      const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
+      const attendees = buildAttendees(purchaserName, payerEmail);
+      payingRef.current = true;
+      setPaymentLoading(true);
+      try {
+        // Same server-authoritative pending-purchase row the Paystack path
+        // uses -- amount and reference are computed server-side here too,
+        // never trusted from this client's `total`.
+        const { data, error } = await supabase.rpc('create_pending_purchase', {
+          p_event_id: event.id,
+          p_ticket_type: ticketType.name,
+          p_attendees: attendees,
+          p_promo_code: promoApplied ? promoCode.trim() : null,
+        });
+        if (error) throw error;
+        const reference: string = (data as any)?.payment_ref;
+        if (!reference) throw new Error('Could not prepare this purchase.');
+
+        // Atomic, idempotent debit + ticket issuance + organizer credit, all
+        // inside confirm_ticket_payment_via_wallet -- see 0074_universal-
+        // customer-wallet audit. This purchase never touches Paystack at
+        // all, so it must complete via onWalletSuccess, never onSuccess
+        // (which routes through the Paystack ?action=verify path).
+        const { data: result, error: walletErr } = await supabase.rpc('confirm_ticket_payment_via_wallet', {
+          p_payment_ref: reference,
+        });
+        if (walletErr) throw walletErr;
+
+        if (typeof result === 'string' && result.startsWith('insufficient_balance')) {
+          throw new Error('Insufficient wallet balance for this purchase.');
+        }
+        if (result !== 'confirmed' && result !== 'already_paid') {
+          throw new Error('Could not complete this purchase with your wallet. Please try again.');
+        }
+
+        const ticket: PurchasedTicket = {
+          event, ticketType, quantity,
+          ticketId: reference,
+          purchasedAt: new Date().toISOString(),
+          totalAmount: total,
+          holderName: purchaserName,
+          holderEmail: payerEmail,
+          attendees,
+          promoCode: promoApplied ? promoCode.trim() : undefined,
+          paymentMethod: 'wallet',
+        };
+        onWalletSuccess(ticket);
+      } catch (err: any) {
+        payingRef.current = false;
+        setPaymentLoading(false);
+        setPayError(err?.message || 'Wallet payment failed. Please try again.');
+      }
       return;
     }
 
@@ -628,6 +725,40 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       {/* Pay CTA */}
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
 
+        {total > 0 && currentUser && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+            <button
+              onClick={() => { setPaymentMethod('paystack'); setPayError(null); }}
+              style={{
+                flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                border: paymentMethod === 'paystack' ? '1px solid rgba(123,47,190,0.6)' : '1px solid rgba(255,255,255,0.1)',
+                background: paymentMethod === 'paystack' ? 'rgba(123,47,190,0.15)' : 'transparent',
+                color: paymentMethod === 'paystack' ? '#C4B5FD' : '#8B8FA8',
+              }}
+            >
+              Card / Bank (Paystack)
+            </button>
+            <button
+              onClick={() => { setPaymentMethod('wallet'); setPayError(null); }}
+              style={{
+                flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                border: paymentMethod === 'wallet' ? '1px solid rgba(168,85,247,0.6)' : '1px solid rgba(255,255,255,0.1)',
+                background: paymentMethod === 'wallet' ? 'rgba(168,85,247,0.15)' : 'transparent',
+                color: paymentMethod === 'wallet' ? '#D8B4FE' : '#8B8FA8',
+              }}
+            >
+              VENTS Wallet {walletBalanceKobo != null ? `(${fmtNgn(walletBalanceKobo)})` : ''}
+            </button>
+          </div>
+        )}
+
+        {total > 0 && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
+            <AlertCircle size={14} color="#EF4444" />
+            <span style={{ color: '#EF4444', fontSize: '13px' }}>Insufficient wallet balance. Deposit funds or pay with Paystack instead.</span>
+          </div>
+        )}
+
         {payError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
             <AlertCircle size={14} color="#EF4444" />
@@ -637,7 +768,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         <button
           onClick={handlePay}
-          disabled={paymentLoading}
+          disabled={paymentLoading || (total > 0 && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance)}
           style={{
             width: '100%',
             height: '52px',

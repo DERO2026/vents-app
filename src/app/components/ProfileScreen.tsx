@@ -553,7 +553,27 @@ export function ProfileScreen({
           </div>
         </div>
 
-        {/* Organizer Wallet */}
+        {/* VENTS Wallet (universal, spendable customer balance) */}
+        {currentUser && (
+          <div className="px-4 mb-3">
+            <button
+              onClick={() => onNavigate('customer-wallet')}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.12))',
+                borderRadius: '14px',
+                border: '1px solid rgba(168,85,247,0.35)',
+                boxShadow: '0 0 18px rgba(124,58,237,0.15)',
+                cursor: 'pointer',
+              }}
+            >
+              <Wallet size={16} color="#D8B4FE" />
+              <span style={{ color: '#D8B4FE', fontSize: '14px', fontWeight: 700 }}>VENTS Wallet</span>
+            </button>
+          </div>
+        )}
+
+        {/* Organizer/Provider Earnings (withdrawable) */}
         {(isOrganizer || isAdmin || isSubAdmin) && (
           <div className="px-4 mb-3">
             <button
@@ -567,7 +587,7 @@ export function ProfileScreen({
               }}
             >
               <Wallet size={16} color="#A855F7" />
-              <span style={{ color: '#A855F7', fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
+              <span style={{ color: '#A855F7', fontSize: '14px', fontWeight: 700 }}>My Earnings</span>
             </button>
           </div>
         )}

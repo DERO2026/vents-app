@@ -41,6 +41,7 @@ import { CreateEventScreen } from './components/CreateEventScreen';
 import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { WalletScreen } from './components/WalletScreen';
+import { CustomerWalletScreen } from './components/CustomerWalletScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
@@ -1623,6 +1624,67 @@ export default function App() {
     }
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
+  // Completion path for a wallet-paid ticket. CheckoutScreen already ran
+  // confirm_ticket_payment_via_wallet (atomic debit + ticket issuance +
+  // organizer credit, all server-side and idempotent) before calling this --
+  // there is no Paystack transaction behind this purchase at all, so this
+  // handler MUST NEVER call api/webhook/paystack?action=verify the way
+  // handleCheckoutSuccess above does for the Paystack path. Doing so would
+  // be a stale/pointless verification attempt against a reference Paystack
+  // has never heard of.
+  const handleWalletCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
+    if (!currentUser) return;
+    try {
+      const { data: rows, error } = await supabase
+        .from('tickets')
+        .select('id')
+        .eq('payment_ref', ticket.ticketId)
+        .eq('user_id', currentUser.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+
+      const ticketIds = (rows || []).map((r: any) => r.id as string);
+      if (ticketIds.length === 0) {
+        throw new Error('Payment confirmed, but no ticket was found for this order. Contact support with your reference.');
+      }
+
+      const tokenPairs = await Promise.all(ticketIds.map(async (id) => {
+        const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
+        if (tokErr) throw tokErr;
+        return { ticket_id: id, token: tok as string };
+      }));
+      tokenPairs.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
+
+      analytics.ticketPurchased({
+        eventId: ticket.event.id,
+        eventTitle: ticket.event.title,
+        ticketType: ticket.ticketType?.name,
+        quantity: ticket.quantity,
+        amount: ticket.totalAmount,
+        free: false,
+        reference: ticket.ticketId,
+      });
+
+      await fetchUserTickets(currentUser.id);
+      await fetchEvents(true);
+
+      setPurchasedTicket({ ...ticket, ticketId: tokenPairs[0].ticket_id, token: tokenPairs[0].token });
+      setScreenStack([]);
+      setScreen('payment-success');
+    } catch (err: any) {
+      console.error('Failed to finalize wallet ticket purchase:', err);
+      Sentry.captureException(err);
+      setPaymentFailure({
+        eventTitle: ticket.event.title,
+        reference: ticket.ticketId ?? 'unknown',
+        message: err?.message || 'Something went wrong while confirming your wallet purchase.',
+      });
+      setScreenStack([]);
+      setScreen('payment-failed');
+    }
+  }, [currentUser, fetchEvents, fetchUserTickets]);
+
   // Resolves a payment reference that arrived via Paystack's own post-
   // payment redirect (?reference=/?trxref= on web, vents://payment?ref= on
   // native — see the URL/deep-link handling above) rather than through
@@ -2562,6 +2624,7 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onSuccess={handleCheckoutSuccess}
+              onWalletSuccess={handleWalletCheckoutSuccess}
             />
           )}
           {screen === 'payment-success' && purchasedTicket && (
@@ -2739,9 +2802,22 @@ export default function App() {
             />
           )}
 
-          {/* ── WALLET ── */}
+          {/* ── ORGANIZER/PROVIDER EARNINGS WALLET (withdrawable) ── */}
           {screen === 'wallet' && (
             <WalletScreen currentUser={currentUser} onBack={goBack} />
+          )}
+
+          {/* ── UNIVERSAL CUSTOMER WALLET (spendable, not withdrawable) ── */}
+          {screen === 'customer-wallet' && (
+            <CustomerWalletScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              showEarningsTab={
+                currentUser?.role === 'organizer' || (currentUser as any)?.isOrganizer ||
+                currentUser?.role === 'admin' || currentUser?.role === 'sub-admin'
+              }
+              onOpenEarnings={() => navigateTo('wallet')}
+            />
           )}
 
           {/* ── CONVERSATION ── */}
