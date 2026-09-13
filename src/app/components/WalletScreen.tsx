@@ -195,8 +195,19 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [banksError, setBanksError] = useState('');
   const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Race guard between load() (a full refresh, e.g. pull-to-retry) and
+  // loadMoreTxns() (append the next page). Without this, loadMoreTxns
+  // computes its .range() offset from a `txns.length` snapshot that a
+  // concurrent load() can invalidate before the response comes back --
+  // appending the fetched page onto load()'s freshly-reset array at the
+  // WRONG offset, producing gapped or duplicated rows. Every load() call
+  // bumps this; loadMoreTxns captures it before fetching and discards its
+  // own result if a newer load() completed in the meantime.
+  const txnsGenerationRef = useRef(0);
+
   const load = async () => {
     if (!currentUser?.id) return;
+    txnsGenerationRef.current += 1;
     setLoading(true);
     setTxnsError('');
     try {
@@ -232,7 +243,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   const loadMoreTxns = async () => {
-    if (!currentUser?.id || loadingMore || !txnsHasMore) return;
+    // Also blocked while a full load() is in flight -- its own generation
+    // bump plus the check below make this belt-and-suspenders, but there's
+    // no reason to even start a fetch whose offset is about to be stale.
+    if (!currentUser?.id || loadingMore || loading || !txnsHasMore) return;
+    const generation = txnsGenerationRef.current;
+    const offset = txns.length;
     setLoadingMore(true);
     try {
       const { data, error } = await supabase
@@ -240,9 +256,19 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
         .select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at')
         .eq('organizer_id', currentUser.id)
         .order('created_at', { ascending: false })
-        .range(txns.length, txns.length + PAGE_SIZE - 1);
+        .range(offset, offset + PAGE_SIZE - 1);
       if (error) throw error;
-      setTxns(prev => [...prev, ...(data || [])]);
+      // A concurrent load() reset the list while this was in flight -- the
+      // offset this fetch used no longer lines up with the current array.
+      // Discard rather than append at the wrong position.
+      if (generation !== txnsGenerationRef.current) return;
+      setTxns(prev => {
+        // Defense-in-depth de-dup: even with the generation guard above, a
+        // fast double-tap or a retried request could re-fetch a page whose
+        // rows are already present.
+        const seen = new Set(prev.map(t => t.id));
+        return [...prev, ...(data || []).filter(t => !seen.has(t.id))];
+      });
       setTxnsHasMore((data || []).length === PAGE_SIZE);
     } catch (e) {
       console.error('Load more transactions error:', e);
