@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 7 UNITS MIGRATED (7 of ~35 units)
+## Status: FOUNDATION + 8 UNITS MIGRATED (8 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -109,8 +109,18 @@ everything else in the priority list below is not started.
   not theme drift. `eventLifecycle.test.ts` and
   `paymentRequestShareLink.test.ts` (the two test files touching this
   screen's logic) both still pass. Typecheck clean, full suite 429/429.
-
-## Explicitly NOT done (the actual redesign work)
+- [x] **`src/app/components/CheckoutScreen.tsx`** (922 lines) and
+  **`PaymentSuccessScreen.tsx`** (568 lines) — FINANCIAL, extra care per
+  the stated rule. Before editing, checked both test files that read
+  `CheckoutScreen.tsx`'s source (`walletTicketVerifyRace.test.ts`,
+  `walletServicesPayment.security.test.ts`) for any color-literal
+  assertions that a hex→token substitution could break — confirmed both
+  only regex-match logic patterns (`skipPaymentVerification`, RPC call
+  shapes), never colors, so the substitution was safe to proceed. Same
+  scripted approach (60 + 43 replacements). After editing: re-ran both
+  security test files explicitly (9/9 pass, not just relying on the
+  aggregate run), then full typecheck + full suite (429/429). No logic
+  touched — same color-only-not-layout caveat as items 3/4 applies.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -158,9 +168,10 @@ maturity — not a batch replace.
    a dedicated pass with real visual verification, not a continuation of
    the mechanical color-only approach.**
 4. Event Details — **color tokens done; layout/hierarchy pass not done (same caveat as item 3)**
-5. Ticket selection / Checkout / Payment / Success / Failure — not started
-   (financial — extra care, re-run `walletPayments.security.test.ts` etc.
-   after any touch)
+5. Ticket selection / Checkout / Payment / Success / Failure — **PARTIAL:
+   Checkout + PaymentSuccess color tokens done + verified (see above).
+   Ticket-selection UI (inside CheckoutScreen or a separate step?) and
+   Failure state not yet confirmed/located — NEXT UP.**
 6. Someone Else Pays — not started
 7. My Tickets / Ticket Detail / QR / Transfers — not started
 8. Wallet / Deposit / Transaction Detail — not started (financial)

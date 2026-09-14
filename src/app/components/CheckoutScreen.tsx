@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Lock, Tag, AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
@@ -31,7 +32,7 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#FFFFFF',
+  color: ventsColors.white,
   fontSize: '14px',
   fontFamily: 'Inter, sans-serif',
 };
@@ -61,12 +62,12 @@ function Field({
 }) {
   return (
     <div style={{ width: '100%', minWidth: 0 }}>
-      <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
+      <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#090514',
+          background: ventsColors.surface,
           border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
           borderRadius: '16px',
           height: '52px',
@@ -88,8 +89,8 @@ function Field({
       </div>
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-          <AlertCircle size={11} color="#EF4444" />
-          <span style={{ color: '#EF4444', fontSize: '11px' }}>{error}</span>
+          <AlertCircle size={11} color={ventsColors.error} />
+          <span style={{ color: ventsColors.error, fontSize: '11px' }}>{error}</span>
         </div>
       )}
     </div>
@@ -517,7 +518,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -533,7 +534,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <button
           onClick={onBack}
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -544,16 +545,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
+        <h1 style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
       </div>
 
       <div style={{ flex: 1, padding: '4px 16px 140px' }}>
         {/* Order mini summary */}
         <div
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             border: '1px solid rgba(255,255,255,0.05)',
             borderRadius: '24px',
             padding: '14px',
@@ -565,15 +566,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         >
           <img src={event.image} alt="" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
-            <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
+            <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
           </div>
-          <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
+          <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
         </div>
 
         {/* Attendee info */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Pre-filled from the account when logged in, but never
                 locked — every logged-in user has an email (required at
@@ -597,19 +598,19 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 (AuthScreen.tsx), so an international visitor buying a
                 Nigerian event ticket isn't forced into a +234 number. */}
             <div>
-              <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
               <PhoneInput
                 countryCode={phoneCountryCode}
                 onCountryCodeChange={(code) => { setPhoneCountryCode(code); setPhone(''); }}
                 value={phone}
                 onChange={(digits) => { setPhone(digits); setPhoneTouched(true); }}
                 height={52}
-                background="#090514"
+                background={ventsColors.surface}
                 borderColor={phoneError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}
                 radius="16px"
               />
               {phoneError && (
-                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
+                <p style={{ color: ventsColors.error, fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
               )}
             </div>
           </div>
@@ -618,8 +619,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         {/* Who's paying — only meaningful for a real payment; free tickets
             (total === 0) always self-checkout, no toggle shown. */}
         {total > 0 && (
-          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Who's Paying?</p>
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Who's Paying?</p>
             <div style={{ display: 'flex', gap: '8px', marginBottom: payMode === 'someone-else' ? '14px' : 0 }}>
               {(['self', 'someone-else'] as const).map((mode) => (
                 <button
@@ -631,7 +632,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     borderRadius: '12px',
                     border: `1px solid ${payMode === mode ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
                     background: payMode === mode ? 'rgba(124,58,237,0.18)' : 'transparent',
-                    color: payMode === mode ? '#C4B5FD' : '#8B8FA8',
+                    color: payMode === mode ? ventsColors.accentSoft : ventsColors.ink2,
                     fontSize: '13px',
                     fontWeight: 600,
                     cursor: 'pointer',
@@ -653,8 +654,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 />
                 {payerNotFound && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
-                    <AlertCircle size={14} color="#EF4444" />
-                    <span style={{ color: '#EF4444', fontSize: '13px' }}>
+                    <AlertCircle size={14} color={ventsColors.error} />
+                    <span style={{ color: ventsColors.error, fontSize: '13px' }}>
                       No VENTS account found for "{payerIdentifier.trim()}". They need to create a VENTS account before you can send them a payment request.
                     </span>
                   </div>
@@ -669,8 +670,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             header comment). Balance shown is informational only; the real
             sufficiency check happens server-side at confirm time. */}
         {total > 0 && payMode === 'self' && (
-          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Payment Method</p>
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Payment Method</p>
             <div style={{ display: 'flex', gap: '8px' }}>
               {(['paystack', 'wallet'] as const).map((method) => {
                 const insufficientForWallet = method === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
@@ -685,7 +686,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                       borderRadius: '12px',
                       border: `1px solid ${paymentMethod === method ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
                       background: paymentMethod === method ? 'rgba(124,58,237,0.18)' : 'transparent',
-                      color: paymentMethod === method ? '#C4B5FD' : '#8B8FA8',
+                      color: paymentMethod === method ? ventsColors.accentSoft : ventsColors.ink2,
                       fontSize: '13px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -699,7 +700,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                   >
                     <span>{method === 'paystack' ? 'Card / Bank / USSD' : 'VENTS Wallet'}</span>
                     {method === 'wallet' && (
-                      <span style={{ fontSize: '11px', color: insufficientForWallet ? '#EF4444' : '#8B8FA8' }}>
+                      <span style={{ fontSize: '11px', color: insufficientForWallet ? ventsColors.error : ventsColors.ink2 }}>
                         {walletBalanceLoading
                           ? 'Loading balance…'
                           : walletBalanceKobo === null
@@ -721,14 +722,14 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             distinct QR code, so the door scanner can check each person in
             individually with the right name. */}
         {quantity > 1 && (
-          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <Users size={16} color="#A78BFA" />
-              <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700 }}>
+              <Users size={16} color={ventsColors.accentSoft} />
+              <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700 }}>
                 Attendee Details ({quantity} tickets)
               </p>
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
               You're buying {quantity} tickets. Each ticket needs its own name and email so everyone gets a valid entry pass.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -742,7 +743,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                   : undefined;
                 return (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: i === 0 ? 0 : '14px', borderTop: i === 0 ? 'none' : '1px dashed rgba(255,255,255,0.08)' }}>
-                    <p style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <p style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Attendee {attendeeNumber} Details
                     </p>
                     <Field
@@ -777,8 +778,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {/* Promo code */}
         <div style={{ marginBottom: '16px' }}>
-          <div style={{ background: '#090514', border: `1px solid ${promoError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {promoApplied ? <CheckCircle2 size={16} color="#10B981" /> : <Tag size={16} color="#8B8FA8" />}
+          <div style={{ background: ventsColors.surface, border: `1px solid ${promoError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {promoApplied ? <CheckCircle2 size={16} color={ventsColors.success} /> : <Tag size={16} color={ventsColors.ink2} />}
             <input
               placeholder="Promo code"
               value={promoCode}
@@ -798,7 +799,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 border: 'none',
                 borderRadius: '8px',
                 padding: '7px 14px',
-                color: promoApplied ? '#10B981' : '#A78BFA',
+                color: promoApplied ? ventsColors.success : ventsColors.accentSoft,
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: (!promoCode.trim() || promoChecking) ? 'not-allowed' : 'pointer',
@@ -810,45 +811,45 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
           {promoError && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', paddingLeft: '2px' }}>
-              <AlertCircle size={11} color="#EF4444" />
-              <span style={{ color: '#EF4444', fontSize: '11px' }}>{promoError}</span>
+              <AlertCircle size={11} color={ventsColors.error} />
+              <span style={{ color: ventsColors.error, fontSize: '11px' }}>{promoError}</span>
             </div>
           )}
         </div>
 
         {/* Order breakdown */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+          <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(subtotal)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>Service fee (5%)</span>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Service fee (5%)</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#10B981', fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
-                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
               </div>
             )}
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Total</span>
-              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>{formatPrice(total)}</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>{formatPrice(total)}</span>
             </div>
           </div>
         </div>
 
-        <p style={{ color: '#8B8FA8', fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
           Paystack processing fees may apply and will be shown before you complete payment.
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '14px' }}>
-          <Lock size={12} color="#8B8FA8" />
-          <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Secured by 256-bit SSL encryption</span>
+          <Lock size={12} color={ventsColors.ink2} />
+          <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>Secured by 256-bit SSL encryption</span>
         </div>
       </div>
 
@@ -857,8 +858,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {payError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
-            <AlertCircle size={14} color="#EF4444" />
-            <span style={{ color: '#EF4444', fontSize: '13px' }}>{payError}</span>
+            <AlertCircle size={14} color={ventsColors.error} />
+            <span style={{ color: ventsColors.error, fontSize: '13px' }}>{payError}</span>
           </div>
         )}
 
@@ -909,11 +910,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             </button>
           );
         })()}
-        <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
+        <p style={{ fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
           By purchasing you agree to our{' '}
-          <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: ventsColors.accentSoft, cursor: 'pointer' }}>Refund Policy</span>
           {' '}and{' '}
-          <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: ventsColors.accentSoft, cursor: 'pointer' }}>Terms of Service</span>
         </p>
       </div>
 
