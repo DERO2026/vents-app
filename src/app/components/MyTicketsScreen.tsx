@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock, AlertCircle, CheckCircle, XCircle, Ban } from 'lucide-react';
 import { PurchasedTicket, TicketTransfer } from './types';
 import { formatPrice } from './data';
@@ -56,26 +57,26 @@ function transferStatusBadge(status: TicketTransfer['status'], isOutgoing: boole
   switch (status) {
     case 'accepted':
       return isOutgoing
-        ? { label: 'Transferred', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle }
-        : { label: 'Accepted', color: '#10B981', bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
+        ? { label: 'Transferred', color: ventsColors.success, bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle }
+        : { label: 'Accepted', color: ventsColors.success, bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
     case 'declined':
-      return { label: 'Declined', color: '#EF4444', bg: 'rgba(239,68,68,0.14)', Icon: XCircle };
+      return { label: 'Declined', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)', Icon: XCircle };
     case 'cancelled':
-      return { label: 'Cancelled', color: '#94A3B8', bg: 'rgba(148,163,184,0.14)', Icon: Ban };
+      return { label: 'Cancelled', color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)', Icon: Ban };
     case 'expired':
-      return { label: 'Expired', color: '#F59E0B', bg: 'rgba(245,158,11,0.14)', Icon: Clock };
+      return { label: 'Expired', color: ventsColors.pending, bg: 'rgba(245,158,11,0.14)', Icon: Clock };
     default:
-      return { label: status, color: '#94A3B8', bg: 'rgba(148,163,184,0.14)', Icon: Clock };
+      return { label: status, color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)', Icon: Clock };
   }
 }
 
 function TransferEmptyState({ text }: { text: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '56px', gap: '16px' }}>
-      <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: '#090514', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Send size={28} color="#94A3B8" />
+      <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: ventsColors.surface, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Send size={28} color={ventsColors.ink3} />
       </div>
-      <p style={{ color: '#94A3B8', fontSize: '13.5px', fontWeight: 600, textAlign: 'center', padding: '0 24px' }}>{text}</p>
+      <p style={{ color: ventsColors.ink3, fontSize: '13.5px', fontWeight: 600, textAlign: 'center', padding: '0 24px' }}>{text}</p>
     </div>
   );
 }
@@ -482,7 +483,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
         <div style={{ width: '36px', flexShrink: 0 }} />
         <h1
           style={{
-            color: '#FFFFFF',
+            color: ventsColors.white,
             fontSize: '20px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
@@ -514,7 +515,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           >
             <RefreshCw
               size={16}
-              color="#A78BFA"
+              color={ventsColors.accentSoft}
               style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}
             />
           </button>
@@ -563,7 +564,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 borderRadius: '100px',
                 border: 'none',
                 background: 'transparent',
-                color: activeTab === tab ? '#FFFFFF' : '#94A3B8',
+                color: activeTab === tab ? ventsColors.white : ventsColors.ink3,
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -611,8 +612,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           <>
             {transferActionError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
-                <AlertCircle size={14} color="#F87171" style={{ flexShrink: 0 }} />
-                <span style={{ color: '#F87171', fontSize: '12px' }}>{transferActionError}</span>
+                <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
+                <span style={{ color: ventsColors.error, fontSize: '12px' }}>{transferActionError}</span>
               </div>
             )}
 
@@ -636,7 +637,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     borderRadius: '12px',
                     border: transferSubTab === sub.key ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
                     background: transferSubTab === sub.key ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.02)',
-                    color: transferSubTab === sub.key ? '#C4B5FD' : '#8B8FA8',
+                    color: transferSubTab === sub.key ? ventsColors.accentSoft : ventsColors.ink2,
                     fontSize: '12.5px',
                     fontWeight: 700,
                     cursor: 'pointer',
@@ -647,7 +648,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   {sub.count > 0 && (
                     <span style={{
                       minWidth: '16px', height: '16px', padding: '0 4px', borderRadius: '8px',
-                      background: '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800,
+                      background: ventsColors.accent, color: '#fff', fontSize: '10px', fontWeight: 800,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       {sub.count}
@@ -670,23 +671,23 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     <div key={t.id} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
-                          <Send size={14} color="#C4B5FD" style={{ flexShrink: 0 }} />
-                          <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <Send size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0 }} />
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
                           </span>
                         </div>
-                        <span style={{ flexShrink: 0, background: 'rgba(168,85,247,0.2)', color: '#C4B5FD', fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', padding: '3px 7px', borderRadius: '100px', textTransform: 'uppercase' }}>
+                        <span style={{ flexShrink: 0, background: 'rgba(168,85,247,0.2)', color: ventsColors.accentSoft, fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', padding: '3px 7px', borderRadius: '100px', textTransform: 'uppercase' }}>
                           Action needed
                         </span>
                       </div>
-                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 6px' }}>
-                        From <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.createdAt)} · expires {formatTransferDate(t.expiresAt)}
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '0 0 6px' }}>
+                        From <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.createdAt)} · expires {formatTransferDate(t.expiresAt)}
                       </p>
                       {/* Fee shown clearly before any payment is triggered --
                           this is the exact amount Paystack will charge,
                           straight from the server-computed, server-locked
                           fee_kobo on this row (never a client estimate). */}
-                      <p style={{ color: '#C4B5FD', fontSize: '11px', fontWeight: 700, margin: '0 0 10px' }}>
+                      <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 700, margin: '0 0 10px' }}>
                         Transfer fee: {formatPrice(t.feeKobo / 100)} (paid by you to accept)
                       </p>
                       <div style={{ display: 'flex', gap: '8px' }}>
@@ -700,7 +701,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         <button
                           onClick={() => handleDeclineTransfer(t.id)}
                           disabled={transferActionBusy === t.id}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
                         >
                           <X size={13} /> Decline
                         </button>
@@ -720,18 +721,18 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   {outgoingPending.map((t) => (
                     <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <Clock size={13} color="#F59E0B" />
-                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <Clock size={13} color={ventsColors.pending} />
+                        <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
                         </span>
                       </div>
-                      <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 10px' }}>
-                        Awaiting <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> to accept · expires {formatTransferDate(t.expiresAt)}
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '0 0 10px' }}>
+                        Awaiting <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> to accept · expires {formatTransferDate(t.expiresAt)}
                       </p>
                       <button
                         onClick={() => handleCancelTransfer(t.id)}
                         disabled={transferActionBusy === t.id}
-                        style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                        style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
                       >
                         Cancel Transfer
                       </button>
@@ -756,15 +757,15 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     return (
                       <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
-                          <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
                           </span>
                           <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '100px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                             <BadgeIcon size={11} /> {badge.label}
                           </span>
                         </div>
-                        <p style={{ color: '#8B8FA8', fontSize: '11px', margin: 0 }}>
-                          {isOutgoing ? 'To' : 'From'} <strong style={{ color: '#C4C9E0' }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.respondedAt || t.createdAt)}
+                        <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: 0 }}>
+                          {isOutgoing ? 'To' : 'From'} <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.respondedAt || t.createdAt)}
                         </p>
                       </div>
                     );
@@ -801,16 +802,16 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 width: '72px',
                 height: '72px',
                 borderRadius: '20px',
-                background: '#090514',
+                background: ventsColors.surface,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Ticket size={32} color="#94A3B8" />
+              <Ticket size={32} color={ventsColors.ink3} />
             </div>
             <div style={{ textAlign: 'center', padding: '0 16px' }}>
-              <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
+              <p style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
                 {activeTab === 'upcoming'
                   ? (past.length > 0
                       ? "You don't have any upcoming tickets right now."
@@ -818,7 +819,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   : 'Your expired tickets will appear here!'}
               </p>
               {activeTab === 'past' && (
-                <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '16px' }}>
+                <p style={{ color: ventsColors.ink3, fontSize: '14px', marginBottom: '16px' }}>
                   Please come back later or start exploring events now!
                 </p>
               )}
@@ -850,7 +851,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 key={ticket.ticketId}
                 onClick={() => onViewTicket(ticket)}
                 style={{
-                  background: '#0A0612',
+                  background: ventsColors.bg,
                   border: '1px solid rgba(255,255,255,0.07)',
                   borderRadius: '22px',
                   overflow: 'hidden',
@@ -885,7 +886,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       padding: '4px 10px',
                     }}
                   >
-                    <span style={{ color: '#F0F0FF', fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
+                    <span style={{ color: ventsColors.ink1, fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
                       {ticket.ticketType.name.toUpperCase()}
                     </span>
                   </div>
@@ -905,15 +906,15 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       gap: '5px',
                     }}
                   >
-                    <QrCode size={13} color="#F0F0FF" />
-                    <span style={{ color: '#F0F0FF', fontSize: '11px', fontWeight: 700 }}>
+                    <QrCode size={13} color={ventsColors.ink1} />
+                    <span style={{ color: ventsColors.ink1, fontSize: '11px', fontWeight: 700 }}>
                       View QR
                     </span>
                   </div>
                   <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '10px' }}>
                     <h3
                       style={{
-                        color: '#FFFFFF',
+                        color: ventsColors.white,
                         fontSize: '16px',
                         fontWeight: 800,
                         fontFamily: 'Space Grotesk, sans-serif',
@@ -930,14 +931,14 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 <div style={{ padding: '14px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Calendar size={12} color="#9CA0BC" />
-                      <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
+                      <Calendar size={12} color={ventsColors.ink3} />
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                         {ticket.event.date} · {ticket.event.time}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <MapPin size={12} color="#9CA0BC" />
-                      <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
+                      <MapPin size={12} color={ventsColors.ink3} />
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                         {ticket.event.venue}, {ticket.event.city}
                       </span>
                     </div>
@@ -954,11 +955,11 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     }}
                   >
                     <div>
-                      <span style={{ color: '#9CA0BC', fontSize: '13px', fontWeight: 500 }}>
+                      <span style={{ color: ventsColors.ink3, fontSize: '13px', fontWeight: 500 }}>
                         {ticket.quantity} × {ticket.ticketType.name}
                       </span>
                     </div>
-                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>
+                    <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
@@ -971,13 +972,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   {(ticket.paidByName || ticket.transferredFromName) && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
                       {ticket.paidByName && (
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                          Paid by <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.paidByName}</span>
+                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                          Paid by <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.paidByName}</span>
                         </span>
                       )}
                       {ticket.transferredFromName && (
-                        <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                          Transferred to you from <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.transferredFromName}</span>
+                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                          Transferred to you from <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.transferredFromName}</span>
                         </span>
                       )}
                     </div>
@@ -996,8 +997,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       alignItems: 'center',
                     }}
                   >
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</span>
-                    <span style={{ color: '#D8B4FE', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                    <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>Ticket Reference No.</span>
+                    <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
                       {ticketDisplayCode(ticket.ticketId)}
                     </span>
                   </div>
@@ -1013,7 +1014,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center',
                         justifyContent: 'center', gap: '6px', background: 'rgba(168,85,247,0.08)',
                         border: '1px solid rgba(168,85,247,0.25)', borderRadius: '10px', padding: '9px',
-                        color: '#C4B5FD', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                        color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, cursor: 'pointer',
                       }}
                     >
                       <Send size={13} /> Transfer Ticket
@@ -1033,10 +1034,10 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           the RPC's own error message. */}
       {transferTicket && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: '#F0F0FF' }}>Transfer Ticket</p>
-              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#8B8FA8' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: ventsColors.ink1 }}>Transfer Ticket</p>
+              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.ink2 }}>
                 <X size={18} />
               </button>
             </div>
@@ -1044,8 +1045,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             {transferSent ? (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
-                  <CheckCircle size={18} color="#10B981" />
-                  <span style={{ color: '#10B981', fontSize: '13px', lineHeight: 1.5 }}>
+                  <CheckCircle size={18} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '13px', lineHeight: 1.5 }}>
                     Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
                   </span>
                 </div>
@@ -1055,7 +1056,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               </>
             ) : (
               <>
-                <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>
+                <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>
                   Enter the VENTS email or username of the person you're transferring "{transferTicket.event.title}" to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
                 </p>
                 <div style={{ marginBottom: '12px' }}>
@@ -1069,12 +1070,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 </div>
                 {initiateError && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
-                    <AlertCircle size={14} color="#EF4444" />
-                    <span style={{ color: '#EF4444', fontSize: '13px' }}>{initiateError}</span>
+                    <AlertCircle size={14} color={ventsColors.error} />
+                    <span style={{ color: ventsColors.error, fontSize: '13px' }}>{initiateError}</span>
                   </div>
                 )}
                 <div style={{ display: 'flex', gap: '10px' }}>
-                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
                   <button
                     onClick={handleSendTransfer}
                     disabled={transferSending || !transferIdentifier.trim()}

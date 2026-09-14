@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Download, Share2, CheckCircle, MapPin, Clock, Zap } from 'lucide-react';
 import QRCode from 'qrcode';
 import { PurchasedTicket } from './types';
@@ -45,7 +46,7 @@ function QRCodeDisplay({ value, size = 280 }: { value: string; size?: number }) 
       width: size,
       margin: 4,
       errorCorrectionLevel: 'L',
-      color: { dark: '#0A0B14', light: '#ffffff' },
+      color: { dark: ventsColors.bg, light: ventsColors.white },
     })
       .then(() => {
         canvas.width = offscreen.width;
@@ -173,15 +174,15 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
   };
 
   return (
-    <div className="flex flex-col h-full" style={{ background: '#020005' }}>
+    <div className="flex flex-col h-full" style={{ background: ventsColors.bg }}>
       {saveError && (
-        <div style={{ ...TOAST_TOP_POSITION, background: '#EF4444', borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {saveToast && (
         <div style={{ ...TOAST_TOP_POSITION, background: 'rgba(34,197,94,0.15)', border: '1px solid rgba(34,197,94,0.35)', borderRadius: '12px', padding: '10px 18px' }}>
-          <span style={{ color: '#4ADE80', fontSize: '13px', fontWeight: 600 }}>
+          <span style={{ color: ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
             {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
         </div>
@@ -194,13 +195,13 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <button
           onClick={onBack}
           className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1 }}
+          style={{ background: ventsColors.surface, flexShrink: 0, position: 'relative', zIndex: 1 }}
         >
-          <ArrowLeft size={18} color="#F0F0FF" />
+          <ArrowLeft size={18} color={ventsColors.ink1} />
         </button>
         <h1
           style={{
-            color: '#F0F0FF', fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif',
+            color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif',
             position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
           }}
         >
@@ -210,9 +211,9 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
           onClick={handleShare}
           disabled={sharing || !signedToken}
           className="w-9 h-9 rounded-full flex items-center justify-center"
-          style={{ background: '#090514', flexShrink: 0, position: 'relative', zIndex: 1, opacity: (sharing || !signedToken) ? 0.5 : 1, cursor: (sharing || !signedToken) ? 'not-allowed' : 'pointer' }}
+          style={{ background: ventsColors.surface, flexShrink: 0, position: 'relative', zIndex: 1, opacity: (sharing || !signedToken) ? 0.5 : 1, cursor: (sharing || !signedToken) ? 'not-allowed' : 'pointer' }}
         >
-          <Share2 size={16} color="#F0F0FF" />
+          <Share2 size={16} color={ventsColors.ink1} />
         </button>
       </div>
 
@@ -227,10 +228,10 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               border: '1px solid rgba(34, 197, 94, 0.25)',
             }}
           >
-            <CheckCircle size={22} color="#22C55E" />
+            <CheckCircle size={22} color={ventsColors.success} />
             <div>
-              <p style={{ color: '#22C55E', fontSize: '14px', fontWeight: 700 }}>Booking Confirmed!</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Your ticket has been sent to your email</p>
+              <p style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>Booking Confirmed!</p>
+              <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Your ticket has been sent to your email</p>
             </div>
           </div>
         </div>
@@ -247,7 +248,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
           >
             <div
               style={{
-                background: '#07030F',
+                background: ventsColors.bg,
                 borderRadius: '24.5px',
                 overflow: 'hidden',
               }}
@@ -270,12 +271,12 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
               <div className="px-4 py-4">
                 <div className="flex items-center justify-between gap-3 mb-4">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <Clock size={13} color="#22D3EE" />
-                    <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }} className="truncate">{timestamp}</p>
+                    <Clock size={13} color={ventsColors.info} />
+                    <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700 }} className="truncate">{timestamp}</p>
                   </div>
                   <span
                     style={{
-                      color: '#FFB830', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
+                      color: ventsColors.pending, fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase',
                       background: 'rgba(255,184,48,0.12)', border: '1px solid rgba(255,184,48,0.4)', borderRadius: '100px',
                       padding: '4px 12px', flexShrink: 0, boxShadow: '0 0 14px rgba(255,184,48,0.25)',
                     }}
@@ -285,8 +286,8 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                 </div>
 
                 <div className="flex items-center gap-1.5 mb-4">
-                  <MapPin size={12} color="#A78BFA" />
-                  <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500 }} className="truncate">{ticket.event.venue}</p>
+                  <MapPin size={12} color={ventsColors.accentSoft} />
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px', fontWeight: 500 }} className="truncate">{ticket.event.venue}</p>
                 </div>
 
                 {/* Ticket holder */}
@@ -295,12 +296,12 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   style={{ background: 'rgba(123,47,190,0.08)', borderRadius: '12px', border: '1px solid rgba(123,47,190,0.15)' }}
                 >
                   <div>
-                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Holder</p>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{ticket.holderName}</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>Ticket Holder</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{ticket.holderName}</p>
                   </div>
                   <div className="text-right">
-                    <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Qty</p>
-                    <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700 }}>×{ticket.quantity}</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>Qty</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700 }}>×{ticket.quantity}</p>
                   </div>
                 </div>
 
@@ -313,13 +314,13 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                 {(ticket.paidByName || ticket.transferredFromName) && (
                   <div className="flex flex-col gap-1.5 px-1 mb-4">
                     {ticket.paidByName && (
-                      <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                        Paid by <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.paidByName}</span>
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                        Paid by <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.paidByName}</span>
                       </p>
                     )}
                     {ticket.transferredFromName && (
-                      <p style={{ color: '#8B8FA8', fontSize: '11px' }}>
-                        Transferred to you from <span style={{ color: '#C4B5FD', fontWeight: 600 }}>{ticket.transferredFromName}</span>
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                        Transferred to you from <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.transferredFromName}</span>
                       </p>
                     )}
                   </div>
@@ -328,8 +329,8 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                 {/* Ticket reference number — matches the wording used in the
                     Refund Policy so support requests can be matched to a ticket. */}
                 <div className="flex items-center justify-between px-1 mb-4">
-                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</p>
-                  <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>Ticket Reference No.</p>
+                  <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
                     {ticketDisplayCode(ticket.ticketId)}
                   </p>
                 </div>
@@ -338,7 +339,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                 <div className="relative flex items-center my-4">
                   <div
                     className="absolute -left-8 w-8 h-8 rounded-full"
-                    style={{ background: '#020005' }}
+                    style={{ background: ventsColors.bg }}
                   />
                   <div
                     className="flex-1 border-t-2 border-dashed"
@@ -346,7 +347,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   />
                   <div
                     className="absolute -right-8 w-8 h-8 rounded-full"
-                    style={{ background: '#020005' }}
+                    style={{ background: ventsColors.bg }}
                   />
                 </div>
 
@@ -369,11 +370,11 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   >
                     {signedToken
                       ? <QRCodeDisplay value={signedToken} size={280} />
-                      : <p style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
+                      : <p style={{ color: ventsColors.ink2, fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
                   </div>
                   <div className="flex items-center gap-1.5" style={{ marginTop: '4px' }}>
-                    <Zap size={11} color={signedToken ? '#22D3EE' : '#555C7A'} />
-                    <p style={{ color: signedToken ? '#22D3EE' : '#8B8FA8', fontSize: '10px', fontWeight: 600 }}>
+                    <Zap size={11} color={signedToken ? ventsColors.info : ventsColors.ink3} />
+                    <p style={{ color: signedToken ? ventsColors.info : ventsColors.ink2, fontSize: '10px', fontWeight: 600 }}>
                       {signedToken ? 'Cryptographically signed — show this QR code at the entrance' : 'Connect to the internet once to activate this ticket'}
                     </p>
                   </div>
@@ -387,10 +388,10 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         <div className="px-4 mt-4">
           <div
             className="flex items-center justify-between p-4"
-            style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
+            style={{ background: ventsColors.surface, borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
-            <span style={{ color: '#8B8FA8', fontSize: '14px' }}>Total Paid</span>
-            <span style={{ color: '#22C55E', fontSize: '18px', fontWeight: 800 }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '14px' }}>Total Paid</span>
+            <span style={{ color: ventsColors.success, fontSize: '18px', fontWeight: 800 }}>
               {formatPrice(ticket.totalAmount)}
             </span>
           </div>
@@ -409,15 +410,15 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
             className="flex-1 flex items-center justify-center gap-2"
             style={{
               height: '50px',
-              background: '#090514',
+              background: ventsColors.surface,
               borderRadius: '14px',
               border: '1px solid rgba(255,255,255,0.08)',
               opacity: (saving || !signedToken) ? 0.6 : 1,
               cursor: (saving || !signedToken) ? 'not-allowed' : 'pointer',
             }}
           >
-            <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save Ticket'}</span>
+            <Download size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save Ticket'}</span>
           </button>
           <button
             onClick={onGoHome}
