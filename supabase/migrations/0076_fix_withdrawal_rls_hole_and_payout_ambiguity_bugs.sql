@@ -1,7 +1,15 @@
--- Two critical, empirically-confirmed defects found during a financial/
+-- Three critical, empirically-confirmed defects found during a financial/
 -- accounting audit of the organizer/provider earnings withdrawal path.
 -- NOT APPLIED by this migration file's author -- written for review only,
 -- per explicit instruction not to touch Production automatically.
+--
+-- Defect 3 was found during this migration's own final pre-deployment
+-- review, after an earlier /code-review pass on this same file incorrectly
+-- cleared admin_cancel_processing_payout as "already fixed in 0023" --
+-- that claim was wrong; re-checking the LIVE deployed definition directly
+-- (not trusting the prior review) surfaced the same bug class the file
+-- already fixes elsewhere. Recorded here rather than silently corrected,
+-- since the earlier review's error is itself worth being honest about.
 --
 -- ============================================================================
 -- DEFECT 1 (CRITICAL, confirmed exploitable): organizer_withdrawal_requests
@@ -123,4 +131,83 @@ BEGIN
   FROM public.users u WHERE u.id = v_organizer_id;
 END;
 $function$
+;
+
+-- ============================================================================
+-- DEFECT 3 (CRITICAL, confirmed live in Production via direct
+-- pg_get_functiondef): admin_cancel_processing_payout has the IDENTICAL
+-- ambiguous-column bug as fail_organizer_payout (Defect 2) -- same
+-- RETURNS TABLE(status text, organizer_email text, organizer_name text,
+-- amount_kobo bigint) OUT-parameter shape, same missing table
+-- qualification on `amount_kobo` (and, here, on `organizer_id` and
+-- `status` too -- neither was qualified at all in the live version).
+-- Confirmed empirically: calling it against a real 'processing' request
+-- throws "column reference \"amount_kobo\" is ambiguous" before any write.
+--
+-- Effect: an admin can never cancel a payout that's stuck in 'processing'
+-- (e.g. claimed but not yet worth sending to Paystack, or needs aborting
+-- before a transfer fires) -- the refund-back-to-balance recovery path for
+-- this specific admin action is completely non-functional, same failure
+-- shape as Defect 2 (fails safe -- aborts before any write, no corrupted
+-- state, just an admin action that cannot currently be performed).
+--
+-- Fix: identical table-alias pattern (r.organizer_id, r.amount_kobo,
+-- r.status), matching complete_organizer_payout and this migration's own
+-- fixed fail_organizer_payout. No other logic changed -- the pre-existing
+-- exception-based rejection of an already-finalized request (rather than
+-- an already_finalized return value, unlike its two siblings) is
+-- unchanged, since it was not itself broken. Verified locally: after this
+-- fix, cancelling a real 'processing' request correctly restores
+-- balance_kobo from pending_kobo exactly once, and a second (replayed)
+-- call correctly raises "Only requests in Processing status can be
+-- cancelled (current status: cancelled)" -- rejected before any further
+-- wallet change, not a silent double-credit.
+CREATE OR REPLACE FUNCTION public.admin_cancel_processing_payout(p_request_id uuid, p_reason text)
+ RETURNS TABLE(status text, organizer_email text, organizer_name text, amount_kobo bigint)
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO ''
+AS $function$
+DECLARE
+  v_organizer_id uuid;
+  v_amount_kobo bigint;
+  v_status text;
+BEGIN
+  IF NOT public.is_admin_or_root() THEN RAISE EXCEPTION 'Super Admin access required'; END IF;
+  IF (SELECT disable_payouts FROM public.app_config LIMIT 1) THEN
+    RAISE EXCEPTION 'payouts_disabled';
+  END IF;
+  IF p_reason IS NULL OR trim(p_reason) = '' THEN RAISE EXCEPTION 'A cancellation reason is required'; END IF;
+
+  SELECT r.organizer_id, r.amount_kobo, r.status
+    INTO v_organizer_id, v_amount_kobo, v_status
+  FROM public.organizer_withdrawal_requests r
+  WHERE r.id = p_request_id;
+
+  IF v_organizer_id IS NULL THEN RAISE EXCEPTION 'Request not found'; END IF;
+  IF v_status <> 'processing' THEN RAISE EXCEPTION 'Only requests in Processing status can be cancelled (current status: %)', v_status; END IF;
+
+  UPDATE public.organizer_withdrawal_requests
+  SET status = 'cancelled', admin_note = p_reason, resolved_by = auth.uid(), updated_at = now()
+  WHERE id = p_request_id;
+
+  UPDATE public.organizer_wallets
+  SET balance_kobo = balance_kobo + v_amount_kobo,
+      pending_kobo = GREATEST(0, pending_kobo - v_amount_kobo),
+      updated_at = now()
+  WHERE organizer_id = v_organizer_id;
+
+  INSERT INTO public.organizer_transactions (organizer_id, type, amount_kobo, description, withdrawal_request_id)
+  VALUES (v_organizer_id, 'cancelled_payout_refund', v_amount_kobo,
+          'Payout request cancelled by admin, funds returned — ' || p_reason, p_request_id);
+
+  INSERT INTO public.admin_logs (admin_id, action, target_user_id, details, actor_role)
+  VALUES (auth.uid(), 'cancel_processing_payout', v_organizer_id,
+          jsonb_build_object('request_id', p_request_id, 'amount_kobo', v_amount_kobo, 'reason', p_reason),
+          public.actor_role());
+
+  RETURN QUERY
+  SELECT 'cancelled'::text, u.email, u.full_name, v_amount_kobo
+  FROM public.users u WHERE u.id = v_organizer_id;
+END; $function$
 ;
