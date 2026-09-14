@@ -3348,7 +3348,22 @@ export default function App() {
 
           {/* ── VENTS WALLET (customer deposit/spend balance) ── */}
           {screen === 'user-wallet' && (
-            <UserWalletScreen currentUser={currentUser} onBack={goBack} />
+            <UserWalletScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              onViewTicket={(ticketId) => {
+                // Same real destination every ticket-notification deep link
+                // already uses (MyTicketsScreen resolves the id against its
+                // own list) -- never a new ticket-detail screen.
+                setMyTicketsFocusTicket({ ticketId, nonce: Date.now() });
+                setScreenStack([]);
+                setScreen('my-tickets');
+              }}
+              onViewServiceBookings={() => {
+                setScreenStack([]);
+                setScreen('service-bookings');
+              }}
+            />
           )}
 
           {/* ── PAYMENT REQUESTS (payer receipts) ── */}

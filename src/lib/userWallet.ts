@@ -7,6 +7,7 @@
 import { supabase, getAuthToken } from './supabase';
 import { openPaystackPopup } from './paystack';
 import { apiUrl } from './apiBase';
+export { classifyWalletTransaction, type WalletTransactionKind } from './walletTransactionClassifier';
 
 export interface UserWalletTransaction {
   id: string;
@@ -15,6 +16,14 @@ export interface UserWalletTransaction {
   description: string | null;
   referenceId: string | null;
   createdAt: string;
+  // get_my_wallet_transactions returns SETOF user_wallet_transactions, whose
+  // metadata column already carries real, authoritative fields depending on
+  // type -- confirm_wallet_deposit writes paystack_reference/paystack_
+  // verified_amount_kobo (0065), refund_ticket writes ticket_id/
+  // platform_fee_absorbed_kobo (0075). Previously fetched but silently
+  // dropped by this mapper -- never shown anywhere, even though it was
+  // already authoritative, server-written data.
+  metadata: Record<string, unknown>;
 }
 
 function mapTransactionRow(row: any): UserWalletTransaction {
@@ -25,6 +34,7 @@ function mapTransactionRow(row: any): UserWalletTransaction {
     description: row.description ?? null,
     referenceId: row.reference_id ?? null,
     createdAt: row.created_at,
+    metadata: (row.metadata && typeof row.metadata === 'object') ? row.metadata : {},
   };
 }
 
@@ -143,4 +153,25 @@ export async function payServiceBookingWithWallet(paymentRef: string): Promise<W
   const { data, error } = await supabase.rpc('confirm_service_booking_payment_via_wallet', { p_reference: paymentRef });
   if (error) return { status: 'error', error: error.message };
   return parseWalletConfirmStatus(data as string);
+}
+
+// Resolves the first ticket id for a wallet-ticket-purchase's payment_ref,
+// so a wallet transaction receipt can deep-link into My Tickets. A single
+// purchase can create several ticket rows sharing one payment_ref (a group
+// buy) -- the first (by created_at) is used as the representative ticket,
+// same convention confirm_ticket_payment_via_wallet itself uses internally
+// (v_first_ticket_id) for its own notification. Scoped implicitly by
+// select_tickets' RLS (own rows only) -- never trusts or needs an explicit
+// user_id filter here. Returns null on no match rather than throwing, since
+// "can't deep-link" is a normal, safe outcome this caller already handles.
+export async function findTicketIdForPaymentRef(paymentRef: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('tickets')
+    .select('id')
+    .eq('payment_ref', paymentRef)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  return data.id as string;
 }
