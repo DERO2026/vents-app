@@ -1,5 +1,6 @@
 import React from 'react';
 import { haptics } from '../../../lib/haptics';
+import { ventsColors, ventsTypography } from '../../../lib/ventsDesignTokens';
 
 // One shared sizing/spacing scale for every button in the app — the
 // "Get Directions" / "Add to Calendar" inconsistency (11px vs 12px padding,
@@ -37,16 +38,16 @@ export function PrimaryButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: '8px',
-        background: disabled ? '#1A1D2E' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+        background: disabled ? 'rgba(255,255,255,0.05)' : ventsColors.accent,
         border: 'none',
         borderRadius: RADIUS[size],
         padding: '0 20px',
-        color: disabled ? '#6B7280' : '#fff',
+        color: disabled ? ventsColors.ink3 : ventsColors.white,
         fontSize: FONT[size],
         fontWeight: 700,
-        fontFamily: 'Space Grotesk, sans-serif',
+        fontFamily: ventsTypography.fontBody,
         cursor: disabled ? 'not-allowed' : 'pointer',
-        boxShadow: disabled ? 'none' : '0 8px 24px rgba(123,47,190,0.3)',
+        boxShadow: disabled ? 'none' : '0 10px 30px -12px rgba(142,92,247,0.9)',
         boxSizing: 'border-box',
         ...style,
       }}
@@ -72,14 +73,14 @@ export function SecondaryButton({
         alignItems: 'center',
         justifyContent: 'center',
         gap: '8px',
-        background: 'rgba(168,85,247,0.1)',
-        border: '1px solid rgba(168,85,247,0.25)',
+        background: ventsColors.glassBg,
+        border: `1px solid ${ventsColors.glassBorder}`,
         borderRadius: RADIUS[size],
         padding: '0 16px',
-        color: '#A78BFA',
+        color: ventsColors.white,
         fontSize: FONT[size],
         fontWeight: 700,
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: ventsTypography.fontBody,
         cursor: disabled ? 'not-allowed' : 'pointer',
         opacity: disabled ? 0.5 : 1,
         boxSizing: 'border-box',

@@ -7,10 +7,11 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION LAID, SCREEN MIGRATION NOT STARTED
+## Status: FOUNDATION + FIRST 2 UNITS MIGRATED (2 of ~35 units)
 
-Do not read this as "redesign implemented." It is not. One real,
-verified piece of groundwork is done; the ~32-screen migration is not.
+Do not read this as "redesign implemented." It is not. The tokens
+foundation plus one shared component and one screen are done and verified;
+everything else in the priority list below is not started.
 
 ## Done this pass
 
@@ -25,19 +26,35 @@ verified piece of groundwork is done; the ~32-screen migration is not.
   variant in Wallet-related screens). This is exactly finding A11 from the
   design audit ("terminology drifts across surfaces") — verified against
   real code, not assumed.
+- [x] **`src/app/components/shared/Button.tsx`** (PrimaryButton/SecondaryButton)
+  migrated to `ventsColors`/`ventsTypography` — solid accent fill + glow per
+  §02's button spec, glass secondary. 4 consumers checked
+  (`ConfirmDialog.tsx`, `EventDetailsScreen.tsx`, `EventMap.tsx`,
+  `ReportModal.tsx`) — none touch financial logic. Typecheck clean, full
+  suite 429/429 passing (same pre-existing unrelated `ticketToken.test.ts`
+  env failure as before, untouched by this change).
+- [x] **`src/app/components/WelcomeScreen.tsx`** (Landing, priority #2)
+  migrated: background, ambient glow, ink colors, both CTA buttons now use
+  the token module. `VentsLogo.tsx` deliberately left untouched — it is
+  already a faithful CSS reconstruction of the real mark (custom purple-bar
+  "E", white V/N/T/S), not a placeholder; swapping it for the supplied
+  raster PNG would be a quality regression (blurry at small sizes, extra
+  network request) for zero benefit, so this was a considered decision, not
+  a skipped step. Typecheck clean, no test references this screen directly,
+  full suite still 429/429.
 
 ## Explicitly NOT done (the actual redesign work)
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
 
-- **Zero of the ~32 mobile screens have been migrated to the new design.**
-  Landing, Signup, Login, Verification, Home, Search, Filters, Event
-  Details, Checkout, Payment, Someone Else Pays, My Tickets, QR, Wallet
-  (x3), Services (all 5), Chats/Notifications, Profile, and all 6
-  business/creator screens (Creator Studio, Provider services mgmt, Event
-  mgmt, KYC, Create/Edit Event, Sales Analytics, Promotions, Provider
-  Bookings) are all still on their current, pre-redesign styling.
+- **1 of ~32 mobile screens migrated (WelcomeScreen/Landing).** Signup,
+  Login, Verification, Home, Search, Filters, Event Details, Checkout,
+  Payment, Someone Else Pays, My Tickets, QR, Wallet (x3), Services (all
+  5), Chats/Notifications, Profile, and all 6 business/creator screens
+  (Creator Studio, Provider services mgmt, Event mgmt, KYC, Create/Edit
+  Event, Sales Analytics, Promotions, Provider Bookings) are all still on
+  their current, pre-redesign styling.
 - **Zero desktop layouts implemented** (Creator Studio sidebar+grid,
   ManageEventsScreen table, SalesAnalyticsScreen stat-grid — all designed,
   none built).
@@ -60,20 +77,44 @@ manually verified against its real functional test coverage plus a visual
 check, is the only responsible way to do this at this codebase's current
 maturity — not a batch replace.
 
-## Recommended next-session order (not yet started)
+## Priority order (per user's numbered list) — progress
 
-1. Migrate the shared/reused primitives first (buttons, chips, status
-   badges, PickerSheet, cards) to `ventsDesignTokens` — one shared change
-   that every screen downstream benefits from, same principle as this
-   session's tokens-file step.
-2. Non-financial, low-risk screens next (Landing, Signup/Login static
-   chrome, Notifications, Chats list) to prove the pattern holds visually
-   before touching anything money-related.
-3. Financial/high-stakes screens last, each with its existing test suite
-   re-run immediately after (Checkout, Wallet, Services booking/refund,
-   ticket purchase) — never batch these with the low-risk screens.
-4. Desktop/tablet layouts only after their mobile counterparts are done
-   and verified, per screen.
+1. Shared design-system primitives/tokens — **tokens file done; Button.tsx
+   done; still pending: chips, status badges (`ventsStatusColors` exists in
+   the tokens file but is not wired into any component yet), PickerSheet,
+   card primitive.**
+2. Landing / onboarding / auth — **WelcomeScreen done. NEXT UP:
+   `AuthScreen.tsx` (2426 lines — large, read it fully before editing;
+   covers Signup/Login/Verification in one file) and
+   `CountrySelectScreen.tsx` (221 lines, smaller, could go first as a
+   warm-up).**
+3. Home / Search / Filters — not started (`HomeScreen.tsx`, `ExploreScreen.tsx`)
+4. Event Details — not started
+5. Ticket selection / Checkout / Payment / Success / Failure — not started
+   (financial — extra care, re-run `walletPayments.security.test.ts` etc.
+   after any touch)
+6. Someone Else Pays — not started
+7. My Tickets / Ticket Detail / QR / Transfers — not started
+8. Wallet / Deposit / Transaction Detail — not started (financial)
+9. Services discovery / Provider Profile / Service Detail — not started
+10. Service Booking / Checkout / Payment / Confirmation — not started (financial)
+11. Booking History / Cancellation / Refund — not started (financial —
+    this is `ServiceBookingsScreen.tsx`, touched functionally this session
+    for the 0077 refund UI; redesign pass must not disturb that logic)
+12. Chats / Requests / People Search — not started
+13. Notifications — not started
+14. Profile — not started
+15. Organizer Dashboard suite — not started
+16. Service Provider Dashboard suite — not started
+17. Creator Studio — not started
+18. Desktop layouts — not started
+19. Tablet layouts — not started
+20. Global UI states — not started
+21. Final responsive/visual consistency pass — not started
+
+Rule holding throughout: financial/security-critical screens (5, 6, 8, 10,
+11) get their existing test file re-run immediately after any touch, never
+batched with low-risk screens.
 
 ## Repo state
 

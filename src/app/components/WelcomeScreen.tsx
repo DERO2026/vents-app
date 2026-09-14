@@ -1,5 +1,6 @@
 import { VentsLogo } from './VentsLogo';
 import { appVersionLabel } from '../../lib/appVersion';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;
@@ -39,17 +40,17 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
   return (
     <div
       style={{
-        background: '#08050F',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         position: 'relative',
-        color: '#F0F0FF',
+        color: ventsColors.ink1,
       }}
     >
-      <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse 420px 300px at 20% 5%, rgba(123,47,190,0.10) 0%, transparent 60%)', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', inset: 0, background: ventsColors.ambientGradient, opacity: 0.5, pointerEvents: 'none' }} />
 
       {/* Header */}
       <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
@@ -57,16 +58,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
       </div>
 
       <div style={{ position: 'relative', padding: '14px 24px 0', flexShrink: 0, textAlign: 'center' }}>
-        <span style={{ color: '#A97FD4', fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em' }}>EVENTS &middot; SERVICES &middot; REAL EXPERIENCES</span>
+        <span style={{ color: ventsColors.accentSoft, fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em' }}>EVENTS &middot; SERVICES &middot; REAL EXPERIENCES</span>
       </div>
 
       <div style={{ position: 'relative', padding: '12px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, color: '#FFFFFF', fontSize: '30px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.16, letterSpacing: '-0.01em' }}>
+        <h1 style={{ margin: 0, color: ventsColors.white, fontSize: '30px', fontWeight: 800, fontFamily: ventsTypography.fontBody, lineHeight: 1.16, letterSpacing: '-0.01em' }}>
           More Than Events.
           <br />
-          <span style={{ color: '#A855F7' }}>Real Experiences.</span>
+          <span style={{ color: ventsColors.accentSoft }}>Real Experiences.</span>
         </h1>
-        <p style={{ margin: '12px 0 0', color: '#9CA0BC', fontSize: '13.5px', lineHeight: 1.6, maxWidth: '280px' }}>
+        <p style={{ margin: '12px 0 0', color: ventsColors.ink2, fontSize: '13.5px', lineHeight: 1.6, maxWidth: '280px' }}>
           Find events, book trusted services, and make it happen — all in one app.
         </p>
       </div>
@@ -102,7 +103,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
       </div>
 
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', gap: '5px', padding: '12px 0 0', flexShrink: 0 }}>
-        <div style={{ width: '16px', height: '5px', borderRadius: '3px', background: '#A855F7' }} />
+        <div style={{ width: '16px', height: '5px', borderRadius: '3px', background: ventsColors.accent }} />
         <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
         <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
       </div>
@@ -113,16 +114,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
           onClick={onGetStarted}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)',
+            background: ventsColors.accent,
             border: 'none',
             borderRadius: '100px',
             padding: '15px 26px',
-            color: '#fff',
+            color: ventsColors.white,
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: ventsTypography.fontBody,
             cursor: 'pointer',
-            boxShadow: '0 8px 20px rgba(88,42,143,0.32)',
+            boxShadow: '0 10px 30px -12px rgba(142,92,247,0.9)',
             marginBottom: '10px',
             display: 'flex',
             alignItems: 'center',
@@ -137,11 +138,11 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
           onClick={onSignIn}
           style={{
             width: '100%',
-            background: 'rgba(255,255,255,0.05)',
-            border: '1px solid rgba(255,255,255,0.1)',
+            background: ventsColors.glassBg,
+            border: `1px solid ${ventsColors.glassBorder}`,
             borderRadius: '100px',
             padding: '13px 26px',
-            color: '#C4C9E0',
+            color: ventsColors.ink1,
             fontSize: '14px',
             fontWeight: 600,
             cursor: 'pointer',
