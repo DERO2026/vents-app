@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
@@ -179,18 +180,18 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
     <div style={{ textAlign: 'center' }}>
       <div
         style={{
-          background: '#090514',
+          background: ventsColors.surface,
           border: '1px solid rgba(168,85,247,0.2)',
           borderRadius: '12px',
           padding: '8px 12px',
           minWidth: '50px',
         }}
       >
-        <span style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
           {String(value).padStart(2, '0')}
         </span>
       </div>
-      <span style={{ color: '#94A3B8', fontSize: '10px', display: 'block', marginTop: '4px' }}>
+      <span style={{ color: ventsColors.ink3, fontSize: '10px', display: 'block', marginTop: '4px' }}>
         {label}
       </span>
     </div>
@@ -208,16 +209,16 @@ const EventCountdown = memo(function EventCountdown({ event_date, date, time }: 
   if (!countdown) return null;
   return (
     <div style={{ marginBottom: '16px' }}>
-      <div style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
+      <div style={{ color: ventsColors.ink2, fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
         EVENT STARTS IN
       </div>
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
         <CountdownUnit value={countdown.d} label="Days" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.h} label="Hours" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.m} label="Mins" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.s} label="Secs" />
       </div>
     </div>
@@ -656,7 +657,7 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
@@ -700,7 +701,7 @@ export function EventDetailsScreen({
               backdropFilter: 'blur(6px)',
             }}
           >
-            <span style={{ color: '#C084FC', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               {event.category.toUpperCase()}
             </span>
           </div>
@@ -713,7 +714,7 @@ export function EventDetailsScreen({
         <div style={{ marginBottom: '12px' }}>
           <h1
             style={{
-              color: '#FFFFFF',
+              color: ventsColors.white,
               fontSize: '24px',
               fontWeight: 700,
               fontFamily: 'Outfit, sans-serif',
@@ -724,13 +725,13 @@ export function EventDetailsScreen({
           >
             {event.title}
             {(event as any).is_18_plus && (
-              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: '#EF4444', fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
+              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: ventsColors.error, fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
             )}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Users size={13} color="#8B8FA8" />
-              <span style={{ color: '#8B8FA8', fontSize: '13px' }}>
+              <Users size={13} color={ventsColors.ink2} />
+              <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                 {realAttendeeCount.toLocaleString()} attending
               </span>
             </div>
@@ -785,15 +786,15 @@ export function EventDetailsScreen({
           </div>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
+              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
                 {organizerProfile?.full_name || event.organizer}
               </span>
               {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill="#4F46E5" color="#fff" />
+                <CheckCircle size={14} fill={ventsColors.accent} color="#fff" />
               )}
               <BadgeChip tier={organizerProfile?.vc_badge} />
             </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', textTransform: 'capitalize' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '12px', textTransform: 'capitalize' }}>
               {organizerProfile?.role || 'Event Organizer'}
             </span>
           </div>
@@ -836,11 +837,11 @@ export function EventDetailsScreen({
                   flexShrink: 0,
                 }}
               >
-                <Icon size={16} color="#A855F7" />
+                <Icon size={16} color={ventsColors.accent} />
               </div>
               <div>
-                <div style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>{label}</div>
-                <div style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>{value}</div>
+                <div style={{ color: ventsColors.ink2, fontSize: '10px', fontWeight: 500 }}>{label}</div>
+                <div style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 600 }}>{value}</div>
               </div>
             </div>
           ))}
@@ -871,13 +872,13 @@ export function EventDetailsScreen({
                 flexShrink: 0,
               }}
             >
-              <MapPin size={16} color="#A855F7" />
+              <MapPin size={16} color={ventsColors.accent} />
             </div>
             <div>
-              <div style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600 }}>
+              <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
                 {event.venue}
               </div>
-              <div style={{ color: '#94A3B8', fontSize: '12px' }}>
+              <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
                 {event.area}, {event.city}, {event.state}
               </div>
             </div>
@@ -928,7 +929,7 @@ export function EventDetailsScreen({
                   cursor: 'pointer',
                 }}
               >
-                <span style={{ color: active ? '#fff' : '#9CA0BC', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+                <span style={{ color: active ? '#fff' : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
               </button>
             );
           })}
@@ -951,8 +952,8 @@ export function EventDetailsScreen({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-              <Shield size={13} color="#A78BFA" />
-              <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <Shield size={13} color={ventsColors.accentSoft} />
+              <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 Organizer Tools
               </span>
             </div>
@@ -992,8 +993,8 @@ export function EventDetailsScreen({
                   marginTop: '10px',
                 }}
               >
-                <LayoutDashboard size={18} color="#A78BFA" />
-                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
+                <LayoutDashboard size={18} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
               </button>
             )}
           </div>
@@ -1010,8 +1011,8 @@ export function EventDetailsScreen({
           <SecondaryButton
             onClick={handleAddToCalendar}
             disabled={addingToCalendar}
-            icon={<CalendarPlus size={16} color="#10B981" />}
-            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10B981', marginBottom: '16px' }}
+            icon={<CalendarPlus size={16} color={ventsColors.success} />}
+            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: ventsColors.success, marginBottom: '16px' }}
           >
             {addingToCalendar ? 'Opening…' : 'Add to Calendar'}
           </SecondaryButton>
@@ -1035,8 +1036,8 @@ export function EventDetailsScreen({
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500 }}>Capacity</span>
-            <span style={{ color: capacityPct > 80 ? '#EF4444' : '#10B981', fontSize: '13px', fontWeight: 600 }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>Capacity</span>
+            <span style={{ color: capacityPct > 80 ? ventsColors.error : ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
               {capacityPct}% filled
             </span>
           </div>
@@ -1062,10 +1063,10 @@ export function EventDetailsScreen({
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
               {realAttendeeCount.toLocaleString()} attending
             </span>
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
               {(event.capacity ?? 0).toLocaleString()} total capacity
             </span>
           </div>
@@ -1083,17 +1084,17 @@ export function EventDetailsScreen({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Phone size={14} color="#A855F7" />
-              <span style={{ color: '#A855F7', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>
+              <Phone size={14} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.accent, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>
                 ORGANISER CONTACT
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
                   {event.contactPhone}
                 </p>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   For event enquiries only
                 </p>
               </div>
@@ -1112,7 +1113,7 @@ export function EventDetailsScreen({
                     textDecoration: 'none',
                   }}
                 >
-                  <Phone size={16} color="#A855F7" />
+                  <Phone size={16} color={ventsColors.accent} />
                 </a>
                 <button
                   onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
@@ -1139,15 +1140,15 @@ export function EventDetailsScreen({
         {event.lineup && event.lineup.length > 0 && (
           <div style={{ marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Mic2 size={16} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Lineup</span>
+              <Mic2 size={16} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700 }}>Lineup</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {event.lineup.map((artist) => (
                 <div
                   key={artist}
                   style={{
-                    background: '#090514',
+                    background: ventsColors.surface,
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: '50px',
                     padding: '7px 14px',
@@ -1173,7 +1174,7 @@ export function EventDetailsScreen({
                   >
                     {artist[0]}
                   </div>
-                  <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500 }}>
+                  <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>
                     {artist}
                   </span>
                 </div>
@@ -1184,12 +1185,12 @@ export function EventDetailsScreen({
 
         {/* Description */}
         <div style={{ marginBottom: '16px' }}>
-          <span style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+          <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
             About
           </span>
           <p
             style={{
-              color: '#94A3B8',
+              color: ventsColors.ink3,
               fontSize: '14px',
               lineHeight: 1.5,
               overflow: 'hidden',
@@ -1205,7 +1206,7 @@ export function EventDetailsScreen({
             style={{
               background: 'none',
               border: 'none',
-              color: '#A78BFA',
+              color: ventsColors.accentSoft,
               fontSize: '13px',
               fontWeight: 600,
               cursor: 'pointer',
@@ -1226,13 +1227,13 @@ export function EventDetailsScreen({
         {ticketTypes.length > 0 && (
           <div ref={ticketsRef} style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
                 Select Tickets
               </span>
               {isBooked && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '20px', padding: '4px 10px', width: 'fit-content' }}>
-                  <CheckCircle size={12} color="#10B981" />
-                  <span style={{ color: '#10B981', fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
+                  <CheckCircle size={12} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
                 </span>
               )}
             </div>
@@ -1246,7 +1247,7 @@ export function EventDetailsScreen({
                     key={t.id}
                     onClick={() => { if (!soldOut) { haptics.light(); setSelectedTicketId(t.id); } }}
                     style={{
-                      background: isSelected ? 'rgba(124,58,237,0.08)' : '#131629',
+                      background: isSelected ? 'rgba(124,58,237,0.08)' : ventsColors.elevated,
                       border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
                       borderRadius: '16px',
                       padding: '14px 16px',
@@ -1257,23 +1258,23 @@ export function EventDetailsScreen({
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
-                        <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
-                        {!soldOut && <span style={{ color: '#6B7280', fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
-                        {soldOut && <span style={{ color: '#EF4444', fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
+                        <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
+                        <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
+                        {!soldOut && <span style={{ color: ventsColors.ink3, fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
+                        {soldOut && <span style={{ color: ventsColors.error, fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
                       </div>
-                      <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginLeft: '8px' }}>
+                      <span style={{ color: ventsColors.pending, fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginLeft: '8px' }}>
                         {formatPrice(t.price)}
                       </span>
                     </div>
                     {isSelected && !soldOut && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Quantity</span>
+                        <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>Quantity</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
-                            <Minus size={14} color="#C4C9E0" />
+                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? ventsColors.elevated : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
+                            <Minus size={14} color={ventsColors.ink2} />
                           </button>
-                          <span key={qty} style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
+                          <span key={qty} style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
                           <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <Plus size={14} color="#fff" />
                           </button>
@@ -1291,8 +1292,8 @@ export function EventDetailsScreen({
         {event.tags && event.tags.length > 0 && (
           <div style={{ marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Tag size={15} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Tags</span>
+              <Tag size={15} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Tags</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {event.tags.map((tag) => (
@@ -1303,7 +1304,7 @@ export function EventDetailsScreen({
                     border: '1px solid rgba(167,139,250,0.15)',
                     borderRadius: '8px',
                     padding: '5px 12px',
-                    color: '#A78BFA',
+                    color: ventsColors.accentSoft,
                     fontSize: '12px',
                     fontWeight: 500,
                   }}
@@ -1322,16 +1323,16 @@ export function EventDetailsScreen({
               <button
                 onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}
                 style={{
-                  width: '100%', background: '#090514',
+                  width: '100%', background: ventsColors.surface,
                   border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px',
                   padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
                 }}
               >
-                <MessageCircle size={16} color="#A78BFA" />
-                <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
+                <MessageCircle size={16} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
                   Message organizer
                 </span>
-                <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Chat →</span>
+                <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600 }}>Chat →</span>
               </button>
             )}
           </div>
@@ -1339,19 +1340,19 @@ export function EventDetailsScreen({
 
         {/* Related Events Section */}
         <div ref={moreRef} style={{ marginTop: '24px', marginBottom: '16px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
               Related Events
             </p>
             {loadingRelated ? (
               <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
+                  <div key={i} style={{ width: '140px', height: '120px', background: ventsColors.surface, borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
                 ))}
               </div>
             ) : relatedEvents.length === 0 ? (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B8FA8" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={ventsColors.ink2} strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>No related events in this category</p>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
@@ -1387,7 +1388,7 @@ export function EventDetailsScreen({
             onClick={(e) => e.stopPropagation()}
             style={{
               width: '100%',
-              background: '#090514',
+              background: ventsColors.surface,
               borderRadius: '24px 24px 0 0',
               padding: '24px 20px 36px',
               border: '1px solid rgba(255,255,255,0.08)',
@@ -1403,8 +1404,8 @@ export function EventDetailsScreen({
                   margin: '0 auto 16px',
                 }}
               />
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Open Location In</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '4px' }}>
+              <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700 }}>Open Location In</p>
+              <p style={{ color: ventsColors.ink2, fontSize: '12px', marginTop: '4px' }}>
                 {event.venue}, {event.city}
               </p>
             </div>
@@ -1432,8 +1433,8 @@ export function EventDetailsScreen({
                   </svg>
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Google Maps</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Opens in browser</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Google Maps</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Opens in browser</p>
                 </div>
               </button>
               <button
@@ -1450,12 +1451,12 @@ export function EventDetailsScreen({
                   width: '100%',
                 }}
               >
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#1C1C1E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: ventsColors.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <MapPin size={20} color="#fff" />
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Apple Maps</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Opens on iOS/macOS</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Apple Maps</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Opens on iOS/macOS</p>
                 </div>
               </button>
             </div>
@@ -1465,7 +1466,7 @@ export function EventDetailsScreen({
 
       {bookingError && (
         <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '88px', zIndex: 20 }}>
-          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: '#FCA5A5', fontSize: '13px', fontWeight: 600 }}>
+          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: ventsColors.error, fontSize: '13px', fontWeight: 600 }}>
             {bookingError}
           </div>
         </div>
@@ -1489,7 +1490,7 @@ export function EventDetailsScreen({
         }}
       >
         {hasEnded ? (
-          <div style={{ flex: 1, textAlign: 'center', color: '#8B8FA8', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', padding: '14px 28px' }}>
+          <div style={{ flex: 1, textAlign: 'center', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', padding: '14px 28px' }}>
             Event Ended
           </div>
         ) : (
@@ -1497,7 +1498,7 @@ export function EventDetailsScreen({
             {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
                 "Buy from ₦X") instead of a bare "FROM / Free" label, which read
                 as a fully free event even when paid tiers also exist. */}
-            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? '#06D6A0' : '#FFFFFF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
+            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
               {formatCardCTA(event.ticketTypes)}
             </div>
             <button
@@ -1518,14 +1519,14 @@ export function EventDetailsScreen({
               style={{
                 flex: 1,
                 background: purchasesDisabled
-                  ? '#1A1D2E'
+                  ? ventsColors.elevated
                   : canBook
                   ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-                  : '#1A1D2E',
+                  : ventsColors.elevated,
                 border: 'none',
                 borderRadius: '16px',
                 padding: '14px 28px',
-                color: purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
+                color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
                 fontSize: '16px',
                 fontWeight: 700,
                 fontFamily: 'Space Grotesk, sans-serif',

@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 6 UNITS MIGRATED (6 of ~35 units)
+## Status: FOUNDATION + 7 UNITS MIGRATED (7 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -100,6 +100,15 @@ everything else in the priority list below is not started.
   horizontal-scroll sections as separately named blocks). That structural
   work remains open and is flagged, not silently skipped.
   Typecheck clean, full suite 429/429.
+- [x] **`src/app/components/EventDetailsScreen.tsx`** (1598 lines) — same
+  scripted color-token substitution approach (88 replacements + 15 JSX-
+  attribute brace fixes), same honesty caveat: layout/hierarchy not
+  reworked. Real third-party brand colors (Google's 4-color palette,
+  WhatsApp green) explicitly excluded from the mapping and confirmed
+  still present post-edit — those are correct as literal brand colors,
+  not theme drift. `eventLifecycle.test.ts` and
+  `paymentRequestShareLink.test.ts` (the two test files touching this
+  screen's logic) both still pass. Typecheck clean, full suite 429/429.
 
 ## Explicitly NOT done (the actual redesign work)
 
@@ -148,7 +157,7 @@ maturity — not a batch replace.
    audit finding A04, card sections) is NOT done — see note above. Needs
    a dedicated pass with real visual verification, not a continuation of
    the mechanical color-only approach.**
-4. Event Details — **NEXT UP** (`EventDetailsScreen.tsx`)
+4. Event Details — **color tokens done; layout/hierarchy pass not done (same caveat as item 3)**
 5. Ticket selection / Checkout / Payment / Success / Failure — not started
    (financial — extra care, re-run `walletPayments.security.test.ts` etc.
    after any touch)
