@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 10 UNITS MIGRATED (10 of ~35 units)
+## Status: FOUNDATION + 11 UNITS MIGRATED (11 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -134,6 +134,19 @@ everything else in the priority list below is not started.
   transfer-list filter expressions), never colors. Scripted substitution
   (64 + 42 replacements). Re-ran both source-reading tests explicitly
   (13/13 pass) plus full typecheck + suite (429/429).
+- [x] **`src/app/components/WalletScreen.tsx`** (1103 lines) and
+  **`UserWalletScreen.tsx`** (497 lines) — FINANCIAL. 4 test files read
+  `WalletScreen.tsx`'s source (`organizerPayoutSecurity.security.test.ts`,
+  `selectorAuditComplete.test.ts`, `walletScrollbarFix.test.ts`,
+  `walletTxnPaginationRace.test.ts`). Read every assertion in all 4 before
+  editing — one of them (`selectorAuditComplete.test.ts`) asserts a
+  **negative** color-shaped pattern (`.not.toMatch(/position: 'fixed',
+  inset: 0, background: '#020005'/)`, confirming the bank picker no longer
+  uses its old bespoke full-screen implementation) — a substitution can
+  only help that stay true, not break it, since the literal string
+  disappears either way. Scripted substitution (103 + 47 replacements).
+  Re-ran all 4 source-reading test files explicitly (31/31 pass, negative
+  assertion included) plus full typecheck + suite (429/429).
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -187,7 +200,7 @@ maturity — not a batch replace.
    Failure state not yet confirmed/located — NEXT UP.**
 6. Someone Else Pays — color tokens done (see above)
 7. My Tickets / Ticket Detail / QR / Transfers — color tokens done (see above)
-8. Wallet / Deposit / Transaction Detail — not started (financial)
+8. Wallet / Deposit / Transaction Detail — color tokens done (see above)
 9. Services discovery / Provider Profile / Service Detail — not started
 10. Service Booking / Checkout / Payment / Confirmation — not started (financial)
 11. Booking History / Cancellation / Refund — not started (financial —

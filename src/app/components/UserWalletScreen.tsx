@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Wallet, Plus, ArrowDownLeft, ArrowUpRight, RotateCcw, Loader, ChevronRight, Ticket, Sparkles, CreditCard } from 'lucide-react';
 import { fetchMyWalletBalanceKobo, fetchMyWalletTransactions, depositToWallet, findTicketIdForPaymentRef, UserWalletTransaction } from '../../lib/userWallet';
 import { classifyWalletTransaction } from '../../lib/walletTransactionClassifier';
@@ -40,9 +41,9 @@ function fmtDate(iso: string) {
 }
 
 const TX_ICON: Record<UserWalletTransaction['type'], { Icon: typeof ArrowDownLeft; color: string }> = {
-  deposit: { Icon: ArrowDownLeft, color: '#10B981' },
-  spend: { Icon: ArrowUpRight, color: '#F59E0B' },
-  refund: { Icon: RotateCcw, color: '#A855F7' },
+  deposit: { Icon: ArrowDownLeft, color: ventsColors.success },
+  spend: { Icon: ArrowUpRight, color: ventsColors.pending },
+  refund: { Icon: RotateCcw, color: ventsColors.accent },
 };
 
 // Reference/ticket ids are shown truncated -- enough to match against a
@@ -56,8 +57,8 @@ function maskRef(ref: string): string {
 function DetailRow({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '11px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-      <span style={{ color: '#8B8FA8', fontSize: '12.5px', flexShrink: 0 }}>{label}</span>
-      <span style={{ color: valueColor || '#F0F0FA', fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+      <span style={{ color: ventsColors.ink2, fontSize: '12.5px', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: valueColor || ventsColors.ink1, fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
     </div>
   );
 }
@@ -146,9 +147,9 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
             display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
           }}
         >
-          <ArrowLeft size={15} color="#C4C9E0" />
+          <ArrowLeft size={15} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: '#F5F5FA', fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           VENTS Wallet
         </h1>
       </div>
@@ -164,16 +165,16 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
             <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wallet size={15} color="#D8B4FE" />
+              <Wallet size={15} color={ventsColors.accentSoft} />
             </div>
-            <span style={{ color: '#C4B5FD', fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
               Spendable Balance
             </span>
           </div>
           <p style={{ color: '#fff', fontSize: '34px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 4px' }}>
             {loading ? '—' : fmtNaira(balanceKobo || 0)}
           </p>
-          <p style={{ color: '#9A9DB5', fontSize: '12px', margin: '0 0 18px' }}>
+          <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '0 0 18px' }}>
             For tickets &amp; Services · not withdrawable
           </p>
           <button
@@ -189,25 +190,25 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
         </div>
 
         {error && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px', color: '#F87171', fontSize: '13px' }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px', color: ventsColors.error, fontSize: '13px' }}>
             {error}
           </div>
         )}
 
         {/* History */}
-        <p style={{ color: '#9CA0BC', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '0 0 10px' }}>
+        <p style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '0 0 10px' }}>
           TRANSACTION HISTORY
         </p>
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0', color: '#6B7089' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '40px 0', color: ventsColors.ink3 }}>
             <Loader size={18} className="animate-spin" />
           </div>
         ) : transactions.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '48px 16px' }}>
             <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Wallet size={22} color="#4A4E63" strokeWidth={1.5} />
+              <Wallet size={22} color={ventsColors.ink3} strokeWidth={1.5} />
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, textAlign: 'center' }}>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, textAlign: 'center' }}>
               No wallet activity yet. Deposit funds to get started.
             </p>
           </div>
@@ -230,15 +231,15 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
                     <Icon size={15} color={color} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FA', fontSize: '13.5px', fontWeight: 600, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <p style={{ color: ventsColors.ink1, fontSize: '13.5px', fontWeight: 600, margin: '0 0 2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {tx.description || (tx.type === 'deposit' ? 'Wallet top-up' : tx.type === 'spend' ? 'Purchase' : 'Refund')}
                     </p>
-                    <p style={{ color: '#5C6079', fontSize: '11px', margin: 0 }}>{fmtDate(tx.createdAt)}</p>
+                    <p style={{ color: ventsColors.ink3, fontSize: '11px', margin: 0 }}>{fmtDate(tx.createdAt)}</p>
                   </div>
                   <span style={{ color, fontSize: '14px', fontWeight: 700, flexShrink: 0 }}>
                     {sign}{fmtNaira(tx.amountKobo)}
                   </span>
-                  <ChevronRight size={15} color="#4A4E63" style={{ flexShrink: 0 }} />
+                  <ChevronRight size={15} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
                 </button>
               );
             })}
@@ -255,11 +256,11 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
           <div
             onClick={(e) => e.stopPropagation()}
             style={{
-              width: '100%', background: '#0A0612', border: '1px solid rgba(255,255,255,0.08)',
+              width: '100%', background: ventsColors.bg, border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '22px 22px 0 0', padding: '22px 20px calc(22px + env(safe-area-inset-bottom))',
             }}
           >
-            <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 16px' }}>
+            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 16px' }}>
               Deposit to Wallet
             </h2>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
@@ -271,7 +272,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
                     padding: '9px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
                     background: depositAmount === String(n) ? 'rgba(168,85,247,0.18)' : 'rgba(255,255,255,0.05)',
                     border: depositAmount === String(n) ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                    color: depositAmount === String(n) ? '#C4B5FD' : '#C4C9E0',
+                    color: depositAmount === String(n) ? ventsColors.accentSoft : ventsColors.ink2,
                   }}
                 >
                   ₦{n.toLocaleString()}
@@ -290,7 +291,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
               }}
             />
             {depositError && (
-              <p style={{ color: '#F87171', fontSize: '12.5px', margin: '0 0 12px' }}>{depositError}</p>
+              <p style={{ color: ventsColors.error, fontSize: '12.5px', margin: '0 0 12px' }}>{depositError}</p>
             )}
             <button
               onClick={handleDeposit}
@@ -379,40 +380,40 @@ function TransactionReceipt({
   const isMoneyIn = tx.type !== 'spend';
   const meta = tx.metadata || {};
 
-  let icon = <Wallet size={22} color={isMoneyIn ? '#10B981' : '#F59E0B'} />;
+  let icon = <Wallet size={22} color={isMoneyIn ? ventsColors.success : ventsColors.pending} />;
   let title = 'Wallet Transaction';
   let statusLabel = 'Completed';
   const rows: Array<{ label: string; value: string; valueColor?: string }> = [];
 
   if (kind === 'deposit') {
-    icon = <ArrowDownLeft size={22} color="#10B981" />;
+    icon = <ArrowDownLeft size={22} color={ventsColors.success} />;
     title = 'Wallet Deposit';
     rows.push({ label: 'Amount deposited', value: fmtNaira(tx.amountKobo) });
     rows.push({ label: 'Payment method', value: 'Paystack' });
     if (typeof meta.paystack_reference === 'string') {
       rows.push({ label: 'Reference', value: maskRef(meta.paystack_reference) });
     }
-    rows.push({ label: 'Status', value: 'Confirmed', valueColor: '#10B981' });
+    rows.push({ label: 'Status', value: 'Confirmed', valueColor: ventsColors.success });
   } else if (kind === 'ticket_purchase' || kind === 'service_purchase') {
-    icon = kind === 'ticket_purchase' ? <Ticket size={22} color="#F59E0B" /> : <Sparkles size={22} color="#F59E0B" />;
+    icon = kind === 'ticket_purchase' ? <Ticket size={22} color={ventsColors.pending} /> : <Sparkles size={22} color={ventsColors.pending} />;
     title = kind === 'ticket_purchase' ? 'Ticket Purchase' : 'Service Booking';
     statusLabel = 'Paid';
     rows.push({ label: 'Description', value: tx.description || (kind === 'ticket_purchase' ? 'Ticket purchase' : 'Service booking') });
-    rows.push({ label: 'Total paid', value: fmtNaira(tx.amountKobo), valueColor: '#F59E0B' });
+    rows.push({ label: 'Total paid', value: fmtNaira(tx.amountKobo), valueColor: ventsColors.pending });
     rows.push({ label: 'Payment method', value: 'VENTS Wallet' });
     if (tx.referenceId) rows.push({ label: 'Reference', value: maskRef(tx.referenceId) });
-    rows.push({ label: 'Status', value: 'Paid', valueColor: '#10B981' });
+    rows.push({ label: 'Status', value: 'Paid', valueColor: ventsColors.success });
   } else if (kind === 'ticket_refund') {
-    icon = <RotateCcw size={22} color="#A855F7" />;
+    icon = <RotateCcw size={22} color={ventsColors.accent} />;
     title = 'Ticket Refund';
-    rows.push({ label: 'Amount refunded', value: fmtNaira(tx.amountKobo), valueColor: '#10B981' });
+    rows.push({ label: 'Amount refunded', value: fmtNaira(tx.amountKobo), valueColor: ventsColors.success });
     if (tx.description) rows.push({ label: 'Details', value: tx.description });
     const feeAbsorbed = Number(meta.platform_fee_absorbed_kobo);
     if (Number.isFinite(feeAbsorbed) && feeAbsorbed > 0) {
       rows.push({ label: 'VENTS fee (included in your refund)', value: fmtNaira(feeAbsorbed) });
     }
     rows.push({ label: 'Refunded to', value: 'VENTS Wallet' });
-    rows.push({ label: 'Status', value: 'Refunded', valueColor: '#A855F7' });
+    rows.push({ label: 'Status', value: 'Refunded', valueColor: ventsColors.accent });
   } else {
     // Genuinely unclassified -- shown honestly with only the raw
     // authoritative fields, never guessed into one of the categories above.
@@ -427,30 +428,30 @@ function TransactionReceipt({
   const showViewBookings = kind === 'service_purchase' && !!onViewServiceBookings;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9200, display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
+    <div style={{ position: 'fixed', inset: 0, background: ventsColors.bg, zIndex: 9200, display: 'flex', flexDirection: 'column', color: ventsColors.ink1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onClose} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+        <button onClick={onClose} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>Transaction Details</span>
       </div>
 
       <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             {icon}
           </div>
-          <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#8B8FA8' }}>{title}</p>
-          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? '#10B981' : '#F59E0B', wordBreak: 'break-all' }}>
+          <p style={{ margin: '0 0 6px', fontSize: '13px', color: ventsColors.ink2 }}>{title}</p>
+          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? ventsColors.success : ventsColors.pending, wordBreak: 'break-all' }}>
             {isMoneyIn ? '+' : '-'}{fmtNaira(tx.amountKobo)}
           </p>
-          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: '#C4C9E0', background: 'rgba(255,255,255,0.06)' }}>
+          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: ventsColors.ink2, background: 'rgba(255,255,255,0.06)' }}>
             {statusLabel}
           </span>
-          <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#8B8FA8' }}>{fmtDate(tx.createdAt)}</p>
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: ventsColors.ink2 }}>{fmtDate(tx.createdAt)}</p>
         </div>
 
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px', marginBottom: showViewTicket || showViewBookings ? '16px' : 0 }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px', marginBottom: showViewTicket || showViewBookings ? '16px' : 0 }}>
           {rows.map((r, i) => (
             <DetailRow key={i} label={r.label} value={r.value} valueColor={r.valueColor} />
           ))}
@@ -471,7 +472,7 @@ function TransactionReceipt({
               <Ticket size={16} /> {resolvingTicket ? 'Opening…' : 'View Ticket'}
             </button>
             {resolveTicketError && (
-              <p style={{ color: '#F87171', fontSize: '12px', margin: '10px 0 0', textAlign: 'center' }}>{resolveTicketError}</p>
+              <p style={{ color: ventsColors.error, fontSize: '12px', margin: '10px 0 0', textAlign: 'center' }}>{resolveTicketError}</p>
             )}
           </>
         )}
@@ -488,7 +489,7 @@ function TransactionReceipt({
           </button>
         )}
 
-        <p style={{ margin: '16px 0 0', fontSize: '11px', color: '#5C6080', textAlign: 'center', lineHeight: 1.6 }}>
+        <p style={{ margin: '16px 0 0', fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', lineHeight: 1.6 }}>
           Card numbers, bank credentials, and other sensitive payment details are never shown here.
         </p>
       </div>

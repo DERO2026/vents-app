@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -553,25 +554,25 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const totalEarned = wallet?.total_earned_kobo ?? 0;
 
   return (
-    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
+    <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+        <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>My Wallet</span>
       </div>
 
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#8B8FA8' }}>Loading…</span>
+          <span style={{ color: ventsColors.ink2 }}>Loading…</span>
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
-              <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
-              <span style={{ color: '#F59E0B', fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
+              <AlertCircle size={16} color={ventsColors.pending} style={{ flexShrink: 0 }} />
+              <span style={{ color: ventsColors.pending, fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
             </div>
           )}
           {/* Balance card */}
@@ -600,8 +601,8 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               disabled={balance === 0 || emailVerified === false}
               title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
             >
-              <ArrowDownCircle size={18} color={balance > 0 && emailVerified !== false ? '#A855F7' : '#555'} />
-              <span style={{ color: balance > 0 && emailVerified !== false ? '#A855F7' : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
+              <ArrowDownCircle size={18} color={balance > 0 && emailVerified !== false ? ventsColors.accent : '#555'} />
+              <span style={{ color: balance > 0 && emailVerified !== false ? ventsColors.accent : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
             </button>
             <button
               onClick={openAddBank}
@@ -609,39 +610,39 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               disabled={emailVerified === false || bankAccounts.length >= 3}
               title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
             >
-              <Plus size={18} color="#8B8FA8" />
-              <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
+              <Plus size={18} color={ventsColors.ink2} />
+              <span style={{ color: ventsColors.ink2, fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
             </button>
           </div>
 
           {/* Payout bank accounts (multiple; one Default) */}
           {bankAccounts.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {bankAccounts.map(acct => (
                   <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}</p>
                           {acct.is_default && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.18)', color: '#C4B5FD', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', flexShrink: 0 }}>
-                              <Star size={9} fill="#C4B5FD" color="#C4B5FD" /> DEFAULT
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.18)', color: ventsColors.accentSoft, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', flexShrink: 0 }}>
+                              <Star size={9} fill={ventsColors.accentSoft} color={ventsColors.accentSoft} /> DEFAULT
                             </span>
                           )}
-                          {acct.recipient_code && <Check size={13} color="#10B981" style={{ flexShrink: 0 }} />}
+                          {acct.recipient_code && <Check size={13} color={ventsColors.success} style={{ flexShrink: 0 }} />}
                         </div>
-                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.account_number} · {acct.account_name}</p>
+                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: ventsColors.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.account_number} · {acct.account_name}</p>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                       {!acct.is_default && (
-                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                           <Star size={13} /> Set default
                         </button>
                       )}
-                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                         <Trash2 size={13} /> Remove
                       </button>
                     </div>
@@ -652,15 +653,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           )}
 
           {/* Transaction history */}
-          <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
+          <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
           {txnsError ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 0' }}>
-              <AlertCircle size={18} color="#EF4444" />
-              <p style={{ color: '#EF4444', fontSize: '13px', textAlign: 'center', margin: 0 }}>{txnsError}</p>
-              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '8px 16px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
+              <AlertCircle size={18} color={ventsColors.error} />
+              <p style={{ color: ventsColors.error, fontSize: '13px', textAlign: 'center', margin: 0 }}>{txnsError}</p>
+              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '8px 16px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
             </div>
           ) : feed.length === 0 ? (
-            <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
           ) : (
             <>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
@@ -679,15 +680,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                           <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.metadata?.event_title || t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.metadata?.event_title || t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
                           {t.type === 'payout' && bank?.bank_name && (
-                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               Paid to {bank.bank_name}{bank.account_number ? ` · ${maskAccountNumber(bank.account_number)}` : ''}
                             </p>
                           )}
-                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
                         </div>
-                        <span style={{ color: isCredit ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                        <span style={{ color: isCredit ? ventsColors.success : ventsColors.error, fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
                           {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
                         </span>
                       </button>
@@ -705,10 +706,10 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                         <span style={{ fontSize: '16px' }}>{isReversed ? '↺' : '⋯'}</span>
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ margin: 0, fontSize: '13px', color: isReversed ? '#8B8FA8' : '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WITHDRAWAL_REQUEST_LABELS[wr.status]}</p>
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        <p style={{ margin: 0, fontSize: '13px', color: isReversed ? ventsColors.ink2 : ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WITHDRAWAL_REQUEST_LABELS[wr.status]}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
                       </div>
-                      <span style={{ color: isReversed ? '#8B8FA8' : '#F59E0B', fontWeight: 700, fontSize: '14px', flexShrink: 0, textDecoration: isReversed ? 'line-through' : 'none' }}>
+                      <span style={{ color: isReversed ? ventsColors.ink2 : ventsColors.pending, fontWeight: 700, fontSize: '14px', flexShrink: 0, textDecoration: isReversed ? 'line-through' : 'none' }}>
                         -{fmt(wr.amount_kobo)}
                       </span>
                     </button>
@@ -719,7 +720,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 <button
                   onClick={loadMoreTxns}
                   disabled={loadingMore}
-                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
                 >
                   {loadingMore ? 'Loading…' : 'Load more'}
                 </button>
@@ -736,9 +737,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Withdraw modal */}
       {showWithdraw && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Withdraw Funds</p>
-            <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
             <input
               type="number"
               placeholder="Amount in ₦ (e.g. 5000)"
@@ -748,18 +749,18 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             />
             {bankAccounts.length > 0 && (
               <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 8px' }}>Pay out to</p>
+                <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: '0 0 8px' }}>Pay out to</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {bankAccounts.map(acct => {
                     const selected = (withdrawAccountId || bankAccounts.find(a => a.is_default)?.id) === acct.id;
                     return (
                       <button key={acct.id} onClick={() => setWithdrawAccountId(acct.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', padding: '11px 13px', cursor: 'pointer' }}>
-                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? '#A855F7' : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#A855F7' }} />}
+                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? ventsColors.accent : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: ventsColors.accent }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
-                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{acct.account_number}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: ventsColors.ink1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{acct.account_number}</p>
                         </div>
                       </button>
                     );
@@ -769,12 +770,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             )}
             {withdrawError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{withdrawError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{withdrawError}</span>
               </div>
             )}
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
               </button>
@@ -786,24 +787,24 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Add/Update bank modal */}
       {showAddBank && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 6px' }}>Add Bank Account</p>
-            <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <ShieldCheck size={13} color="#A855F7" /> You'll confirm with your password before it's saved.
+            <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <ShieldCheck size={13} color={ventsColors.accent} /> You'll confirm with your password before it's saved.
             </p>
 
             {/* Bank picker */}
             <button
               onClick={() => { if (banksError) loadBanks(); else setShowBankPicker(true); }}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : '#8B8FA8', fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : ventsColors.ink2, fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
             >
               <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : banksError ? 'Couldn\'t load banks — tap to retry' : 'Select bank'}</span>
-              <ChevronDown size={16} color="#8B8FA8" />
+              <ChevronDown size={16} color={ventsColors.ink2} />
             </button>
             {banksError && !selectedBank && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', marginTop: '-4px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '12px' }}>{banksError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '12px' }}>{banksError}</span>
               </div>
             )}
 
@@ -815,29 +816,29 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
             />
 
-            {resolving && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
+            {resolving && <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
             {resolveError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{resolveError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{resolveError}</span>
               </div>
             )}
             {resolvedName && !resolving && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '10px' }}>
-                <Check size={16} color="#10B981" />
-                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
+                <Check size={16} color={ventsColors.success} />
+                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
               </div>
             )}
 
             {bankSaveError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{bankSaveError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{bankSaveError}</span>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button
                 onClick={handleSaveBank}
                 disabled={savingBank || !resolvedName || resolving}
@@ -870,12 +871,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Security gate: password / biometric confirmation for bank mutations */}
       {confirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9800, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-              <ShieldCheck size={20} color="#A855F7" />
+              <ShieldCheck size={20} color={ventsColors.accent} />
               <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>Confirm it's you</p>
             </div>
-            <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
 
             <div style={{ position: 'relative', marginBottom: '10px' }}>
               <input
@@ -889,26 +890,26 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 onKeyDown={e => { if (e.key === 'Enter' && !confirmBusy) runConfirm(confirmPassword); }}
                 style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px 44px 14px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
               />
-              <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#8B8FA8', display: 'flex' }}>
+              <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: ventsColors.ink2, display: 'flex' }}>
                 {showConfirmPw ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
 
             {biometricAvailable && (
-              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: '#C4B5FD', fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
+              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
                 <Fingerprint size={17} /> Use Face ID / Touch ID
               </button>
             )}
 
             {confirmError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{confirmError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{confirmError}</span>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
                 {confirmBusy ? 'Confirming…' : 'Confirm'}
               </button>
@@ -924,17 +925,17 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 function ReceiptRow({ label, value, valueColor, muted }: { label: string; value: string; valueColor?: string; muted?: boolean }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-      <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{label}</span>
-      <span style={{ color: valueColor || (muted ? '#8B8FA8' : '#F0F0FF'), fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+      <span style={{ color: ventsColors.ink2, fontSize: '13px', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: valueColor || (muted ? ventsColors.ink2 : ventsColors.ink1), fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
     </div>
   );
 }
 
 const STATUS_COLORS: Record<string, string> = {
-  paid: '#10B981', confirmed: '#10B981', completed: '#10B981',
-  pending: '#F59E0B', processing: '#F59E0B',
-  failed: '#EF4444', rejected: '#EF4444',
-  cancelled: '#8B8FA8', 'cancelled — refunded': '#8B8FA8',
+  paid: ventsColors.success, confirmed: ventsColors.success, completed: ventsColors.success,
+  pending: ventsColors.pending, processing: ventsColors.pending,
+  failed: ventsColors.error, rejected: ventsColors.error,
+  cancelled: ventsColors.ink2, 'cancelled — refunded': ventsColors.ink2,
 };
 
 function fmtDateTime(iso: string) {
@@ -954,7 +955,7 @@ function fmtDateTime(iso: string) {
 function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => void }) {
   const na = (v: string | null | undefined) => (v && v.trim() ? v : 'Not available');
 
-  let icon = <Receipt size={22} color="#A855F7" />;
+  let icon = <Receipt size={22} color={ventsColors.accent} />;
   let title = 'Transaction';
   let isMoneyIn = true;
   let amountLabel = '';
@@ -969,7 +970,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
     amountLabel = fmt(t.amount_kobo);
 
     if (t.type === 'credit') {
-      icon = <Ticket size={22} color="#10B981" />;
+      icon = <Ticket size={22} color={ventsColors.success} />;
       title = 'Ticket Sale';
       statusLabel = 'Paid';
       dateLabel = fmtDateTime(t.created_at);
@@ -982,7 +983,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           value: buyerFee != null ? `${fmt(buyerFee)} (paid by buyer, not deducted)` : 'Not available for this transaction',
           muted: true,
         },
-        { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: '#10B981' },
+        { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
         { label: 'Currency', value: 'NGN (₦)' },
         { label: 'Event', value: na(meta.event_title) },
         { label: 'Ticket type', value: na(meta.ticket_type) },
@@ -996,14 +997,14 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         { label: 'Date & time', value: fmtDateTime(t.created_at) },
       ];
     } else if (t.type === 'payout') {
-      icon = <Landmark size={22} color="#EF4444" />;
+      icon = <Landmark size={22} color={ventsColors.error} />;
       title = 'Withdrawal';
       statusLabel = 'Completed';
       dateLabel = fmtDateTime(t.created_at);
       rows = [
         { label: 'Requested amount', value: fmt(t.amount_kobo) },
         { label: 'Withdrawal fee', value: 'None', muted: true },
-        { label: 'Amount sent', value: fmt(t.amount_kobo), valueColor: '#EF4444' },
+        { label: 'Amount sent', value: fmt(t.amount_kobo), valueColor: ventsColors.error },
         { label: 'Destination bank', value: na(meta.bank_name) },
         { label: 'Account number', value: maskAccountNumber(meta.account_number) },
         { label: 'Account name', value: na(meta.account_name) },
@@ -1011,12 +1012,12 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         { label: 'Completed', value: fmtDateTime(t.created_at) },
       ];
     } else if (t.type === 'cancelled_payout_refund') {
-      icon = <Landmark size={22} color="#10B981" />;
+      icon = <Landmark size={22} color={ventsColors.success} />;
       title = 'Withdrawal Cancelled — Refunded';
       statusLabel = 'Refunded';
       dateLabel = fmtDateTime(t.created_at);
       rows = [
-        { label: 'Refunded amount', value: fmt(t.amount_kobo), valueColor: '#10B981' },
+        { label: 'Refunded amount', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
         { label: 'Reason', value: na(t.description) },
         { label: 'Destination bank', value: na(meta.bank_name) },
         { label: 'Account number', value: maskAccountNumber(meta.account_number) },
@@ -1034,7 +1035,7 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
   } else {
     const wr = item.row;
     const isReversed = wr.status === 'failed' || wr.status === 'rejected';
-    icon = <Landmark size={22} color={isReversed ? '#8B8FA8' : '#F59E0B'} />;
+    icon = <Landmark size={22} color={isReversed ? ventsColors.ink2 : ventsColors.pending} />;
     title = WITHDRAWAL_REQUEST_LABELS[wr.status];
     isMoneyIn = isReversed; // reversed = funds back in the wallet
     amountLabel = fmt(wr.amount_kobo);
@@ -1051,15 +1052,15 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
       { label: 'Status', value: wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: STATUS_COLORS[wr.status] },
       { label: 'Requested', value: fmtDateTime(wr.created_at) },
       ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),
-      ...(isReversed ? [{ label: 'Failure / rejection reason', value: na(wr.admin_note), valueColor: '#EF4444' }] : []),
+      ...(isReversed ? [{ label: 'Failure / rejection reason', value: na(wr.admin_note), valueColor: ventsColors.error }] : []),
     ];
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9200, display: 'flex', flexDirection: 'column', color: '#F0F0FF' }}>
+    <div style={{ position: 'fixed', inset: 0, background: ventsColors.bg, zIndex: 9200, display: 'flex', flexDirection: 'column', color: ventsColors.ink1 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onClose} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+        <button onClick={onClose} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>Transaction Details</span>
       </div>
@@ -1073,28 +1074,28 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
           defines both. */}
       <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
         {/* Receipt header card */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
           <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
             {icon}
           </div>
-          <p style={{ margin: '0 0 6px', fontSize: '13px', color: '#8B8FA8' }}>{title}</p>
-          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? '#10B981' : '#EF4444', wordBreak: 'break-all' }}>
+          <p style={{ margin: '0 0 6px', fontSize: '13px', color: ventsColors.ink2 }}>{title}</p>
+          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? ventsColors.success : ventsColors.error, wordBreak: 'break-all' }}>
             {isMoneyIn ? '+' : '-'}{amountLabel}
           </p>
-          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: STATUS_COLORS[statusLabel.toLowerCase()] || '#C4C9E0', background: 'rgba(255,255,255,0.06)' }}>
+          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: STATUS_COLORS[statusLabel.toLowerCase()] || ventsColors.ink2, background: 'rgba(255,255,255,0.06)' }}>
             {statusLabel}
           </span>
-          <p style={{ margin: '10px 0 0', fontSize: '12px', color: '#8B8FA8' }}>{dateLabel}</p>
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: ventsColors.ink2 }}>{dateLabel}</p>
         </div>
 
         {/* Detail rows */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px' }}>
           {rows.map((r, i) => (
             <ReceiptRow key={i} label={r.label} value={r.value} valueColor={r.valueColor} muted={r.muted} />
           ))}
         </div>
 
-        <p style={{ margin: '16px 0 0', fontSize: '11px', color: '#5C6080', textAlign: 'center', lineHeight: 1.6 }}>
+        <p style={{ margin: '16px 0 0', fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', lineHeight: 1.6 }}>
           Card numbers, bank credentials, and other sensitive payment details are never shown here.
         </p>
       </div>
