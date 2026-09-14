@@ -18,6 +18,7 @@ import { COUNTRY_CODES, DEFAULT_COUNTRY, countryByIso, isPlausibleNationalNumber
 import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -91,20 +92,19 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#FFFFFF',
-  fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  color: ventsColors.white,
+  fontSize: '16px',
+  fontFamily: ventsTypography.fontBody,
 };
 
-// Fields sit on a near-black radial background (#050010 → #020005). The old
-// #090514 fill was within a few percent of it, so inputs visually dissolved
-// into the page. These two constants keep every field — text rows, the date
-// input, the state picker — on one raised surface with a readable edge.
-const FIELD_BG = '#150B26';
-const FIELD_BORDER = 'rgba(255,255,255,0.16)';
-// Fields use a 16px radius; the submit button matches so the form reads as
-// one set of controls rather than a pill dropped under a stack of boxes.
-const FIELD_RADIUS = '16px';
+// Fields sit on the redesign's canvas (#08070C). Per the design artifact's
+// §02 input spec: raised "elevated" surface, glass border, 14px radius --
+// these constants keep every field (text rows, date input, state picker) on
+// one consistent raised surface with a readable edge, matching every other
+// input across the redesigned screens.
+const FIELD_BG = ventsColors.elevated;
+const FIELD_BORDER = ventsColors.glassBorder;
+const FIELD_RADIUS = '14px';
 
 const BTN_PRIMARY: React.CSSProperties = {
   width: '100%',
@@ -112,16 +112,16 @@ const BTN_PRIMARY: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+  background: ventsColors.accent,
   border: 'none',
   borderRadius: FIELD_RADIUS,
   padding: '0 24px',
-  color: '#fff',
+  color: ventsColors.white,
   fontSize: '16px',
   fontWeight: 700,
-  fontFamily: 'Space Grotesk, sans-serif',
+  fontFamily: ventsTypography.fontBody,
   cursor: 'pointer',
-  boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
+  boxShadow: '0 10px 30px -12px rgba(142,92,247,0.9)',
 };
 
 // Profile photo limits. The file is cropped and re-encoded to JPEG before
@@ -1348,7 +1348,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
     const isSuspended = banInfo.status === 'suspended';
     const untilStr = banInfo.until ? new Date(banInfo.until).toLocaleDateString('en-NG', { dateStyle: 'long' }) : null;
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <AlertCircle size={32} color="#EF4444" />
         </div>
@@ -1411,7 +1411,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       }
     };
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
         {/* Themed to the app's purple, not the stock indigo it shipped with. */}
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <ShieldCheck size={32} color="#A78BFA" />
@@ -1466,7 +1466,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
+        background: `radial-gradient(ellipse at 50% 0%, rgba(142,92,247,0.16) 0%, ${ventsColors.elevated} 40%, ${ventsColors.bg} 100%)`,
         position: 'fixed',
         top: 0,
         left: 0,

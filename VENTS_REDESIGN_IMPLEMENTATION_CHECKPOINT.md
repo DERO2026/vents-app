@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 3 UNITS MIGRATED (3 of ~35 units)
+## Status: FOUNDATION + 4 UNITS MIGRATED (4 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -60,6 +60,23 @@ everything else in the priority list below is not started.
   (flag icon) also kept — real functional value the mockup's low-fidelity
   rows simply didn't render, not something to remove. Typecheck clean, no
   direct test coverage (pure presentational), full suite 429/429.
+- [x] **`src/app/components/AuthScreen.tsx`** (2426 lines, Signup/Login/
+  Verification/Forgot-Password all in one file) — read in full first given
+  its size and that it owns real auth logic. Migrated its 4 shared style
+  constants (`INPUT_STYLE`, `FIELD_BG`, `FIELD_BORDER`/`FIELD_RADIUS`,
+  `BTN_PRIMARY`) to `ventsColors`/`ventsTypography` per §02's input/button
+  spec (elevated `#1A1724` fields at 14px radius, solid-accent button with
+  the new glow), plus the 3 page-canvas background declarations (main
+  radial gradient + 2 fallback-state screens) to the new bg/elevated
+  tokens. Because this file already centralizes its styling into these few
+  constants (its own existing architecture, not something I introduced),
+  updating them alone consistently restyles every field, label, and button
+  across all ~2400 lines and every mode (signup, login, OTP, forgot-
+  password, profile-photo step) without touching a single line of the
+  validation/RPC/rate-limit/session logic living alongside them in the
+  same file. Typecheck clean, full suite 429/429 including
+  `loginReliability.test.ts` (20/20) run individually to confirm no
+  auth-logic regression from a styling-only change.
 
 ## Explicitly NOT done (the actual redesign work)
 
@@ -101,12 +118,11 @@ maturity — not a batch replace.
    done; still pending: chips, status badges (`ventsStatusColors` exists in
    the tokens file but is not wired into any component yet), PickerSheet,
    card primitive.**
-2. Landing / onboarding / auth — **WelcomeScreen done. NEXT UP:
-   `AuthScreen.tsx` (2426 lines — large, read it fully before editing;
-   covers Signup/Login/Verification in one file) and
-   `CountrySelectScreen.tsx` (221 lines, smaller, could go first as a
-   warm-up).**
-3. Home / Search / Filters — not started (`HomeScreen.tsx`, `ExploreScreen.tsx`)
+2. Landing / onboarding / auth — **DONE: WelcomeScreen, CountrySelectScreen,
+   AuthScreen (shared style constants). NEXT: item 3 below.**
+3. Home / Search / Filters — **NEXT UP.** `HomeScreen.tsx` (large — check
+   size/shared-constant structure before deciding whole-file vs
+   constants-only approach, same triage as AuthScreen), `ExploreScreen.tsx`
 4. Event Details — not started
 5. Ticket selection / Checkout / Payment / Success / Failure — not started
    (financial — extra care, re-run `walletPayments.security.test.ts` etc.
