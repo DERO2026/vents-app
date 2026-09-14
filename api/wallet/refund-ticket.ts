@@ -1,15 +1,21 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { applyCors } from '../_lib/cors.js';
 
-// Organizer/admin-triggered ticket refund. refund_ticket (SECURITY DEFINER)
-// does all the authorization, locking, and state transition inside
-// Postgres; this endpoint's only job is the part a Postgres function can't
-// do itself -- calling out to Paystack's refund API with the secret key --
-// then recording the resulting refund id so the refund.processed /
-// refund.failed webhook (api/webhook/paystack.ts) can find this ticket
-// again and finalize it. Mirrors admin-approve-payout.ts's shape exactly:
-// RPC (authorize + lock + return what's needed) -> Paystack call -> RPC
-// (record the provider's reference) -> webhook finalizes later.
+// Organizer/admin-triggered ticket refund, and provider/admin-triggered
+// service-booking refund -- refund_ticket / cancel_service_booking
+// (both SECURITY DEFINER) do all the authorization, locking, and state
+// transition inside Postgres; this endpoint's only job is the part a
+// Postgres function can't do itself -- calling out to Paystack's refund
+// API with the secret key -- then recording the resulting refund id so the
+// refund.processed/refund.failed webhook (api/webhook/paystack.ts) can
+// find the ticket/booking again and finalize it. Mirrors
+// admin-approve-payout.ts's shape exactly: RPC (authorize + lock + return
+// what's needed) -> Paystack call -> RPC (record the provider's reference)
+// -> webhook finalizes later.
+//
+// Handles both ticket_id and booking_id in one file (not two) because
+// Vercel's Hobby plan caps this project at 12 serverless functions -- see
+// api/webhook/paystack.ts's ?action= dispatch for the same constraint.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
@@ -19,13 +25,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
-  const { ticket_id, reason } = req.body || {};
-  if (!ticket_id || typeof ticket_id !== 'string') {
+  const { ticket_id, booking_id, reason } = req.body || {};
+  if (ticket_id && booking_id) {
+    return res.status(400).json({ error: 'Pass either ticket_id or booking_id, not both' });
+  }
+  if (!ticket_id && !booking_id) {
+    return res.status(400).json({ error: 'ticket_id or booking_id is required' });
+  }
+  if (ticket_id && typeof ticket_id !== 'string') {
     return res.status(400).json({ error: 'ticket_id is required' });
+  }
+  if (booking_id && typeof booking_id !== 'string') {
+    return res.status(400).json({ error: 'booking_id is required' });
   }
   if (!reason || typeof reason !== 'string' || !reason.trim()) {
     return res.status(400).json({ error: 'A refund reason is required' });
   }
+
+  const isBooking = !!booking_id;
+  const entityId = isBooking ? booking_id : ticket_id;
+  const rpcNames = isBooking
+    ? {
+        start: 'cancel_service_booking',
+        attach: 'attach_service_booking_refund_id',
+        revert: 'admin_revert_stuck_service_refund',
+      }
+    : {
+        start: 'refund_ticket',
+        attach: 'attach_ticket_refund_id',
+        revert: 'admin_revert_stuck_refund',
+      };
+  const idParam = isBooking ? 'p_booking_id' : 'p_ticket_id';
 
   const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
   const baseUrl = process.env.VITE_SUPABASE_URL;
@@ -41,13 +71,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   try {
-    // is_admin()/organizer-of-event authorization, the paid-only guard, and
-    // the flip to 'refund_pending' (or straight to 'refunded' for free
-    // tickets with nothing to move) all happen atomically inside this RPC.
-    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/refund_ticket`, {
+    // is_admin()/organizer-of-event (or provider-of-booking) authorization,
+    // the paid-only guard, and the flip to 'refund_pending' (or straight to
+    // 'refunded' for a free ticket/zero-amount booking with nothing to
+    // move) all happen atomically inside this RPC.
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.start}`, {
       method: 'POST',
       headers: supabaseHeaders,
-      body: JSON.stringify({ p_ticket_id: ticket_id, p_reason: reason.trim() }),
+      body: JSON.stringify({ [idParam]: entityId, p_reason: reason.trim() }),
     });
     if (!rpcRes.ok) {
       const errJson = await rpcRes.json().catch(() => null);
@@ -63,7 +94,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     if (state?.status !== 'refund_pending' || !state?.payment_ref || !state?.amount_kobo) {
-      return res.status(502).json({ error: 'Unexpected refund_ticket response' });
+      return res.status(502).json({ error: `Unexpected ${rpcNames.start} response` });
     }
 
     // amount_kobo is already in kobo -- do NOT multiply by 100 again, that
@@ -88,21 +119,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // insufficient balance, already fully refunded on their side, etc) --
       // release the ticket back to 'paid' rather than leaving it stuck
       // showing cancelled with no refund actually in flight.
-      await fetch(`${baseUrl}/rest/v1/rpc/admin_revert_stuck_refund`, {
+      await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.revert}`, {
         method: 'POST',
         headers: supabaseHeaders,
         body: JSON.stringify({
-          p_ticket_id: ticket_id,
+          [idParam]: entityId,
           p_reason: 'Paystack refund creation failed: ' + (refundJson?.message || `HTTP ${refundRes.status}`),
         }),
       }).catch(() => {});
       return res.status(502).json({ error: refundJson?.message || 'Paystack refund initiation failed' });
     }
 
-    await fetch(`${baseUrl}/rest/v1/rpc/attach_ticket_refund_id`, {
+    await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.attach}`, {
       method: 'POST',
       headers: supabaseHeaders,
-      body: JSON.stringify({ p_ticket_id: ticket_id, p_refund_id: refundId }),
+      body: JSON.stringify({ [idParam]: entityId, p_refund_id: refundId }),
     });
 
     // Paystack has accepted the refund for processing -- refund.processed /

@@ -576,6 +576,14 @@ async function handleWebhook(req, res) {
           const tRows = await callProjectAdminTableRpc<any>('finalize_transfer_fee_refund', [refundId]);
           const tRow = tRows[0];
           console.log('[Paystack webhook] refund.processed -> finalize_transfer_fee_refund result:', tRow?.status, 'for', refundId);
+
+          if (tRow?.status === 'not_found') {
+            // Still not found -- try the service-booking refund flow
+            // (0077_service_booking_refunds.sql) as the last link in the chain.
+            const sRows = await callProjectAdminTableRpc<any>('finalize_service_booking_refund', [refundId]);
+            const sRow = sRows[0];
+            console.log('[Paystack webhook] refund.processed -> finalize_service_booking_refund result:', sRow?.status, 'for', refundId);
+          }
         }
       } else {
         const rows = await callProjectAdminTableRpc<any>('fail_ticket_refund', [refundId, event.data?.message || event.event]);
@@ -585,6 +593,12 @@ async function handleWebhook(req, res) {
         if (row?.status === 'not_found') {
           const tStatus = await callProjectAdminRpc<string>('fail_transfer_fee_refund', [refundId, event.data?.message || event.event]);
           console.log('[Paystack webhook] refund.failed -> fail_transfer_fee_refund result:', tStatus, 'for', refundId);
+
+          if (tStatus === 'not_found') {
+            const sRows = await callProjectAdminTableRpc<any>('fail_service_booking_refund', [refundId, event.data?.message || event.event]);
+            const sRow = sRows[0];
+            console.log('[Paystack webhook] refund.failed -> fail_service_booking_refund result:', sRow?.status, 'for', refundId);
+          }
         }
       }
     } catch (err: any) {

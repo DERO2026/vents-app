@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
 import { fetchMyServiceBookings, fetchProviderServiceBookings, ServiceBookingRow } from '../../lib/serviceBookings';
+import { getAuthToken } from '../../lib/supabase';
+import { apiUrl } from '../../lib/apiBase';
 
 // Booking history/receipt screen for the Services marketplace
 // (0054_service_bookings_marketplace.sql). Two real, RLS-scoped data
@@ -42,6 +44,10 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
   const [bookings, setBookings] = useState<ServiceBookingRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [cancelTarget, setCancelTarget] = useState<ServiceBookingRow | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
@@ -58,6 +64,49 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
   const handleRefresh = async () => {
     setRefreshing(true);
     try { load(); } finally { setTimeout(() => setRefreshing(false), 400); }
+  };
+
+  const openCancelDialog = (booking: ServiceBookingRow) => {
+    setCancelTarget(booking);
+    setCancelReason('');
+    setCancelError(null);
+  };
+
+  // Provider/admin-triggered service-booking refund. cancel_service_booking
+  // (SECURITY DEFINER) does all authorization, locking, and amount
+  // derivation server-side -- this only calls the shared refund endpoint
+  // (api/wallet/refund-ticket.ts, which also handles booking_id) and
+  // reflects the result. Mirrors AttendeeListScreen's ticket-refund dialog.
+  const confirmCancel = async () => {
+    const booking = cancelTarget;
+    if (!booking) return;
+    if (!cancelReason.trim()) { setCancelError('A reason is required — this is shown to the customer.'); return; }
+
+    setCancellingId(booking.id);
+    setCancelError(null);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(apiUrl('/api/wallet/refund-ticket'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ booking_id: booking.id, reason: cancelReason.trim() }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Refund failed');
+
+      setBookings((prev) =>
+        (prev || []).map((b) =>
+          b.id === booking.id
+            ? { ...b, status: 'cancelled', paymentStatus: json.status === 'refunded' ? 'refunded' : 'refund_pending' }
+            : b
+        )
+      );
+      setCancelTarget(null);
+    } catch (err: any) {
+      setCancelError(err.message || 'Refund failed');
+    } finally {
+      setCancellingId(null);
+    }
   };
 
   return (
@@ -157,12 +206,56 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                       </span>
                     </div>
                   </div>
+
+                  {mode === 'provider' && b.paymentStatus === 'paid' && (
+                    <button
+                      onClick={() => openCancelDialog(b)}
+                      style={{ marginTop: '10px', width: '100%', background: 'rgba(239,68,68,0.10)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.error, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                    >
+                      Cancel & Refund
+                    </button>
+                  )}
                 </div>
               );
             })}
           </div>
         )}
       </div>
+
+      {cancelTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,0,5,0.75)', display: 'flex', alignItems: 'flex-end', zIndex: 9300 }}>
+          <div style={{ background: servicesColors.bg, width: '100%', borderRadius: '20px 20px 0 0', padding: '20px', border: `1px solid ${servicesColors.border}` }}>
+            <p style={{ color: servicesColors.textPrimary, fontSize: '16px', fontWeight: 800, margin: '0 0 6px' }}>Cancel this booking?</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '12.5px', margin: '0 0 12px' }}>
+              The customer gets their full payment back, including the VENTS fee. Your earnings for this booking will be reversed.
+            </p>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Reason (shown to the customer)"
+              rows={3}
+              style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md, padding: '10px', color: servicesColors.textPrimary, fontSize: '13px', resize: 'none', marginBottom: '10px' }}
+            />
+            {cancelError && <p style={{ color: servicesColors.error, fontSize: '12px', margin: '0 0 10px' }}>{cancelError}</p>}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setCancelTarget(null)}
+                disabled={cancellingId === cancelTarget.id}
+                style={{ flex: 1, background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md, padding: '11px', color: servicesColors.textPrimary, fontSize: '13.5px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Keep booking
+              </button>
+              <button
+                onClick={confirmCancel}
+                disabled={cancellingId === cancelTarget.id}
+                style={{ flex: 1, background: servicesColors.error, border: 'none', borderRadius: servicesRadii.md, padding: '11px', color: '#fff', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', opacity: cancellingId === cancelTarget.id ? 0.6 : 1 }}
+              >
+                {cancellingId === cancelTarget.id ? 'Refunding…' : 'Cancel & Refund'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
