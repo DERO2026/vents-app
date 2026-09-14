@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 8 UNITS MIGRATED (8 of ~35 units)
+## Status: FOUNDATION + 9 UNITS MIGRATED (9 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -121,6 +121,12 @@ everything else in the priority list below is not started.
   security test files explicitly (9/9 pass, not just relying on the
   aggregate run), then full typecheck + full suite (429/429). No logic
   touched — same color-only-not-layout caveat as items 3/4 applies.
+- [x] **`src/app/components/PaymentRequestScreen.tsx`** (301 lines) and
+  **`PaymentRequestsScreen.tsx`** (149 lines, Someone Else Pays) — checked
+  `someoneElsePaysNotifications.test.ts` (reads SQL migrations, not this
+  file) and `paymentRequestShareLink.test.ts` (reads `App.tsx`, not this
+  file) — neither could be affected by a color-only edit here. Scripted
+  substitution (29 + 22 replacements). Typecheck clean, full suite 429/429.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -172,7 +178,7 @@ maturity — not a batch replace.
    Checkout + PaymentSuccess color tokens done + verified (see above).
    Ticket-selection UI (inside CheckoutScreen or a separate step?) and
    Failure state not yet confirmed/located — NEXT UP.**
-6. Someone Else Pays — not started
+6. Someone Else Pays — color tokens done (see above)
 7. My Tickets / Ticket Detail / QR / Transfers — not started
 8. Wallet / Deposit / Transaction Detail — not started (financial)
 9. Services discovery / Provider Profile / Service Detail — not started

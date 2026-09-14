@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Lock, AlertCircle, Clock, XCircle, CheckCircle2 } from 'lucide-react';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
@@ -177,25 +178,25 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
   };
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
+    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
-          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Payment Request</h1>
+        <h1 style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Payment Request</h1>
       </div>
 
       <div style={{ flex: 1, padding: '4px 16px 140px' }}>
-        {loading && <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '40px' }}>Loading request…</p>}
+        {loading && <p style={{ color: ventsColors.ink2, fontSize: '14px', textAlign: 'center', marginTop: '40px' }}>Loading request…</p>}
 
         {!loading && !currentUser && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginTop: '40px', textAlign: 'center' }}>
-            <Lock size={28} color="#A78BFA" />
-            <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700 }}>Log in to view this request</p>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', maxWidth: '260px' }}>
+            <Lock size={28} color={ventsColors.accentSoft} />
+            <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700 }}>Log in to view this request</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', maxWidth: '260px' }}>
               This payment request is tied to a VENTS account. Log in with the account it was sent to, then reopen this link.
             </p>
           </div>
@@ -203,63 +204,63 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
         {!loading && currentUser && loadError && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', marginTop: '40px' }}>
-            <AlertCircle size={28} color="#EF4444" />
-            <p style={{ color: '#EF4444', fontSize: '14px', textAlign: 'center' }}>{loadError}</p>
+            <AlertCircle size={28} color={ventsColors.error} />
+            <p style={{ color: ventsColors.error, fontSize: '14px', textAlign: 'center' }}>{loadError}</p>
           </div>
         )}
 
         {!loading && details && (
           <>
-            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '14px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '14px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {details.event_image_url && (
                 <img src={details.event_image_url} alt="" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
               )}
               <div style={{ flex: 1, minWidth: 0 }}>
-                <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{details.event_title}</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{details.ticket_type} × {details.attendee_count}</p>
+                <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{details.event_title}</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{details.ticket_type} × {details.attendee_count}</p>
               </div>
-              <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600 }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
+              <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
             </div>
 
-            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-              <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6 }}>
-                <strong style={{ color: '#FFFFFF' }}>{details.recipient_name}</strong> asked you to pay for this ticket. They'll receive the ticket and QR code once you complete payment — you'll get a receipt, not the ticket.
+            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.6 }}>
+                <strong style={{ color: ventsColors.white }}>{details.recipient_name}</strong> asked you to pay for this ticket. They'll receive the ticket and QR code once you complete payment — you'll get a receipt, not the ticket.
               </p>
             </div>
 
             {(paid || details.status === 'completed') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '12px', padding: '14px' }}>
-                <CheckCircle2 size={18} color="#10B981" />
-                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>Paid — {details.recipient_name} has received their ticket.</span>
+                <CheckCircle2 size={18} color={ventsColors.success} />
+                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>Paid — {details.recipient_name} has received their ticket.</span>
               </div>
             )}
             {!paid && details.status === 'cancelled' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '14px' }}>
-                <XCircle size={18} color="#8B8FA8" />
-                <span style={{ color: '#8B8FA8', fontSize: '14px' }}>This request was cancelled by {details.recipient_name}.</span>
+                <XCircle size={18} color={ventsColors.ink2} />
+                <span style={{ color: ventsColors.ink2, fontSize: '14px' }}>This request was cancelled by {details.recipient_name}.</span>
               </div>
             )}
             {!paid && (details.status === 'expired' || (details.status === 'pending' && details.is_expired)) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '14px' }}>
-                <Clock size={18} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '14px' }}>This payment request has expired.</span>
+                <Clock size={18} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '14px' }}>This payment request has expired.</span>
               </div>
             )}
 
             {payError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{payError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{payError}</span>
               </div>
             )}
             {cancelError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{cancelError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{cancelError}</span>
               </div>
             )}
             {notRecipient && (
-              <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '10px', textAlign: 'center' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '12px', marginTop: '10px', textAlign: 'center' }}>
                 Only the person who sent this request can cancel it.
               </p>
             )}
@@ -287,7 +288,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
               disabled={cancelling}
               style={{
                 width: '100%', height: '40px', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: '100px', color: '#8B8FA8', fontSize: '13px', fontWeight: 600,
+                borderRadius: '100px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600,
                 cursor: cancelling ? 'not-allowed' : 'pointer', opacity: cancelling ? 0.6 : 1,
               }}
             >
