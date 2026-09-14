@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + FIRST 2 UNITS MIGRATED (2 of ~35 units)
+## Status: FOUNDATION + 3 UNITS MIGRATED (3 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -42,6 +42,24 @@ everything else in the priority list below is not started.
   network request) for zero benefit, so this was a considered decision, not
   a skipped step. Typecheck clean, no test references this screen directly,
   full suite still 429/429.
+- [x] **`src/app/components/CountrySelectScreen.tsx`** (A2, onboarding step)
+  migrated against the artifact's actual A2 mockup (line ~444 of the .dc.html),
+  not just colors: 44×44 glass back button (up from 36×36 solid), 30px/800
+  title (up from 26px), elevated (`#1A1724`) 50px-tall search bar (up from a
+  flat `#131629` bar), 64px/16px-radius list rows with the accent-tinted
+  selected state and a checkmark shown only when selected (matches the
+  mockup exactly — unselected rows have no radio circle at all, a real
+  layout simplification, not just a recolor), solid-accent CTA button.
+  Two things deliberately NOT copied from the mockup: (1) a "Step 1 of 3"
+  label — no verified source for the exact step count in this flow, adding
+  it would be fabricating flow state; (2) the mockup's subtitle copy
+  ("sets your currency and what shows up first on Home") — this screen's
+  own code comment says explicitly it does neither (no currency/event
+  filtering exists anywhere in the RLS layer), so the mockup's copy is
+  inaccurate and the original, correct copy was kept. `CountryMark`
+  (flag icon) also kept — real functional value the mockup's low-fidelity
+  rows simply didn't render, not something to remove. Typecheck clean, no
+  direct test coverage (pure presentational), full suite 429/429.
 
 ## Explicitly NOT done (the actual redesign work)
 

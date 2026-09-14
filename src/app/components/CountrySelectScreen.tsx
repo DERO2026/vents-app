@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArrowLeft, Search, Check, ChevronRight } from 'lucide-react';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
+import { ventsColors, ventsTypography, ventsRadii } from '../../lib/ventsDesignTokens';
 
 // The account/home-country step in the signup flow (Choose Country ->
 // Create Account -> Email Verification -> Account Created -> Home). This is
@@ -37,7 +38,7 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -48,56 +49,57 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
       {/* Header */}
       <div
         style={{
-          padding: 'calc(28px + env(safe-area-inset-top)) 24px 16px',
-          background: 'linear-gradient(180deg, #0D0520 0%, #020005 100%)',
+          padding: 'calc(20px + env(safe-area-inset-top)) 20px 16px',
           flexShrink: 0,
         }}
       >
         <button
           onClick={onBack}
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.07)',
+            background: ventsColors.glassBg,
+            border: `1px solid ${ventsColors.glassBorder}`,
             borderRadius: '50%',
-            width: '36px',
-            height: '36px',
+            width: '44px',
+            height: '44px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             cursor: 'pointer',
-            marginBottom: '16px',
+            marginBottom: '26px',
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={18} color={ventsColors.white} />
         </button>
         <h1
           style={{
-            color: '#F0F0FF',
-            fontSize: '26px',
+            margin: 0,
+            color: ventsColors.white,
+            fontSize: '30px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
-            lineHeight: 1.2,
-            marginBottom: '6px',
+            fontFamily: ventsTypography.fontBody,
+            lineHeight: 1.12,
+            letterSpacing: '-0.03em',
+            marginBottom: '8px',
           }}
         >
           Where's home{' '}
-          <span style={{ color: '#A855F7' }}>for you?</span>
+          <span style={{ color: ventsColors.accentSoft }}>for you?</span>
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.5 }}>
+        <p style={{ margin: 0, color: ventsColors.ink2, fontSize: '15px', lineHeight: 1.55, maxWidth: '300px' }}>
           This sets your account's home country — you'll still see and book events everywhere on VENTS.
         </p>
       </div>
 
       {/* Search */}
       <div style={{ padding: '4px 20px 8px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '11px 14px' }}>
-          <Search size={16} color="#8B8FA8" style={{ flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', height: '50px', background: ventsColors.elevated, border: `1px solid ${ventsColors.glassBorder}`, borderRadius: `${ventsRadii.md}px`, padding: '0 16px' }}>
+          <Search size={16} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
           <input
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search country or code..."
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            placeholder="Search countries"
+            style={{ flex: 1, minWidth: 0, height: '100%', background: 'none', border: 'none', outline: 'none', color: ventsColors.white, fontSize: '16px', fontFamily: ventsTypography.fontBody }}
           />
         </div>
       </div>
@@ -107,16 +109,16 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: '8px 16px 100px',
+          padding: '10px 20px 100px',
           scrollbarWidth: 'none',
         }}
       >
         {filtered.length === 0 ? (
-          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 20px' }}>
+          <p style={{ color: ventsColors.ink3, fontSize: '14px', textAlign: 'center', padding: '24px 20px' }}>
             No countries match "{search}".
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {filtered.map((country) => {
               const isSelected = selected === country.iso;
               return (
@@ -124,10 +126,12 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
                   key={country.iso}
                   onClick={() => setSelected(country.iso)}
                   style={{
-                    background: isSelected ? 'rgba(168,85,247,0.12)' : '#131629',
-                    border: isSelected ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
-                    borderRadius: '16px',
-                    padding: '14px 16px',
+                    height: '64px',
+                    boxSizing: 'border-box',
+                    background: isSelected ? 'rgba(142,92,247,0.14)' : ventsColors.surface,
+                    border: isSelected ? `1px solid rgba(142,92,247,0.55)` : `1px solid ${ventsColors.border}`,
+                    borderRadius: `${ventsRadii.lg}px`,
+                    padding: '0 18px',
                     display: 'flex',
                     alignItems: 'center',
                     gap: '14px',
@@ -137,10 +141,10 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
                 >
                   <div
                     style={{
-                      width: '40px',
-                      height: '40px',
-                      borderRadius: '12px',
-                      background: isSelected ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)',
+                      width: '36px',
+                      height: '36px',
+                      borderRadius: `${ventsRadii.sm}px`,
+                      background: isSelected ? 'rgba(142,92,247,0.2)' : 'rgba(255,255,255,0.05)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -149,27 +153,28 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
                   >
                     <CountryMark country={country} size={20} />
                   </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                    <span style={{ color: isSelected ? ventsColors.white : ventsColors.ink1, fontSize: '16px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {country.name}
-                    </p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{country.code}</p>
+                    </span>
+                    <span style={{ color: isSelected ? ventsColors.ink2 : ventsColors.ink3, fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.1em' }}>{country.code}</span>
                   </div>
-                  <div
-                    style={{
-                      width: '22px',
-                      height: '22px',
-                      borderRadius: '50%',
-                      background: isSelected ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'transparent',
-                      border: isSelected ? 'none' : '2px solid rgba(255,255,255,0.15)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0,
-                    }}
-                  >
-                    {isSelected && <Check size={12} color="#fff" strokeWidth={3} />}
-                  </div>
+                  {isSelected && (
+                    <div
+                      style={{
+                        width: '22px',
+                        height: '22px',
+                        borderRadius: '50%',
+                        background: ventsColors.accent,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      <Check size={12} color={ventsColors.white} strokeWidth={3} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -185,7 +190,7 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
           left: 0,
           right: 0,
           padding: '14px 20px 32px',
-          background: 'linear-gradient(to top, #020005 60%, transparent)',
+          background: `linear-gradient(to top, ${ventsColors.bg} 60%, transparent)`,
         }}
       >
         <button
@@ -193,18 +198,17 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
           disabled={!selectedCountry}
           style={{
             width: '100%',
-            background: selectedCountry
-              ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)'
-              : 'rgba(123,47,190,0.25)',
+            height: '56px',
+            background: selectedCountry ? ventsColors.accent : 'rgba(255,255,255,0.05)',
             border: 'none',
-            borderRadius: '16px',
-            padding: '16px',
-            color: selectedCountry ? '#fff' : 'rgba(255,255,255,0.35)',
+            borderRadius: `${ventsRadii.lg}px`,
+            padding: '0 16px',
+            color: selectedCountry ? ventsColors.white : ventsColors.ink3,
             fontSize: '17px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: ventsTypography.fontBody,
             cursor: selectedCountry ? 'pointer' : 'not-allowed',
-            boxShadow: selectedCountry ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
+            boxShadow: selectedCountry ? '0 14px 40px -14px rgba(142,92,247,1)' : 'none',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
