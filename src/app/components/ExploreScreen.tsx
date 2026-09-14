@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
@@ -28,7 +29,7 @@ interface ExploreScreenProps {
 export function mapDbUserToUserProfile(dbUser: any): UserProfile {
   const name = dbUser.full_name || (dbUser.email ? dbUser.email.split('@')[0] : null) || dbUser.username || 'Vents User';
   const initials = name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2) || 'U';
-  const colors = ['#EC4899', '#3B82F6', '#10B981', '#F59E0B', '#8B5CF6', '#EF4444'];
+  const colors = ['#EC4899', ventsColors.info, ventsColors.success, ventsColors.pending, ventsColors.accent, ventsColors.error];
   const charSum = (dbUser.username || dbUser.id || '').split('').reduce((sum: number, char: string) => sum + char.charCodeAt(0), 0);
   const avatarColor = colors[charSum % colors.length];
 
@@ -240,8 +241,8 @@ export function ExploreScreen({
   // approved provider shows Organizer first (their account role takes
   // precedence over the secondary capability).
   const roleBadge = (role?: string, isServiceProvider?: boolean): { label: string; color: string; bg: string } | null => {
-    if (role === 'organizer' || role === 'organiser') return { label: 'Organizer', color: '#D8B4FE', bg: 'rgba(168,85,247,0.16)' };
-    if (role === 'admin' || role === 'sub-admin') return { label: 'Admin', color: '#FCA5A5', bg: 'rgba(239,68,68,0.14)' };
+    if (role === 'organizer' || role === 'organiser') return { label: 'Organizer', color: ventsColors.accentSoft, bg: 'rgba(168,85,247,0.16)' };
+    if (role === 'admin' || role === 'sub-admin') return { label: 'Admin', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)' };
     if (isServiceProvider) return { label: 'Service Provider', color: '#67E8F9', bg: 'rgba(34,211,238,0.14)' };
     return null;
   };
@@ -306,26 +307,26 @@ export function ExploreScreen({
       )}
       {/* ── Header ── */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0 }}>
-        <h1 style={{ color: '#FFFFFF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.white, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           Chats
         </h1>
-        <p style={{ color: '#9CA0BC', fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
+        <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
       </div>
 
       {/* ── Search bar ── */}
       <div style={{ padding: '0 16px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '100px', height: '48px', padding: '0 14px', boxSizing: 'border-box' }}>
-          <Search size={16} color="#9CA0BC" />
+          <Search size={16} color={ventsColors.ink3} />
           <input
             ref={searchRef}
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search people and messages..."
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.white, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
           />
           {query && (
             <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-              <X size={15} color="#9CA0BC" />
+              <X size={15} color={ventsColors.ink3} />
             </button>
           )}
         </div>
@@ -356,9 +357,9 @@ export function ExploreScreen({
                   borderRadius: '999px', padding: '8px 14px', cursor: 'pointer',
                 }}
               >
-                <span style={{ color: active ? '#fff' : '#E4E4F0', fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
+                <span style={{ color: active ? '#fff' : ventsColors.ink1, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{f.label}</span>
                 {!!f.count && (
-                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : '#A855F7', color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
+                  <span style={{ background: active ? 'rgba(255,255,255,0.25)' : ventsColors.accent, color: '#fff', fontSize: '10px', fontWeight: 800, borderRadius: '10px', padding: '1px 6px', minWidth: '16px', textAlign: 'center' }}>{f.count}</span>
                 )}
               </button>
             );
@@ -370,17 +371,17 @@ export function ExploreScreen({
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
         {!currentUserId ? (
-          <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to see your messages.</p>
+          <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '80px', fontSize: '14px' }}>Sign in to see your messages.</p>
         ) : (
           <>
             {/* ── People results (while searching) ── */}
             {isSearching && (
               <div style={{ padding: '0 16px 8px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
                 {loadingUsers ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Searching…</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>Searching…</p>
                 ) : searchedUsers.length === 0 ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px' }}>No people found</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>No people found</p>
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {searchedUsers.map(u => {
@@ -398,14 +399,14 @@ export function ExploreScreen({
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px', minWidth: 0, flexWrap: 'wrap' }}>
-                            <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
-                            {u.isVerified && <CheckCircle size={12} fill="#4F46E5" color="#fff" style={{ flexShrink: 0 }} />}
+                            <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{u.name}</span>
+                            {u.isVerified && <CheckCircle size={12} fill={ventsColors.accent} color="#fff" style={{ flexShrink: 0 }} />}
                             <span style={{ flexShrink: 0 }}><BadgeChip tier={u.vc_badge} /></span>
                             {badge && (
                               <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
                             )}
                           </div>
-                          <span style={{ color: '#9CA0BC', fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{u.username}</span>
+                          <span style={{ color: ventsColors.ink3, fontSize: '12px', display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>@{u.username}</span>
                         </div>
                       </div>
                       );
@@ -413,7 +414,7 @@ export function ExploreScreen({
                   </div>
                 )}
                 {filteredConvos.length > 0 && (
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>MESSAGES</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>MESSAGES</p>
                 )}
               </div>
             )}
@@ -426,11 +427,11 @@ export function ExploreScreen({
                   style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(168,85,247,0.1)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(196,181,253,0.25)', borderRadius: '14px', padding: '12px 14px', cursor: 'pointer' }}
                 >
                   <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(167,139,250,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <MessageCircle size={15} color="#A78BFA" />
+                    <MessageCircle size={15} color={ventsColors.accentSoft} />
                   </div>
-                  <span style={{ flex: 1, textAlign: 'left', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>Message Requests</span>
-                  <span style={{ background: '#A78BFA', color: '#fff', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
-                  <ChevronRight size={16} color="#8B8FA8" />
+                  <span style={{ flex: 1, textAlign: 'left', color: ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>Message Requests</span>
+                  <span style={{ background: ventsColors.accentSoft, color: '#fff', fontSize: '11px', fontWeight: 800, borderRadius: '10px', padding: '1px 7px' }}>{requests.length}</span>
+                  <ChevronRight size={16} color={ventsColors.ink2} />
                 </button>
               </div>
             )}
@@ -438,7 +439,7 @@ export function ExploreScreen({
             {/* ── Conversations ── */}
             <div style={{ padding: '0 16px' }}>
               {!isSearching && (
-                <p style={{ color: '#9CA0BC', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>RECENT</p>
+                <p style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>RECENT</p>
               )}
               {loadingChats && conversations.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -449,12 +450,12 @@ export function ExploreScreen({
               ) : filteredConvos.length === 0 ? (
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 32px', gap: '12px', textAlign: 'center' }}>
                   <div style={{ width: '64px', height: '64px', borderRadius: '20px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <MessageCircle size={28} color="#C4C9E0" />
+                    <MessageCircle size={28} color={ventsColors.ink2} />
                   </div>
-                  <p style={{ color: '#E4E4F0', fontSize: '14px', fontWeight: 700, margin: 0 }}>
+                  <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0 }}>
                     {isSearching ? 'No matching messages' : 'No conversations yet'}
                   </p>
-                  <p style={{ color: '#9CA0BC', fontSize: '14px', margin: 0 }}>
+                  <p style={{ color: ventsColors.ink3, fontSize: '14px', margin: 0 }}>
                     {isSearching ? 'Try a different search term' : 'Message an organizer or attendee to start'}
                   </p>
                 </div>
@@ -474,28 +475,28 @@ export function ExploreScreen({
                         role="button" tabIndex={0}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '16px', cursor: 'pointer', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}
                       >
-                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
+                        <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)', boxSizing: 'border-box', position: 'relative' }}>
                           {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '18px', fontWeight: 700 }}>{initial}</span>}
-                          {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: '#10B981', border: '2px solid #0A0612' }} />}
+                          {online && <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '12px', height: '12px', borderRadius: '50%', background: ventsColors.success, border: '2px solid #0A0612' }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '3px' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexWrap: 'wrap' }}>
-                              <span style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
+                              <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
                               <span style={{ flexShrink: 0 }}><BadgeChip tier={profile?.vc_badge} /></span>
                               {badge && (
                                 <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
                               )}
                             </div>
-                            <span style={{ color: '#7C8199', fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
+                            <span style={{ color: ventsColors.ink3, fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                           </div>
-                          <span style={{ color: isUnread ? '#E4E4F0' : '#9CA0BC', fontSize: '13px', fontWeight: isUnread ? 600 : 400, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          <span style={{ color: isUnread ? ventsColors.ink1 : ventsColors.ink3, fontSize: '13px', fontWeight: isUnread ? 600 : 400, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                             {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
                           </span>
                         </div>
                         {isUnread && (
-                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: '#A855F7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
-                            <span style={{ color: '#FFFFFF', fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
+                          <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
+                            <span style={{ color: ventsColors.white, fontSize: '10px', fontWeight: 700 }}>{unreadCount > 99 ? '99+' : unreadCount}</span>
                           </div>
                         )}
                       </div>
@@ -513,13 +514,13 @@ export function ExploreScreen({
         <div style={{ position: 'fixed', inset: 0, background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', zIndex: 500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 0 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '0 16px 16px' }}>
             <button onClick={() => setShowRequests(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-              <X size={22} color="#A78BFA" />
+              <X size={22} color={ventsColors.accentSoft} />
             </button>
-            <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Message Requests</h2>
+            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Message Requests</h2>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {requests.length === 0 ? (
-              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '60px', fontSize: '13px' }}>No pending requests.</p>
+              <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '60px', fontSize: '13px' }}>No pending requests.</p>
             ) : requests.map((r) => {
               const name = r.profile?.full_name || r.profile?.username || 'User';
               const avatarUrl = r.profile?.avatar_url;
@@ -536,19 +537,19 @@ export function ExploreScreen({
                     borderLeft: isHighlighted ? '2px solid #A855F7' : '2px solid transparent',
                   }}
                 >
-                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : '#7B2FBE', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+                  <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: avatarUrl ? 'transparent' : ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
                     {avatarUrl ? <img src={avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>{name[0]?.toUpperCase()}</span>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, margin: 0 }}>{name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>wants to message you</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0 }}>{name}</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>wants to message you</p>
                   </div>
                   <button
                     onClick={() => respondToRequest(r.requesterId, 'decline')}
                     disabled={respondingId === r.requesterId}
                     style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
                   >
-                    <X size={15} color="#8B8FA8" />
+                    <X size={15} color={ventsColors.ink2} />
                   </button>
                   <button
                     onClick={() => respondToRequest(r.requesterId, 'accept')}

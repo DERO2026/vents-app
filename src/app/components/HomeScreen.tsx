@@ -1,3 +1,4 @@
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
@@ -133,7 +134,7 @@ function DateBadge({ eventDate }: { eventDate?: string }) {
       borderRadius: '10px', padding: '4px 8px', textAlign: 'center', lineHeight: 1.1,
       boxShadow: '0 2px 8px rgba(0,0,0,0.35)', minWidth: '34px',
     }}>
-      <div style={{ fontSize: '8px', fontWeight: 800, color: '#7B2FBE', letterSpacing: '0.03em' }}>{parsed.month}</div>
+      <div style={{ fontSize: '8px', fontWeight: 800, color: ventsColors.accent, letterSpacing: '0.03em' }}>{parsed.month}</div>
       <div style={{ fontSize: '13px', fontWeight: 800, color: '#0A0A0F' }}>{parsed.day}</div>
     </div>
   );
@@ -253,7 +254,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '100%',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '22px',
         border: '1px solid rgba(255,255,255,0.08)',
         boxShadow: '0 20px 40px rgba(88,28,135,0.16), 0 2px 10px rgba(0,0,0,0.3)',
@@ -283,7 +284,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -294,7 +295,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <span
             style={{
               fontSize: '9px',
-              color: '#C4B5FD',
+              color: ventsColors.accentSoft,
               fontWeight: 700,
               background: 'rgba(167,139,250,0.14)',
               border: '1px solid rgba(167,139,250,0.3)',
@@ -310,7 +311,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             <span
               style={{
                 fontSize: '8px',
-                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                color: event.promoPlan === 'trending' ? ventsColors.error : event.promoPlan === 'featured' ? ventsColors.pending : '#3B82F6',
                 fontWeight: 800,
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
@@ -328,7 +329,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             primary heading. */}
         <h4
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '13px',
             fontWeight: 700,
             lineHeight: 1.35,
@@ -350,7 +351,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
               {event.organizer && event.organizer !== 'Verified Organizer' && (
                 <>
-                  <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ fontSize: '9px', color: ventsColors.accentSoft, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     @{event.organizer}
                   </span>
                   <BadgeChip tier={event.organizerVcBadge} />
@@ -359,7 +360,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             </div>
             {countdown && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px' }}>
-                <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : ventsColors.accent, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
                 </span>
               </div>
@@ -372,14 +373,14 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             competing for the same left-aligned line. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Calendar size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.date}{event.time ? ` · ${event.time}` : ''}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
-            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <MapPin size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.city}
             </span>
           </div>
@@ -398,7 +399,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? '#06D6A0' : '#fff',
+                color: isFree ? ventsColors.success : '#fff',
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -407,7 +408,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             );
           })()}
           {event.is_18_plus && (
-            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
+            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: ventsColors.error, fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
           )}
         </div>
       </div>
@@ -421,7 +422,7 @@ function CardSkeleton() {
       style={{
         width: '100%',
         height: '210px',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '16px',
         border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
@@ -430,12 +431,12 @@ function CardSkeleton() {
         opacity: 0.6,
       }}
     >
-      <div style={{ height: '110px', background: '#1A1D36' }} />
+      <div style={{ height: '110px', background: ventsColors.elevated }} />
       <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
-        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '50px', height: '12px', background: ventsColors.elevated, borderRadius: '4px' }} />
+        <div style={{ width: '80%', height: '14px', background: ventsColors.elevated, borderRadius: '4px' }} />
+        <div style={{ width: '60%', height: '10px', background: ventsColors.elevated, borderRadius: '4px', marginTop: '4px' }} />
+        <div style={{ width: '40%', height: '10px', background: ventsColors.elevated, borderRadius: '4px' }} />
       </div>
     </div>
   );
@@ -458,7 +459,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '162px',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '16px',
         border: '1px solid rgba(255,255,255,0.08)',
         flexShrink: 0,
@@ -514,7 +515,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -525,7 +526,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           <span
             style={{
               fontSize: '9px',
-              color: '#C4B5FD',
+              color: ventsColors.accentSoft,
               fontWeight: 700,
               background: 'rgba(167,139,250,0.14)',
               border: '1px solid rgba(167,139,250,0.3)',
@@ -541,7 +542,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             <span
               style={{
                 fontSize: '8px',
-                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                color: event.promoPlan === 'trending' ? ventsColors.error : event.promoPlan === 'featured' ? ventsColors.pending : '#3B82F6',
                 fontWeight: 800,
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
@@ -556,7 +557,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
         </div>
         <h4
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '13px',
             fontWeight: 700,
             lineHeight: 1.3,
@@ -575,12 +576,12 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             room before it even reaches price. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '2px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.date}</span>
+            <Calendar size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.date}</span>
           </div>
           {countdown && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 5px' }}>
-              <span style={{ fontSize: '8px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '8px', color: countdown === 'Happening now' ? '#10B981' : ventsColors.accent, fontWeight: 700, whiteSpace: 'nowrap' }}>
                 {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
               </span>
             </div>
@@ -590,14 +591,14 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
         {/* Location (left) / organizer (right) — same pairing logic. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <MapPin size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.city}
             </span>
           </div>
           {event.organizer && event.organizer !== 'Verified Organizer' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, minWidth: 0 }}>
-              <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{event.organizer}</span>
+              <span style={{ fontSize: '9px', color: ventsColors.accentSoft, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{event.organizer}</span>
               <BadgeChip tier={event.organizerVcBadge} />
             </div>
           )}
@@ -611,7 +612,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? '#06D6A0' : '#fff',
+                color: isFree ? ventsColors.success : '#fff',
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -637,7 +638,7 @@ function HorizontalCardSkeleton() {
       style={{
         width: '180px',
         height: '220px',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '18px',
         border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
@@ -710,7 +711,7 @@ function FeaturedCarousel({
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between px-4 mb-3">
-        <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
           Featured
         </h3>
         {events.length > 1 && (
@@ -723,7 +724,7 @@ function FeaturedCarousel({
                   width: i === currentIndex ? '18px' : '6px',
                   height: '6px',
                   borderRadius: '3px',
-                  background: i === currentIndex ? '#A78BFA' : 'rgba(255,255,255,0.2)',
+                  background: i === currentIndex ? ventsColors.accentSoft : 'rgba(255,255,255,0.2)',
                   border: 'none',
                   cursor: 'pointer',
                   padding: 0,
@@ -743,7 +744,7 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '28px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 24px 48px rgba(88,28,135,0.22), 0 4px 12px rgba(0,0,0,0.35)' }}>
+        <div style={{ borderRadius: '28px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: ventsColors.surface, border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 24px 48px rgba(88,28,135,0.22), 0 4px 12px rgba(0,0,0,0.35)' }}>
           {/* This card's own swipe (above) switches between featured EVENTS;
               a single event's own image list rarely has more than one entry
               today (events only store one image_url), so ImageCarousel's own
@@ -772,7 +773,7 @@ function FeaturedCarousel({
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
             {event.organizer && event.organizer !== 'Verified Organizer' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
-                <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
+                <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
                 <BadgeChip tier={event.organizerVcBadge} />
               </div>
             )}
@@ -787,7 +788,7 @@ function FeaturedCarousel({
                   <span style={{
                     fontSize: '12px', fontWeight: 800, width: 'fit-content',
                     borderRadius: '20px', padding: '4px 12px',
-                    color: isFree ? '#06D6A0' : '#fff',
+                    color: isFree ? ventsColors.success : '#fff',
                     background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                     border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
                   }}>
@@ -813,8 +814,8 @@ function FilterChip({ label, onClear }: { label: string; onClear: () => void }) 
         borderRadius: '999px', padding: '5px 8px 5px 10px', cursor: 'pointer',
       }}
     >
-      <span style={{ color: '#C4B5FD', fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
-      <X size={11} color="#C4B5FD" />
+      <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <X size={11} color={ventsColors.accentSoft} />
     </button>
   );
 }
@@ -968,13 +969,13 @@ export function HomeScreen({
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
     { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
     { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
-    { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FBE' },
+    { id: 'all', label: 'All', icon: LayoutGrid, color: ventsColors.accent },
     { id: 'Music', label: 'Music', icon: Music, color: '#FF6B6B' },
     { id: 'Technology', label: 'Tech', icon: Cpu, color: '#4ECDC4' },
     { id: 'Food & Drinks', label: 'Food', icon: UtensilsCrossed, color: '#FFE66D' },
     { id: 'Comedy Shows', label: 'Comedy', icon: Laugh, color: '#FF8C42' },
     { id: 'Arts & Culture', label: 'Arts', icon: Palette, color: '#C77DFF' },
-    { id: 'Sports & Wellness', label: 'Sports', icon: Dumbbell, color: '#06D6A0' },
+    { id: 'Sports & Wellness', label: 'Sports', icon: Dumbbell, color: ventsColors.success },
     { id: 'Conferences', label: 'Conferences', icon: Presentation, color: '#4CC9F0' },
     { id: 'Family Events', label: 'Family', icon: Heart, color: '#FF6B9D' },
     { id: 'Nightlife', label: 'Nightlife', icon: Moon, color: '#9B5DE5' },
@@ -1331,7 +1332,7 @@ export function HomeScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#020005', position: 'relative' }}
+      style={{ background: ventsColors.bg, position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -1351,28 +1352,28 @@ export function HomeScreen({
       )}
       {/* Full-screen Search overlay */}
       {searchOpen && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#020005', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: ventsColors.bg, display: 'flex', flexDirection: 'column' }}>
           {/* Search bar */}
           <div style={{ padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
-              <Search size={17} color="#94A3B8" />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: ventsColors.surface, borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
+              <Search size={17} color={ventsColors.ink2} />
               <input
                 autoFocus
                 type="text"
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 placeholder="Search people and events..."
-                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.ink1, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
               />
               {inputValue && (
                 <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                  <X size={15} color="#94A3B8" />
+                  <X size={15} color={ventsColors.ink2} />
                 </button>
               )}
             </div>
             <button
               onClick={() => { setSearchOpen(false); setInputValue(''); setSearchQuery(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#A78BFA', fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
             >
               Cancel
             </button>
@@ -1385,14 +1386,14 @@ export function HomeScreen({
                 {/* Suggested People */}
                 {suggestedPeople.length > 0 && (
                   <>
-                    <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
                     {suggestedPeople.map((u: any) => (
                       <div
                         key={u.id}
                         onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                           <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
                           {u.avatar_url && (
                             <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1400,29 +1401,29 @@ export function HomeScreen({
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
+                            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
                 {/* Popular Events */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
                 {dbEvents.slice(0, 4).map(ev => (
                   <div
                     key={ev.id}
                     onClick={() => { setSearchOpen(false); setInputValue(''); onEventPress(ev); }}
                     style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                   >
-                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
+                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
                       <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                      <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                      <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                      <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
                     </div>
                   </div>
                 ))}
@@ -1430,11 +1431,11 @@ export function HomeScreen({
             ) : (
               <>
                 {/* People results */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
                 {loadingPeople ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
                 ) : searchPeople.length === 0 ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>No people found</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '16px' }}>No people found</p>
                 ) : (
                   <>
                     {searchPeople.map((u: any) => (
@@ -1443,7 +1444,7 @@ export function HomeScreen({
                         onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                           <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
                           {u.avatar_url && (
                             <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1451,10 +1452,10 @@ export function HomeScreen({
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
+                            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
@@ -1462,13 +1463,13 @@ export function HomeScreen({
                 )}
 
                 {/* Event results */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
                 {searchLoading ? (
                   <>
                     {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="row" />)}
                   </>
                 ) : filteredEvents.length === 0 ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px' }}>No events found</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>No events found</p>
                 ) : (
                   filteredEvents.slice(0, 8).map(ev => (
                     <div
@@ -1476,12 +1477,12 @@ export function HomeScreen({
                       onClick={() => { setSearchOpen(false); onEventPress(ev); }}
                       style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                     >
-                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
+                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
                         <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                        <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                        <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
                       </div>
                     </div>
                   ))
@@ -1520,20 +1521,20 @@ export function HomeScreen({
               borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
             }}
           >
-            <Search size={14} color="#9CA0BC" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#9CA0BC', fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
+            <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
+            <span style={{ color: ventsColors.ink3, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
           </button>
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
           >
-            <Bell size={16} color="#C4C9E0" />
+            <Bell size={16} color={ventsColors.ink2} />
             {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
               <span
                 style={{
                   position: 'absolute', top: '-4px', right: '-4px',
                   minWidth: '16px', height: '16px', padding: '0 4px',
-                  borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
+                  borderRadius: '9px', background: ventsColors.error, border: '2px solid #020005',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
                 }}
@@ -1545,7 +1546,7 @@ export function HomeScreen({
           {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button
               onClick={onCreatePress}
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: ventsColors.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}
             >
               <Plus size={17} color="#fff" strokeWidth={2.5} />
             </button>
@@ -1568,11 +1569,11 @@ export function HomeScreen({
               borderRadius: '999px', padding: '7px 12px', cursor: 'pointer',
             }}
           >
-            <MapPin size={12} color="#A855F7" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#F0F0FF', whiteSpace: 'nowrap' }}>
+            <MapPin size={12} color={ventsColors.accent} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: ventsColors.ink1, whiteSpace: 'nowrap' }}>
               {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
             </span>
-            <ChevronDown size={11} color="#C4C9E0" />
+            <ChevronDown size={11} color={ventsColors.ink2} />
           </button>
 
           {[
@@ -1594,8 +1595,8 @@ export function HomeScreen({
                   borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
                 }}
               >
-                <Icon size={12} color={active ? '#D8B4FE' : '#C4C9E0'} />
-                <span style={{ color: active ? '#F0F0FF' : '#E4E4F0', fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
+                <Icon size={12} color={active ? ventsColors.accentSoft : ventsColors.ink2} />
+                <span style={{ color: active ? ventsColors.ink1 : ventsColors.ink1, fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
               </button>
             );
           })}
@@ -1610,10 +1611,10 @@ export function HomeScreen({
               borderRadius: '999px', padding: '7px 13px', cursor: 'pointer', position: 'relative',
             }}
           >
-            <SlidersHorizontal size={12} color={hasActiveFilters ? '#D8B4FE' : '#C4C9E0'} />
-            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? '#F0F0FF' : '#E4E4F0', whiteSpace: 'nowrap' }}>Filters</span>
+            <SlidersHorizontal size={12} color={hasActiveFilters ? ventsColors.accentSoft : ventsColors.ink2} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? ventsColors.ink1 : ventsColors.ink1, whiteSpace: 'nowrap' }}>Filters</span>
             {hasActiveFilters && (
-              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: '#A78BFA', border: '2px solid #020005' }} />
+              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: ventsColors.accentSoft, border: '2px solid #020005' }} />
             )}
           </button>
         </div>
@@ -1642,13 +1643,13 @@ export function HomeScreen({
           {onServicesPress && (
             <button
               onClick={onServicesPress}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
+              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
             >
               <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(34,211,238,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Store size={17} color="#22D3EE" />
               </div>
               <div style={{ minWidth: 0 }}>
-                <p style={{ margin: 0, color: '#F0F0FF', fontSize: '13px', fontWeight: 800 }}>Services</p>
+                <p style={{ margin: 0, color: ventsColors.ink1, fontSize: '13px', fontWeight: 800 }}>Services</p>
                 <p style={{ margin: 0, color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>Beauty, home, photo & more</p>
               </div>
             </button>
@@ -1693,7 +1694,7 @@ export function HomeScreen({
               <>
                 <div className="mb-6">
                   <div className="px-4 mb-3">
-                    <div style={{ width: '120px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                    <div style={{ width: '120px', height: '18px', background: ventsColors.elevated, borderRadius: '4px' }} />
                   </div>
                   <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -1704,7 +1705,7 @@ export function HomeScreen({
 
                 <div className="mb-6">
                   <div className="px-4 mb-3">
-                    <div style={{ width: '140px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                    <div style={{ width: '140px', height: '18px', background: ventsColors.elevated, borderRadius: '4px' }} />
                   </div>
                   <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -1717,7 +1718,7 @@ export function HomeScreen({
 
             <div className="px-4">
               <div className="mb-3">
-                <div style={{ width: '100px', height: '16px', background: '#1A1D36', borderRadius: '4px' }} />
+                <div style={{ width: '100px', height: '16px', background: ventsColors.elevated, borderRadius: '4px' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -1746,7 +1747,7 @@ export function HomeScreen({
                 {trendingEvents.length > 0 && (
                   <div className="mb-6" ref={trendingSectionRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Trending Events
                       </h3>
                     </div>
@@ -1773,11 +1774,11 @@ export function HomeScreen({
                 {nearbyProviders && nearbyProviders.length > 0 && (
                   <div className="mb-6" ref={nearbyProvidersRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         {homeGeo.status === 'granted' ? 'Providers Near You' : 'Top Service Providers'}
                       </h3>
                       {onServicesPress && (
-                        <button onClick={onServicesPress} style={{ background: 'none', border: 'none', color: '#A855F7', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                        <button onClick={onServicesPress} style={{ background: 'none', border: 'none', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
                           See all
                         </button>
                       )}
@@ -1801,7 +1802,7 @@ export function HomeScreen({
             {/* Main grid of events */}
             <div className="px-4">
               <div className="flex items-center justify-between mb-3">
-                <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                   {isDefaultState
                     ? 'Explore Events'
                     // Name the section after what's actually applied when
@@ -1816,7 +1817,7 @@ export function HomeScreen({
                     ? 'This Weekend'
                     : 'Search Results'}
                 </h3>
-                <span style={{ color: '#94A3B8', fontSize: '11px' }}>
+                <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
                   {searchActive && searchLoading ? 'Searching…' : filtersActive && filterLoading ? 'Loading…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
@@ -1840,10 +1841,10 @@ export function HomeScreen({
                   {searchActive ? (
                     <>
                       <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
+                      <p style={{ color: ventsColors.ink2, fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
                         No matches
                       </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
+                      <p style={{ color: ventsColors.ink3, fontSize: '13px', marginTop: '4px' }}>
                         Try a different search or browse all events.
                       </p>
                     </>
@@ -1857,16 +1858,16 @@ export function HomeScreen({
                     // (which now deliberately excludes country).
                     <>
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                      <p style={{ color: ventsColors.ink2, fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
                         No events match your filters
                       </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                      <p style={{ color: ventsColors.ink3, fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
                         Try a different country, category, or price.
                       </p>
                       {hasActiveFilters && (
                         <button
                           onClick={() => { setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
-                          style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                          style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: ventsColors.accent, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
                         >
                           Clear filters
                         </button>
@@ -1898,7 +1899,7 @@ export function HomeScreen({
                       border: '1px solid rgba(167,139,250,0.2)',
                       borderRadius: '12px',
                       padding: '10px 20px',
-                      color: '#A78BFA',
+                      color: ventsColors.accentSoft,
                       fontSize: '13px',
                       fontWeight: 600,
                       cursor: 'pointer',
@@ -1926,7 +1927,7 @@ export function HomeScreen({
           {/* Sheet */}
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 201,
-            background: '#090514', borderRadius: '24px 24px 0 0',
+            background: ventsColors.surface, borderRadius: '24px 24px 0 0',
             border: '1px solid rgba(255,255,255,0.08)',
             paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
             maxHeight: '85vh', display: 'flex', flexDirection: 'column',
@@ -1937,9 +1938,9 @@ export function HomeScreen({
             </div>
             {/* Title */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800 }}>Filters</span>
+              <span style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 800 }}>Filters</span>
               <button onClick={() => setFilterSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                <X size={20} color="#94A3B8" />
+                <X size={20} color={ventsColors.ink2} />
               </button>
             </div>
 
@@ -1951,7 +1952,7 @@ export function HomeScreen({
                   ids/logic as before (tempCategory -> applyFilters ->
                   setActiveCategory), just presented as compact wrapped
                   chips instead of a horizontal icon rail. */}
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>CATEGORY</p>
+              <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>CATEGORY</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
                 {ICON_CATEGORIES.map((cat) => {
                   const active = tempCategory === cat.id;
@@ -1981,7 +1982,7 @@ export function HomeScreen({
                   fallback for a non-Nigeria country. */}
               {subdivisions && (
                 <>
-                  <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>{subdivisions.label.toUpperCase()}</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>{subdivisions.label.toUpperCase()}</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
                     {[`All ${subdivisions.label}s`, ...subdivisions.options].map((st) => {
                       const stId = st === `All ${subdivisions.label}s` ? 'all' : st;
@@ -1993,8 +1994,8 @@ export function HomeScreen({
                           style={{
                             padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
                             cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                            background: active ? '#7B2FBE' : 'transparent',
-                            color: active ? '#fff' : '#666666',
+                            background: active ? ventsColors.accent : 'transparent',
+                            color: active ? '#fff' : ventsColors.ink3,
                           }}
                         >{st}</button>
                       );
@@ -2004,7 +2005,7 @@ export function HomeScreen({
               )}
 
               {/* PRICE */}
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
+              <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
                 {(['all', 'free', 'paid'] as const).map((p) => {
                   const active = tempPrice === p;
@@ -2015,8 +2016,8 @@ export function HomeScreen({
                       style={{
                         flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
                         cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FBE' : 'transparent',
-                        color: active ? '#fff' : '#666666',
+                        background: active ? ventsColors.accent : 'transparent',
+                        color: active ? '#fff' : ventsColors.ink3,
                       }}
                     >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
                   );
@@ -2031,14 +2032,14 @@ export function HomeScreen({
                 style={{
                   flex: 1, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
                   background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                  color: '#C4C9E0', cursor: 'pointer',
+                  color: ventsColors.ink2, cursor: 'pointer',
                 }}
               >Clear All</button>
               <button
                 onClick={applyFilters}
                 style={{
                   flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
-                  background: '#7B2FBE', border: 'none', color: '#fff', cursor: 'pointer',
+                  background: ventsColors.accent, border: 'none', color: '#fff', cursor: 'pointer',
                 }}
               >Apply</button>
             </div>

@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 4 UNITS MIGRATED (4 of ~35 units)
+## Status: FOUNDATION + 6 UNITS MIGRATED (6 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -77,6 +77,29 @@ everything else in the priority list below is not started.
   same file. Typecheck clean, full suite 429/429 including
   `loginReliability.test.ts` (20/20) run individually to confirm no
   auth-logic regression from a styling-only change.
+- [x] **`src/app/components/HomeScreen.tsx`** (2061 lines) and
+  **`src/app/components/ExploreScreen.tsx`** (568 lines) — **color-token
+  migration only, NOT a layout/hierarchy pass.** Being honest about scope
+  here rather than overclaiming: unlike AuthScreen, these files have no
+  small set of shared style constants — colors are inlined per-JSX-element
+  throughout, and HomeScreen in particular has real feed/filter/geolocation
+  logic woven through 2000+ lines with no visual-regression tooling
+  available in this environment (no screenshot/browser-preview tool this
+  session). A freehand structural rewrite here (e.g. the design audit's own
+  A04 finding, "Home filters compete with Home content", which calls for
+  actually moving/restructuring the filter row) carries real risk of
+  breaking the most-trafficked screen in the app with no way to visually
+  confirm the result. What was done instead: a scripted, quote-exact hex
+  substitution (`'#020005'` → `ventsColors.bg`, etc. — 117 replacements in
+  HomeScreen, 45 in ExploreScreen) that only touches literal color values
+  inside string/JSX-attribute positions, never gradient stops or layout
+  properties, verified by re-running typecheck + the full suite after.
+  This unifies the dominant legacy palette onto the token system safely;
+  it does NOT implement the artifact's B1/B2 layout changes (filter
+  placement, card hierarchy, "Book an experience"/"Book a service"
+  horizontal-scroll sections as separately named blocks). That structural
+  work remains open and is flagged, not silently skipped.
+  Typecheck clean, full suite 429/429.
 
 ## Explicitly NOT done (the actual redesign work)
 
@@ -120,10 +143,12 @@ maturity — not a batch replace.
    card primitive.**
 2. Landing / onboarding / auth — **DONE: WelcomeScreen, CountrySelectScreen,
    AuthScreen (shared style constants). NEXT: item 3 below.**
-3. Home / Search / Filters — **NEXT UP.** `HomeScreen.tsx` (large — check
-   size/shared-constant structure before deciding whole-file vs
-   constants-only approach, same triage as AuthScreen), `ExploreScreen.tsx`
-4. Event Details — not started
+3. Home / Search / Filters — **PARTIAL: color tokens migrated on both
+   files; the actual B1 layout/hierarchy rework (filter placement per
+   audit finding A04, card sections) is NOT done — see note above. Needs
+   a dedicated pass with real visual verification, not a continuation of
+   the mechanical color-only approach.**
+4. Event Details — **NEXT UP** (`EventDetailsScreen.tsx`)
 5. Ticket selection / Checkout / Payment / Success / Failure — not started
    (financial — extra care, re-run `walletPayments.security.test.ts` etc.
    after any touch)
