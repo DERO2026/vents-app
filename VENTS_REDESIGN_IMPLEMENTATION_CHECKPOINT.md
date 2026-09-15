@@ -499,3 +499,86 @@ conversation's history — `VITE_PAYSTACK_PUBLIC_KEY`/`VITE_SUPABASE_URL`/
 without real production credentials in the shell; this is pre-existing,
 unrelated to the redesign, and was correctly not bypassed with fake
 credentials).
+
+---
+
+## UPDATE 2 — Items 20-21: real, bounded progress. NOT exhaustively done.
+
+Commit `043c6a9` (this pass). Read this section, not the "20-21 not
+started" line above it, for current status.
+
+### The one finding that mattered most: a real cross-cutting bug, found and fixed
+
+Auditing item 21 by actually screenshotting `EventDetailsScreen` (a
+screen no prior pass in this effort had touched or verified) at 1440px
+found that its full-bleed hero media stretched edge-to-edge — the exact
+"desktop is mobile stretched" symptom this whole effort exists to kill.
+
+Root cause: the item-18 fix widened `#root` (the single shared SPA
+container for every screen) to `max-width:1240px` at `>=1100px` with a
+blanket media query. That widened every screen, not just the 4 with a
+bespoke desktop layout — the "screens without a bespoke layout are
+unaffected" reasoning in the item-18/19 notes above was checked against
+exactly one screen (WelcomeScreen, which happens to self-center) and was
+wrong in general.
+
+**Fixed properly, not patched around**: `#root`'s widen is now gated on a
+`.vents-desktop-wide` class (`src/styles/index.css`), toggled only by the
+4 screens that should have it via a new shared hook
+(`src/lib/useDesktopWideShell.ts`), added to `OrganizerDashboard.tsx`,
+`ManageEventsScreen.tsx`, both render paths of `SalesAnalyticsScreen.tsx`,
+and `HomeScreen.tsx`. Every other screen in the app is back to the
+original 640px desktop cap — confirmed via `EventDetailsScreen`
+screenshot after the fix (now correctly centered and capped) — while the
+4 bespoke screens keep their full sidebar/grid width (re-screenshotted,
+unchanged). This closes the regression class for the whole app, not just
+the one screen that happened to catch it.
+
+### Screens actually verified this pass (code review + qa-harness screenshots, 3 viewports where noted)
+
+- `CheckoutScreen.tsx`: loading (`Processing...` spinner button),
+  disabled (`Insufficient Wallet Balance`, `Balance unavailable`),
+  error (`payError` banner), and the base form — all already correctly
+  token-based, already using a 52px touch target, no changes needed.
+  Verified 390/834/1440 — visually consistent across all three, no
+  overflow, no stretch.
+- `WalletScreen.tsx`: read (not screenshotted) — already has real
+  loading/error/empty (`No transactions yet`)/retry states, all
+  token-based. No changes needed.
+- `EventDetailsScreen.tsx`: the regression above, now fixed. Added to the
+  qa-harness registry so it stays checkable.
+- Confirmed via `grep` that offline/connectivity handling already exists
+  in several places (`src/lib/isOnline.ts`, `LocationPicker.tsx`'s
+  loading/ready/unavailable/offline state machine, the Wifi/WifiOff
+  indicator already visible in `ManageEventsScreen.tsx`) — this is
+  pre-existing infrastructure from before this redesign effort, not
+  something item 20 needed to build from scratch.
+
+### What item 20-21 have NOT covered (honest gap, not silently dropped)
+
+- No systematic per-screen pass across Services booking/refund, ticket
+  transfer, Someone Else Pays, Chats, Notifications, Profile, or the
+  Service Provider dashboard suite this pass — only the payment/wallet
+  slice above was actually re-verified with screenshots.
+- No exhaustive per-state screenshot matrix (loading/empty/error/success/
+  disabled/payment/refund/confirmation × 3 viewports × every screen) was
+  produced. That is a multi-session undertaking at the same rigor this
+  effort has held to (real fixture data, real route mocking, typecheck +
+  full suite per fix) — one further turn was enough to find and fix the
+  highest-leverage cross-cutting bug (the `#root` regression above), not
+  to clear the entire matrix.
+- Items not re-verified: alignment/grid drift, icon alignment, radii
+  consistency, and design-token usage on screens outside the payment/
+  wallet/event-details slice above.
+
+**Do not claim the redesign complete.** The `#root` regression fix is a
+real, load-bearing correctness fix that had to happen before any further
+desktop/tablet work could be trusted. The remaining item 20/21 scope
+(everything outside the payment/wallet/event-details slice verified
+above) is the honest release blocker for a genuinely complete redesign,
+not a formality.
+
+Verification for this update: typecheck clean (only the pre-existing
+unrelated `App.tsx:2764` error); full suite 429/429 passing (one
+pre-existing unrelated `ticketToken.test.ts` env-setup failure, file-level
+only); final commit `043c6a9`, pushed to `origin/main`.
