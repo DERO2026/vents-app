@@ -14,6 +14,7 @@ import { ServicesHomeScreen } from '../src/app/components/ServicesHomeScreen';
 import { ServiceBookingsScreen } from '../src/app/components/ServiceBookingsScreen';
 import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
 import { InboxScreen } from '../src/app/components/InboxScreen';
+import { NotificationsScreen } from '../src/app/components/NotificationsScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -119,6 +120,9 @@ const SCREENS: Record<string, () => JSX.Element> = {
   },
   inbox: () => (
     <InboxScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onOpenConversation={() => {}} />
+  ),
+  notifications: () => (
+    <NotificationsScreen currentUser={{ id: 'org-1' }} onBack={() => {}} />
   ),
   checkout: () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };

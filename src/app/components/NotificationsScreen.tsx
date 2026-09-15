@@ -58,6 +58,10 @@ export function NotificationsScreen({
   const [pressedId, setPressedId] = useState<string | null>(null);
   const [pullRefreshing, setPullRefreshing] = useState(false);
   const pullStartY = useRef<number | null>(null);
+  // Distinct from `items.length === 0` -- previously a failed fetch just
+  // logged to console and left `items` at [], rendering identically to the
+  // genuine "You're all caught up" empty state below.
+  const [loadError, setLoadError] = useState<string | null>(null);
   // Guards fetchNotifications against out-of-order responses: the initial
   // mount fetch and the realtime broadcast handler can both call it, and
   // aren't sequenced against each other or against an in-flight
@@ -81,6 +85,7 @@ export function NotificationsScreen({
     if (!currentUser?.id) return;
     const myReq = ++reqIdRef.current;
     setLoading(true);
+    setLoadError(null);
     try {
       const { data, error } = await supabase
         .from('notifications')
@@ -98,6 +103,7 @@ export function NotificationsScreen({
     } catch (err) {
       console.error("Failed to fetch notifications:", err);
       Sentry.captureException(err);
+      if (myReq === reqIdRef.current) setLoadError('Pull down or tap Retry to try again.');
     } finally {
       if (myReq === reqIdRef.current) setLoading(false);
     }
@@ -399,6 +405,43 @@ export function NotificationsScreen({
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: ventsColors.ink3 }}>
             <Loader size={18} className="animate-spin" />
             <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading notifications...</span>
+          </div>
+        ) : loadError ? (
+          <div
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              paddingTop: '96px',
+              gap: '18px',
+            }}
+          >
+            <div
+              style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '50%',
+                background: 'rgba(239,68,68,0.08)',
+                backdropFilter: 'blur(20px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+                border: '1px solid rgba(239,68,68,0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Bell size={24} color={ventsColors.error} strokeWidth={1.5} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
+              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Couldn't load your notifications</p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: 0, textAlign: 'center', padding: '0 24px' }}>{loadError}</p>
+            </div>
+            <button
+              onClick={fetchNotifications}
+              style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${ventsColors.error}`, borderRadius: '12px', padding: '10px 20px', color: ventsColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
           </div>
         ) : items.length === 0 ? (
           <div
