@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
   ArrowLeft,
   DollarSign,
@@ -36,6 +37,7 @@ export function OrganizerDashboard({
   onEventPress,
   onManageEvents,
 }: OrganizerDashboardProps) {
+  useDesktopWideShell();
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

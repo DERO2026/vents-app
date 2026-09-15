@@ -26,6 +26,7 @@ import { COUNTRY_CODES as COUNTRY_CODES_HOME } from '../../lib/countries';
 import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -844,6 +845,7 @@ export function HomeScreen({
   countryFilter,
   onCountryFilterChange,
 }: HomeScreenProps) {
+  useDesktopWideShell();
   const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
 
   // Providers Near You (Services surfaced directly on Home, per the

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import { ArrowLeft, Ticket, Wallet, Receipt, Users, TrendingUp } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
@@ -210,6 +211,7 @@ export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle 
 }
 
 function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void }) {
+  useDesktopWideShell();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
     totalRevenue: number;
@@ -613,6 +615,7 @@ function TrendBars({ data, valueKey, color, formatValue }: {
 }
 
 function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void; eventId: string; eventTitle?: string }) {
+  useDesktopWideShell();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [data, setData] = useState<EventAnalyticsData | null>(null);

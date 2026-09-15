@@ -100,16 +100,20 @@ button:active, [role="button"]:active {
 }
 
 /* Screens with a genuine bespoke desktop layout (Creator Studio, Manage
-   Events, Sales & Analytics) need real horizontal room for a sidebar +
-   grid composition -- the 640px cap above was sized for screens that
-   don't have one yet and just needed to stop stretching edge-to-edge.
-   Widen #root at real desktop widths; screens without a bespoke layout
-   are unaffected because their own inner content already centers itself
-   at a fixed max-width (see each screen's own `maxWidth` + `margin: 0
-   auto` on its content wrapper), so widening the outer shell doesn't
-   make them stretch. */
+   Events, Sales & Analytics, Home) need real horizontal room for a
+   sidebar/grid composition -- the 640px cap above was sized for screens
+   that don't have one and just needed to stop stretching edge-to-edge.
+   This used to be a blanket `@media (min-width: 1100px)` rule on #root,
+   which was wrong: #root is the single shared SPA container for every
+   screen, so widening it widened EVERY screen, not just the ones with a
+   bespoke layout -- confirmed via qa-harness screenshot that
+   EventDetailsScreen (no inner max-width of its own) stretched its hero
+   media edge-to-edge at 1240px. Fixed by scoping the widen to a class
+   each bespoke-desktop screen toggles on #root itself via a mount/unmount
+   effect (same DOM-class-on-a-shared-ancestor pattern main.tsx already
+   uses for `legal-scroll`), so every other screen keeps the 640px cap. */
 @media (min-width: 1100px) {
-  #root {
+  #root.vents-desktop-wide {
     max-width: 1240px;
   }
 }

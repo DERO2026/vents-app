@@ -6,8 +6,10 @@ import '../src/styles/index.css';
 import { OrganizerDashboard } from '../src/app/components/OrganizerDashboard';
 import { ManageEventsScreen } from '../src/app/components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from '../src/app/components/SalesAnalyticsScreen';
-import { HomeScreen } from '../src/app/components/HomeScreen';
+import { HomeScreen, mapDbEventToFrontend } from '../src/app/components/HomeScreen';
 import { WelcomeScreen } from '../src/app/components/WelcomeScreen';
+import { EventDetailsScreen } from '../src/app/components/EventDetailsScreen';
+import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -66,6 +68,35 @@ const SCREENS: Record<string, () => JSX.Element> = {
       countryFilter="NG"
     />
   ),
+  'event-details': () => {
+    const dbEvent = { ...FIXTURE_EVENTS[0], ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }] };
+    const event = mapDbEventToFrontend(dbEvent);
+    return (
+      <EventDetailsScreen
+        event={event}
+        onBack={() => {}}
+        onGetTickets={() => {}}
+        isSaved={false}
+        onToggleSave={() => {}}
+        currentUserId="user-1"
+      />
+    );
+  },
+  checkout: () => {
+    const dbEvent = { ...FIXTURE_EVENTS[0] };
+    const event = mapDbEventToFrontend(dbEvent);
+    const ticketType = { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 };
+    return (
+      <CheckoutScreen
+        event={event}
+        ticketType={ticketType}
+        quantity={1}
+        currentUser={FIXTURE_USER}
+        onBack={() => {}}
+        onSuccess={() => {}}
+      />
+    );
+  },
 };
 
 const params = new URLSearchParams(window.location.search);

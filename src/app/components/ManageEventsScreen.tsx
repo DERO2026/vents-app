@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
   ArrowLeft, Users, Search, Calendar, MapPin, Edit2, Lock, Zap, MoreVertical,
   Trash2, EyeOff, Eye, Wifi, WifiOff, ArrowUpDown, RefreshCw, AlertCircle,
@@ -60,6 +61,7 @@ export function ManageEventsScreen({
   onBack, currentUser, onOpenEdit, onCreateEvent, onViewAttendees, onViewAnalytics,
   onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted,
 }: ManageEventsScreenProps) {
+  useDesktopWideShell();
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
