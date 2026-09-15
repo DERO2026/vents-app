@@ -18,6 +18,7 @@ import { NotificationsScreen } from '../src/app/components/NotificationsScreen';
 import { ManageProviderServicesScreen } from '../src/app/components/ManageProviderServicesScreen';
 import { CheckinScannerScreen } from '../src/app/components/CheckinScannerScreen';
 import { DoorManagerScreen } from '../src/app/components/DoorManagerScreen';
+import { BottomNav } from '../src/app/components/BottomNav';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -144,6 +145,11 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onBack={() => {}}
       onOpenScanner={() => {}}
     />
+  ),
+  'bottom-nav': () => (
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: '#08070C' }}>
+      <BottomNav activeTab="home" onTabChange={() => {}} hasUnreadChats />
+    </div>
   ),
   checkout: () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };
