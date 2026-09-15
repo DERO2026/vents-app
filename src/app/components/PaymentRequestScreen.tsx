@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ventsColors } from '../../lib/ventsDesignTokens';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Lock, AlertCircle, Clock, XCircle, CheckCircle2 } from 'lucide-react';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
@@ -15,6 +15,15 @@ interface PaymentRequestDetails {
   recipient_name: string;
   status: 'pending' | 'completed' | 'cancelled' | 'expired';
   is_expired: boolean;
+  // Added by 0078_payment_request_viewer_role.sql -- optional so this
+  // still degrades to the original unified view if that migration hasn't
+  // reached a given environment yet (viewer_is_requester undefined ->
+  // isRequester below is false, same rendering as before this change).
+  viewer_is_requester?: boolean;
+  payer_name?: string | null;
+  payer_masked_phone?: string | null;
+  created_at?: string;
+  expires_at?: string | null;
 }
 
 interface PaymentRequestScreenProps {
@@ -177,6 +186,8 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
     }
   };
 
+  const isRequester = details?.viewer_is_requester === true;
+
   return (
     <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
@@ -222,11 +233,53 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
               <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
             </div>
 
-            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-              <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.6 }}>
-                <strong style={{ color: ventsColors.white }}>{details.recipient_name}</strong> asked you to pay for this ticket. They'll receive the ticket and QR code once you complete payment — you'll get a receipt, not the ticket.
-              </p>
-            </div>
+            {/* Handoff C4 vs C5: the requester (the eventual ticket holder,
+                pending_purchases.user_id) and the payer see two genuinely
+                different views of the same request, not the same
+                payer-oriented copy + an unusable Pay/Cancel button pair.
+                viewer_is_requester comes from 0078_payment_request_viewer_
+                role.sql; undefined (migration not yet applied) falls back
+                to the payer view, same as before this change. */}
+            {isRequester ? (
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+                <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: ventsColors.ink3, margin: '0 0 8px' }}>Waiting on</p>
+                <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, margin: 0 }}>{details.payer_name || 'the payer'}</p>
+                {details.payer_masked_phone && (
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '2px 0 0' }}>{details.payer_masked_phone}</p>
+                )}
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.6, margin: '12px 0 0' }}>
+                  The ticket will be issued to <strong style={{ color: ventsColors.white }}>you</strong> once they pay. If the request expires, your seats are released back to the event.
+                </p>
+              </div>
+            ) : (
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.6 }}>
+                  <strong style={{ color: ventsColors.white }}>{details.recipient_name}</strong> asked you to pay for this ticket. They'll receive the ticket and QR code once you complete payment — you'll get a receipt, not the ticket.
+                </p>
+              </div>
+            )}
+
+            {isRequester && (
+              <div style={{ marginBottom: '16px' }}>
+                <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.1em', textTransform: 'uppercase', color: ventsColors.ink3, marginBottom: '12px' }}>Progress</p>
+                {[
+                  { label: 'Request sent', done: true, sub: details.created_at ? new Date(details.created_at).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : undefined },
+                  { label: details.status === 'completed' || paid ? 'Paid' : 'Awaiting payment', done: details.status === 'completed' || paid || details.status === 'pending', sub: details.status === 'pending' && !details.is_expired ? `${details.payer_name || 'The payer'} was notified` : undefined },
+                  { label: 'Ticket issued to you', done: details.status === 'completed' || paid },
+                ].map((step, i, arr) => (
+                  <div key={step.label} style={{ display: 'flex', gap: '14px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '20px' }}>
+                      <span style={{ width: '12px', height: '12px', borderRadius: '50%', marginTop: '5px', background: step.done ? ventsColors.success : 'transparent', border: step.done ? 'none' : '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }} />
+                      {i < arr.length - 1 && <span style={{ flex: 1, width: '2px', background: 'rgba(255,255,255,0.12)' }} />}
+                    </div>
+                    <div style={{ paddingBottom: i < arr.length - 1 ? '18px' : 0 }}>
+                      <span style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: step.done ? ventsColors.white : ventsColors.ink2 }}>{step.label}</span>
+                      {step.sub && <span style={{ display: 'block', fontSize: '12px', color: ventsColors.ink3, marginTop: '2px' }}>{step.sub}</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {(paid || details.status === 'completed') && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '12px', padding: '14px' }}>
@@ -270,31 +323,42 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
       {!loading && details && !paid && details.status === 'pending' && !details.is_expired && (
         <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-          <button
-            onClick={handlePay}
-            disabled={paying}
-            style={{
-              width: '100%', height: '52px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none',
-              borderRadius: '100px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
-              cursor: paying ? 'not-allowed' : 'pointer', opacity: paying ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            }}
-          >
-            <Lock size={16} color="#fff" />
-            {paying ? 'Processing…' : `Pay ${formatPrice(Math.round(details.amount_kobo / 100))}`}
-          </button>
-          {!notRecipient && (
-            <button
-              onClick={handleCancel}
-              disabled={cancelling}
-              style={{
-                width: '100%', height: '40px', background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                borderRadius: '100px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600,
-                cursor: cancelling ? 'not-allowed' : 'pointer', opacity: cancelling ? 0.6 : 1,
-              }}
-            >
-              {cancelling ? 'Cancelling…' : 'Cancel Request'}
-            </button>
-          )}
+            {/* Payer's view (C5): only a real, working action -- Pay. No
+                Decline button: cancel_payment_request is requester-only,
+                so a payer-facing "Decline" has no backend counterpart to
+                call, and the old unconditional "Cancel Request" button
+                here always failed for a real payer (surfaced as
+                notRecipient below). */}
+            {!isRequester && (
+              <button
+                onClick={handlePay}
+                disabled={paying}
+                style={{
+                  width: '100%', height: '52px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none',
+                  borderRadius: '100px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
+                  cursor: paying ? 'not-allowed' : 'pointer', opacity: paying ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                }}
+              >
+                <Lock size={16} color="#fff" />
+                {paying ? 'Processing…' : `Pay ${formatPrice(Math.round(details.amount_kobo / 100))}`}
+              </button>
+            )}
+            {/* Requester's view (C4): the real, authorized action --
+                Cancel Request. No "Send reminder": no notification-sending
+                path for payment request reminders exists in this schema. */}
+            {isRequester && (
+              <button
+                onClick={handleCancel}
+                disabled={cancelling}
+                style={{
+                  width: '100%', height: '52px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)',
+                  borderRadius: '100px', color: '#FCA5A5', fontSize: '15px', fontWeight: 700,
+                  cursor: cancelling ? 'not-allowed' : 'pointer', opacity: cancelling ? 0.6 : 1,
+                }}
+              >
+                {cancelling ? 'Cancelling…' : 'Cancel Request'}
+              </button>
+            )}
         </div>
       )}
     </div>

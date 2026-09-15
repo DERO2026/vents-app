@@ -72,13 +72,23 @@ export async function getAuthToken(): Promise<string> {
   return 'qa-harness-fake-token';
 }
 
+const RPC_FIXTURES: Record<string, any> = {
+  get_payment_request_details: {
+    event_title: 'Lagos Music Festival', event_image_url: null, ticket_type: 'Regular',
+    attendee_count: 2, amount_kobo: 4200000, recipient_name: 'Ada Okonkwo',
+    status: 'pending', is_expired: false, viewer_is_requester: true,
+    payer_name: 'Tobi O.', payer_masked_phone: '+234 803••••21',
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 23 * 3600000).toISOString(),
+  },
+};
+
 export const supabase = {
   from: (table: string) => chainable(table),
   auth: {
     getSession: async () => ({ data: { session: null }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
   },
-  rpc: async () => ({ data: null, error: null }),
+  rpc: async (fn: string) => ({ data: RPC_FIXTURES[fn] ?? null, error: null }),
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} }),
   removeChannel: () => {},
 } as any;
