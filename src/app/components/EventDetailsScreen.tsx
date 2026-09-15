@@ -555,11 +555,41 @@ export function EventDetailsScreen({
           content at a readable width instead of reintroducing that
           regression while the real two-column rework is still pending. */}
       <style>{`
-        @media (min-width: 900px) {
+        .event-details-content { display: flex; flex-direction: column; }
+        .edt-purchase-panel { display: none; }
+        @media (min-width: 900px) and (max-width: 1199px) {
           .event-details-content { max-width: 640px; margin: 0 auto; width: 100%; }
         }
+        @media (min-width: 1200px) {
+          .event-details-content {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            column-gap: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            align-items: start;
+          }
+          .event-details-hero { grid-column: 1; }
+          .event-details-main { grid-column: 1; padding-bottom: 40px; }
+          .edt-bottom-bar { display: none; }
+          .edt-purchase-panel {
+            display: block;
+            grid-column: 2;
+            grid-row: 1 / span 2;
+            position: sticky;
+            top: 24px;
+            align-self: start;
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: calc(16px + env(safe-area-inset-top));
+          }
+        }
       `}</style>
-      <div className="event-details-content" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+      <div className="event-details-content" style={{ flex: 1 }}>
       {/* Full-screen flyer lightbox */}
       {flyerFullScreen && (
         <FlyerLightbox
@@ -575,6 +605,7 @@ export function EventDetailsScreen({
           legibility, category pill + share/save/report overlaid on the
           image, and a subtle fade-in on mount. */}
       <div
+        className="event-details-hero"
         style={{
           padding: '0 16px',
           marginTop: 'calc(16px + env(safe-area-inset-top))',
@@ -723,7 +754,7 @@ export function EventDetailsScreen({
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: '0 16px 120px' }}>
+      <div className="event-details-main" style={{ flex: 1, padding: '0 16px 120px' }}>
         {/* Title + Rating */}
         <div style={{ marginBottom: '12px' }}>
           <h1
@@ -1239,7 +1270,7 @@ export function EventDetailsScreen({
             an attendee who already has a ticket can still buy more (extra
             tickets for friends, a different tier, etc). */}
         {ticketTypes.length > 0 && (
-          <div ref={ticketsRef} style={{ marginBottom: '24px' }}>
+          <div ref={ticketsRef} className="edt-tickets-inline" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
               <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
                 Select Tickets
@@ -1384,6 +1415,76 @@ export function EventDetailsScreen({
           </div>
         </div>
 
+      {/* Desktop sticky purchase panel (handoff DT2/TB2: Event Detail splits
+          media-left / sticky-purchase-panel-right at >=1200px). Hidden below
+          that breakpoint -- .edt-tickets-inline above stays the only ticket
+          UI on mobile/tablet. Mirrors the bottom CTA bar's summary + buy
+          action rather than duplicating the full ticket-tier list, since
+          that list already lives in the left column and stays reachable via
+          the "Tickets" tab / normal scroll on desktop too. */}
+      {ticketTypes.length > 0 && !hasEnded && (
+        <div className="edt-purchase-panel">
+          <div style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
+            Your Order
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{selectedTicket?.name || 'Select a ticket'}</span>
+            <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {selectedTicket ? formatPrice(selectedTicket.price) : ''}
+            </span>
+          </div>
+          {selectedTicket && (
+            <div style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '16px' }}>Qty: {selectedQty}</div>
+          )}
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '12px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total</span>
+            <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {selectedTicket ? formatPrice(selectedTicket.price * selectedQty) : formatPrice(0)}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              try {
+                if (canBook && !purchasesDisabled && selectedTicket) {
+                  haptics.medium();
+                  onGetTickets(selectedTicket, selectedQty);
+                }
+              } catch (err: any) {
+                console.error('BOOK BUTTON CRASH:', err);
+                Sentry.captureException(err);
+                setBookingError(err?.message || String(err));
+                setTimeout(() => setBookingError(null), 3500);
+              }
+            }}
+            disabled={!canBook || purchasesDisabled}
+            style={{
+              width: '100%',
+              background: purchasesDisabled
+                ? ventsColors.elevated
+                : canBook
+                ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                : ventsColors.elevated,
+              border: 'none',
+              borderRadius: '14px',
+              padding: '14px',
+              color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
+              fontSize: '15px',
+              fontWeight: 700,
+              fontFamily: 'Space Grotesk, sans-serif',
+              cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+              boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+            }}
+          >
+            {purchasesDisabled
+              ? 'Purchases Paused'
+              : canBook
+              ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+              : 'Select tickets'}
+          </button>
+        </div>
+      )}
+
       {/* Map dialog */}
       {showMapDialog && (
         <div
@@ -1486,8 +1587,10 @@ export function EventDetailsScreen({
         </div>
       )}
 
-      {/* Sticky bottom bar */}
+      {/* Sticky bottom bar -- mobile/tablet only; desktop's sticky
+          .edt-purchase-panel in the right column replaces it. */}
       <div
+        className="edt-bottom-bar"
         style={{
           position: 'absolute',
           bottom: 0,
