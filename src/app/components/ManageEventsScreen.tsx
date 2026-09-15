@@ -194,8 +194,23 @@ export function ManageEventsScreen({
         .vents-manage-card:active { transform: scale(0.99); }
         .vents-action-btn { transition: transform 0.12s ease, opacity 0.12s ease; }
         .vents-action-btn:active { transform: scale(0.95); }
+
+        /* Desktop (DT1): a genuine multi-column content grid instead of a
+           single stretched mobile column -- header/search/list share a
+           centered max-width content column, and events lay out as a
+           responsive card grid rather than one wide stacked list. */
+        .vents-manage-shell { }
+        .vents-manage-list { display: flex; flex-direction: column; gap: 12px; }
+        @media (min-width: 900px) {
+          .vents-manage-shell { max-width: 1100px; width: 100%; margin: 0 auto; padding-left: 8px; padding-right: 8px; box-sizing: border-box; }
+          .vents-manage-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
+        }
+        @media (min-width: 1300px) {
+          .vents-manage-list { grid-template-columns: repeat(3, 1fr); }
+        }
       `}</style>
 
+      <div className="vents-manage-shell">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
@@ -264,7 +279,7 @@ export function ManageEventsScreen({
 
         {/* Event cards */}
         {!loading && filtered.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="vents-manage-list">
             {filtered.map((event, idx) => {
               const meta = STATUS_META[event.displayStatus];
               const StatusIcon = meta.icon;
@@ -387,6 +402,7 @@ export function ManageEventsScreen({
             No events match "{query}".
           </div>
         )}
+      </div>
       </div>
 
       {/* Options bottom sheet */}
