@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 11 UNITS MIGRATED (11 of ~35 units)
+## Status: FOUNDATION + 12 UNITS MIGRATED (12 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -147,6 +147,29 @@ everything else in the priority list below is not started.
   disappears either way. Scripted substitution (103 + 47 replacements).
   Re-ran all 4 source-reading test files explicitly (31/31 pass, negative
   assertion included) plus full typecheck + suite (429/429).
+- [x] **`src/lib/servicesDesignTokens.ts`** — the Services feature's OWN
+  second token module (used by 9 files: ServicesHomeScreen, ServiceCategory
+  Screen, ServiceProviderCard, ServiceProviderProfileScreen,
+  ServiceBookingsScreen, and others) had drifted into its own independent
+  palette (`#020005`/`#090514`/`#A855F7`) distinct from the codebase-wide
+  one — exactly the A11 "tokens drift across surfaces" finding, now closed
+  at the root. Rewrote `servicesColors`'s VALUES to reference `ventsColors`
+  (bg→bg, cardBg→surface, accentPurple→accent, etc.), keeping every KEY
+  name unchanged so none of the 9 consumer files needed any edit — same
+  "update the shared primitive once" principle as the Button.tsx and
+  AuthScreen constant migrations, applied to a whole second token system.
+  `servicesGradients.primary` changed from a two-stop gradient to a solid
+  accent value (per the redesign's button spec) — still a valid CSS
+  `background` string, so no consumer syntax changed. Checked
+  `walletServicesPayment.security.test.ts` (the one test that reads
+  `servicesColors.border` by name) first — it asserts the reference exists
+  in source, not what it resolves to, so unaffected. Then cleaned up the
+  last 15 raw hex leftovers across ServicesHomeScreen, ServiceCategoryScreen,
+  ServiceProviderCard, and ServiceProviderProfileScreen to reference
+  `servicesColors.*` directly. Typecheck clean;
+  `walletServicesPayment.security.test.ts`, `providerServicesUi.test.ts`,
+  `selectorAuditComplete.test.ts` re-run explicitly (27/27 pass); full
+  suite 429/429.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -201,11 +224,18 @@ maturity — not a batch replace.
 6. Someone Else Pays — color tokens done (see above)
 7. My Tickets / Ticket Detail / QR / Transfers — color tokens done (see above)
 8. Wallet / Deposit / Transaction Detail — color tokens done (see above)
-9. Services discovery / Provider Profile / Service Detail — not started
-10. Service Booking / Checkout / Payment / Confirmation — not started (financial)
-11. Booking History / Cancellation / Refund — not started (financial —
-    this is `ServiceBookingsScreen.tsx`, touched functionally this session
-    for the 0077 refund UI; redesign pass must not disturb that logic)
+9. Services discovery / Provider Profile / Service Detail — color tokens
+   done via the `servicesDesignTokens.ts` root-cause fix (see above); this
+   also covers Service Booking/Checkout/Confirmation UI since it lives in
+   `ServiceProviderProfileScreen.tsx`
+10. Service Booking / Checkout / Payment / Confirmation — color tokens done
+    (same file as item 9)
+11. Booking History / Cancellation / Refund — color tokens done via the
+    `servicesDesignTokens.ts` fix (`ServiceBookingsScreen.tsx` is a
+    consumer). Explicitly re-ran `serviceBookingRefunds.security.test.ts`
+    (the 0077 refund UI's own security tests from earlier this session) —
+    16/16 pass, and it has zero color-literal assertions, so this token
+    change is confirmed safe against it.
 12. Chats / Requests / People Search — not started
 13. Notifications — not started
 14. Profile — not started

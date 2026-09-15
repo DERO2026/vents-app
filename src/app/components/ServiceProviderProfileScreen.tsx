@@ -38,7 +38,7 @@ function ProfileSkeleton({ onBack }: { onBack: () => void }) {
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={servicesColors.textSecondary} />
         </button>
       </div>
       <div style={{ margin: '16px 20px 0', height: '220px', borderRadius: servicesRadii.xl, background: servicesColors.cardBg }} />
@@ -224,7 +224,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
       <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <ArrowLeft size={16} color="#C4C9E0" />
+            <ArrowLeft size={16} color={servicesColors.textSecondary} />
           </button>
         </div>
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
@@ -283,7 +283,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
 
         {provider.description && (
           <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
-            <p style={{ color: '#C9C9D9', fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{provider.description}</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{provider.description}</p>
           </div>
         )}
 
@@ -316,7 +316,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                       </div>
                       <div style={{ minWidth: 0 }}>
                         <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
-                        {svc.description && <p style={{ color: '#C9C9D9', fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
+                        {svc.description && <p style={{ color: servicesColors.textSecondary, fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
                         {svc.durationMinutes && <p style={{ color: servicesColors.textTertiary, fontSize: '11px', margin: '4px 0 0' }}>{svc.durationMinutes} min</p>}
                         {isSelected && (
                           <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
@@ -371,12 +371,12 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
       <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 75%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {bookingSuccess && (
           <div style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: servicesRadii.md, padding: '12px 14px' }}>
-            <p style={{ color: '#10B981', fontSize: '13px', fontWeight: 700, margin: 0 }}>Booking confirmed! Check My Bookings for details.</p>
+            <p style={{ color: servicesColors.success, fontSize: '13px', fontWeight: 700, margin: 0 }}>Booking confirmed! Check My Bookings for details.</p>
           </div>
         )}
         {bookingError && (
           <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: servicesRadii.md, padding: '12px 14px' }}>
-            <p style={{ color: '#EF4444', fontSize: '13px', fontWeight: 600, margin: 0 }}>{bookingError}</p>
+            <p style={{ color: servicesColors.error, fontSize: '13px', fontWeight: 600, margin: 0 }}>{bookingError}</p>
           </div>
         )}
 
@@ -412,7 +412,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 >
                   <span>{method === 'paystack' ? 'Card / Bank / USSD' : 'VENTS Wallet'}</span>
                   {method === 'wallet' && (
-                    <span style={{ fontSize: '10px', color: insufficientForWallet ? '#EF4444' : servicesColors.textTertiary }}>
+                    <span style={{ fontSize: '10px', color: insufficientForWallet ? servicesColors.error : servicesColors.textTertiary }}>
                       {walletBalanceLoading
                         ? 'Loading…'
                         : walletBalanceKobo === null

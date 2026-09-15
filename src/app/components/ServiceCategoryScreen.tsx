@@ -73,7 +73,7 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress }: Ser
       {/* Header */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={servicesColors.textSecondary} />
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
           <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${accent}26`, flexShrink: 0 }} />

@@ -133,7 +133,7 @@ export function ServiceProviderCompactCard({ provider, onPress }: ServiceProvide
           </p>
         )}
         {!!provider.reviewCount && provider.avgRating != null && (
-          <p style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 700, margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          <p style={{ color: servicesColors.warning, fontSize: '11px', fontWeight: 700, margin: '4px 0 0', display: 'flex', alignItems: 'center', gap: '3px' }}>
             ★ {provider.avgRating.toFixed(1)} <span style={{ color: servicesColors.textSecondary, fontWeight: 500 }}>({provider.reviewCount})</span>
           </p>
         )}

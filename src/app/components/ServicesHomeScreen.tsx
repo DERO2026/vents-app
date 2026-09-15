@@ -133,7 +133,7 @@ export function ServicesHomeScreen({
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <ArrowLeft size={16} color="#C4C9E0" />
+            <ArrowLeft size={16} color={servicesColors.textSecondary} />
           </button>
           <h1 style={{ color: servicesColors.textPrimary, fontSize: '26px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Services</h1>
           <button

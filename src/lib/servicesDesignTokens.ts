@@ -1,30 +1,34 @@
-// Reusable design tokens for the VENTS Services experience (Stage 1: tokens
-// only, no screens yet). Not new styles -- every value here is lifted
-// directly from patterns already in production across ExploreScreen,
-// ProfileScreen, EventDetailsScreen, and the Country/State picker screens,
-// named once so Services components import from here instead of re-inlining
-// the same hex strings a fifth time. Scoped to `services*` naming so this
-// file can later be merged into a codebase-wide tokens module without a
-// rename, if that's ever undertaken as a separate effort.
+// Reusable design tokens for the VENTS Services experience. Values now
+// sourced from the codebase-wide token module (src/lib/ventsDesignTokens.ts,
+// the approved VENTS Redesign artifact's §02) rather than a second,
+// independently-drifting palette -- this was itself the exact
+// "terminology/tokens drift across surfaces" finding (A11) the redesign
+// audit flagged. Key NAMES kept unchanged (servicesColors.bg, .cardBg,
+// etc.) so none of this module's ~9 consumer files need to change how they
+// reference these tokens -- only the values moved.
+
+import { ventsColors } from './ventsDesignTokens';
 
 export const servicesColors = {
-  bg: '#020005',
-  cardBg: '#090514',
-  cardBgAlt: '#131629',
-  border: 'rgba(255,255,255,0.06)',
-  borderSelected: 'rgba(168,85,247,0.45)',
-  textPrimary: '#F0F0FF',
-  textSecondary: '#8B8FA8',
-  textTertiary: '#5A5A7A',
-  accentPurple: '#A855F7',
-  success: '#10B981',
-  warning: '#F59E0B',
-  error: '#EF4444',
+  bg: ventsColors.bg,
+  cardBg: ventsColors.surface,
+  cardBgAlt: ventsColors.elevated,
+  border: ventsColors.border,
+  borderSelected: 'rgba(142,92,247,0.55)',
+  textPrimary: ventsColors.ink1,
+  textSecondary: ventsColors.ink2,
+  textTertiary: ventsColors.ink3,
+  accentPurple: ventsColors.accent,
+  success: ventsColors.success,
+  warning: ventsColors.pending,
+  error: ventsColors.error,
 } as const;
 
 export const servicesGradients = {
-  // Primary CTA / selected-state gradient, matches Country/State picker CTAs.
-  primary: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+  // Solid accent fill per the redesign's button spec (no longer a
+  // gradient) -- kept as a CSS `background` value either way, so every
+  // consumer using `background: servicesGradients.primary` needs no change.
+  primary: ventsColors.accent,
   // Reserved for the existing "Become a Service Provider" capability-request
   // card in ProfileScreen -- Services screens should NOT reuse this for
   // their own CTAs, to keep that capability affordance visually distinct.
