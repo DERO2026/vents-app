@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { ArrowLeft, Plus, Pencil, Trash2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Plus, Pencil, Trash2 } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
 import { servicesPayableCurrencyForCountry } from '../../lib/currencies';
 import {
@@ -172,10 +172,27 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(100px + env(safe-area-inset-bottom))` }}>
-        {error && <p style={{ color: ventsColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        {/* Same fix as ServiceBookingsScreen: only show this banner-style
+            error once services has loaded at least once (a failed refresh
+            keeps the existing list visible with this on top). A failed
+            INITIAL load falls through to the dedicated error state below
+            instead of coexisting with a perpetual "Loading…". */}
+        {error && services !== null && <p style={{ color: ventsColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
         {info && <p style={{ color: ventsColors.pending, fontSize: '13px', margin: '0 0 12px' }}>{info}</p>}
 
-        {services === null ? (
+        {services === null && error ? (
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <AlertCircle size={32} color={ventsColors.error} style={{ marginBottom: '10px', marginLeft: 'auto', marginRight: 'auto' }} />
+            <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>Couldn't load your services</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 16px' }}>{error}</p>
+            <button
+              onClick={load}
+              style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${ventsColors.error}`, borderRadius: servicesRadii.md, padding: '10px 20px', color: ventsColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : services === null ? (
           <p style={{ color: servicesColors.textSecondary, textAlign: 'center', marginTop: '40px', fontSize: '13px' }}>Loading…</p>
         ) : services.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: '40px' }}>
