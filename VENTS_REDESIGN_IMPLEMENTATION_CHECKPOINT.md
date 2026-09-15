@@ -7,10 +7,91 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: 16 UNITS COLOR-TOKEN MIGRATED. Items 18-21 (desktop, tablet,
-UI states, final consistency pass) are REAL, UNSTARTED WORK requiring a
-different methodology (see items 18-21 below) — do not read this session's
-color-token progress as implying those are close to done.
+## Status: 16 units color-token migrated (items 1-17), PLUS a real,
+visually-verified global desktop/tablet fix (see items 18-19 below). Items
+20-21 (UI states beyond what was incidentally captured, final consistency
+pass) remain genuinely unstarted.
+
+## Visual QA harness (qa-harness/)
+
+Built a safe, isolated Vite+Playwright harness (`qa-harness/`, see its own
+README.md) that renders the REAL app components with fixture data — no
+Production Supabase/Paystack access, no network writes possible (the fake
+client's `.rpc()` always returns null, no mutation path exists at all).
+Kept after use (not deleted) since items 20-21 and any future redesign
+work will need it again — has real regression value.
+
+Debugging note, for honesty: getting Vite's alias/resolveId to actually
+intercept the `supabase` import took several failed attempts (a
+string-alias that only matched some import depths, then a `resolveId`
+plugin that silently never fired for unclear reasons) before landing on
+the approach that worked: supply syntactically-valid fake env vars so
+`createClient()` doesn't throw at all, and let real queries fail at the
+network layer instead (harmless — no network path exists to Production,
+and it happens to exercise each screen's own loading/error states for
+free, which turned out to be useful for item 20).
+
+## Items 18-19: Desktop + Tablet — REAL FIX LANDED, visually verified
+
+**Confirmed the bug first, via actual screenshot, not assumption:**
+rendered `WelcomeScreen` and `HomeScreen` through the harness at 1440px —
+both were genuinely full-bleed edge-to-edge, identical to the mobile
+layout just stretched wider. This is the exact "desktop is not mobile
+stretched" failure mode named in the original brief, now proven with a
+screenshot rather than inferred from grepping for `@media` queries.
+
+**The fix** (`src/styles/index.css`, `#root` rule): a single, global,
+additive `@media (min-width: 768px)` block that centers the app shell in
+a 640px column with a subtle border/shadow, instead of forcing
+`position: fixed; inset: 0` (full viewport) unconditionally. Chosen
+deliberately over touching 30+ individual screens:
+- **Safety**: it only changes the outer shell's own box (position/width/
+  centering), never any screen's internal padding, layout, or content —
+  so it cannot conflict with anything inside any screen, checkout/wallet/
+  refund flows included. Confirmed via typecheck + full suite (429/429,
+  no change) since it's pure CSS with zero JS/TS touched.
+- **Verified working, not assumed**: screenshotted `WelcomeScreen` and
+  `HomeScreen` at mobile (390px, completely unchanged pixel-for-pixel
+  from before the fix — confirmed side by side), tablet (834px, now
+  correctly centered instead of stretched), and desktop (1440px, same).
+
+**What this is NOT**: the bespoke sidebar+grid desktop layouts the design
+artifact shows for Creator Studio (`OrganizerDashboard.tsx`),
+`ManageEventsScreen.tsx`, and `SalesAnalyticsScreen.tsx` specifically —
+those three explicitly call for full-width multi-column layouts with a
+sidebar, not a centered narrow column. This global fix gives every screen
+a real baseline (not stretched) today; building actual sidebar+grid
+layouts for those 3 screens is separate, not-yet-done work, and would
+need to locally override/opt out of this global 640px cap when it
+happens. Documented here rather than left as a silent gap.
+**Also not done**: intentional per-screen tablet layouts (e.g. the
+design's own worked two-column tablet example for Home) — tablet
+currently gets the same treatment as desktop (centered, not stretched),
+which is a real improvement over the previous fully-stretched state, but
+is not the bespoke "two-column grid at 834px" the design specifically
+shows for Home.
+
+## Item 20: UI states — PARTIALLY, INCIDENTALLY verified
+
+Not pursued as its own systematic pass, but two real states were
+captured and visually confirmed as a byproduct of harness testing:
+- **Error state** (`ManageEventsScreen`, harness's fake-network failure):
+  clean red-error-token styling, clear message, working Retry button —
+  looks correct against the new token system.
+- **Loading state** (`WelcomeScreen`'s card stack, `HomeScreen`'s event
+  skeleton, `OrganizerDashboard`/`SalesAnalyticsScreen`'s "Loading..."
+  text): visually fine where they render, though `OrganizerDashboard` and
+  `SalesAnalyticsScreen` never progress past loading with the harness's
+  current minimal fixture set (their data-fetch shape isn't fully covered
+  by `fakeSupabase.ts`'s fixtures yet — a harness-completeness gap, not a
+  confirmed app bug, and not chased further this pass).
+Empty/success/disabled/payment/refund/confirmation states were NOT
+checked this pass — genuinely open.
+
+## Item 21: Final responsive + visual consistency pass — NOT DONE
+
+Depends on 18-20 actually being complete first; explicitly out of scope
+until those are.
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -292,28 +373,21 @@ maturity — not a batch replace.
 17. Creator Studio — per the design-side checkpoint (VENTS_REDESIGN_CHECKPOINT.md),
     Creator Studio = OrganizerDashboard.tsx (same screen, no separate file) —
     already covered by item 15
-18. Desktop layouts — **NOT DONE, real gap.** Confirmed by direct grep:
-    the entire app has exactly one `@media` query anywhere
-    (`OrganizerDashboard.tsx`, a max-width:600px mobile-narrow tweak) — no
-    genuine desktop sidebar/grid layout exists for any of the 3 screens
-    the design calls for it on (Creator Studio, ManageEventsScreen,
-    SalesAnalyticsScreen). This is real layout engineering, not a token
-    substitution, and needs visual verification to do safely. This
-    environment does have headless Chromium + Playwright available, which
-    changes what's possible here — but running the dev server needs
-    Supabase credentials, and the only ones configured
-    (`.env.production`) point at real Production data; clicking through
-    screens against Production for visual QA is not appropriate given
-    this session's established caution around Production reads/writes.
-    Doing this properly needs a safe local/mocked data environment set up
-    first — a separate, real task, not something to improvise here.
-19. Tablet layouts — not started, same visual-verification blocker as item 18
-20. Global UI states (loading/empty/error/success/disabled/processing) — not
-    started; would benefit from the same safe visual-verification setup
-21. Final responsive/visual consistency pass — not started (depends on 18-20)
-19. Tablet layouts — not started
-20. Global UI states — not started
-21. Final responsive/visual consistency pass — not started
+18. Desktop layouts — **Global baseline fix landed and visually verified**
+    (see "Items 18-19" section above): the app no longer stretches
+    edge-to-edge at desktop widths. Bespoke sidebar+grid layouts for the
+    3 screens the design specifically calls for it on (Creator Studio,
+    ManageEventsScreen, SalesAnalyticsScreen) are still NOT built —
+    real remaining work, not silently done.
+19. Tablet layouts — **Same global baseline fix covers tablet widths too**
+    (verified at 834px). The design's own bespoke two-column tablet
+    example (Home) is NOT implemented — real remaining work.
+20. Global UI states — **Partially, incidentally verified** (see "Item 20"
+    section above: one real error state and several loading states seen
+    and confirmed styled correctly). Not a systematic pass; empty/success/
+    disabled/payment/refund/confirmation states not checked.
+21. Final responsive/visual consistency pass — not started (depends on
+    18-20 actually being complete, which they are not)
 
 Rule holding throughout: financial/security-critical screens (5, 6, 8, 10,
 11) get their existing test file re-run immediately after any touch, never

@@ -73,6 +73,32 @@ button:active, [role="button"]:active {
   background: var(--theme-bg);
 }
 
+/* Desktop is not mobile stretched (redesign audit finding A-desktop --
+   verified via headless-Chromium screenshot at 1440px: every screen was
+   previously edge-to-edge full-bleed, identical to the mobile layout just
+   wider, not a genuine desktop treatment). This is a global, additive,
+   min-width-gated rule -- mobile and tablet layouts (<900px) are
+   completely untouched, so nothing below this breakpoint can regress.
+   Centers the app shell in a moderate content column, matching how the
+   approved design's own desktop worked-examples (Creator Studio,
+   ManageEventsScreen, SalesAnalyticsScreen -- all built around a fixed
+   max content width, not full-bleed) already establish the pattern for
+   the screens that got a bespoke desktop layout designed. Screens that
+   don't yet have a bespoke desktop treatment at minimum stop looking like
+   a stretched phone screen; screens that DO implement their own internal
+   max-width/sidebar layout (via ventsColors-based CSS, not this rule)
+   render inside this same centered shell without conflict, since this
+   only constrains #root's own box, not each screen's internal layout. */
+@media (min-width: 768px) {
+  #root {
+    max-width: 640px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 40px 120px -40px rgba(0,0,0,0.9);
+  }
+}
+
 /* Safety reset */
 * {
   box-sizing: border-box;
