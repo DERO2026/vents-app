@@ -522,26 +522,53 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         background: ventsColors.bg,
         width: '100%',
         height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
         overflowY: 'auto',
         scrollbarWidth: 'none',
       }}
     >
       <style>{`
+        .checkout-content { display: flex; flex-direction: column; }
         input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }
-        /* Interim desktop containment -- see EventDetailsScreen's identical
-           fix for why: the shared #root shell now goes to 1200px by
-           default, and this screen has no max-width of its own yet. The
-           real fix (a two-column layout with a pinned order summary, per
-           the handoff spec) is still pending. */
-        @media (min-width: 900px) {
+        .checkout-summary-panel {
+          position: absolute; bottom: 0; left: 0; right: 0;
+          background: rgba(6,10,18,0.95); backdrop-filter: blur(20px);
+          border-top: 1px solid rgba(255,255,255,0.08); padding: 14px 16px 28px;
+        }
+        @media (min-width: 900px) and (max-width: 1199px) {
           .checkout-content > * { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+        }
+        /* Real desktop layout (handoff DT2/TB2): form column left, pinned
+           order-summary + Pay CTA in a real sticky right column, instead of
+           a screen-bottom-fixed bar over a centered single column. */
+        @media (min-width: 1200px) {
+          .checkout-content {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            column-gap: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            align-items: start;
+            padding: 0 16px;
+          }
+          .checkout-header { grid-column: 1 / -1; padding-left: 0; padding-right: 0; }
+          .checkout-main { grid-column: 1; padding-left: 0; padding-right: 0; padding-bottom: 40px; }
+          .checkout-summary-panel {
+            grid-column: 2;
+            grid-row: 2;
+            position: sticky;
+            top: 24px;
+            bottom: auto;
+            left: auto;
+            right: auto;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+          }
         }
       `}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+      <div className="checkout-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
           style={{
@@ -561,7 +588,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         <h1 style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
       </div>
 
-      <div style={{ flex: 1, padding: '4px 16px 140px' }}>
+      <div className="checkout-main" style={{ flex: 1, padding: '4px 16px 140px' }}>
         {/* Order mini summary */}
         <div
           style={{
@@ -864,8 +891,11 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </div>
       </div>
 
-      {/* Pay CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
+      {/* Pay CTA -- .checkout-summary-panel base styles (mobile: fixed bottom
+          bar) and desktop override (sticky right-column panel) live in the
+          <style> block above; keeping this element's own positioning out of
+          inline style means the desktop media query can actually win. */}
+      <div className="checkout-summary-panel">
 
         {payError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
