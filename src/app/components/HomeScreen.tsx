@@ -1799,8 +1799,34 @@ export function HomeScreen({
               </>
             )}
 
-            {/* Main grid of events */}
-            <div className="px-4">
+            {/* Main grid of events -- tablet (TB1): two-column card grid at
+                >=768px with 32px margins, per the design's §07/§28 tablet
+                composition. Desktop (>=1100px) goes to three columns and
+                caps its own content width -- without this, HomeScreen has
+                no inner max-width of its own (unlike screens with a bespoke
+                desktop layout), so the global #root widening added for
+                Creator Studio/ManageEvents/SalesAnalytics would otherwise
+                stretch a single FeedCard edge-to-edge into one oversized
+                card instead of a real desktop grid. */}
+            <style>{`
+              @media (min-width: 768px) and (max-width: 1099px) {
+                .vents-home-main-section { padding-left: 32px; padding-right: 32px; }
+                .vents-home-feed-grid {
+                  display: grid !important;
+                  grid-template-columns: repeat(2, 1fr);
+                  gap: 16px;
+                }
+              }
+              @media (min-width: 1100px) {
+                .vents-home-main-section { max-width: 1100px; margin: 0 auto; padding-left: 32px; padding-right: 32px; box-sizing: border-box; }
+                .vents-home-feed-grid {
+                  display: grid !important;
+                  grid-template-columns: repeat(3, 1fr);
+                  gap: 16px;
+                }
+              }
+            `}</style>
+            <div className="px-4 vents-home-main-section">
               <div className="flex items-center justify-between mb-3">
                 <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                   {isDefaultState
@@ -1876,7 +1902,7 @@ export function HomeScreen({
                   )}
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="vents-home-feed-grid" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {filteredEvents.map((event) => (
                     <div key={event.id} style={{ width: '100%' }}>
                       <FeedCard

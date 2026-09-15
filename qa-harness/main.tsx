@@ -15,17 +15,22 @@ const FIXTURE_EVENTS = [
   {
     id: 'evt-1', title: 'Lagos Music Festival', location: 'Eko Atlantic, Lagos',
     price: 15000, status: 'live', event_date: new Date(Date.now() + 7 * 86400000).toISOString(),
-    category: 'Music', organizer_id: 'org-1', image_url: null,
+    category: 'Music', organizer_id: 'org-1', image_url: null, country: 'NG',
   },
   {
     id: 'evt-2', title: 'Comedy Night Abuja', location: 'Transcorp Hilton, Abuja',
     price: 5000, status: 'live', event_date: new Date(Date.now() + 14 * 86400000).toISOString(),
-    category: 'Comedy', organizer_id: 'org-1', image_url: null,
+    category: 'Comedy', organizer_id: 'org-1', image_url: null, country: 'NG',
   },
   {
     id: 'evt-3', title: 'Free Tech Meetup', location: 'Landmark Centre, Lagos',
     price: 0, status: 'live', event_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-    category: 'Technology', organizer_id: 'org-1', image_url: null,
+    category: 'Technology', organizer_id: 'org-1', image_url: null, country: 'NG',
+  },
+  {
+    id: 'evt-4', title: 'Abuja Food Carnival', location: 'Millennium Park, Abuja',
+    price: 3000, status: 'live', event_date: new Date(Date.now() + 10 * 86400000).toISOString(),
+    category: 'Food', organizer_id: 'org-1', image_url: null, country: 'NG',
   },
 ] as any[];
 
@@ -58,6 +63,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
       loading={false}
       fetchEvents={() => {}}
       currentUser={FIXTURE_USER}
+      countryFilter="NG"
     />
   ),
 };
