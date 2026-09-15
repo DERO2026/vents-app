@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 13 UNITS MIGRATED (13 of ~35 units)
+## Status: FOUNDATION + 14 UNITS MIGRATED (14 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -174,6 +174,18 @@ everything else in the priority list below is not started.
   **`NotificationsScreen.tsx`** (626 lines) — no test file reads either
   file's source, confirmed via grep before editing. Scripted substitution
   (54 + 28 replacements). Typecheck clean, full suite 429/429.
+- [x] **`src/app/components/ProfileScreen.tsx`** (950 lines) — 8 test
+  files reference this filename; checked all 8 for color-literal
+  assertions before editing (grep for hex patterns across all 8 test
+  files returned zero matches) — all assert capability/RLS/logic
+  patterns, none touch styling. Two colors deliberately NOT mapped:
+  `#22D3EE`/`#EC4899` — decorative accents matching
+  `servicesGradients.serviceProviderCapability`'s intentionally-distinct
+  cyan (per that module's own comment: "should NOT reuse [the primary
+  gradient] ... to keep that capability affordance visually distinct").
+  Scripted substitution (43 replacements). Re-ran the 4 tests that
+  actually read this file's source explicitly (33/33 pass) plus full
+  typecheck + suite (429/429).
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -242,8 +254,8 @@ maturity — not a batch replace.
     change is confirmed safe against it.
 12. Chats / Requests / People Search — color tokens done (ConversationScreen; ExploreScreen done earlier in item 3's pass)
 13. Notifications — color tokens done (see above)
-14. Profile — **NEXT UP** (`ProfileScreen.tsx`)
-15. Organizer Dashboard suite — not started
+14. Profile — color tokens done (see above)
+15. Organizer Dashboard suite — **NEXT UP**
 16. Service Provider Dashboard suite — not started
 17. Creator Studio — not started
 18. Desktop layouts — not started

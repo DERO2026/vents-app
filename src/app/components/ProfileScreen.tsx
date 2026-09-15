@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
   Settings,
@@ -329,9 +330,9 @@ export function ProfileScreen({
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
-        <div style={{ fontSize: '20px', fontWeight: 700, color: '#FFFFFF' }}>Sign in to view your profile</div>
-        <div style={{ fontSize: '14px', color: '#94A3B8', maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: ventsColors.ink3, fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: ventsColors.white }}>Sign in to view your profile</div>
+        <div style={{ fontSize: '14px', color: ventsColors.ink3, maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
         <button
           onClick={() => onNavigate('auth')}
           style={{
@@ -362,14 +363,14 @@ export function ProfileScreen({
       icon: WalletCards,
       label: 'VENTS Wallet',
       sublabel: 'Deposit & spend balance',
-      color: '#A855F7',
+      color: ventsColors.accent,
       screen: 'user-wallet',
     },
     {
       icon: Bell,
       label: 'Notifications',
       sublabel: 'Manage alerts',
-      color: '#F59E0B',
+      color: ventsColors.pending,
       screen: 'notifications',
       badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
     },
@@ -384,14 +385,14 @@ export function ProfileScreen({
       icon: Gift,
       label: 'Vents Cents',
       sublabel: 'Earn Vents Cents',
-      color: '#FFB830',
+      color: ventsColors.pending,
       screen: 'referral',
     },
     {
       icon: Ticket,
       label: 'Payment Requests',
       sublabel: 'Tickets you sent or paid for someone',
-      color: '#A78BFA',
+      color: ventsColors.accentSoft,
       screen: 'payment-requests',
     },
     {
@@ -476,7 +477,7 @@ export function ProfileScreen({
       >
         <h1
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '20px',
             fontWeight: 800,
             fontFamily: 'Space Grotesk, sans-serif',
@@ -552,7 +553,7 @@ export function ProfileScreen({
                 </div>
                 <div style={{
                   position: 'absolute', bottom: -4, right: -4,
-                  background: '#7B2FBE', borderRadius: '50%', width: '22px', height: '22px',
+                  background: ventsColors.accent, borderRadius: '50%', width: '22px', height: '22px',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   border: '2px solid #020005',
                 }}>
@@ -563,7 +564,7 @@ export function ProfileScreen({
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                   <h2
                     style={{
-                      color: '#FFFFFF',
+                      color: ventsColors.white,
                       fontSize: '20px',
                       fontWeight: 700,
                       fontFamily: 'Space Grotesk, sans-serif',
@@ -574,14 +575,14 @@ export function ProfileScreen({
                   </h2>
                   {isVerified && (
                     <span title="Verified" style={{ display: 'inline-flex' }}>
-                      <BadgeCheck size={16} color="#3B82F6" style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+                      <BadgeCheck size={16} color={ventsColors.info} style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
                     </span>
                   )}
                 </div>
                 <div className="flex items-center gap-1 mt-0.5">
-                  <MapPin size={12} color="#8B8FA8" />
+                  <MapPin size={12} color={ventsColors.ink2} />
                   {currentUser?.state ? (
-                    <span style={{ color: '#8B8FA8', fontSize: '12px' }}>
+                    <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>
                       {currentUser.state}
                       {(() => {
                         // Unset (legacy pre-country-column accounts) falls
@@ -598,7 +599,7 @@ export function ProfileScreen({
                   ) : (
                     <button
                       onClick={() => onNavigate('settings')}
-                      style={{ background: 'none', border: 'none', padding: 0, color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                      style={{ background: 'none', border: 'none', padding: 0, color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       Add your state
                     </button>
@@ -637,7 +638,7 @@ export function ProfileScreen({
                         cursor: 'pointer',
                       }}
                     >
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: '#F59E0B' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 700, color: ventsColors.pending }}>
                         ⭐ {vcBalance.toLocaleString()} VC
                       </span>
                     </div>
@@ -681,19 +682,19 @@ export function ProfileScreen({
                     className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
                     style={{ background: 'rgba(168,85,247,0.14)', border: '1px solid rgba(255,255,255,0.06)' }}
                   >
-                    <Icon size={17} color="#C4B5FD" />
+                    <Icon size={17} color={ventsColors.accentSoft} />
                   </div>
                   <div className="flex-1">
-                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 600 }}>
+                    <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 600 }}>
                       {item.label}
                     </p>
-                    <p style={{ color: '#9CA0BC', fontSize: '12px' }}>{item.sublabel}</p>
+                    <p style={{ color: ventsColors.ink3, fontSize: '12px' }}>{item.sublabel}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {item.badge && (
                       <div
                         style={{
-                          background: '#EF4444',
+                          background: ventsColors.error,
                           borderRadius: '50%',
                           width: '18px',
                           height: '18px',
@@ -707,7 +708,7 @@ export function ProfileScreen({
                         </span>
                       </div>
                     )}
-                    <ChevronRight size={15} color="#94A3B8" />
+                    <ChevronRight size={15} color={ventsColors.ink3} />
                   </div>
                 </button>
               );
@@ -730,8 +731,8 @@ export function ProfileScreen({
                 cursor: 'pointer',
               }}
             >
-              <Wallet size={16} color="#D8B4FE" />
-              <span style={{ color: '#D8B4FE', fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
+              <Wallet size={16} color={ventsColors.accentSoft} />
+              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
             </button>
           </div>
         )}
@@ -751,8 +752,8 @@ export function ProfileScreen({
                 cursor: 'pointer',
               }}
             >
-              <Shield size={16} color="#EF4444" />
-              <span style={{ color: '#EF4444', fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
+              <Shield size={16} color={ventsColors.error} />
+              <span style={{ color: ventsColors.error, fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
                 Admin Dashboard
               </span>
             </button>
@@ -837,8 +838,8 @@ export function ProfileScreen({
                   className="w-full flex items-center justify-center gap-2 p-4"
                   style={{ background: 'rgba(16,185,129,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '14px' }}
                 >
-                  <ShieldCheck size={16} color="#10B981" />
-                  <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
+                  <ShieldCheck size={16} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
                 </div>
               </div>
             ) : (
@@ -848,8 +849,8 @@ export function ProfileScreen({
                   className="w-full flex items-center justify-center gap-2 p-4"
                   style={{ background: 'rgba(124,58,237,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', borderRadius: '14px', border: '1px solid rgba(168,85,247,0.3)', cursor: 'pointer' }}
                 >
-                  <ShieldCheck size={16} color="#A78BFA" />
-                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</span>
+                  <ShieldCheck size={16} color={ventsColors.accentSoft} />
+                  <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</span>
                 </button>
               </div>
             )
@@ -868,12 +869,12 @@ export function ProfileScreen({
                   opacity: orgRequestStatus === 'pending' ? 0.7 : 1,
                 }}
               >
-                <BadgeCheck size={16} color="#A78BFA" />
-                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>
+                <BadgeCheck size={16} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
                   {orgRequestStatus === 'pending' ? 'Application Submitted' : orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
                 </span>
                 {orgRequestStatus === 'idle' && hasOrgDraft && (
-                  <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
+                  <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: ventsColors.pending, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
                     PENDING COMPLETION
                   </span>
                 )}
@@ -889,32 +890,32 @@ export function ProfileScreen({
         {showOrgRequestModal && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
             onClick={() => setShowOrgRequestModal(false)}>
-            <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
+            <div style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
               onClick={(e) => e.stopPropagation()}>
               {orgRequestStatus === 'pending' ? (
                 <>
-                  <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                  <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
                     Your organizer request is under review. Our team typically responds within 1–3 business days.
                   </p>
                   {orgRequestReason && (
-                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', lineHeight: 1.5 }}>
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '13px', lineHeight: 1.5 }}>
                       {orgRequestReason}
                     </div>
                   )}
                 </>
               ) : (
                 <>
-                  <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>
+                  <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>
                     {orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
                   </h3>
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
                     Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
                   </p>
                   {orgRequestStatus === 'rejected' && orgRequestAdminNote && (
                     <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
-                      <p style={{ color: '#EF4444', fontSize: '12px', fontWeight: 700, margin: '0 0 4px' }}>Your previous application wasn't approved</p>
-                      <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>{orgRequestAdminNote}</p>
+                      <p style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 700, margin: '0 0 4px' }}>Your previous application wasn't approved</p>
+                      <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{orgRequestAdminNote}</p>
                     </div>
                   )}
                   <textarea
@@ -922,9 +923,9 @@ export function ProfileScreen({
                     onChange={(e) => handleOrgReasonChange(e.target.value)}
                     placeholder="e.g. I want to host tech meetups in Lagos..."
                     rows={4}
-                    style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    style={{ width: '100%', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
                   />
-                  {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
+                  {orgRequestError && <p style={{ color: ventsColors.error, fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
                   <button
                     onClick={submitOrgRequest}
                     disabled={orgRequestStatus === 'sending'}
