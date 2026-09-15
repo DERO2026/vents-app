@@ -1334,10 +1334,20 @@ export function HomeScreen({
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: ventsColors.bg, position: 'relative' }}
+      style={{ background: ventsColors.bg, position: 'relative', overflow: 'hidden' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
+      {/* Ambient glow -- one radial per screen, top-centered, per the design
+          system's own foundational rule (§02: "ambient · radial · 1 per
+          screen, top"). Purely decorative, behind all content and
+          interaction. */}
+      <div style={{
+        position: 'absolute', top: '-200px', left: '50%', transform: 'translateX(-50%)',
+        width: '560px', height: '500px', borderRadius: '9999px',
+        background: 'radial-gradient(circle, rgba(142,92,247,0.2) 0%, rgba(142,92,247,0) 68%)',
+        pointerEvents: 'none', zIndex: 0,
+      }} />
       {/* Pull-to-refresh spinner */}
       {pullRefreshing && (
         <div style={{
