@@ -375,7 +375,7 @@ export function ImageCropperModal({
         {/* No title for the flyer variant — matches Apple Photos' minimal crop
             header (Cancel/Done only); the spacer keeps Done pinned right. */}
         {isFlyer ? <span style={{ flex: 1 }} /> : (
-          <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
+          <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
         )}
         {isFlyer && (
           <button onClick={() => setShowHelp(true)} aria-label="Framing guide" style={{ ...floatBtn, marginRight: '8px' }}>
@@ -505,7 +505,7 @@ export function ImageCropperModal({
             style={{ width: '100%', maxHeight: '78%', overflowY: 'auto', background: '#0B0618', borderRadius: '22px 22px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 8px))', display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>Framing Guide</p>
+              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>Framing Guide</p>
               <button onClick={() => setShowHelp(false)} aria-label="Close" style={floatBtn}><X size={18} /></button>
             </div>
 
@@ -568,7 +568,7 @@ const floatBtn: React.CSSProperties = {
 const doneBtn: React.CSSProperties = {
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '999px',
   height: '36px', padding: '0 16px', color: '#fff', fontSize: '13px', fontWeight: 700,
-  fontFamily: 'Space Grotesk, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
+  fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
 };
 // Essential toolbar icon button — generous hit target (44px+) for one-handed
 // mobile use, with a tiny label so the icon's meaning is never ambiguous.

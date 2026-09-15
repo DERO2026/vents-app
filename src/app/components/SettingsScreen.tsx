@@ -286,7 +286,7 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Clock size={28} color="#F59E0B" />
         </div>
-        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Verification Pending</p>
+        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Verification Pending</p>
         <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
           Your brand verification request is under review. We'll email you once a decision is made.
         </p>
@@ -1290,7 +1290,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
         <button
           onClick={handleSaveProfile}
           disabled={loading || saving}
-          style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
+          style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>

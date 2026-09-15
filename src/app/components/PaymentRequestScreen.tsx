@@ -275,7 +275,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
             disabled={paying}
             style={{
               width: '100%', height: '52px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none',
-              borderRadius: '100px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif',
+              borderRadius: '100px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
               cursor: paying ? 'not-allowed' : 'pointer', opacity: paying ? 0.6 : 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
             }}
           >

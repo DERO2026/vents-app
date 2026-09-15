@@ -347,7 +347,7 @@ export function ProfileScreen({
             color: '#fff',
             fontSize: '15px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: 'pointer',
             boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
           }}
@@ -480,7 +480,7 @@ export function ProfileScreen({
             color: ventsColors.ink1,
             fontSize: '20px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
           }}
         >
           Profile
@@ -567,7 +567,7 @@ export function ProfileScreen({
                       color: ventsColors.white,
                       fontSize: '20px',
                       fontWeight: 700,
-                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontFamily: 'Manrope, sans-serif',
                       margin: 0,
                     }}
                   >

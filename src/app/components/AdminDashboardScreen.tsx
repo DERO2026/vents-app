@@ -127,7 +127,7 @@ function ConfirmModal({
         <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
           <AlertCircle size={24} color="#EF4444" />
         </div>
-        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif' }}>{title}</h3>
+        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Manrope, sans-serif' }}>{title}</h3>
         <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: '0 0 24px' }}>{message}</p>
         {typedConfirmationText && (
           <div style={{ marginBottom: '20px', textAlign: 'left' }}>
@@ -2031,7 +2031,7 @@ export function AdminDashboardScreen({
             pointerEvents: 'none', padding: '0 60px', textAlign: 'center',
           }}
         >
-          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             Admin Console
             {isRoot && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#A855F7', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>ROOT</span>}
             {isSubAdmin && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>SUB-ADMIN</span>}
@@ -2575,7 +2575,7 @@ export function AdminDashboardScreen({
             ].map(card => (
               <div key={card.label} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', boxSizing: 'border-box' }}>
                 <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
+                <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
               </div>
             ))}
           </div>
@@ -2759,7 +2759,7 @@ export function AdminDashboardScreen({
                 ].map(card => (
                   <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '16px' }}>
                     <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                    <div style={{ color: card.color, fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                    <div style={{ color: card.color, fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{card.value}</div>
                   </div>
                 ))}
               </div>
@@ -2787,7 +2787,7 @@ export function AdminDashboardScreen({
               ].map(card => (
                 <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '14px' }}>
                   <div style={{ color: '#8B8FA8', fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                  <div style={{ color: card.color, fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                  <div style={{ color: card.color, fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{card.value}</div>
                 </div>
               ))}
             </div>
@@ -3432,7 +3432,7 @@ export function AdminDashboardScreen({
               <Zap size={20} color="#A855F7" />
             </div>
             <div>
-              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>System Controller</h3>
+              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>System Controller</h3>
               <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Root-level platform controls. All actions are logged.</p>
             </div>
           </div>

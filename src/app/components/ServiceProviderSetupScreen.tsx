@@ -117,7 +117,7 @@ function OverlayPicker<T>({
     <div style={{ position: 'fixed', inset: 0, zIndex: 600, background: servicesColors.bg, display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h2 style={{ color: servicesColors.textPrimary, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>{title}</h2>
+          <h2 style={{ color: servicesColors.textPrimary, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>{title}</h2>
           <button onClick={onClose} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '32px', height: '32px', color: servicesColors.textSecondary, cursor: 'pointer' }}>×</button>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '11px 14px' }}>
@@ -422,7 +422,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}>
           <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: servicesColors.textPrimary, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: servicesColors.textPrimary, fontSize: '24px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
           {existing ? 'Edit Service Profile' : 'Set Up Your Service Profile'}
         </h1>
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '6px 0 0' }}>
@@ -632,7 +632,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             background: canSave ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
             border: 'none', borderRadius: servicesRadii.md, padding: '16px',
             color: canSave ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',
+            fontFamily: 'Manrope, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',
             boxShadow: canSave ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
           }}
         >

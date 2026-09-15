@@ -294,7 +294,7 @@ export function OrganizerDashboard({
               color: ventsColors.white,
               fontSize: '20px',
               fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               margin: 0,
               letterSpacing: '-0.02em',
             }}
@@ -442,7 +442,7 @@ export function OrganizerDashboard({
             <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Total Revenue
             </span>
-            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
               {formatPrice(revenue)}
             </span>
           </div>
@@ -486,7 +486,7 @@ export function OrganizerDashboard({
             <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Tickets Sold
             </span>
-            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
               {ticketsSold}
             </span>
           </div>
@@ -497,7 +497,7 @@ export function OrganizerDashboard({
           <div style={{ background: ventsColors.surface, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Tickets Sold vs Goal</h3>
+                <h3 style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Tickets Sold vs Goal</h3>
                 <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '2px 0 0' }}>
                   {ticketsSold} sold across {orgEvents.length} event{orgEvents.length !== 1 ? 's' : ''}
                 </p>
@@ -557,7 +557,7 @@ export function OrganizerDashboard({
               borderRadius: '16px',
               padding: '10px 20px',
               color: '#C084FC',
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               fontSize: '14px',
               fontWeight: 700,
               cursor: 'pointer',
@@ -577,7 +577,7 @@ export function OrganizerDashboard({
             borderRadius: '16px',
             padding: '16px 24px',
             color: ventsColors.white,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             fontSize: '16px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -620,7 +620,7 @@ export function OrganizerDashboard({
                   border: 'none',
                   padding: '12px 4px 16px',
                   color: isActive ? ventsColors.white : ventsColors.ink2,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Manrope, sans-serif',
                   fontSize: '15px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -820,7 +820,7 @@ export function OrganizerDashboard({
                 <h3
                   style={{
                     color: ventsColors.ink1,
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Manrope, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
                     margin: '0 0 8px 0',
@@ -877,7 +877,7 @@ export function OrganizerDashboard({
                 <h3
                   style={{
                     color: ventsColors.ink1,
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Manrope, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
                     margin: '0 0 8px 0',
@@ -933,7 +933,7 @@ export function OrganizerDashboard({
               <h3
                 style={{
                   color: ventsColors.ink1,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Manrope, sans-serif',
                   fontSize: '16px',
                   fontWeight: 700,
                   margin: '0 0 8px 0',

@@ -252,7 +252,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
         <button onClick={onBack} style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', borderRadius: '50%', width: '36px', height: '36px', cursor: 'pointer', padding: 0, position: 'relative', zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ArrowLeft size={18} color="#C4C9E0" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none', fontFamily: 'Manrope, sans-serif' }}>
           Messages
         </h1>
       </div>

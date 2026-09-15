@@ -244,7 +244,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           <ArrowLeft size={17} color="#F0F0FF" />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ color: '#fff', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Ticket Scanner</h1>
+          <h1 style={{ color: '#fff', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Ticket Scanner</h1>
           {selectedEvent && (
             <p style={{ color: '#C4C9E0', fontSize: '11px', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedEvent.title}</p>
           )}
@@ -307,7 +307,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           >
             <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.15)', borderRadius: '2px', margin: '0 auto 18px' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-              <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Enter Ticket Code</h2>
+              <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Enter Ticket Code</h2>
               <button onClick={() => { setManualOpen(false); setManualCode(''); }} aria-label="Close" style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                 <X size={15} color="#C4C9E0" />
               </button>

@@ -42,7 +42,7 @@ function ProviderThumb({ provider, size, radius }: { provider: ServiceProvider; 
       {photo ? (
         <img src={photo} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
       ) : (
-        <span style={{ color: accent, fontSize: size * 0.4, fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <span style={{ color: accent, fontSize: size * 0.4, fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
           {provider.businessName.charAt(0).toUpperCase()}
         </span>
       )}

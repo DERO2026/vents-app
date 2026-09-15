@@ -330,7 +330,7 @@ export function NotificationsScreen({
               color: ventsColors.ink1,
               fontSize: '17px',
               fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               margin: 0,
               letterSpacing: '0.01em',
             }}
@@ -439,7 +439,7 @@ export function NotificationsScreen({
               <Bell size={24} color={ventsColors.error} strokeWidth={1.5} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
-              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Couldn't load your notifications</p>
+              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Couldn't load your notifications</p>
               <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: 0, textAlign: 'center', padding: '0 24px' }}>{loadError}</p>
             </div>
             <button
@@ -476,7 +476,7 @@ export function NotificationsScreen({
               <Bell size={24} color={ventsColors.ink3} strokeWidth={1.5} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
-              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>You're all caught up</p>
+              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Manrope, sans-serif' }}>You're all caught up</p>
               <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: 0 }}>New activity will show up here</p>
             </div>
           </div>

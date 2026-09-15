@@ -84,7 +84,7 @@ function PendingCard({ v, onContactSupport }: { v: SpVerificationRow; onContactS
         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Clock size={28} color={ventsColors.pending} />
         </div>
-        <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Application Pending</p>
+        <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Application Pending</p>
         <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
           Your Service Provider application is under review. We'll notify you once a decision is made.
         </p>
@@ -239,7 +239,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex' }}>
           <ChevronLeft size={22} color={ventsColors.ink1} />
         </button>
-        <h1 style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
           Become a Service Provider
         </h1>
       </div>

@@ -416,7 +416,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
           <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div>
-          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>Sales Analytics</h1>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>Sales Analytics</h1>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
             This week · All events
           </p>
@@ -466,7 +466,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
                   }}
                 >
                   <p style={{ color: ventsColors.ink2, fontSize: '11px', marginBottom: '5px' }}>{label}</p>
-                  <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '3px' }}>
+                  <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '3px' }}>
                     {value}
                   </p>
                   <p style={{ color, fontSize: '11px', fontWeight: 600 }}>{sub}</p>
@@ -569,7 +569,7 @@ function StatTile({ label, value, sub, subColor }: { label: string; value: strin
   return (
     <div style={{ flex: '1 1 140px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
       <p style={{ color: ventsColors.ink2, fontSize: '11px', marginBottom: '5px' }}>{label}</p>
-      <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: sub ? '3px' : 0 }}>{value}</p>
+      <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: sub ? '3px' : 0 }}>{value}</p>
       {sub && <p style={{ color: subColor || ventsColors.ink2, fontSize: '11px', fontWeight: 600 }}>{sub}</p>}
     </div>
   );
@@ -653,7 +653,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
           <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Event Analytics</h1>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Event Analytics</h1>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px', margin: 0 }}>
             {data?.eventTitle || eventTitle || 'This event'}
           </p>

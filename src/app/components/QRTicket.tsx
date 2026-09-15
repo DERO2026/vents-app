@@ -203,7 +203,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
         </button>
         <h1
           style={{
-            color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif',
+            color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
             position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
           }}
         >

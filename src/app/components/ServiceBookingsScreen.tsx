@@ -116,7 +116,7 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
             <ArrowLeft size={16} color="#C4C9E0" />
           </button>
-          <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             {mode === 'provider' ? 'My Bookings' : 'My Service Bookings'}
           </h1>
         </div>

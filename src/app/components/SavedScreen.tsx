@@ -84,7 +84,7 @@ export function SavedScreen({ savedEventIds, onEventPress, onToggleSave, dbEvent
               <ArrowLeft size={22} color="#A78BFA" />
             </button>
           )}
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             Saved Events
           </h1>
         </div>

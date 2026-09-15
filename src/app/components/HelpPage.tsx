@@ -68,17 +68,17 @@ export function HelpPage() {
       {/* Logo */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
         <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#fff', fontWeight: 900, fontSize: '18px', fontFamily: 'Space Grotesk, sans-serif' }}>V</span>
+          <span style={{ color: '#fff', fontWeight: 900, fontSize: '18px', fontFamily: 'Manrope, sans-serif' }}>V</span>
         </div>
-        <span style={{ color: '#F0F0FF', fontWeight: 800, fontSize: '20px', fontFamily: 'Space Grotesk, sans-serif' }}>Vents</span>
+        <span style={{ color: '#F0F0FF', fontWeight: 800, fontSize: '20px', fontFamily: 'Manrope, sans-serif' }}>Vents</span>
       </div>
 
-      <h1 style={{ color: '#F0F0FF', fontSize: '28px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '6px' }}>Help Center</h1>
+      <h1 style={{ color: '#F0F0FF', fontSize: '28px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '6px' }}>Help Center</h1>
       <p style={{ color: '#8B8FA8', fontSize: '14px', marginBottom: '40px' }}>Answers to the most common questions about Vents.</p>
 
       {SECTIONS.map(section => (
         <div key={section.title} style={{ marginBottom: '36px' }}>
-          <h2 style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif' }}>{section.title}</h2>
+          <h2 style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase', marginBottom: '8px', fontFamily: 'Manrope, sans-serif' }}>{section.title}</h2>
           <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '0 16px' }}>
             {section.items.map(item => <AccordionItem key={item.q} q={item.q} a={item.a} />)}
           </div>
@@ -86,7 +86,7 @@ export function HelpPage() {
       ))}
 
       <div style={{ background: 'rgba(167,139,250,0.07)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '16px', padding: '24px' }}>
-        <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 8px' }}>Still need help?</h3>
+        <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: '0 0 8px' }}>Still need help?</h3>
         <p style={{ color: '#8B8FA8', fontSize: '14px', margin: '0 0 16px' }}>Our support team is available Monday–Friday, 9am–6pm WAT.</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
           <a href="mailto:support@getvents.com" style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#A78BFA', textDecoration: 'none', fontSize: '14px', fontWeight: 600 }}>

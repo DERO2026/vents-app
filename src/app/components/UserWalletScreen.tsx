@@ -149,7 +149,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
         >
           <ArrowLeft size={15} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
           VENTS Wallet
         </h1>
       </div>
@@ -171,7 +171,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
               Spendable Balance
             </span>
           </div>
-          <p style={{ color: '#fff', fontSize: '34px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 4px' }}>
+          <p style={{ color: '#fff', fontSize: '34px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: '0 0 4px' }}>
             {loading ? '—' : fmtNaira(balanceKobo || 0)}
           </p>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '0 0 18px' }}>
@@ -260,7 +260,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
               borderRadius: '22px 22px 0 0', padding: '22px 20px calc(22px + env(safe-area-inset-bottom))',
             }}
           >
-            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 16px' }}>
+            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: '0 0 16px' }}>
               Deposit to Wallet
             </h2>
             <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>

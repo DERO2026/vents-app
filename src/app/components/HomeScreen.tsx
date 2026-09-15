@@ -712,7 +712,7 @@ function FeaturedCarousel({
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between px-4 mb-3">
-        <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
           Featured
         </h3>
         {events.length > 1 && (
@@ -784,7 +784,7 @@ function FeaturedCarousel({
                 <BadgeChip tier={event.organizerVcBadge} />
               </div>
             )}
-            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
@@ -1756,7 +1756,7 @@ export function HomeScreen({
                 {trendingEvents.length > 0 && (
                   <div className="mb-6" ref={trendingSectionRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Trending Events
                       </h3>
                     </div>
@@ -1783,7 +1783,7 @@ export function HomeScreen({
                 {nearbyProviders && nearbyProviders.length > 0 && (
                   <div className="mb-6" ref={nearbyProvidersRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         {homeGeo.status === 'granted' ? 'Providers Near You' : 'Top Service Providers'}
                       </h3>
                       {onServicesPress && (
@@ -1837,7 +1837,7 @@ export function HomeScreen({
             `}</style>
             <div className="px-4 vents-home-main-section">
               <div className="flex items-center justify-between mb-3">
-                <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                   {isDefaultState
                     ? 'Explore Events'
                     // Name the section after what's actually applied when
@@ -1939,7 +1939,7 @@ export function HomeScreen({
                       fontWeight: 600,
                       cursor: 'pointer',
                       transition: 'all 0.2s',
-                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontFamily: 'Manrope, sans-serif',
                     }}
                   >
                     Load More Events

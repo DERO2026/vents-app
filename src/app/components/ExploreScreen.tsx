@@ -313,7 +313,7 @@ export function ExploreScreen({
       )}
       {/* ── Header ── */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 16px 12px', flexShrink: 0 }}>
-        <h1 style={{ color: ventsColors.white, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.white, fontSize: '24px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
           Chats
         </h1>
         <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: '2px 0 0' }}>Messages, organizers, and more</p>
@@ -522,7 +522,7 @@ export function ExploreScreen({
             <button onClick={() => setShowRequests(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               <X size={22} color={ventsColors.accentSoft} />
             </button>
-            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Message Requests</h2>
+            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Message Requests</h2>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {requests.length === 0 ? (

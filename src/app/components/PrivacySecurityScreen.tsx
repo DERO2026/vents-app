@@ -114,7 +114,7 @@ export function PrivacySecurityScreen({ currentUser, onBack }: Props) {
           <ArrowLeft size={16} color="#C4C9E0" />
         </button>
         <div>
-          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Privacy & Security</h1>
+          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Privacy & Security</h1>
           <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Control who sees your activity</p>
         </div>
         <Shield size={20} color="#A78BFA" style={{ marginLeft: 'auto' }} />

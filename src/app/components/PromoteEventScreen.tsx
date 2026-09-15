@@ -173,7 +173,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: '0 0 40px rgba(16,185,129,0.2)' }}>
           <CheckCircle size={40} color={ventsColors.success} />
         </div>
-        <h1 style={{ color: ventsColors.ink1, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px', textAlign: 'center' }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '24px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '8px', textAlign: 'center' }}>
           Promotion Active!
         </h1>
         <p style={{ color: ventsColors.ink2, fontSize: '14px', textAlign: 'center', lineHeight: 1.6, marginBottom: '8px' }}>
@@ -190,7 +190,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             </div>
           ))}
         </div>
-        <button onClick={onBack} style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '16px', padding: '15px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', cursor: 'pointer' }}>
+        <button onClick={onBack} style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '16px', padding: '15px', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}>
           Back to Dashboard
         </button>
       </div>
@@ -377,7 +377,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: loading ? 'not-allowed' : 'pointer',
             boxShadow: loading ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
             display: 'flex',

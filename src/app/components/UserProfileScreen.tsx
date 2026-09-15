@@ -342,7 +342,7 @@ export function UserProfileScreen({
               color: '#F0F0FF',
               fontSize: '20px',
               fontWeight: 800,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               margin: 0,
             }}
           >
@@ -427,7 +427,7 @@ export function UserProfileScreen({
                 color: '#F0F0FF',
                 fontSize: '18px',
                 fontWeight: 800,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
               }}
             >
               {value}

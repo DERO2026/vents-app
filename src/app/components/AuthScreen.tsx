@@ -1352,7 +1352,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <AlertCircle size={32} color="#EF4444" />
         </div>
-        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '12px', fontFamily: 'Manrope, sans-serif' }}>
           {isSuspended ? 'Account Suspended' : 'Account Deleted'}
         </h2>
         <p style={{ color: '#C4C9E0', fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
@@ -1416,7 +1416,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <ShieldCheck size={32} color="#A78BFA" />
         </div>
-        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Manrope, sans-serif', textAlign: 'center' }}>
           Two-Factor Authentication
         </h2>
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '28px', lineHeight: 1.5 }}>
@@ -1531,7 +1531,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   color: '#F0F0FF',
                   fontSize: '22px',
                   fontWeight: 700,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Manrope, sans-serif',
                   marginBottom: '10px',
                 }}
               >
@@ -1705,7 +1705,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   color: '#F0F0FF',
                   fontSize: '22px',
                   fontWeight: 700,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Manrope, sans-serif',
                   marginBottom: '10px',
                 }}
               >
@@ -1824,7 +1824,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 color: '#F0F0FF',
                 fontSize: '22px',
                 fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 marginBottom: '10px',
               }}
             >
@@ -2021,7 +2021,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                           color: active ? '#FFFFFF' : '#94A3B8',
                           fontSize: '14px',
                           fontWeight: 700,
-                          fontFamily: 'Space Grotesk, sans-serif',
+                          fontFamily: 'Manrope, sans-serif',
                           boxShadow: active ? '0 0 20px rgba(123,47,190,0.5)' : 'none',
                           transition: 'background 0.3s ease, box-shadow 0.3s ease, color 0.3s ease',
                         }}
@@ -2040,7 +2040,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 color: '#FFFFFF',
                 fontSize: '24px',
                 fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 marginBottom: '6px',
               }}
             >

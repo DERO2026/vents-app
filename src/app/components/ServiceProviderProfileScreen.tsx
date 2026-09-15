@@ -446,7 +446,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 background: 'linear-gradient(135deg, #10B981, #059669)',
                 border: 'none', borderRadius: servicesRadii.md, padding: '16px',
                 color: '#fff', fontSize: '16px', fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',
+                fontFamily: 'Manrope, sans-serif', cursor: disabled ? 'not-allowed' : 'pointer',
                 boxShadow: '0 8px 28px rgba(16,185,129,0.4)', opacity: disabled ? 0.7 : 1,
               }}
             >
@@ -469,7 +469,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             borderRadius: servicesRadii.md, padding: '16px',
             color: selectedServices.length > 0 ? servicesColors.textPrimary : (onContactProvider ? '#fff' : 'rgba(255,255,255,0.4)'),
             fontSize: '16px', fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif', cursor: onContactProvider ? 'pointer' : 'not-allowed',
+            fontFamily: 'Manrope, sans-serif', cursor: onContactProvider ? 'pointer' : 'not-allowed',
             boxShadow: selectedServices.length === 0 && onContactProvider ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
           }}
         >

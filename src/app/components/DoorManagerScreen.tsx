@@ -172,7 +172,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-            <h1 style={{ color: C.text, fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Door Manager</h1>
+            <h1 style={{ color: C.text, fontSize: '17px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Door Manager</h1>
             <span title={dm.live ? 'Live' : 'Reconnecting'} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 700, color: dm.live ? C.green : C.faint }}>
               {dm.live ? <Wifi size={11} /> : <WifiOff size={11} />}{dm.live ? 'LIVE' : '···'}
             </span>
@@ -391,7 +391,7 @@ const scanBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', ga
 function Stat({ label, value, color, glow, small }: { label: string; value: number; color: string; glow?: boolean; small?: boolean }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${glow ? 'rgba(16,185,129,0.3)' : C.line}`, borderRadius: '16px', padding: small ? '10px' : '13px 10px', textAlign: 'center', boxShadow: glow ? `0 0 22px ${C.greenGlow}` : 'none' }}>
-      <div style={{ color, fontSize: small ? '20px' : '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Space Grotesk, sans-serif' }}>{value}</div>
+      <div style={{ color, fontSize: small ? '20px' : '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Manrope, sans-serif' }}>{value}</div>
       <div style={{ color: C.sub, fontSize: '10.5px', fontWeight: 600, marginTop: '3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
     </div>
   );

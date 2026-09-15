@@ -921,7 +921,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 color: '#fff',
                 fontSize: '16px',
                 fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 opacity: disabled ? 0.6 : 1,
                 boxShadow: '0 8px 24px rgba(123,47,190,0.35)',

@@ -126,7 +126,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           boxSizing: 'border-box'
         }}>
           <span style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</span>
-          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px' }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '8px' }}>
             Application Crash
           </h1>
           <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
@@ -2465,7 +2465,7 @@ export default function App() {
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>⬆️</span>
         </div>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
           Update Required
         </h1>
         <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px', maxWidth: '300px' }}>
@@ -2498,7 +2498,7 @@ export default function App() {
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>🛠️</span>
         </div>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
           Under Maintenance
         </h1>
         <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, maxWidth: '300px' }}>

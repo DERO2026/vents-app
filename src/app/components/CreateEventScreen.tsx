@@ -275,7 +275,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     return (
       <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '64px', marginBottom: '20px' }}>⏳</div>
-        <h2 style={{ color: ventsColors.ink1, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h2 style={{ color: ventsColors.ink1, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
           Session Expired
         </h2>
         <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
@@ -316,7 +316,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             color: ventsColors.ink1,
             fontSize: '22px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             marginBottom: '10px',
           }}
         >
@@ -1533,7 +1533,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer',
-                fontFamily: 'Space Grotesk, sans-serif'
+                fontFamily: 'Manrope, sans-serif'
               }}
             >
               + Add Ticket Type
@@ -1794,7 +1794,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: (submitting || uploadingImage || published) ? 'not-allowed' : 'pointer',
             boxShadow: published ? '0 6px 24px rgba(16,185,129,0.4)' : (submitting || uploadingImage) ? 'none' : '0 6px 24px rgba(123,47,190,0.45)',
           }}
@@ -1820,7 +1820,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 color: ventsColors.ink2,
                 fontSize: '14px',
                 fontWeight: 600,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 cursor: 'pointer',
                 marginTop: '10px',
               }}
@@ -1840,7 +1840,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 color: ventsColors.ink2,
                 fontSize: '14px',
                 fontWeight: 600,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 cursor: 'pointer',
                 marginTop: '10px',
               }}

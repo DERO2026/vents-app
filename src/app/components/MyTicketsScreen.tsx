@@ -497,7 +497,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             color: ventsColors.white,
             fontSize: '20px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             position: 'absolute',
             left: 0,
             right: 0,
@@ -940,7 +940,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         color: ventsColors.white,
                         fontSize: '16px',
                         fontWeight: 800,
-                        fontFamily: 'Space Grotesk, sans-serif',
+                        fontFamily: 'Manrope, sans-serif',
                         margin: 0,
                         textShadow: '0 1px 6px rgba(0,0,0,0.6)',
                       }}

@@ -81,7 +81,7 @@ export function PermissionSheetHost() {
         >
           <Icon size={26} color="#A78BFA" />
         </div>
-        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: '0 0 8px', textAlign: 'center' }}>
+        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: '0 0 8px', textAlign: 'center' }}>
           {state.title}
         </h3>
         <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.5, textAlign: 'center', margin: '0 0 24px' }}>

@@ -167,7 +167,7 @@ export function PickerSheet({
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+          <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
             {title}
           </h3>
           <button

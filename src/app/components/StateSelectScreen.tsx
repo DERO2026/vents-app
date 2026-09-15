@@ -94,7 +94,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
             color: '#F0F0FF',
             fontSize: '26px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             lineHeight: 1.2,
             marginBottom: '6px',
           }}
@@ -221,7 +221,7 @@ export function StateSelectScreen({ onContinue, selectedStateName }: StateSelect
             color: selected ? '#fff' : 'rgba(255,255,255,0.35)',
             fontSize: '17px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: selected ? 'pointer' : 'not-allowed',
             boxShadow: selected ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
             display: 'flex',

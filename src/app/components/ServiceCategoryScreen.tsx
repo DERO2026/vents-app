@@ -77,7 +77,7 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress }: Ser
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
           <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${accent}26`, flexShrink: 0 }} />
-          <h1 style={{ color: servicesColors.textPrimary, fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>{category}</h1>
+          <h1 style={{ color: servicesColors.textPrimary, fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>{category}</h1>
         </div>
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 14px' }}>
           {providers === null ? 'Loading providers…' : `${filtered.length} provider${filtered.length === 1 ? '' : 's'}`}

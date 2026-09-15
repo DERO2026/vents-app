@@ -47,7 +47,7 @@ export function ScanResultCard({ outcome }: { outcome: ScanOutcome }) {
         </div>
       </div>
 
-      <h2 style={{ color: t.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '0 0 6px', fontFamily: 'Space Grotesk, sans-serif' }}>
+      <h2 style={{ color: t.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '0 0 6px', fontFamily: 'Manrope, sans-serif' }}>
         {outcome.headline}
       </h2>
 

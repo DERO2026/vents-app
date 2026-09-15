@@ -422,7 +422,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
             color: canContinue ? '#fff' : '#8B8FA8',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: canContinue ? 'pointer' : 'not-allowed',
             boxShadow: canContinue ? '0 6px 24px rgba(123,47,190,0.45)' : 'none',
             transition: 'all 0.2s ease',

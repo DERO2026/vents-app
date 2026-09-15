@@ -186,7 +186,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
               );
             })()}
           </div>
-          <p style={{ color: '#FFB830', fontSize: '36px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+          <p style={{ color: '#FFB830', fontSize: '36px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
             {balance.toLocaleString()}<span style={{ fontSize: '16px', color: '#8B8FA8', marginLeft: '6px' }}>VC</span>
           </p>
           <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px' }}>Earn by inviting friends, buying tickets, and completing your profile.</p>

@@ -187,7 +187,7 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
           minWidth: '50px',
         }}
       >
-        <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
           {String(value).padStart(2, '0')}
         </span>
       </div>
@@ -1272,7 +1272,7 @@ export function EventDetailsScreen({
         {ticketTypes.length > 0 && (
           <div ref={ticketsRef} className="edt-tickets-inline" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
                 Select Tickets
               </span>
               {isBooked && (
@@ -1308,7 +1308,7 @@ export function EventDetailsScreen({
                         {!soldOut && <span style={{ color: ventsColors.ink3, fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
                         {soldOut && <span style={{ color: ventsColors.error, fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
                       </div>
-                      <span style={{ color: ventsColors.pending, fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginLeft: '8px' }}>
+                      <span style={{ color: ventsColors.pending, fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginLeft: '8px' }}>
                         {formatPrice(t.price)}
                       </span>
                     </div>
@@ -1385,7 +1385,7 @@ export function EventDetailsScreen({
 
         {/* Related Events Section */}
         <div ref={moreRef} style={{ marginTop: '24px', marginBottom: '16px' }}>
-            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Manrope, sans-serif' }}>
               Related Events
             </p>
             {loadingRelated ? (
@@ -1439,7 +1439,7 @@ export function EventDetailsScreen({
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '12px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
             <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total</span>
-            <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+            <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
               {selectedTicket ? formatPrice(selectedTicket.price * selectedQty) : formatPrice(0)}
             </span>
           </div>
@@ -1471,7 +1471,7 @@ export function EventDetailsScreen({
               color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
               fontSize: '15px',
               fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
               boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
             }}
@@ -1607,7 +1607,7 @@ export function EventDetailsScreen({
         }}
       >
         {hasEnded ? (
-          <div style={{ flex: 1, textAlign: 'center', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', padding: '14px 28px' }}>
+          <div style={{ flex: 1, textAlign: 'center', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', padding: '14px 28px' }}>
             Event Ended
           </div>
         ) : (
@@ -1615,7 +1615,7 @@ export function EventDetailsScreen({
             {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
                 "Buy from ₦X") instead of a bare "FROM / Free" label, which read
                 as a fully free event even when paid tiers also exist. */}
-            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
+            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 0 }}>
               {formatCardCTA(event.ticketTypes)}
             </div>
             <button
@@ -1646,7 +1646,7 @@ export function EventDetailsScreen({
                 color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
                 fontSize: '16px',
                 fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
                 boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
                 display: 'flex',

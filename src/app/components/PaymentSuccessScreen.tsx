@@ -222,7 +222,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             color: ventsColors.ink1,
             fontSize: '24px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             marginBottom: '6px',
           }}
         >
@@ -477,7 +477,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: 'pointer',
             boxShadow: '0 6px 24px rgba(123,47,190,0.4)',
           }}
