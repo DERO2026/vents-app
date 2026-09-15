@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
   ArrowLeft, Search, Camera, X, Plus, Scissors, PartyPopper, Shirt, Wrench, Sparkles,
   Heart, UtensilsCrossed, Music, Palette, Car,
@@ -80,7 +81,7 @@ function ToggleRow({ label, sub, on, onChange }: { label: string; sub: string; o
       </div>
       <div
         onClick={() => onChange(!on)}
-        style={{ width: '44px', height: '26px', borderRadius: '13px', background: on ? '#7B2FBE' : '#1A1625', cursor: 'pointer', position: 'relative', transition: 'background 0.25s ease', flexShrink: 0 }}
+        style={{ width: '44px', height: '26px', borderRadius: '13px', background: on ? ventsColors.accent : ventsColors.elevated, cursor: 'pointer', position: 'relative', transition: 'background 0.25s ease', flexShrink: 0 }}
       >
         <div style={{ position: 'absolute', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', top: '3px', left: on ? '21px' : '3px', transition: 'left 0.25s ease', boxShadow: '0 1px 4px rgba(0,0,0,0.3)' }} />
       </div>
@@ -373,7 +374,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
         <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 0' }}>
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <ArrowLeft size={16} color="#C4C9E0" />
+            <ArrowLeft size={16} color={ventsColors.ink2} />
           </button>
         </div>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -419,7 +420,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       {/* Header */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <h1 style={{ color: servicesColors.textPrimary, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           {existing ? 'Edit Service Profile' : 'Set Up Your Service Profile'}

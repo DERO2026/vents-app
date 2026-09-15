@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ChevronLeft, Clock, Upload, MessageSquare } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase } from '../../lib/supabase';
@@ -73,7 +74,7 @@ function PendingCard({ v, onContactSupport }: { v: SpVerificationRow; onContactS
   const rows = [
     v.provider_type === 'individual' ? { label: 'Name', value: v.owner_name } : { label: 'Business Name', value: v.business_name || v.owner_name },
     { label: 'Submission Date', value: submittedDate },
-    { label: 'Status', value: 'Pending Review', color: '#F59E0B' },
+    { label: 'Status', value: 'Pending Review', color: ventsColors.pending },
     { label: 'Estimated Review Time', value: '1–3 business days' },
     { label: 'Reference ID', value: refId, mono: true },
   ];
@@ -81,23 +82,23 @@ function PendingCard({ v, onContactSupport }: { v: SpVerificationRow; onContactS
     <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
       <div style={{ textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '28px 20px 22px', background: 'linear-gradient(180deg, rgba(34,211,238,0.14), rgba(9,5,20,0))', borderRadius: '20px', border: '1px solid rgba(34,211,238,0.2)' }}>
         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Clock size={28} color="#F59E0B" />
+          <Clock size={28} color={ventsColors.pending} />
         </div>
-        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Application Pending</p>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
+        <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Application Pending</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
           Your Service Provider application is under review. We'll notify you once a decision is made.
         </p>
       </div>
-      <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '4px 16px' }}>
+      <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '4px 16px' }}>
         {rows.map((row, i) => (
           <div key={row.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 0', borderBottom: i < rows.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none', gap: '12px' }}>
-            <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{row.label}</span>
-            <span style={{ color: row.color || '#F0F0FF', fontSize: '13px', fontWeight: 700, fontFamily: row.mono ? 'ui-monospace, monospace' : 'inherit', textAlign: 'right' }}>{row.value}</span>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', flexShrink: 0 }}>{row.label}</span>
+            <span style={{ color: row.color || ventsColors.ink1, fontSize: '13px', fontWeight: 700, fontFamily: row.mono ? 'ui-monospace, monospace' : 'inherit', textAlign: 'right' }}>{row.value}</span>
           </div>
         ))}
       </div>
       {onContactSupport && (
-        <button onClick={onContactSupport} style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', color: '#C4C9E0', fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <button onClick={onContactSupport} style={{ width: '100%', padding: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
           <MessageSquare size={16} /> Contact Support
         </button>
       )}
@@ -131,8 +132,8 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
   const requiresCac = providerType === 'business' && country === 'NG';
 
   const inputStyle: React.CSSProperties = {
-    width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px',
-    padding: '12px 14px', color: '#F0F0FF', fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box',
+    width: '100%', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px',
+    padding: '12px 14px', color: ventsColors.ink1, fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box',
   };
 
   const handleFileSelect = useCallback((f: File | null) => {
@@ -233,25 +234,25 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
   };
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(16px + env(safe-area-inset-top)) 16px 12px' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', display: 'flex' }}>
-          <ChevronLeft size={22} color="#F0F0FF" />
+          <ChevronLeft size={22} color={ventsColors.ink1} />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
           Become a Service Provider
         </h1>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 32px' }}>
-        {status === 'loading' && <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>}
+        {status === 'loading' && <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '40px' }}>Loading...</p>}
 
         {status === 'pending' && verification && <PendingCard v={verification} />}
 
         {status === 'approved' && (
           <div style={{ marginTop: '40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0 }}>You're approved ✓</p>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, maxWidth: '280px' }}>Head back to your profile to set up your Services listing.</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 800, margin: 0 }}>You're approved ✓</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, maxWidth: '280px' }}>Head back to your profile to set up your Services listing.</p>
             <button onClick={onBack} style={{ marginTop: '12px', height: '44px', padding: '0 24px', borderRadius: '14px', background: 'linear-gradient(135deg,#0891B2,#22D3EE)', border: 'none', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
               Back to Profile
             </button>
@@ -261,8 +262,8 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
         {status === 'rejected' && verification && (
           <div style={{ marginTop: '12px' }}>
             <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '14px', padding: '14px', marginBottom: '16px' }}>
-              <p style={{ color: '#EF4444', fontSize: '13px', fontWeight: 700, margin: '0 0 4px' }}>Application not approved</p>
-              {verification.admin_note && <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>{verification.admin_note}</p>}
+              <p style={{ color: ventsColors.error, fontSize: '13px', fontWeight: 700, margin: '0 0 4px' }}>Application not approved</p>
+              {verification.admin_note && <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{verification.admin_note}</p>}
             </div>
             <button onClick={() => setStatus('form')} style={{ width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#0891B2,#22D3EE)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
               Apply Again
@@ -272,13 +273,13 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
 
         {status === 'form' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: '8px' }}>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, lineHeight: 1.5 }}>
               Tell us about yourself and upload an identity/business document. Our team reviews every application within 1–3 business days.
             </p>
 
             <div style={{ display: 'flex', gap: '8px' }}>
               {(['individual', 'business'] as const).map((t) => (
-                <button key={t} onClick={() => setProviderType(t)} style={{ flex: 1, height: '40px', borderRadius: '10px', border: `1px solid ${providerType === t ? '#22D3EE' : 'rgba(255,255,255,0.08)'}`, background: providerType === t ? 'rgba(34,211,238,0.12)' : '#090514', color: providerType === t ? '#22D3EE' : '#8B8FA8', fontSize: '13px', fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>
+                <button key={t} onClick={() => setProviderType(t)} style={{ flex: 1, height: '40px', borderRadius: '10px', border: `1px solid ${providerType === t ? '#22D3EE' : 'rgba(255,255,255,0.08)'}`, background: providerType === t ? 'rgba(34,211,238,0.12)' : ventsColors.surface, color: providerType === t ? '#22D3EE' : ventsColors.ink2, fontSize: '13px', fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>
                   {t}
                 </button>
               ))}
@@ -321,10 +322,10 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
               <button onClick={() => fileInputRef.current?.click()} style={{ width: '100%', height: '52px', borderRadius: '12px', border: '1px dashed rgba(34,211,238,0.35)', background: 'rgba(34,211,238,0.06)', color: '#22D3EE', fontSize: '13px', fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
                 <Upload size={16} /> {file ? file.name : 'Upload identity/business document'}
               </button>
-              {uploading && <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px' }}>Uploading... {uploadProgress}%</p>}
+              {uploading && <p style={{ color: ventsColors.ink2, fontSize: '12px', marginTop: '6px' }}>Uploading... {uploadProgress}%</p>}
             </div>
 
-            {error && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{error}</p>}
+            {error && <p style={{ color: ventsColors.error, fontSize: '12px', margin: 0 }}>{error}</p>}
 
             <button onClick={handleSubmit} disabled={submitting} style={{ height: '50px', borderRadius: '14px', background: 'linear-gradient(135deg,#0891B2,#22D3EE)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: submitting ? 'wait' : 'pointer', opacity: submitting ? 0.7 : 1 }}>
               {submitting ? 'Submitting...' : 'Submit Application'}

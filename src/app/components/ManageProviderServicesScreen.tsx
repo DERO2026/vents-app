@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Plus, Pencil, Trash2 } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
 import { servicesPayableCurrencyForCountry } from '../../lib/currencies';
@@ -158,21 +159,21 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '12px' }}>
         <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0, flex: 1 }}>
           Your Services & Prices
         </h1>
         {onViewBookings && (
-          <button onClick={onViewBookings} style={{ background: 'none', border: 'none', padding: 0, color: '#A855F7', fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+          <button onClick={onViewBookings} style={{ background: 'none', border: 'none', padding: 0, color: ventsColors.accent, fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             Bookings &rsaquo;
           </button>
         )}
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(100px + env(safe-area-inset-bottom))` }}>
-        {error && <p style={{ color: '#EF4444', fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
-        {info && <p style={{ color: '#F59E0B', fontSize: '13px', margin: '0 0 12px' }}>{info}</p>}
+        {error && <p style={{ color: ventsColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        {info && <p style={{ color: ventsColors.pending, fontSize: '13px', margin: '0 0 12px' }}>{info}</p>}
 
         {services === null ? (
           <p style={{ color: servicesColors.textSecondary, textAlign: 'center', marginTop: '40px', fontSize: '13px' }}>Loading…</p>
@@ -190,11 +191,11 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
                     <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
                     {svc.category && <p style={{ color: servicesColors.textTertiary, fontSize: '11px', margin: '2px 0 0' }}>{svc.category}</p>}
                   </div>
-                  <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: servicesRadii.pill, background: svc.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(148,163,184,0.15)', color: svc.isActive ? '#10B981' : '#94A3B8', flexShrink: 0 }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: servicesRadii.pill, background: svc.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(148,163,184,0.15)', color: svc.isActive ? ventsColors.success : ventsColors.ink3, flexShrink: 0 }}>
                     {svc.isActive ? 'ACTIVE' : 'INACTIVE'}
                   </span>
                 </div>
-                {svc.description && <p style={{ color: '#C9C9D9', fontSize: '12px', margin: '8px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
+                {svc.description && <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '8px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
                   <span style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700 }}>
                     {svc.currency} {svc.price.toLocaleString('en-US')}
@@ -208,7 +209,7 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
                       <Pencil size={13} color={servicesColors.textSecondary} />
                     </button>
                     <button onClick={() => setConfirmDeleteId(svc.id)} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.3)', borderRadius: servicesRadii.sm, width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-                      <Trash2 size={13} color="#EF4444" />
+                      <Trash2 size={13} color={ventsColors.error} />
                     </button>
                   </div>
                 </div>
@@ -226,8 +227,8 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
 
       {showForm && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => !saving && setShowForm(false)}>
-          <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px calc(28px + env(safe-area-inset-bottom))', width: '100%', maxWidth: '430px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 4px' }}>{editing ? 'Edit Service' : 'Add a Service'}</h3>
+          <div style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px calc(28px + env(safe-area-inset-bottom))', width: '100%', maxWidth: '430px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 4px' }}>{editing ? 'Edit Service' : 'Add a Service'}</h3>
 
             <input style={inputStyle} placeholder="Service name (e.g. Bridal Makeup)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
             <textarea style={{ ...inputStyle, resize: 'none' }} rows={3} placeholder="Description (optional)" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
@@ -252,12 +253,12 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
 
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md }}>
               <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 600 }}>Published (visible to customers)</span>
-              <div onClick={() => setForm({ ...form, isActive: !form.isActive })} style={{ width: '40px', height: '24px', borderRadius: '12px', background: form.isActive ? '#7B2FBE' : '#1A1625', cursor: 'pointer', position: 'relative' }}>
+              <div onClick={() => setForm({ ...form, isActive: !form.isActive })} style={{ width: '40px', height: '24px', borderRadius: '12px', background: form.isActive ? ventsColors.accent : ventsColors.elevated, cursor: 'pointer', position: 'relative' }}>
                 <div style={{ position: 'absolute', top: '2px', left: form.isActive ? '18px' : '2px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
               </div>
             </div>
 
-            {formError && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{formError}</p>}
+            {formError && <p style={{ color: ventsColors.error, fontSize: '12px', margin: 0 }}>{formError}</p>}
 
             <button onClick={handleSubmit} disabled={saving} style={{ height: '48px', borderRadius: servicesRadii.md, background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}>
               {saving ? 'Saving...' : editing ? 'Save Changes' : 'Add Service'}

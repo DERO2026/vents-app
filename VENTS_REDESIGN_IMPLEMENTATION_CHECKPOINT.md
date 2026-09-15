@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 15 UNITS MIGRATED (15 of ~35 units)
+## Status: FOUNDATION + 16 UNITS MIGRATED (16 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -206,6 +206,15 @@ everything else in the priority list below is not started.
   replacements across 5 files). Typecheck clean (after the fix),
   `organizerEventNavigation.test.ts` re-run explicitly (4/4 pass), full
   suite 429/429.
+- [x] **Service Provider Dashboard suite**: `ManageProviderServicesScreen.tsx`
+  (292), `ServiceProviderSetupScreen.tsx` (643),
+  `ServiceProviderVerificationScreen.tsx` (343) — 6 test files reference
+  these filenames; all 6 confirmed zero color-literal assertions before
+  editing. `#22D3EE`/`#0891B2` in `ServiceProviderVerificationScreen.tsx`
+  deliberately not mapped — same service-provider-capability cyan
+  distinction as ProfileScreen's item. Scripted substitution (13+4+23 = 40
+  replacements). Typecheck clean, all 6 source-reading test files re-run
+  explicitly (46/46 pass), full suite 429/429.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -276,7 +285,7 @@ maturity — not a batch replace.
 13. Notifications — color tokens done (see above)
 14. Profile — color tokens done (see above)
 15. Organizer Dashboard suite — color tokens done (see above)
-16. Service Provider Dashboard suite — **NEXT UP** (`ManageProviderServicesScreen.tsx`, `ServiceProviderSetupScreen.tsx`, `ServiceProviderVerificationScreen.tsx`)
+16. Service Provider Dashboard suite — color tokens done (see above)
 17. Creator Studio — per the design-side checkpoint (VENTS_REDESIGN_CHECKPOINT.md),
     Creator Studio = OrganizerDashboard.tsx (same screen, no separate file) —
     already covered by item 15
