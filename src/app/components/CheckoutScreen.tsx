@@ -849,7 +849,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
               <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total</span>
-              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>{formatPrice(total)}</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
             </div>
           </div>
         </div>
