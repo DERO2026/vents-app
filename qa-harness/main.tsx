@@ -16,6 +16,7 @@ import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
 import { InboxScreen } from '../src/app/components/InboxScreen';
 import { NotificationsScreen } from '../src/app/components/NotificationsScreen';
 import { ManageProviderServicesScreen } from '../src/app/components/ManageProviderServicesScreen';
+import { CheckinScannerScreen } from '../src/app/components/CheckinScannerScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -127,6 +128,13 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   'manage-provider-services': () => (
     <ManageProviderServicesScreen providerId="prov-1" accountCountry="NG" onBack={() => {}} />
+  ),
+  scanner: () => (
+    <CheckinScannerScreen
+      onBack={() => {}}
+      currentUser={{ id: 'org-1', role: 'organizer' }}
+      selectedEvent={{ id: 'evt-1', title: 'Lagos Music Festival' } as any}
+    />
   ),
   checkout: () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };

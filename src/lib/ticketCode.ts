@@ -32,3 +32,33 @@ export function ticketDisplayCode(ticketId: string | null | undefined): string {
   const groups = out.match(/.{1,5}/g) || [out];
   return 'VT-' + groups.join('-');
 }
+
+/**
+ * Inverse of ticketDisplayCode(): recovers the raw ticket UUID from a
+ * "VT-XXXXX-XXXXX-…" code a guest reads off their ticket and an organizer
+ * types into the scanner's manual-entry fallback. Purely a decode — it
+ * carries no cryptographic authority of its own (unlike the signed QR
+ * token) and proves nothing about validity; the resolved UUID is only ever
+ * handed to a server-authoritative RPC (manual_check_in), which re-derives
+ * ownership/status/duplicate-check-in from the database itself. Returns
+ * null for anything that doesn't decode to a well-formed UUID, rather than
+ * guessing or silently truncating.
+ */
+export function parseTicketDisplayCode(code: string | null | undefined): string | null {
+  if (!code) return null;
+  const cleaned = code.trim().toUpperCase().replace(/^VT-?/, '').replace(/[-\s]/g, '');
+  // Every char must be a valid base36 digit (0-9, A-Z) -- reject anything else
+  // up front instead of letting a bad char silently parse as NaN.
+  if (!cleaned || !/^[0-9A-Z]+$/.test(cleaned)) return null;
+  let n: bigint;
+  try {
+    n = cleaned.split('').reduce((acc, ch) => acc * 36n + BigInt(parseInt(ch, 36)), 0n);
+  } catch {
+    return null;
+  }
+  let hex = n.toString(16);
+  if (hex.length > 32) return null; // overflowed 128 bits -- not a real ticket code
+  hex = hex.padStart(32, '0');
+  const uuid = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(uuid) ? uuid : null;
+}
