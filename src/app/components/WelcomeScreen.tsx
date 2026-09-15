@@ -1,5 +1,4 @@
 import { VentsLogo } from './VentsLogo';
-import { appVersionLabel } from '../../lib/appVersion';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 
 interface WelcomeScreenProps {
@@ -9,27 +8,28 @@ interface WelcomeScreenProps {
   onBrowseGuest?: () => void;
 }
 
+// Handoff A1 (LandingScreen): side cards carry only a single JetBrains Mono
+// uppercase caption (no subtitle line); the center card gets a dark-glass
+// "EVENTS" pill instead of a title. Sizes/rotation/position match the
+// design's 172x224 side / 196x262 center stack.
 const STACK_CARDS = [
   {
     src: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=600&fit=crop&crop=center',
-    title: 'Services',
-    subtitle: 'Beauty, home, photo and more',
-    rotate: -9,
-    top: 26,
+    caption: 'Services',
+    rotate: -10,
+    top: 34,
     side: 'left' as const,
   },
   {
     src: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600&fit=crop&crop=center',
-    title: 'Experiences',
-    subtitle: 'Discover, connect and enjoy',
-    rotate: 8,
+    caption: 'Experiences',
+    rotate: 10,
     top: 34,
     side: 'right' as const,
   },
   {
     src: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=700&fit=crop&crop=center',
-    title: 'Events',
-    subtitle: 'Concerts, parties, festivals and more',
+    caption: null,
     rotate: 0,
     top: 0,
     side: 'center' as const,
@@ -53,129 +53,100 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
       <div style={{ position: 'absolute', inset: 0, background: ventsColors.ambientGradient, opacity: 0.5, pointerEvents: 'none' }} />
 
       {/* Header */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(20px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
-        <VentsLogo size={30} />
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(48px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
+        <VentsLogo size={86} />
       </div>
 
-      <div style={{ position: 'relative', padding: '14px 24px 0', flexShrink: 0, textAlign: 'center' }}>
-        <span style={{ color: ventsColors.accentSoft, fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em' }}>EVENTS &middot; SERVICES &middot; REAL EXPERIENCES</span>
-      </div>
-
-      <div style={{ position: 'relative', padding: '12px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <h1 style={{ margin: 0, color: ventsColors.white, fontSize: '30px', fontWeight: 800, fontFamily: ventsTypography.fontBody, lineHeight: 1.16, letterSpacing: '-0.01em' }}>
+      {/* Handoff A1: single-color headline directly under the logo (no
+          mono eyebrow line above it, no accent-colored second line) and one
+          subtitle line, matching the design's exact copy. */}
+      <div style={{ position: 'relative', padding: '34px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <h1 style={{ margin: 0, color: ventsColors.white, fontSize: '34px', fontWeight: 800, fontFamily: ventsTypography.fontBody, lineHeight: 1.12, letterSpacing: '-0.035em', maxWidth: '310px' }}>
           More Than Events.
           <br />
-          <span style={{ color: ventsColors.accentSoft }}>Real Experiences.</span>
+          Real Experiences.
         </h1>
-        <p style={{ margin: '12px 0 0', color: ventsColors.ink2, fontSize: '13.5px', lineHeight: 1.6, maxWidth: '280px' }}>
-          Find events, book trusted services, and make it happen — all in one app.
+        <p style={{ margin: '14px 0 0', color: ventsColors.ink2, fontSize: '15px', lineHeight: 1.55, maxWidth: '290px' }}>
+          Tickets, services and the nights worth remembering — in one place.
         </p>
       </div>
 
-      {/* Phone stack visual */}
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '18px 0 0' }}>
+      {/* Phone stack visual -- handoff A1: 172x224 side cards (rotated
+          ±10deg) behind a 196x262 center card, mono uppercase captions
+          instead of title+subtitle pairs. */}
+      <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '34px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {STACK_CARDS.map(card => (
           <div
-            key={card.title}
+            key={card.caption ?? 'center'}
             style={{
               position: 'absolute',
               top: `${card.top}px`,
-              left: card.side === 'left' ? '26px' : card.side === 'center' ? '50%' : undefined,
-              right: card.side === 'right' ? '22px' : undefined,
+              left: card.side === 'left' ? '0' : card.side === 'center' ? '50%' : undefined,
+              right: card.side === 'right' ? '0' : undefined,
               transform: card.side === 'center' ? `translateX(-50%) rotate(${card.rotate}deg)` : `rotate(${card.rotate}deg)`,
-              width: card.side === 'center' ? '172px' : '150px',
-              height: card.side === 'center' ? '246px' : card.side === 'left' ? '220px' : '210px',
-              borderRadius: card.side === 'center' ? '22px' : '20px',
+              width: card.side === 'center' ? '196px' : '172px',
+              height: card.side === 'center' ? '262px' : '224px',
+              borderRadius: '22px',
               overflow: 'hidden',
-              border: card.side === 'center' ? '1px solid rgba(168,85,247,0.22)' : '1px solid rgba(255,255,255,0.08)',
-              boxShadow: card.side === 'center' ? '0 20px 40px rgba(88,28,135,0.28)' : '0 16px 30px rgba(0,0,0,0.35)',
-              zIndex: card.side === 'center' ? 2 : 1,
+              border: card.side === 'center' ? '1px solid rgba(183,155,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: card.side === 'center'
+                ? '0 34px 70px -20px rgba(0,0,0,0.95), 0 0 60px -20px rgba(142,92,247,0.6)'
+                : '0 24px 50px -18px rgba(0,0,0,0.9)',
+              zIndex: card.side === 'center' ? 3 : 1,
             }}
           >
-            <img src={card.src} alt={card.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <img src={card.src} alt={card.caption ?? 'Events'} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 45%, rgba(0,0,0,0.85) 100%)' }} />
-            <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '16px' }}>
-              <p style={{ margin: 0, color: '#FFFFFF', fontSize: card.side === 'center' ? '15px' : '13px', fontWeight: 700, fontFamily: card.side === 'center' ? 'Space Grotesk, sans-serif' : undefined, textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>{card.title}</p>
-              <p style={{ margin: '4px 0 0', color: '#C4C9E0', fontSize: '9.5px', lineHeight: 1.4, textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>{card.subtitle}</p>
-            </div>
+            {card.side === 'center' ? (
+              <>
+                <span style={{ position: 'absolute', top: '16px', left: '16px', fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', padding: '5px 9px', borderRadius: '7px', background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff' }}>
+                  EVENTS
+                </span>
+              </>
+            ) : (
+              <span style={{ position: 'absolute', left: '14px', right: '14px', bottom: '14px', fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 500, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.7)', textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>
+                {card.caption}
+              </span>
+            )}
           </div>
         ))}
       </div>
 
-      <div style={{ position: 'relative', display: 'flex', justifyContent: 'center', gap: '5px', padding: '12px 0 0', flexShrink: 0 }}>
-        <div style={{ width: '16px', height: '5px', borderRadius: '3px', background: ventsColors.accent }} />
-        <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
-        <div style={{ width: '5px', height: '5px', borderRadius: '3px', background: 'rgba(255,255,255,0.18)' }} />
-      </div>
-
-      {/* Actions */}
-      <div style={{ position: 'relative', padding: '16px 24px calc(24px + env(safe-area-inset-bottom))', flexShrink: 0 }}>
+      {/* Actions -- handoff A1: single primary CTA + a plain "Already have
+          an account? Log in" line (no second full-width Sign In button, no
+          pagination dots, no version footer). Guest browsing has no design
+          slot here either, but the entry point stays reachable as a small
+          understated link rather than being dropped outright. */}
+      <div style={{ position: 'relative', padding: '24px 24px calc(24px + env(safe-area-inset-bottom))', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
         <button
           onClick={onGetStarted}
           style={{
             width: '100%',
+            height: '56px',
             background: ventsColors.accent,
             border: 'none',
-            borderRadius: '100px',
-            padding: '15px 26px',
+            borderRadius: '16px',
             color: ventsColors.white,
-            fontSize: '16px',
+            fontSize: '17px',
             fontWeight: 700,
             fontFamily: ventsTypography.fontBody,
             cursor: 'pointer',
-            boxShadow: '0 10px 30px -12px rgba(142,92,247,0.9)',
-            marginBottom: '10px',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            boxShadow: '0 14px 40px -14px rgba(142,92,247,1)',
           }}
         >
-          <span>Get Started</span>
-          <span style={{ fontSize: '18px' }}>→</span>
+          Get Started
         </button>
 
-        <button
-          onClick={onSignIn}
-          style={{
-            width: '100%',
-            background: ventsColors.glassBg,
-            border: `1px solid ${ventsColors.glassBorder}`,
-            borderRadius: '100px',
-            padding: '13px 26px',
-            color: ventsColors.ink1,
-            fontSize: '14px',
-            fontWeight: 600,
-            cursor: 'pointer',
-            textAlign: 'center',
-            marginBottom: '16px',
-          }}
-        >
-          Sign in
-        </button>
+        <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: ventsColors.ink2, textAlign: 'center' }}>
+          Already have an account?{' '}
+          <span onClick={onSignIn} style={{ color: '#B79BFF', fontWeight: 700, cursor: 'pointer' }}>Log in</span>
+        </p>
 
         {onBrowseGuest && (
-          <button
-            onClick={onBrowseGuest}
-            style={{
-              width: '100%',
-              background: 'none',
-              border: 'none',
-              padding: '10px 26px',
-              color: '#7C8199',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              textAlign: 'center',
-              marginBottom: '10px',
-            }}
-          >
+          <span onClick={onBrowseGuest} style={{ fontSize: '13px', fontWeight: 600, color: '#7C8199', cursor: 'pointer' }}>
             Browse as guest
-          </button>
+          </span>
         )}
-
-        <p style={{ textAlign: 'center', color: '#3A3D52', fontSize: '10px', margin: 0 }}>
-          {appVersionLabel()}
-        </p>
       </div>
     </div>
   );
