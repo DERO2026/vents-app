@@ -1,4 +1,4 @@
-import { ventsColors } from '../../lib/ventsDesignTokens';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
@@ -1971,11 +1971,13 @@ export function HomeScreen({
             <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
               <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
             </div>
-            {/* Title */}
+            {/* Title -- handoff B3: title + a plain "Reset" text link (no
+                X-close icon; the sheet dismisses via backdrop tap or the
+                footer buttons, same as the design). */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
-              <span style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 800 }}>Filters</span>
-              <button onClick={() => setFilterSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                <X size={20} color={ventsColors.ink2} />
+              <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 800, letterSpacing: '-0.02em' }}>Filters</span>
+              <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '15px', fontWeight: 700, color: '#B79BFF' }}>
+                Reset
               </button>
             </div>
 
@@ -1987,7 +1989,7 @@ export function HomeScreen({
                   ids/logic as before (tempCategory -> applyFilters ->
                   setActiveCategory), just presented as compact wrapped
                   chips instead of a horizontal icon rail. */}
-              <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>CATEGORY</p>
+              <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>Category</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
                 {ICON_CATEGORIES.map((cat) => {
                   const active = tempCategory === cat.id;
@@ -1996,10 +1998,11 @@ export function HomeScreen({
                       key={cat.id}
                       onClick={() => setTempCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
                       style={{
-                        padding: '7px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
-                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? cat.color : 'transparent',
-                        color: active ? '#fff' : '#888',
+                        height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
+                        fontWeight: active ? 700 : 600, cursor: 'pointer',
+                        border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                        color: active ? '#0B0812' : '#EDEAF5',
                       }}
                     >
                       {cat.label}
@@ -2017,7 +2020,7 @@ export function HomeScreen({
                   fallback for a non-Nigeria country. */}
               {subdivisions && (
                 <>
-                  <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>{subdivisions.label.toUpperCase()}</p>
+                  <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>{subdivisions.label}</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
                     {[`All ${subdivisions.label}s`, ...subdivisions.options].map((st) => {
                       const stId = st === `All ${subdivisions.label}s` ? 'all' : st;
@@ -2027,10 +2030,11 @@ export function HomeScreen({
                           key={st}
                           onClick={() => setTempState(stId)}
                           style={{
-                            padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
-                            cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                            background: active ? ventsColors.accent : 'transparent',
-                            color: active ? '#fff' : ventsColors.ink3,
+                            height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
+                            fontWeight: active ? 700 : 600, cursor: 'pointer',
+                            border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                            background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                            color: active ? '#0B0812' : '#EDEAF5',
                           }}
                         >{st}</button>
                       );
@@ -2039,8 +2043,12 @@ export function HomeScreen({
                 </>
               )}
 
-              {/* PRICE */}
-              <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
+              {/* PRICE -- kept as a 3-way All/Free/Paid control rather than
+                  the design's binary "Free events only" toggle: a toggle
+                  would drop the real, working "paid only" filter, which the
+                  design's simpler mock never had to account for. Restyled
+                  to the same pill language as Category/{subdivision} above. */}
+              <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>Price</p>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
                 {(['all', 'free', 'paid'] as const).map((p) => {
                   const active = tempPrice === p;
@@ -2049,10 +2057,11 @@ export function HomeScreen({
                       key={p}
                       onClick={() => setTempPrice(p)}
                       style={{
-                        flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
-                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? ventsColors.accent : 'transparent',
-                        color: active ? '#fff' : ventsColors.ink3,
+                        flex: 1, height: '38px', borderRadius: '9999px', fontSize: '14px',
+                        fontWeight: active ? 700 : 600, cursor: 'pointer',
+                        border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                        color: active ? '#0B0812' : '#EDEAF5',
                       }}
                     >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
                   );
@@ -2061,22 +2070,23 @@ export function HomeScreen({
             </div>
 
             {/* Footer buttons */}
-            <div style={{ display: 'flex', gap: '12px', padding: '16px 20px 0' }}>
+            <div style={{ display: 'flex', gap: '10px', padding: '16px 20px 0' }}>
               <button
                 onClick={clearFilters}
                 style={{
-                  flex: 1, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                  color: ventsColors.ink2, cursor: 'pointer',
+                  flex: 1, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
+                  background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)',
+                  color: '#fff', cursor: 'pointer',
                 }}
-              >Clear All</button>
+              >Clear</button>
               <button
                 onClick={applyFilters}
                 style={{
-                  flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
+                  flex: 2, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
                   background: ventsColors.accent, border: 'none', color: '#fff', cursor: 'pointer',
+                  boxShadow: '0 12px 34px -14px rgba(142,92,247,1)',
                 }}
-              >Apply</button>
+              >Show results</button>
             </div>
           </div>
         </>
