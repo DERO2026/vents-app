@@ -119,26 +119,25 @@ const CATEGORIES = [{ id: 'all', label: 'All', icon: '' }, ...CATEGORY_LIST];
 // image (matches the approved landing/Home mockup's card treatment) --
 // purely a display parse of event_date, no new data. Renders nothing if
 // event_date can't be parsed rather than showing a broken/blank badge.
+// Handoff spec (file 1, B1 HomeScreen card anatomy): a single-line dark
+// glass pill overlaid on the card image top-left -- "FRI 11" in JetBrains
+// Mono caps -- not a two-line solid-white badge.
 function DateBadge({ eventDate }: { eventDate?: string }) {
   const parsed = useMemo(() => {
     if (!eventDate) return null;
     const d = new Date(eventDate);
     if (isNaN(d.getTime())) return null;
-    return {
-      month: d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(),
-      day: d.getDate(),
-    };
+    return `${d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} ${d.getDate()}`;
   }, [eventDate]);
   if (!parsed) return null;
   return (
     <div style={{
-      position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,255,255,0.95)',
-      borderRadius: '10px', padding: '4px 8px', textAlign: 'center', lineHeight: 1.1,
-      boxShadow: '0 2px 8px rgba(0,0,0,0.35)', minWidth: '34px',
-    }}>
-      <div style={{ fontSize: '8px', fontWeight: 800, color: ventsColors.accent, letterSpacing: '0.03em' }}>{parsed.month}</div>
-      <div style={{ fontSize: '13px', fontWeight: 800, color: '#0A0A0F' }}>{parsed.day}</div>
-    </div>
+      position: 'absolute', top: '8px', left: '8px',
+      background: 'rgba(8,7,12,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+      border: '1px solid rgba(255,255,255,0.14)', borderRadius: '6px', padding: '4px 7px',
+      fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700,
+      letterSpacing: '0.1em', color: ventsColors.ink1,
+    }}>{parsed}</div>
   );
 }
 
