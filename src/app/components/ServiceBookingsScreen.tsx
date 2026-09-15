@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
 import { fetchMyServiceBookings, fetchProviderServiceBookings, ServiceBookingRow } from '../../lib/serviceBookings';
 import { getAuthToken } from '../../lib/supabase';
@@ -126,9 +126,27 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
-        {error && <p style={{ color: servicesColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
+        {/* Only show the banner-style error once bookings has loaded at least
+            once -- a failed REFRESH keeps the existing list visible with this
+            banner on top. A failed INITIAL load falls through to the
+            dedicated error state below instead (previously this banner and
+            "Loading…" rendered at the same time forever, since `bookings`
+            never leaves null on a caught fetch error). */}
+        {error && bookings !== null && <p style={{ color: servicesColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
 
-        {bookings === null ? (
+        {bookings === null && error ? (
+          <div style={{ textAlign: 'center', marginTop: '40px' }}>
+            <AlertCircle size={32} color={servicesColors.error} style={{ marginBottom: '10px', marginLeft: 'auto', marginRight: 'auto' }} />
+            <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>Couldn't load your bookings</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 16px' }}>{error}</p>
+            <button
+              onClick={load}
+              style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '10px 20px', color: servicesColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
+        ) : bookings === null ? (
           <p style={{ color: servicesColors.textSecondary, textAlign: 'center', marginTop: '40px', fontSize: '13px' }}>Loading…</p>
         ) : bookings.length === 0 ? (
           <div style={{ textAlign: 'center', marginTop: '40px' }}>

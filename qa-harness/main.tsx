@@ -10,6 +10,9 @@ import { HomeScreen, mapDbEventToFrontend } from '../src/app/components/HomeScre
 import { WelcomeScreen } from '../src/app/components/WelcomeScreen';
 import { EventDetailsScreen } from '../src/app/components/EventDetailsScreen';
 import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
+import { ServicesHomeScreen } from '../src/app/components/ServicesHomeScreen';
+import { ServiceBookingsScreen } from '../src/app/components/ServiceBookingsScreen';
+import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -79,6 +82,37 @@ const SCREENS: Record<string, () => JSX.Element> = {
         isSaved={false}
         onToggleSave={() => {}}
         currentUserId="user-1"
+      />
+    );
+  },
+  'services-home': () => (
+    <ServicesHomeScreen
+      onBack={() => {}}
+      onCategoryPress={() => {}}
+      onProviderPress={() => {}}
+      discoveryCountryIso="NG"
+      onDiscoveryCountryChange={() => {}}
+    />
+  ),
+  'service-bookings': () => (
+    <ServiceBookingsScreen mode="customer" onBack={() => {}} />
+  ),
+  'my-tickets': () => {
+    const dbEvent = { ...FIXTURE_EVENTS[0] };
+    const event = mapDbEventToFrontend(dbEvent);
+    const ticket = {
+      event, ticketType: { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 },
+      quantity: 1, ticketId: 'tkt-1', purchasedAt: new Date().toISOString(), totalAmount: 15000,
+      holderName: 'Test Organizer', holderEmail: 'organizer@example.com',
+    };
+    return (
+      <MyTicketsScreen
+        tickets={[ticket as any]}
+        loading={false}
+        onBack={() => {}}
+        onViewTicket={() => {}}
+        currentUserId="org-1"
+        currentUserEmail="organizer@example.com"
       />
     );
   },
