@@ -633,3 +633,62 @@ every prior update in this document.
 **Not yet covered**: Notifications, Profile, Organizer Dashboard suite
 beyond Creator Studio itself, Service Provider Dashboard suite. Final
 commit this update: `c64e706`.
+
+---
+
+## UPDATE 4 — Notifications → Profile → remaining dashboards
+
+Commits `e7fca7f`, `ccd50cb` (this pass).
+
+- **Notifications** (`NotificationsScreen.tsx`): same missing-error-state
+  bug as the Chats/Services fixes -- `fetchNotifications()` correctly
+  checked `if (error) throw error`, but the catch only logged; a failed
+  fetch rendered identically to "You're all caught up". Added a
+  `loadError` state and a dedicated error view using this screen's own
+  existing visual language (not imported from another screen).
+- **Profile** (`ProfileScreen.tsx`): reviewed `fetchStats`'s silent catch
+  (event/attendee count fetch). Judged NOT the same bug class -- these
+  are secondary decorative stats on a profile screen, not a primary
+  list/content area, and the established pattern for this exact kind of
+  non-critical enhancement data elsewhere in this file (draft-key
+  cleanup, etc.) is already a deliberate silent degrade. Left unchanged.
+- **Service Provider dashboard suite** (`ManageProviderServicesScreen.tsx`):
+  the exact same perpetual-"Loading…"-under-an-error bug as
+  ServiceBookingsScreen, same fix pattern applied.
+- **Swept for the same pattern** across `CreateEventScreen.tsx`,
+  `PromoteEventScreen.tsx`, `AttendeeListScreen.tsx`,
+  `ServiceCategoryScreen.tsx`, `ExploreScreen.tsx`,
+  `ConversationScreen.tsx`. One hit (`ServiceCategoryScreen.tsx`'s
+  `providers === null` check ordered before its `loadError` check) was
+  investigated and found NOT a bug: its catch explicitly sets
+  `providers` to `[]` (not leaving it `null`), so the null-check
+  correctly falls through to the error branch. Verified by reading the
+  state-update code before concluding, not from the branch order alone.
+
+All fixes verified via qa-harness screenshots with mocked failing
+requests, typecheck clean, full suite 429/429 passing, same pre-existing
+exceptions as every prior update. Final commit this update: `ccd50cb`.
+
+### Where this effort actually stands now
+
+Five real, verified bugs found and fixed across this session's two
+continuations (`ServiceBookingsScreen`, `MyTicketsScreen`,
+`InboxScreen`, `NotificationsScreen`, `ManageProviderServicesScreen`),
+all the same underlying class: a failed initial data load rendering
+indistinguishably from "genuinely empty" or getting stuck under a
+permanent loading indicator. Every other screen checked this session
+(`ServicesHomeScreen`, `ServiceProviderProfileScreen`,
+`PaymentRequestScreen`, `PaymentRequestsScreen`, `ProfileScreen`'s
+stats, `ServiceCategoryScreen`, plus the six screens swept and found
+clean) was reviewed and found already correct -- not rewritten for the
+sake of it.
+
+**Still not covered**: `CreateEventScreen.tsx`, `PromoteEventScreen.tsx`,
+`AttendeeListScreen.tsx` and `ExploreScreen.tsx`/`ConversationScreen.tsx`
+were swept only for this one specific bug pattern (grep + targeted read),
+not given a full state/consistency review. The Organizer dashboard suite
+beyond `OrganizerDashboard.tsx`/`ManageEventsScreen.tsx`/
+`SalesAnalyticsScreen.tsx` (already covered) hasn't had a dedicated pass.
+No exhaustive per-viewport screenshot matrix exists for any of the
+screens fixed in Updates 3-4 beyond the specific error state that was
+fixed. Do not claim the redesign complete.
