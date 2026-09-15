@@ -874,3 +874,66 @@ the scanner. No desktop-organizer-console visual QA (not built).
    credential-guard blocker as every prior update).
 
 Final commit this update: `b53c4f0`. Do not deploy to Production.
+
+---
+
+## UPDATE 6 — Desktop organizer console + the real reason Preview "looked the same"
+
+Commits `377bc20`, `ac6dacb` (this pass).
+
+### Desktop organizer console — DONE
+
+`DoorManagerScreen.tsx` now has the 3-column desktop layout (event/
+stats/"Scanners Connected" | live feed | quick actions) the design
+calls for, scoped via `useDesktopWideShell()` so only this screen widens
+at `>=1100px`. "Scanners Connected" is derived from real scan activity
+(gate_name/scanner_name on check-ins in the last 15 minutes), not a
+fabricated presence list; the design mock's non-functional "pair a
+webcam via QR" panel was replaced with a real Quick Actions panel
+(Open Scanner + a pointer to the existing manual check-in) since no
+pairing/signaling backend exists to build that honestly. Create/Edit
+Event was checked and found already implemented (a working 4-step flow
+in `CreateEventScreen.tsx`) — not rebuilt into the design's 6-step
+breakdown, per "do not redesign existing completed work."
+
+### The user opened the Preview and it looked unchanged — here's why, confirmed not guessed
+
+Given the deployment: confirmed via `get_deployment` that the Preview
+was built from the correct commit (`377bc20`, HEAD of `main` at the
+time), on the correct project (`vents`, linked to `DERO2026/vents-app`),
+as a genuine preview (`target: null`), not production. The code WAS
+there. It didn't look different anyway. Root cause, found by auditing
+the actual token/CSS wiring rather than re-auditing scope:
+
+1. **Typography was never wired in.** `ventsDesignTokens.ts`'s own
+   comment admitted `ventsTypography` was defined but never applied.
+   `index.css` only ever loaded Inter + Space Grotesk; every component
+   hardcodes those font names inline. Since typography is one of the
+   most visible signals of a redesign, this alone explains most of "it
+   looks the same" — literally nothing had changed on screen at that
+   level for the entire multi-session effort.
+2. **The logo was a CSS recreation, not the real asset**, because no
+   real asset file had ever existed in this repo — despite the original
+   redesign mandate's explicit rule against redrawing it. The QR/
+   scanner/media design upload happened to include real logo PNGs that
+   were never pulled into the app itself.
+
+Both fixed this pass (see commit `ac6dacb` for full detail): Manrope/
+JetBrains Mono now load and are forced over every existing inline Inter/
+Space Grotesk declaration via a global CSS override (same technique
+already used in this file for colors); the real logo PNG now renders in
+`VentsLogo.tsx` (used by AuthScreen/HomeScreen/StateSelectScreen/
+WelcomeScreen) instead of the hand-drawn version. Verified via qa-harness
+screenshots showing the real logo image and visibly different (rounder,
+more geometric) letterforms on both WelcomeScreen and Creator Studio.
+
+**What this does NOT fix**: individual screens' spacing/radii/card
+sizing were never audited against the design's exact token values
+(`ventsSpacing`/`ventsRadii` are also defined but likely similarly
+under-applied — not confirmed this pass, flagged as the next thing to
+check if the redesign still doesn't look right after this fix). Services/
+Wallet/Tickets/Profile/Chats were not re-screenshotted this pass beyond
+what earlier updates already covered. Typecheck clean, full suite 46/46
+files / 456/456 tests passing. Final commit `ac6dacb`. A fresh Preview
+was requested after this fix — see the conversation for its URL; do not
+assume this document was updated with it.
