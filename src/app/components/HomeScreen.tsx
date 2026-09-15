@@ -27,6 +27,7 @@ import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
+import { AmbientGlow } from './shared/AmbientGlow';
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -1338,16 +1339,7 @@ export function HomeScreen({
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
-      {/* Ambient glow -- one radial per screen, top-centered, per the design
-          system's own foundational rule (§02: "ambient · radial · 1 per
-          screen, top"). Purely decorative, behind all content and
-          interaction. */}
-      <div style={{
-        position: 'absolute', top: '-200px', left: '50%', transform: 'translateX(-50%)',
-        width: '560px', height: '500px', borderRadius: '9999px',
-        background: 'radial-gradient(circle, rgba(142,92,247,0.2) 0%, rgba(142,92,247,0) 68%)',
-        pointerEvents: 'none', zIndex: 0,
-      }} />
+      <AmbientGlow />
       {/* Pull-to-refresh spinner */}
       {pullRefreshing && (
         <div style={{

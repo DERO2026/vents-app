@@ -10,6 +10,7 @@ import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { PickerSheet } from './shared/PickerSheet';
+import { AmbientGlow } from './shared/AmbientGlow';
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   'Beauty & Grooming': Scissors,
@@ -120,7 +121,8 @@ export function ServicesHomeScreen({
   }, [providers, search]);
 
   return (
-    <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
+      <AmbientGlow />
       {pickerOpen && (
         <DiscoveryCountryPicker
           selectedIso={activeIso}
