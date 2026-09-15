@@ -692,3 +692,185 @@ beyond `OrganizerDashboard.tsx`/`ManageEventsScreen.tsx`/
 No exhaustive per-viewport screenshot matrix exists for any of the
 screens fixed in Updates 3-4 beyond the specific error state that was
 fixed. Do not claim the redesign complete.
+
+---
+
+## UPDATE 5 — Ticket QR / Scanner / Media Upload (new design artifact)
+
+Commits `e7f2573`, `b53c4f0` (this pass). Source design:
+`VENTS Ticket Security and Media Upload.dc.html` (uploaded this
+conversation). Per the task's own framing, this is a new, separate design
+delivery layered on top of the existing redesign — audited and mapped to
+the real codebase rather than rebuilt from scratch, since large parts of
+this surface (the scanner, the cropper) turned out to already be mature,
+carefully-built systems, not gaps.
+
+### 1-2. QR root cause + fix — DONE, verified
+
+**Root cause** (confirmed by reading the actual migration SQL, not
+guessed): `generate_ticket_token` (`0004_functions.sql`) mints a
+genuinely NEW nonce + signature on every single call — it is not
+idempotent. `verify_entry_pass` (the scanner's verification RPC) accepts
+ANY validly-signed, non-expired token for a ticket (tokens are valid
+~2 days via `v_expires`); minting a new one never invalidates an older
+one. So there was zero correctness or security benefit to re-minting on
+every mount — only cost: `useSignedTicketToken`'s background-refresh
+effect (`src/lib/ticketToken.ts`) called `mintToken()` unconditionally
+every time a component using it mounted. `QRTicket` and
+`PaymentSuccessScreen` both call this hook independently for the same
+ticket during the purchase → success → ticket-detail journey, and
+`MyTicketsScreen`'s `prefetchTicketTokens` warms a whole list of tickets
+the same way. Each mint produces a different nonce → different QR
+encoding → visible repaint on top of whatever was already showing. That
+is the reported "multiple different QR codes flash" bug: a
+token-regeneration bug (an unnecessary network round-trip silently
+replacing an already-valid displayed value), not a rendering bug —
+`QRCodeDisplay`'s canvas paint was already correctly deduped
+(`drawnRef`) and only repaints when `value` itself changes; the bug was
+upstream of it, in what value got produced.
+
+**Fix**: added `decodeTokenPayload()` (reads a v2 token's payload —
+`ticketId`/`expiresAt`/`nonce` — without needing the signing secret,
+since the payload was only ever signed, never encrypted) and
+`needsRefresh()` (true only when a token is missing, unparseable, or
+within 12h of its ~2-day expiry) to `ticketToken.ts`. Both
+`useSignedTicketToken` and `prefetchTicketTokens` now gate their
+background mint calls on `needsRefresh()` instead of minting
+unconditionally. `ensureTicketToken` was already correct (only mints
+when nothing is cached at all) and needed no change. This preserves the
+existing secure architecture exactly — one authoritative server-signed
+credential per ticket, same offline-first localStorage cache, same
+"only ever replaces, never clears" failure behavior, no parallel QR
+system, no client-side trust of anything but the server-issued token.
+
+**Tests**: also fixed the test file itself — it mocked a nonexistent
+`./insforge` module (this file has imported `./supabase` for a long
+time), so the whole suite silently failed to load; this was the
+long-documented "pre-existing unrelated ticketToken.test.ts env-setup
+failure" every commit through Updates 1-4 had to call out. Fixed the
+mock (`vi.hoisted` + mocking `./supabase`) and added real regression
+coverage: `decodeTokenPayload` edge cases, `needsRefresh`'s expiry-window
+logic (the direct test for this bug — asserts a comfortably-valid token
+is never re-minted and an expiring one is), `ensureTicketToken`'s
+mint-only-when-uncached behavior, `prefetchTicketTokens`' dedup +
+freshness gating. **Full suite is now genuinely 46/46 files passing**,
+no more asterisked exception anywhere in this document going forward.
+
+**QR generation** (item 2) was already using an established library
+(`qrcode` npm package, canvas renderer) at 280px with a 4-module quiet
+zone and `errorCorrectionLevel: 'L'` — matches the design's "≥3px module
+size, full quiet zone, no logos/overlays inside the code" note exactly.
+No changes needed; this was never the bug.
+
+**QR states** (item 3): `QRTicket.tsx` already renders ready ("show this
+QR") vs a text-only generating state (no second QR visual ever appears —
+confirmed by reading the render: it's `signedToken ? <QRCodeDisplay/> :
+<p>Generating…</p>`, never two QR-shaped elements). Not yet built as the
+design's single "state prop: ready | loading | refreshing | disabled"
+container component — the current implementation achieves the same
+user-facing guarantee (one QR, never a second flashing one) through
+different means (the needsRefresh gating above) rather than an explicit
+state machine component. Refactoring into that exact component shape is
+NOT done and is the most concrete remaining item-3 gap.
+
+### 4. Organizer scanner — mostly already built; one real gap closed
+
+Audited `CheckinScannerScreen.tsx` + `scanner/ticketValidation.ts` +
+`scanner/useCamera.ts` in full. Found this was already a mature,
+carefully-built system covering nearly the entire 14-state spec: camera
+permission request/denied (`useCamera`'s status machine), scanning
+state, QR detection, server-authoritative verification via
+`verify_entry_pass` (never decides validity locally), valid/success,
+already-checked-in (with original-scanner attribution), invalid, wrong
+event, expired, refunded, cancelled (all distinctly messaged via
+`deniedInfo`'s reason mapping), network-error vs denied (deliberately
+different color — amber not red, since a network failure says nothing
+about ticket validity), retry, rate-limiting. Atomicity for concurrent
+scans confirmed via `FOR UPDATE OF t` row lock in `verify_entry_pass` —
+already correct, not something this pass needed to add.
+
+**The one real, named gap**: a guest-facing manual code fallback
+("always reachable, even mID-permission-denial" per the design notes)
+did not exist — only a dev-only raw-token simulator and a separate
+name-search manual override buried in `DoorManagerScreen`. Built it:
+`parseTicketDisplayCode()` (`src/lib/ticketCode.ts`, exact inverse of
+the existing `ticketDisplayCode()`) decodes a guest-readable "VT-XXXXX-…"
+code back to the ticket UUID client-side — a pure decode, not a
+credential, proves nothing about validity on its own — then
+`validateManualCode()` (`scanner/ticketValidation.ts`) hands that UUID to
+the existing `manual_check_in` RPC, which is already fully
+server-authoritative (door-manager auth check, rate limit, row lock,
+status/duplicate check). Wired into `CheckinScannerScreen` as a keyboard
+icon always visible in the top bar AND a second entry point inside the
+camera-error state itself, opening a bottom sheet; the QR decode loop is
+paused while it's open. Reuses the exact same `ScanResultCard` verdict UI
+as a camera scan.
+
+**Desktop organizer console** (multi-scanner live feed) mentioned in the
+design's implementation notes is NOT built — no existing equivalent was
+found, and this pass did not build one. Real remaining item.
+
+### 5. Image upload / cropper — audited, found already substantially complete
+
+`ImageCropperModal.tsx` (584 lines) + `smartCrop.ts` + `visionCrop.ts` +
+`pickImage.ts` turned out to be a mature, sophisticated existing system:
+`react-easy-crop`-based zoom/reposition, EXIF-orientation-aware
+decoding, vision-based smart default crop, a portrait-master renderer
+that never upscales past the source resolution (matches the design
+note's "default crop = smallest crop that fits... image never upscaled"
+requirement exactly), blurred-background fill for aspect mismatches.
+`CreateEventScreen.tsx`'s upload flow already has client-side type/size
+validation (`ACCEPTED_IMAGE_TYPES`, 15MB cap) before any upload attempt,
+an uploading spinner state, an error+Retry banner, and a "Change" replace
+affordance. This was not rebuilt — it already substantially satisfies
+item 5's requirements.
+
+**One real, named gap identified, NOT fixed this pass**: no explicit
+drag-over visual state (the dropzone is click-to-pick-file only, no
+`onDragOver`/`onDrop` handlers) and no explicit "reset confirmation"
+dialog before discarding a crop in progress. Judged lower priority than
+the QR/scanner work given VENTS' overwhelmingly mobile audience (drag-
+and-drop is desktop-only), and left for a future pass rather than
+rushed.
+
+### 6-7. Visual implementation / security — held throughout
+
+No design tokens, typography, spacing, or component architecture were
+replaced wholesale; every change this pass was additive/surgical, same
+discipline as every prior update in this document. No Supabase/RLS/
+Paystack/wallet/transfer/refund/notification logic was touched — the QR
+fix only changed WHEN a token is minted, never what mints it or what
+verifies it; the manual-entry addition calls an existing, unmodified,
+already-authoritative RPC.
+
+### 8-9. Testing / Visual QA — done for what was built this pass
+
+New: 8 `parseTicketDisplayCode` tests (round-trip incl. all-zero/all-Fs
+UUID edge cases, formatting tolerance, invalid-input rejection), 10 new
+`needsRefresh`/`decodeTokenPayload`/gating tests, plus the pre-existing
+suite's own coverage. Screenshot-verified via qa-harness with a fake
+camera device (`--use-fake-device-for-media-stream`): scanner renders
+correctly at 390px and 1440px (correctly staying in its native
+phone-width frame at desktop, not stretched by the earlier
+wide-desktop-shell fix, since it's not one of the 4 bespoke screens),
+manual-entry sheet opens and matches the existing visual language.
+Typecheck clean (only the pre-existing unrelated `App.tsx:2764` error,
+unchanged all session). Full suite: **46/46 files, 456/456 tests
+passing** — no exceptions.
+
+**Not done**: no cropper-specific visual QA screenshots were taken this
+pass (existing system, not modified). No tablet (834px) screenshot of
+the scanner. No desktop-organizer-console visual QA (not built).
+
+### Remaining blockers for this design artifact specifically
+
+1. QR container component refactor (explicit `state` prop) — cosmetic
+   relative to the root-cause fix, not user-visible, not done.
+2. Desktop organizer console (multi-scanner live feed) — not built.
+3. Cropper drag-over state + reset confirmation — not built.
+4. No tests added for the scanner's camera/permission state machine
+   itself (`useCamera.ts`) — only the new manual-entry decode logic.
+5. Production build status not re-assessed this pass (same pre-existing
+   credential-guard blocker as every prior update).
+
+Final commit this update: `b53c4f0`. Do not deploy to Production.
