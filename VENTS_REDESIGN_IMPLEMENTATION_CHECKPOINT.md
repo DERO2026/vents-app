@@ -400,3 +400,102 @@ batched with low-risk screens.
   effort, do not conflate the two).
 - New file this pass: `src/lib/ventsDesignTokens.ts` (uncommitted).
 - No other files changed.
+
+---
+
+## UPDATE (this pass) — Items 18-19 bespoke layouts DONE. 20-21 still NOT done.
+
+Everything above this line is historical and, in places, stale (e.g. the
+"Repo state" section above says `ventsDesignTokens.ts` is uncommitted — it
+has been committed and in use for a long time). This section is the
+current source of truth. Do not re-read the sections above as current
+status without checking dates/commits.
+
+### Item 18 — Bespoke desktop layouts: DONE for the 3 named screens
+
+- **Creator Studio (`OrganizerDashboard.tsx`)** — commit `101fa15`. A real
+  220px sidebar (Overview/Events/Sales & Analytics/Promotions/Earnings)
+  appears at `>=900px`, wired to the real `onManageEvents`/`onNavigate`
+  callbacks. All mobile JSX, state (`revenue`, `ticketsSold`, `orgEvents`,
+  `chartData`, `activeTab`) untouched.
+- **ManageEventsScreen.tsx** — commit `08587d1`. Header/search/list share a
+  centered `max-width:1100px` column at `>=900px`; the event list becomes
+  a 2-column (3-column at `>=1300px`) card grid instead of one stacked
+  column. All actions (edit, attendees, analytics, door manager, scan,
+  hide/delete, announcements) untouched.
+- **SalesAnalyticsScreen.tsx** — commit `aecb5ed`. Both real render paths
+  fixed: `PortfolioAnalyticsScreen` (the actual screen reached from Creator
+  Studio's "Sales & Analytics" nav item with no `eventId` — this is the
+  one that matters for the sidebar link) gets a 2-column stat row + 2-column
+  chart grid at `>=900px`; `EventAnalyticsScreen` (the per-event drill-down)
+  gets the same content-column + paired-card treatment. All chart math and
+  data-fetching untouched.
+- Also required (not in the original 4-item list, but necessary to make
+  the above real instead of squeezed): `src/styles/index.css`'s global
+  `#root` cap was raised from `max-width:640px` to `max-width:1240px` at
+  `>=1100px`, specifically so these sidebar/grid layouts have real desktop
+  width to lay out in. Verified this doesn't stretch a screen with no
+  bespoke layout of its own (WelcomeScreen) since its content already
+  self-centers.
+
+### Item 19 — Bespoke tablet layout: DONE for HomeScreen
+
+- **HomeScreen.tsx** — commit `78699e7`. Main "Explore Events" feed is a
+  2-column grid with 32px margins at 768-1099px (tablet), 3-column grid
+  with its own `max-width:1100px` content column at `>=1100px` (desktop).
+  Carousel/trending/providers rows above the grid deliberately stay as
+  horizontally-scrolling strips (licensed exception per §02) — only the
+  vertical feed grid changed.
+- **Real bug caught and fixed in the same pass, not shipped separately**:
+  raising the global `#root` cap for item 18 has no effect on a screen
+  whose own content has no max-width — HomeScreen's feed had none, so
+  before this fix a single `FeedCard` stretched into one oversized
+  full-bleed card at desktop widths (visually confirmed via qa-harness
+  screenshot before it was called done). Fixed by giving HomeScreen's own
+  main section a max-width + grid at `>=1100px` too, not just the tablet
+  range.
+- Also fixed in the same commit: `qa-harness/main.tsx`'s Home fixture was
+  silently broken (`countryFilter` prop never passed, `HomeScreen`
+  requires it and has no `'all'` fallback) — every previous Home
+  screenshot in this harness showed a "0 events" empty state regardless of
+  fixture content. Added `countryFilter="NG"` + `country: 'NG'` on fixture
+  events so the harness actually exercises the real feed now and in future
+  passes.
+
+All four of the above verified via `qa-harness` screenshots at mobile
+(390px, pixel-unchanged), tablet (834px), and desktop (1440px), each with
+real Playwright network-route mocking of the relevant Supabase REST/RPC
+calls (the harness's own fake-network-failure approach isn't enough to
+reach a populated success state for screens that fetch on mount — see the
+`/tmp/screenshot_*.mjs` one-off scripts used this pass, not checked into
+the repo since they're throwaway verification, not reusable tooling).
+Typecheck clean after every commit (only the pre-existing unrelated
+`App.tsx:2764` error). Full suite 429/429 passing after every commit (one
+pre-existing unrelated `ticketToken.test.ts` env-setup failure, file-level
+only).
+
+### Items 20-21 — NOT done. Real remaining scope, not silently skipped.
+
+- **Item 20 (systematic UI-state pass)**: still only the incidental
+  coverage noted in the "Item 20" section above (one real error state,
+  several loading states seen in passing while working on 18-19). No
+  systematic empty/success/disabled/payment/refund/confirmation pass has
+  been done across the app. This needs its own dedicated pass, screen by
+  screen, using the qa-harness with route-mocked fixture responses for
+  each state (loading = never resolve the mocked route within the
+  screenshot's wait window; error = `route.fulfill` a non-2xx or reject;
+  empty = fulfill with `[]`; success = fulfill with realistic fixture
+  rows, as done for items 18-19 above).
+- **Item 21 (final visual consistency pass)**: not started. Depends on 20
+  being real first — a consistency pass across states that were never
+  actually checked isn't meaningful.
+
+**Do not claim the redesign complete.** Items 1-19 are genuinely done and
+verified. 20-21 are the real remaining release blockers. Production build
+readiness was not re-assessed this pass (see the "Local production build
+blocked by pre-existing, unrelated guards" note earlier in this
+conversation's history — `VITE_PAYSTACK_PUBLIC_KEY`/`VITE_SUPABASE_URL`/
+`VITE_SUPABASE_ANON_KEY` build guards in `vite.config.ts` refuse to build
+without real production credentials in the shell; this is pre-existing,
+unrelated to the redesign, and was correctly not bypassed with fake
+credentials).
