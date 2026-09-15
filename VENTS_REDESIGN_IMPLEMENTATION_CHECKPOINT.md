@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 12 UNITS MIGRATED (12 of ~35 units)
+## Status: FOUNDATION + 13 UNITS MIGRATED (13 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -170,6 +170,10 @@ everything else in the priority list below is not started.
   `walletServicesPayment.security.test.ts`, `providerServicesUi.test.ts`,
   `selectorAuditComplete.test.ts` re-run explicitly (27/27 pass); full
   suite 429/429.
+- [x] **`src/app/components/ConversationScreen.tsx`** (707 lines) and
+  **`NotificationsScreen.tsx`** (626 lines) — no test file reads either
+  file's source, confirmed via grep before editing. Scripted substitution
+  (54 + 28 replacements). Typecheck clean, full suite 429/429.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -236,9 +240,9 @@ maturity — not a batch replace.
     (the 0077 refund UI's own security tests from earlier this session) —
     16/16 pass, and it has zero color-literal assertions, so this token
     change is confirmed safe against it.
-12. Chats / Requests / People Search — not started
-13. Notifications — not started
-14. Profile — not started
+12. Chats / Requests / People Search — color tokens done (ConversationScreen; ExploreScreen done earlier in item 3's pass)
+13. Notifications — color tokens done (see above)
+14. Profile — **NEXT UP** (`ProfileScreen.tsx`)
 15. Organizer Dashboard suite — not started
 16. Service Provider Dashboard suite — not started
 17. Creator Studio — not started

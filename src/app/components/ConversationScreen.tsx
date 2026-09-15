@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { ArrowLeft, Send, Image, Trash2, Check, CheckCheck, X, Search, Reply } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
@@ -403,7 +404,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   return (
     <div
-      style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
+      style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}
       onTouchStart={e => setSwipeStartX(e.touches[0].clientX)}
       onTouchEnd={e => {
         if (swipeStartX !== null && e.changedTouches[0].clientX - swipeStartX > 60) onBack();
@@ -418,8 +419,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       `}</style>
 
       {toast && (
-        <div style={{ position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)', background: '#090514', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '12px', padding: '10px 16px', zIndex: 9999, maxWidth: '320px', textAlign: 'center', animation: 'bubbleIn 0.2s ease' }}>
-          <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{toast}</p>
+        <div style={{ position: 'fixed', bottom: '90px', left: '50%', transform: 'translateX(-50%)', background: ventsColors.surface, border: '1px solid rgba(167,139,250,0.3)', borderRadius: '12px', padding: '10px 16px', zIndex: 9999, maxWidth: '320px', textAlign: 'center', animation: 'bubbleIn 0.2s ease' }}>
+          <p style={{ color: ventsColors.ink1, fontSize: '13px', margin: 0 }}>{toast}</p>
         </div>
       )}
 
@@ -432,7 +433,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       {/* Long-press context menu: react / reply / delete */}
       {actionMsg && (
         <div onClick={() => setActionMsg(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} style={{ background: '#090514', borderRadius: '20px', padding: '14px', minWidth: '220px', border: '1px solid rgba(255,255,255,0.08)' }}>
+          <div onClick={e => e.stopPropagation()} style={{ background: ventsColors.surface, borderRadius: '20px', padding: '14px', minWidth: '220px', border: '1px solid rgba(255,255,255,0.08)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', padding: '0 4px' }}>
               {REACTION_EMOJI.map(e => (
                 <button key={e} onClick={() => toggleReaction(actionMsg.id, e)} style={{ background: 'none', border: 'none', fontSize: '22px', cursor: 'pointer', padding: '4px' }}>{e}</button>
@@ -440,14 +441,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             </div>
             <button
               onClick={() => { setReplyTo(actionMsg); setActionMsg(null); }}
-              style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', background: 'none', border: 'none', color: '#F0F0FF', fontSize: '14px', cursor: 'pointer', borderRadius: '12px' }}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', background: 'none', border: 'none', color: ventsColors.ink1, fontSize: '14px', cursor: 'pointer', borderRadius: '12px' }}
             >
-              <Reply size={16} color="#A78BFA" /> Reply
+              <Reply size={16} color={ventsColors.accentSoft} /> Reply
             </button>
             {actionMsg.sender_id === currentUser.id && !actionMsg.deleted_by_sender && (
               <button
                 onClick={() => deleteMessage(actionMsg.id)}
-                style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', background: 'none', border: 'none', color: '#EF4444', fontSize: '14px', cursor: 'pointer', borderRadius: '12px' }}
+                style={{ display: 'flex', alignItems: 'center', gap: '10px', width: '100%', padding: '12px 16px', background: 'none', border: 'none', color: ventsColors.error, fontSize: '14px', cursor: 'pointer', borderRadius: '12px' }}
               >
                 <Trash2 size={16} /> Delete message
               </button>
@@ -458,34 +459,34 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
       {/* Search overlay */}
       {showSearch && (
-        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 16px 16px', animation: 'sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>
+        <div style={{ position: 'fixed', inset: 0, background: ventsColors.bg, zIndex: 9500, display: 'flex', flexDirection: 'column', padding: 'calc(16px + env(safe-area-inset-top)) 16px 16px', animation: 'sheetSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '10px 14px' }}>
-              <Search size={16} color="#8B8FA8" />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '10px 14px' }}>
+              <Search size={16} color={ventsColors.ink2} />
               <input
                 autoFocus
                 value={searchQuery}
                 onChange={e => runSearch(e.target.value)}
                 placeholder={`Search in chat with ${otherUser.name}`}
-                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px' }}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.ink1, fontSize: '14px' }}
               />
             </div>
-            <button onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', color: '#A78BFA', fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
+            <button onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }} style={{ background: 'none', border: 'none', color: ventsColors.accentSoft, fontSize: '14px', cursor: 'pointer' }}>Cancel</button>
           </div>
           <div style={{ flex: 1, overflowY: 'auto', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
             {searching ? (
-              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '24px', fontSize: '13px' }}>Searching…</p>
+              <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '24px', fontSize: '13px' }}>Searching…</p>
             ) : searchQuery && searchResults.length === 0 ? (
-              <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '24px', fontSize: '13px' }}>No messages found.</p>
+              <p style={{ color: ventsColors.ink2, textAlign: 'center', marginTop: '24px', fontSize: '13px' }}>No messages found.</p>
             ) : (
               searchResults.map(m => (
                 <button
                   key={m.id}
                   onClick={() => jumpToMessage(m.id)}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px 14px', marginBottom: '8px', cursor: 'pointer' }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', background: ventsColors.elevated, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '12px 14px', marginBottom: '8px', cursor: 'pointer' }}
                 >
-                  <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0, lineHeight: 1.4 }}>{m.body}</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '4px 0 0' }}>{formatTime(m.created_at)}</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '13px', margin: 0, lineHeight: 1.4 }}>{m.body}</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '4px 0 0' }}>{formatTime(m.created_at)}</p>
                 </button>
               ))
             )}
@@ -503,7 +504,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         flexShrink: 0, background: 'rgba(9,5,20,0.85)', backdropFilter: 'blur(16px)',
       }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, flexShrink: 0 }}>
-          <ArrowLeft size={22} color="#A78BFA" />
+          <ArrowLeft size={22} color={ventsColors.accentSoft} />
         </button>
         <div
           onClick={() => onNavigateToProfile?.(otherUser.id)}
@@ -511,23 +512,23 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         >
           {otherUser.avatarUrl
             ? <img src={otherUser.avatarUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : <span style={{ color: '#A78BFA', fontSize: '15px', fontWeight: 700 }}>{otherUser.name[0]?.toUpperCase()}</span>
+            : <span style={{ color: ventsColors.accentSoft, fontSize: '15px', fontWeight: 700 }}>{otherUser.name[0]?.toUpperCase()}</span>
           }
           {isOnline && (
-            <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '11px', height: '11px', borderRadius: '50%', background: '#10B981', border: '2px solid #090514' }} />
+            <div style={{ position: 'absolute', bottom: '-1px', right: '-1px', width: '11px', height: '11px', borderRadius: '50%', background: ventsColors.success, border: '2px solid #090514' }} />
           )}
         </div>
         <div onClick={() => onNavigateToProfile?.(otherUser.id)} style={{ cursor: onNavigateToProfile ? 'pointer' : 'default', flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{otherUser.name}</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{otherUser.name}</p>
             <BadgeChip tier={otherUser.vc_badge} />
           </div>
-          <p style={{ color: otherTyping ? '#A78BFA' : '#8B8FA8', fontSize: '11px', margin: 0, fontWeight: otherTyping ? 600 : 400 }}>
+          <p style={{ color: otherTyping ? ventsColors.accentSoft : ventsColors.ink2, fontSize: '11px', margin: 0, fontWeight: otherTyping ? 600 : 400 }}>
             {otherTyping ? 'typing…' : eventTitle ? `Re: ${eventTitle}` : isOnline ? 'Online' : ''}
           </p>
         </div>
         <button onClick={() => setShowSearch(true)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', flexShrink: 0 }}>
-          <Search size={18} color="#8B8FA8" />
+          <Search size={18} color={ventsColors.ink2} />
         </button>
       </div>
 
@@ -537,32 +538,32 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           pending). */}
       {requestStatus === 'pending_incoming' && (
         <div style={{ padding: '12px 16px', background: 'rgba(167,139,250,0.08)', borderBottom: '1px solid rgba(167,139,250,0.15)', flexShrink: 0 }}>
-          <p style={{ color: '#F0F0FF', fontSize: '13px', margin: '0 0 10px', textAlign: 'center' }}>
+          <p style={{ color: ventsColors.ink1, fontSize: '13px', margin: '0 0 10px', textAlign: 'center' }}>
             <b>{otherUser.name}</b> wants to message you.
           </p>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={() => respondToRequest('decline')} disabled={respondingRequest} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: '#C4C9E0', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Decline</button>
+            <button onClick={() => respondToRequest('decline')} disabled={respondingRequest} style={{ flex: 1, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '10px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Decline</button>
             <button onClick={() => respondToRequest('accept')} disabled={respondingRequest} style={{ flex: 1, background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', padding: '10px', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>Accept</button>
           </div>
         </div>
       )}
       {requestStatus === 'pending_outgoing' && (
         <div style={{ padding: '8px 16px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.05)', flexShrink: 0 }}>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0, textAlign: 'center' }}>Message request sent — you'll be notified when {otherUser.name} accepts.</p>
+          <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0, textAlign: 'center' }}>Message request sent — you'll be notified when {otherUser.name} accepts.</p>
         </div>
       )}
       {requestStatus === 'declined' && (
         <div style={{ padding: '8px 16px', background: 'rgba(239,68,68,0.08)', borderBottom: '1px solid rgba(239,68,68,0.15)', flexShrink: 0 }}>
-          <p style={{ color: '#EF4444', fontSize: '12px', margin: 0, textAlign: 'center' }}>This conversation isn't open — {otherUser.name} isn't accepting messages from you right now.</p>
+          <p style={{ color: ventsColors.error, fontSize: '12px', margin: 0, textAlign: 'center' }}>This conversation isn't open — {otherUser.name} isn't accepting messages from you right now.</p>
         </div>
       )}
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
-          <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '20px' }}>Loading…</p>
+          <p style={{ color: ventsColors.ink2, textAlign: 'center', padding: '20px' }}>Loading…</p>
         ) : messages.length === 0 && pendingMessages.length === 0 ? (
-          <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '20px', fontSize: '13px' }}>No messages yet. Say hello!</p>
+          <p style={{ color: ventsColors.ink2, textAlign: 'center', padding: '20px', fontSize: '13px' }}>No messages yet. Say hello!</p>
         ) : [...messages, ...pendingMessages].map((m) => {
           const isMine = m.sender_id === currentUser.id;
           const isDeleted = m.deleted_by_sender;
@@ -580,23 +581,23 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
             >
               <div style={{
                 maxWidth: '75%',
-                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
+                background: isDeleted ? 'rgba(255,255,255,0.04)' : isMine ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
                 borderRadius: isMine ? '18px 18px 4px 18px' : '18px 18px 18px 4px',
                 padding: (m.image_url && !isDeleted) ? '8px' : '10px 14px',
                 border: isMine && !isDeleted ? 'none' : '1px solid rgba(255,255,255,0.06)',
               }}>
                 {quoted && !isDeleted && (
-                  <div style={{ borderLeft: `2px solid ${isMine ? 'rgba(255,255,255,0.5)' : '#A78BFA'}`, paddingLeft: '8px', marginBottom: '6px', opacity: 0.75 }}>
-                    <p style={{ fontSize: '11px', color: isMine ? 'rgba(255,255,255,0.85)' : '#A78BFA', margin: 0, fontWeight: 600 }}>
+                  <div style={{ borderLeft: `2px solid ${isMine ? 'rgba(255,255,255,0.5)' : ventsColors.accentSoft}`, paddingLeft: '8px', marginBottom: '6px', opacity: 0.75 }}>
+                    <p style={{ fontSize: '11px', color: isMine ? 'rgba(255,255,255,0.85)' : ventsColors.accentSoft, margin: 0, fontWeight: 600 }}>
                       {quoted.sender_id === currentUser.id ? 'You' : otherUser.name}
                     </p>
-                    <p style={{ fontSize: '12px', color: isMine ? 'rgba(255,255,255,0.7)' : '#8B8FA8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <p style={{ fontSize: '12px', color: isMine ? 'rgba(255,255,255,0.7)' : ventsColors.ink2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {quoted.deleted_by_sender ? 'Message deleted' : quoted.image_url ? '📷 Photo' : quoted.body}
                     </p>
                   </div>
                 )}
                 {isDeleted ? (
-                  <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, fontStyle: 'italic' }}>This message was deleted</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0, fontStyle: 'italic' }}>This message was deleted</p>
                 ) : m.image_url ? (
                   <img
                     src={m.image_url} alt="Sent image" loading="lazy" decoding="async"
@@ -604,15 +605,15 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                     style={{ maxWidth: '200px', maxHeight: '200px', borderRadius: '14px', objectFit: 'cover', cursor: 'zoom-in', display: 'block' }}
                   />
                 ) : (
-                  <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0, lineHeight: 1.45, wordBreak: 'break-word' }}>{m.body}</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '14px', margin: 0, lineHeight: 1.45, wordBreak: 'break-word' }}>{m.body}</p>
                 )}
                 {!isDeleted && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '3px', marginTop: '4px' }}>
-                    <span style={{ color: isMine ? 'rgba(255,255,255,0.55)' : '#8B8FA8', fontSize: '10px' }}>
+                    <span style={{ color: isMine ? 'rgba(255,255,255,0.55)' : ventsColors.ink2, fontSize: '10px' }}>
                       {m._pending === 'queued' ? 'Waiting for connection…' : m._pending === 'sending' ? 'Sending…' : formatTime(m.created_at)}
                     </span>
                     {isMine && !m._pending && (m.read_at
-                      ? <CheckCheck size={12} color="#A78BFA" />
+                      ? <CheckCheck size={12} color={ventsColors.accentSoft} />
                       : <Check size={12} color="rgba(255,255,255,0.4)" />
                     )}
                   </div>
@@ -626,10 +627,10 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
                       <button
                         key={emoji}
                         onClick={() => toggleReaction(m.id, emoji)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '3px', background: mine ? 'rgba(167,139,250,0.2)' : '#131629', border: `1px solid ${mine ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '10px', padding: '2px 6px', cursor: 'pointer', width: 'fit-content' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '3px', background: mine ? 'rgba(167,139,250,0.2)' : ventsColors.elevated, border: `1px solid ${mine ? 'rgba(167,139,250,0.4)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '10px', padding: '2px 6px', cursor: 'pointer', width: 'fit-content' }}
                       >
                         <span style={{ fontSize: '11px' }}>{emoji}</span>
-                        {count > 1 && <span style={{ fontSize: '10px', color: '#8B8FA8', fontWeight: 600 }}>{count}</span>}
+                        {count > 1 && <span style={{ fontSize: '10px', color: ventsColors.ink2, fontWeight: 600 }}>{count}</span>}
                       </button>
                     );
                   })}
@@ -640,9 +641,9 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         })}
         {otherTyping && (
           <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-            <div style={{ background: '#131629', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '18px 18px 18px 4px', padding: '12px 16px', display: 'flex', gap: '4px', animation: 'bubbleIn 0.2s ease' }}>
+            <div style={{ background: ventsColors.elevated, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '18px 18px 18px 4px', padding: '12px 16px', display: 'flex', gap: '4px', animation: 'bubbleIn 0.2s ease' }}>
               {[0, 1, 2].map(i => (
-                <span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8B8FA8', display: 'inline-block', animation: `typingDot 1.1s ${i * 0.15}s infinite ease-in-out` }} />
+                <span key={i} style={{ width: '6px', height: '6px', borderRadius: '50%', background: ventsColors.ink2, display: 'inline-block', animation: `typingDot 1.1s ${i * 0.15}s infinite ease-in-out` }} />
               ))}
             </div>
           </div>
@@ -652,14 +653,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
       {/* Reply preview */}
       {replyTo && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', background: '#090514', borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
-          <Reply size={14} color="#A78BFA" style={{ flexShrink: 0 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 16px', background: ventsColors.surface, borderTop: '1px solid rgba(255,255,255,0.06)', flexShrink: 0 }}>
+          <Reply size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ fontSize: '11px', color: '#A78BFA', margin: 0, fontWeight: 600 }}>Replying to {replyTo.sender_id === currentUser.id ? 'yourself' : otherUser.name}</p>
-            <p style={{ fontSize: '12px', color: '#8B8FA8', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.image_url ? '📷 Photo' : replyTo.body}</p>
+            <p style={{ fontSize: '11px', color: ventsColors.accentSoft, margin: 0, fontWeight: 600 }}>Replying to {replyTo.sender_id === currentUser.id ? 'yourself' : otherUser.name}</p>
+            <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{replyTo.image_url ? '📷 Photo' : replyTo.body}</p>
           </div>
           <button onClick={() => setReplyTo(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
-            <X size={16} color="#8B8FA8" />
+            <X size={16} color={ventsColors.ink2} />
           </button>
         </div>
       )}
@@ -667,13 +668,13 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       {/* Input */}
       <div style={{
         padding: '10px 16px', paddingBottom: 'calc(10px + env(safe-area-inset-bottom))',
-        background: '#090514', borderTop: replyTo ? 'none' : '1px solid rgba(255,255,255,0.06)',
+        background: ventsColors.surface, borderTop: replyTo ? 'none' : '1px solid rgba(255,255,255,0.06)',
         display: 'flex', gap: '8px', alignItems: 'flex-end', flexShrink: 0,
         transform: 'translateZ(0)', position: 'relative', zIndex: 10,
       }}>
         {imageSharingEnabled && (
           <button onClick={async () => { const native = await pickImage(); if (native) { sendImageMessage(native); return; } imgInputRef.current?.click(); }} disabled={uploadingImg} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0 0 2px', flexShrink: 0 }}>
-            <Image size={20} color={uploadingImg ? '#555C7A' : '#8B8FA8'} />
+            <Image size={20} color={uploadingImg ? ventsColors.ink3 : ventsColors.ink2} />
           </button>
         )}
         <textarea
@@ -683,8 +684,8 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           placeholder="Type a message…"
           rows={1}
           style={{
-            flex: 1, background: '#131629', border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '20px', padding: '10px 14px', color: '#F0F0FF', fontSize: '14px',
+            flex: 1, background: ventsColors.elevated, border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '20px', padding: '10px 14px', color: ventsColors.ink1, fontSize: '14px',
             resize: 'none', outline: 'none', fontFamily: 'inherit', lineHeight: 1.4,
             maxHeight: '120px', overflowY: 'auto', scrollbarWidth: 'none',
           }}
@@ -694,12 +695,12 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
           disabled={!body.trim()}
           style={{
             width: '40px', height: '40px', borderRadius: '50%', flexShrink: 0,
-            background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#1A1D2E',
+            background: body.trim() ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
             border: 'none', cursor: body.trim() ? 'pointer' : 'not-allowed',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
           }}
         >
-          <Send size={16} color={body.trim() ? '#fff' : '#555C7A'} />
+          <Send size={16} color={body.trim() ? '#fff' : ventsColors.ink3} />
         </button>
       </div>
     </div>

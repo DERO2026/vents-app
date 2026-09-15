@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Bell, Loader, Trash2, CheckCheck, ChevronRight } from 'lucide-react';
 import { Notification } from './types';
 import { supabase } from '../../lib/supabase';
@@ -19,14 +20,14 @@ function formatRelativeTime(isoString: string): string {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  reminder: '#A855F7',
-  booking: '#10B981',
-  promo: '#F59E0B',
-  social: '#3B82F6',
-  broadcast: '#F59E0B',
-  message: '#3B82F6',
-  sale: '#10B981',
-  event_update: '#A855F7',
+  reminder: ventsColors.accent,
+  booking: ventsColors.success,
+  promo: ventsColors.pending,
+  social: ventsColors.info,
+  broadcast: ventsColors.pending,
+  message: ventsColors.info,
+  sale: ventsColors.success,
+  event_update: ventsColors.accent,
 };
 
 export function NotificationsScreen({
@@ -294,7 +295,7 @@ export function NotificationsScreen({
             flexShrink: 0,
           }}
         >
-          <ArrowLeft size={15} color="#C4C9E0" />
+          <ArrowLeft size={15} color={ventsColors.ink2} />
         </button>
 
         <div
@@ -314,7 +315,7 @@ export function NotificationsScreen({
         >
           <h1
             style={{
-              color: '#F5F5FA',
+              color: ventsColors.ink1,
               fontSize: '17px',
               fontWeight: 700,
               fontFamily: 'Space Grotesk, sans-serif',
@@ -326,8 +327,8 @@ export function NotificationsScreen({
           </h1>
           {unreadCount > 0 && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: '#A855F7', boxShadow: '0 0 5px rgba(168,85,247,0.8)' }} />
-              <span style={{ color: '#8B8FA8', fontSize: '11px', letterSpacing: '0.02em' }}>
+              <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: ventsColors.accent, boxShadow: '0 0 5px rgba(168,85,247,0.8)' }} />
+              <span style={{ color: ventsColors.ink2, fontSize: '11px', letterSpacing: '0.02em' }}>
                 {unreadCount} new
               </span>
             </div>
@@ -355,7 +356,7 @@ export function NotificationsScreen({
                 flexShrink: 0,
               }}
             >
-              <CheckCheck size={15} color="#B9A6E8" />
+              <CheckCheck size={15} color={ventsColors.accentSoft} />
             </button>
           )}
           {items.length > 0 && (
@@ -380,7 +381,7 @@ export function NotificationsScreen({
                 flexShrink: 0,
               }}
             >
-              <Trash2 size={14} color="#8B8FA8" />
+              <Trash2 size={14} color={ventsColors.ink2} />
             </button>
           )}
         </div>
@@ -395,7 +396,7 @@ export function NotificationsScreen({
         }}
       >
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: '#6B7089' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '150px', color: ventsColors.ink3 }}>
             <Loader size={18} className="animate-spin" />
             <span style={{ marginLeft: '10px', fontSize: '13px' }}>Loading notifications...</span>
           </div>
@@ -423,17 +424,17 @@ export function NotificationsScreen({
                 justifyContent: 'center',
               }}
             >
-              <Bell size={24} color="#4A4E63" strokeWidth={1.5} />
+              <Bell size={24} color={ventsColors.ink3} strokeWidth={1.5} />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px' }}>
-              <p style={{ color: '#D8D8E4', fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>You're all caught up</p>
-              <p style={{ color: '#6B7089', fontSize: '12.5px', margin: 0 }}>New activity will show up here</p>
+              <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>You're all caught up</p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12.5px', margin: 0 }}>New activity will show up here</p>
             </div>
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {items.map((notif) => {
-              const accent = TYPE_COLORS[notif.type] ?? '#A855F7';
+              const accent = TYPE_COLORS[notif.type] ?? ventsColors.accent;
               const offsetX = swipe?.id === notif.id ? swipe.offsetX : 0;
               return (
                 <div key={notif.id} style={{ position: 'relative', borderRadius: '18px', overflow: 'hidden' }}>
@@ -466,7 +467,7 @@ export function NotificationsScreen({
                           flexShrink: 0,
                         }}
                       >
-                        <Trash2 size={14} color="#8B8FA8" />
+                        <Trash2 size={14} color={ventsColors.ink2} />
                       </div>
                     </div>
                   )}
@@ -539,7 +540,7 @@ export function NotificationsScreen({
                     >
                       <span
                         style={{
-                          color: notif.read ? '#B8BBCC' : '#F0F0FA',
+                          color: notif.read ? ventsColors.ink2 : ventsColors.ink1,
                           fontSize: '14px',
                           fontWeight: notif.read ? 500 : 650,
                           letterSpacing: '0.001em',
@@ -554,7 +555,7 @@ export function NotificationsScreen({
                               width: '5px',
                               height: '5px',
                               borderRadius: '50%',
-                              background: '#A855F7',
+                              background: ventsColors.accent,
                               boxShadow: '0 0 4px rgba(168,85,247,0.7)',
                               flexShrink: 0,
                             }}
@@ -562,7 +563,7 @@ export function NotificationsScreen({
                         )}
                         <span
                           style={{
-                            color: '#5C6079',
+                            color: ventsColors.ink3,
                             fontSize: '11px',
                             whiteSpace: 'nowrap',
                           }}
@@ -573,7 +574,7 @@ export function NotificationsScreen({
                     </div>
                     <p
                       style={{
-                        color: notif.read ? '#6B7089' : '#9A9DB5',
+                        color: notif.read ? ventsColors.ink3 : ventsColors.ink3,
                         fontSize: '12.5px',
                         lineHeight: 1.5,
                         margin: 0,
@@ -587,7 +588,7 @@ export function NotificationsScreen({
                       somewhere -- an informational/non-navigational
                       notification (no push_data) shouldn't look tappable. */}
                   {notif.push_data && (
-                    <ChevronRight size={15} color="#4A4E63" style={{ flexShrink: 0 }} />
+                    <ChevronRight size={15} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
                   )}
                   </div>
                 </div>
@@ -601,7 +602,7 @@ export function NotificationsScreen({
                   marginTop: '4px', padding: '13px', borderRadius: '16px',
                   background: 'rgba(255,255,255,0.03)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
                   border: '1px solid rgba(255,255,255,0.06)',
-                  color: '#9A9DB5', fontSize: '13px', fontWeight: 600,
+                  color: ventsColors.ink3, fontSize: '13px', fontWeight: 600,
                   cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1,
                 }}
               >
