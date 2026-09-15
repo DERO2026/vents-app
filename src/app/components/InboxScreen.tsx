@@ -33,6 +33,11 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
   const [threads, setThreads] = useState<Thread[]>([]);
   const [requests, setRequests] = useState<RequestRow[]>([]);
   const [loading, setLoading] = useState(true);
+  // Distinct from the per-action toast below -- this is "the inbox itself
+  // failed to load", which previously had no UI: the catch just logged and
+  // returned, leaving threads/requests at their initial [] so a real
+  // fetch failure looked identical to "no messages yet".
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [menuThread, setMenuThread] = useState<Thread | null>(null);
   const [confirmAction, setConfirmAction] = useState<'clear' | 'delete' | 'block' | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -43,8 +48,17 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
 
   const load = useCallback(async () => {
     if (!currentUser?.id) return;
+    setLoadError(null);
     try {
-      const [{ data: msgs }, { data: clears }, { data: pendingReqs }] = await Promise.all([
+      // supabase-js returns { data, error } for a query-level failure (bad
+      // RLS, a 4xx/5xx from PostgREST) rather than throwing -- it only
+      // throws for a genuine network exception before any response comes
+      // back. Destructuring only `data` here (as this used to) silently
+      // drops that far more common case: msgs/clears/pendingReqs would just
+      // be null/undefined and fall through to the `|| []` defaults below as
+      // if the user genuinely had nothing, with the real failure never
+      // reaching the catch block or `loadError` at all.
+      const [msgsRes, clearsRes, reqsRes] = await Promise.all([
         supabase
           .from('direct_messages')
           .select('id, sender_id, recipient_id, body, created_at, read_at')
@@ -60,6 +74,13 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
           .select('requester_id, recipient_id, status, created_at')
           .or(`requester_id.eq.${currentUser.id},recipient_id.eq.${currentUser.id}`),
       ]);
+
+      if (msgsRes.error || clearsRes.error || reqsRes.error) {
+        throw msgsRes.error || clearsRes.error || reqsRes.error;
+      }
+      const msgs = msgsRes.data;
+      const clears = clearsRes.data;
+      const pendingReqs = reqsRes.data;
 
       const reqRows = (pendingReqs as any[]) || [];
       // A thread only belongs in "Messages" once the request is accepted OR
@@ -124,6 +145,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     } catch (e) {
       console.error('InboxScreen load error', e);
       Sentry.captureException(e);
+      setLoadError('Could not load your messages. Pull down to try again.');
     } finally {
       setLoading(false);
     }
@@ -275,6 +297,20 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '10px 16px calc(110px + env(safe-area-inset-bottom))' }}>
         {loading ? (
           <p style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px 16px' }}>Loading…</p>
+        ) : loadError ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MessageCircle size={28} color="#F87171" />
+            </div>
+            <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0 }}>Couldn't load your messages</p>
+            <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>{loadError}</p>
+            <button
+              onClick={load}
+              style={{ marginTop: '4px', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '10px 20px', color: '#F87171', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
         ) : tab === 'requests' ? (
           requests.length === 0 ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '60px 24px', gap: '12px' }}>

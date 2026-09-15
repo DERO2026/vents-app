@@ -13,6 +13,7 @@ import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
 import { ServicesHomeScreen } from '../src/app/components/ServicesHomeScreen';
 import { ServiceBookingsScreen } from '../src/app/components/ServiceBookingsScreen';
 import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
+import { InboxScreen } from '../src/app/components/InboxScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -116,6 +117,9 @@ const SCREENS: Record<string, () => JSX.Element> = {
       />
     );
   },
+  inbox: () => (
+    <InboxScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onOpenConversation={() => {}} />
+  ),
   checkout: () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };
     const event = mapDbEventToFrontend(dbEvent);
