@@ -99,6 +99,21 @@ button:active, [role="button"]:active {
   }
 }
 
+/* Screens with a genuine bespoke desktop layout (Creator Studio, Manage
+   Events, Sales & Analytics) need real horizontal room for a sidebar +
+   grid composition -- the 640px cap above was sized for screens that
+   don't have one yet and just needed to stop stretching edge-to-edge.
+   Widen #root at real desktop widths; screens without a bespoke layout
+   are unaffected because their own inner content already centers itself
+   at a fixed max-width (see each screen's own `maxWidth` + `margin: 0
+   auto` on its content wrapper), so widening the outer shell doesn't
+   make them stretch. */
+@media (min-width: 1100px) {
+  #root {
+    max-width: 1240px;
+  }
+}
+
 /* Safety reset */
 * {
   box-sizing: border-box;

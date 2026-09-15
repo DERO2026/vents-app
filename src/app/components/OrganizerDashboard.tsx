@@ -304,6 +304,89 @@ export function OrganizerDashboard({
         <div style={{ width: '40px', flexShrink: 0 }} />
       </header>
 
+      {/* Style block for responsive grid and the desktop Creator Studio shell (CS1) */}
+      <style>{`
+        .metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+        @media (max-width: 600px) {
+          .metrics-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+        }
+        .cs-sidebar { display: none; }
+        @media (min-width: 900px) {
+          .cs-shell {
+            display: flex;
+            align-items: flex-start;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+          }
+          .cs-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 220px;
+            flex: none;
+            padding: 20px 14px;
+            border-right: 1px solid rgba(255,255,255,0.07);
+            position: sticky;
+            top: 81px;
+          }
+          .cs-sidebar-item {
+            display: flex;
+            align-items: center;
+            height: 42px;
+            border-radius: 12px;
+            padding: 0 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: none;
+            text-align: left;
+            width: 100%;
+          }
+          .cs-shell > main {
+            max-width: none;
+            margin: 0;
+          }
+          .metrics-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+      `}</style>
+
+      <div className="cs-shell">
+        <nav className="cs-sidebar" aria-label="Creator Studio navigation">
+          {[
+            { key: 'overview', label: 'Overview', action: undefined },
+            { key: 'events', label: 'Events', action: onManageEvents },
+            { key: 'sales', label: 'Sales & Analytics', action: () => onNavigate('sales-analytics') },
+            { key: 'promotions', label: 'Promotions', action: () => onNavigate('promote-event') },
+            { key: 'earnings', label: 'Earnings', action: () => onNavigate('wallet') },
+          ].map((item) => (
+            <button
+              key={item.key}
+              className="cs-sidebar-item"
+              onClick={item.action}
+              disabled={!item.action}
+              style={
+                item.key === 'overview'
+                  ? { background: 'rgba(142,92,247,0.14)', border: '1px solid rgba(142,92,247,0.4)', color: ventsColors.white }
+                  : { color: ventsColors.ink2, cursor: item.action ? 'pointer' : 'default' }
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+
       {/* Main Content Area */}
       <main
         style={{
@@ -315,21 +398,6 @@ export function OrganizerDashboard({
           margin: '0 auto',
         }}
       >
-        {/* Style block for responsive grid and other dynamic adjustments */}
-        <style>{`
-          .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-bottom: 28px;
-          }
-          @media (max-width: 600px) {
-            .metrics-grid {
-              grid-template-columns: 1fr;
-              gap: 16px;
-            }
-          }
-        `}</style>
 
         {/* Metrics Hero Section */}
         <div className="metrics-grid">
@@ -887,6 +955,7 @@ export function OrganizerDashboard({
           );
         })()}
       </main>
+      </div>
     </div>
   );
 }
