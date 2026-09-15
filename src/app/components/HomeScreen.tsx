@@ -759,9 +759,15 @@ function FeaturedCarousel({
           />
           {/* Deep gradient from transparent at top to almost-black at bottom */}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
-          {/* FEATURED badge */}
+          {/* FEATURED badge -- handoff anatomy: dark glass pill, JetBrains
+              Mono caps, not a purple gradient pill. */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
-            <span style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 11px', borderRadius: '999px', letterSpacing: '0.05em', boxShadow: '0 2px 10px rgba(123,47,190,0.5)' }}>FEATURED</span>
+            <span style={{
+              background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+              border: '1px solid rgba(255,255,255,0.16)', color: '#fff',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: '9px', fontWeight: 700,
+              padding: '6px 10px', borderRadius: '8px', letterSpacing: '0.14em',
+            }}>FEATURED</span>
           </div>
           {/* Save button */}
           <button
