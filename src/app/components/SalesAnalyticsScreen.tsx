@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Ticket, Wallet, Receipt, Users, TrendingUp } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
@@ -26,8 +27,8 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
       <defs>
         <linearGradient id="saBarGrad" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#A855F7" />
-          <stop offset="100%" stopColor="#7B2FBE" />
+          <stop offset="0%" stopColor={ventsColors.accent} />
+          <stop offset="100%" stopColor={ventsColors.accent} />
         </linearGradient>
       </defs>
       {/* Grid lines */}
@@ -65,7 +66,7 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
               x={x + barW / 2}
               y={H - 6}
               textAnchor="middle"
-              fill="#8B8FA8"
+              fill={ventsColors.ink2}
               fontSize={10}
             >
               {d.day}
@@ -78,7 +79,7 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
         const val = Math.round(max * (1 - frac));
         const y = PT + innerH * frac + 4;
         return (
-          <text key={`ylabel-${i}`} x={PL} y={y} fill="#8B8FA8" fontSize={9}>
+          <text key={`ylabel-${i}`} x={PL} y={y} fill={ventsColors.ink2} fontSize={9}>
             ₦{val >= 1000000 ? `${(val / 1000000).toFixed(1)}M` : `${val / 1000}k`}
           </text>
         );
@@ -147,8 +148,8 @@ function LineChartSVG({ data }: { data: { day: string; rate: number }[] }) {
     <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: 'block' }}>
       <defs>
         <linearGradient id="saLineArea" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#10B981" stopOpacity={0.25} />
-          <stop offset="100%" stopColor="#10B981" stopOpacity={0} />
+          <stop offset="0%" stopColor={ventsColors.success} stopOpacity={0.25} />
+          <stop offset="100%" stopColor={ventsColors.success} stopOpacity={0} />
         </linearGradient>
       </defs>
       {[0, 0.5, 1].map((frac, i) => {
@@ -166,12 +167,12 @@ function LineChartSVG({ data }: { data: { day: string; rate: number }[] }) {
         );
       })}
       <path d={area} fill="url(#saLineArea)" />
-      <polyline points={polyline} fill="none" stroke="#10B981" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={polyline} fill="none" stroke={ventsColors.success} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
       {pts.map((p, i) => (
-        <circle key={`dot-${i}`} cx={p.x} cy={p.y} r={3.5} fill="#10B981" />
+        <circle key={`dot-${i}`} cx={p.x} cy={p.y} r={3.5} fill={ventsColors.success} />
       ))}
       {data.map((d, i) => (
-        <text key={`lday-${i}`} x={pts[i].x} y={H - 4} textAnchor="middle" fill="#8B8FA8" fontSize={10}>
+        <text key={`lday-${i}`} x={pts[i].x} y={H - 4} textAnchor="middle" fill={ventsColors.ink2} fontSize={10}>
           {d.day}
         </text>
       ))}
@@ -183,14 +184,14 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   return (
     <div
       style={{
-        background: '#090514',
+        background: ventsColors.surface,
         border: '1px solid rgba(255,255,255,0.06)',
         borderRadius: '18px',
         padding: '16px',
         marginBottom: '16px',
       }}
     >
-      <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '16px' }}>
+      <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '16px' }}>
         {title}
       </p>
       {children}
@@ -230,7 +231,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
     ],
     ticketTypes: [
       { name: 'No sales yet', value: 100, color: '#374151' },
-      { name: 'VIP', value: 0, color: '#A855F7' },
+      { name: 'VIP', value: 0, color: ventsColors.accent },
       { name: 'VVIP', value: 0, color: '#D946EF' }
     ],
     conversion: [
@@ -320,7 +321,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
           });
         }
 
-        const TYPE_COLORS = ['#7B2FBE', '#A855F7', '#D946EF', '#EC4899', '#6366F1'];
+        const TYPE_COLORS = [ventsColors.accent, ventsColors.accent, '#D946EF', '#EC4899', '#6366F1'];
         const computedTypes = Object.keys(typeCount).length > 0
           ? Object.entries(typeCount).map(([name, count], i) => ({
               name,
@@ -370,7 +371,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Inter, sans-serif' }}>
         Loading analytics...
       </div>
     );
@@ -379,7 +380,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -399,7 +400,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         <button
           onClick={onBack}
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '40px',
@@ -410,11 +411,11 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={18} color="#C4C9E0" />
+          <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div>
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>Sales Analytics</h1>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>Sales Analytics</h1>
+          <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px' }}>
             This week · All events
           </p>
         </div>
@@ -430,27 +431,27 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         }}
       >
         {loading ? (
-          <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>Loading analytics...</div>
+          <div style={{ color: ventsColors.ink2, textAlign: 'center', padding: '40px' }}>Loading analytics...</div>
         ) : (
           <>
             {/* Top stats */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
               {[
-                { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: '#10B981' },
-                { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: '#A855F7' },
+                { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: ventsColors.success },
+                { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: ventsColors.accent },
               ].map(({ label, value, sub, color }) => (
                 <div
                   key={label}
                   style={{
                     flex: 1,
-                    background: '#090514',
+                    background: ventsColors.surface,
                     border: '1px solid rgba(255,255,255,0.06)',
                     borderRadius: '16px',
                     padding: '14px',
                   }}
                 >
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '5px' }}>{label}</p>
-                  <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '3px' }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', marginBottom: '5px' }}>{label}</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '3px' }}>
                     {value}
                   </p>
                   <p style={{ color, fontSize: '11px', fontWeight: 600 }}>{sub}</p>
@@ -471,8 +472,8 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
                   {analytics.ticketTypes.map((t) => (
                     <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: t.color, flexShrink: 0 }} />
-                      <span style={{ color: '#C4C9E0', fontSize: '13px', flex: 1 }}>{t.name}</span>
-                      <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px', flex: 1 }}>{t.name}</span>
+                      <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
                     </div>
                   ))}
                 </div>
@@ -487,13 +488,13 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
             {/* Key insights */}
             <div
               style={{
-                background: '#090514',
+                background: ventsColors.surface,
                 border: '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '18px',
                 padding: '16px',
               }}
             >
-              <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Key Insights</p>
+              <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Key Insights</p>
               {[
                 { icon: '📈', text: 'Real-time sales dashboard is active. Revenue updates directly on ticket bookings.' },
                 { icon: '🎟️', text: 'Ticket sales count shows exact quantity of checked-out attendee tickets.' },
@@ -501,7 +502,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
               ].map(({ icon, text }) => (
                 <div key={text} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
                   <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
-                  <p style={{ color: '#C4C9E0', fontSize: '13px', lineHeight: 1.5 }}>{text}</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.5 }}>{text}</p>
                 </div>
               ))}
             </div>
@@ -546,10 +547,10 @@ function fmtTrendDate(iso: string): string {
 
 function StatTile({ label, value, sub, subColor }: { label: string; value: string; sub?: string; subColor?: string }) {
   return (
-    <div style={{ flex: '1 1 140px', background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
-      <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '5px' }}>{label}</p>
-      <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: sub ? '3px' : 0 }}>{value}</p>
-      {sub && <p style={{ color: subColor || '#8B8FA8', fontSize: '11px', fontWeight: 600 }}>{sub}</p>}
+    <div style={{ flex: '1 1 140px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+      <p style={{ color: ventsColors.ink2, fontSize: '11px', marginBottom: '5px' }}>{label}</p>
+      <p style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: sub ? '3px' : 0 }}>{value}</p>
+      {sub && <p style={{ color: subColor || ventsColors.ink2, fontSize: '11px', fontWeight: 600 }}>{sub}</p>}
     </div>
   );
 }
@@ -558,7 +559,7 @@ function SectionHeader({ icon, title }: { icon: React.ReactNode; title: string }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: '20px 0 10px' }}>
       {icon}
-      <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>{title}</p>
+      <p style={{ color: ventsColors.ink2, fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', margin: 0 }}>{title}</p>
     </div>
   );
 }
@@ -581,11 +582,11 @@ function TrendBars({ data, valueKey, color, formatValue }: {
         const pct = Math.max(2, Math.round((v / max) * 100));
         return (
           <div key={d.date} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ color: '#8B8FA8', fontSize: '11px', width: '52px', flexShrink: 0 }}>{fmtTrendDate(d.date)}</span>
+            <span style={{ color: ventsColors.ink2, fontSize: '11px', width: '52px', flexShrink: 0 }}>{fmtTrendDate(d.date)}</span>
             <div style={{ flex: 1, background: 'rgba(255,255,255,0.04)', borderRadius: '100px', height: '8px', overflow: 'hidden' }}>
               <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: '100px' }} />
             </div>
-            <span style={{ color: '#F0F0FF', fontSize: '11px', fontWeight: 700, width: '64px', textAlign: 'right', flexShrink: 0 }}>{formatValue(v)}</span>
+            <span style={{ color: ventsColors.ink1, fontSize: '11px', fontWeight: 700, width: '64px', textAlign: 'right', flexShrink: 0 }}>{formatValue(v)}</span>
           </div>
         );
       })}
@@ -621,18 +622,18 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
   }, [currentUser?.id, eventId]);
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
-          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '40px', height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          <ArrowLeft size={18} color="#C4C9E0" />
+          <ArrowLeft size={18} color={ventsColors.ink2} />
         </button>
         <div style={{ minWidth: 0 }}>
-          <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Event Analytics</h1>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px', margin: 0 }}>
+          <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Event Analytics</h1>
+          <p style={{ color: ventsColors.ink2, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '260px', margin: 0 }}>
             {data?.eventTitle || eventTitle || 'This event'}
           </p>
         </div>
@@ -640,24 +641,24 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 110px', scrollbarWidth: 'none' }}>
         {loading ? (
-          <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>Loading analytics…</div>
+          <div style={{ color: ventsColors.ink2, textAlign: 'center', padding: '40px' }}>Loading analytics…</div>
         ) : error ? (
           <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '16px', padding: '16px', textAlign: 'center', marginTop: '20px' }}>
-            <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>
+            <p style={{ color: ventsColors.error, fontSize: '13px', margin: 0 }}>{error}</p>
           </div>
         ) : !data ? (
-          <div style={{ color: '#8B8FA8', textAlign: 'center', padding: '40px' }}>No analytics available.</div>
+          <div style={{ color: ventsColors.ink2, textAlign: 'center', padding: '40px' }}>No analytics available.</div>
         ) : (
           <>
             {/* 1. OVERVIEW */}
-            <SectionHeader icon={<Wallet size={13} color="#A855F7" />} title="Overview" />
+            <SectionHeader icon={<Wallet size={13} color={ventsColors.accent} />} title="Overview" />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '4px' }}>
-              <StatTile label="Tickets Sold" value={data.overview.soldQuantity.toLocaleString()} sub={data.overview.pendingCount > 0 ? `${data.overview.pendingCount} pending payment` : undefined} subColor="#F59E0B" />
+              <StatTile label="Tickets Sold" value={data.overview.soldQuantity.toLocaleString()} sub={data.overview.pendingCount > 0 ? `${data.overview.pendingCount} pending payment` : undefined} subColor={ventsColors.pending} />
               {data.overview.remaining !== null && (
                 <StatTile label="Tickets Remaining" value={data.overview.remaining.toLocaleString()} sub={`of ${data.overview.ticketGoal.toLocaleString()} capacity`} />
               )}
-              <StatTile label="Gross Ticket Sales" value={fmtKobo(data.overview.grossKobo)} sub="paid tickets only" subColor="#10B981" />
-              <StatTile label="Organizer Amount Earned" value={fmtKobo(data.overview.organizerEarnedKobo)} sub="credited to your wallet" subColor="#10B981" />
+              <StatTile label="Gross Ticket Sales" value={fmtKobo(data.overview.grossKobo)} sub="paid tickets only" subColor={ventsColors.success} />
+              <StatTile label="Organizer Amount Earned" value={fmtKobo(data.overview.organizerEarnedKobo)} sub="credited to your wallet" subColor={ventsColors.success} />
               <StatTile
                 label="VENTS Service Fee"
                 value={fmtKobo(data.overview.buyerFeeKobo)}
@@ -665,7 +666,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
               />
             </div>
             {(data.overview.cancelledCount > 0 || data.overview.refundedCount > 0) && (
-              <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '10px 2px 0' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '10px 2px 0' }}>
                 {data.overview.cancelledCount > 0 && `${data.overview.cancelledCount} cancelled`}
                 {data.overview.cancelledCount > 0 && data.overview.refundedCount > 0 && ' · '}
                 {data.overview.refundedCount > 0 && `${data.overview.refundedCount} refunded`}
@@ -674,24 +675,24 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
             )}
 
             {/* 2. SALES */}
-            <SectionHeader icon={<Ticket size={13} color="#A855F7" />} title="Sales" />
+            <SectionHeader icon={<Ticket size={13} color={ventsColors.accent} />} title="Sales" />
             {data.byTicketType.length === 0 ? (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>No ticket sales yet.</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0 }}>No ticket sales yet.</p>
               </div>
             ) : (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '14px' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>By Ticket Type</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '14px' }}>
+                <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, marginBottom: '10px' }}>By Ticket Type</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   {data.byTicketType.map((t) => (
                     <div key={t.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
                       <div style={{ minWidth: 0 }}>
-                        <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</p>
-                        <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                        <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.name}</p>
+                        <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '2px 0 0' }}>
                           {t.soldCount} sold{t.remaining !== null ? ` · ${t.remaining} left` : ''}
                         </p>
                       </div>
-                      <span style={{ color: '#10B981', fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>{fmtKobo(t.revenueKobo)}</span>
+                      <span style={{ color: ventsColors.success, fontSize: '13px', fontWeight: 700, flexShrink: 0 }}>{fmtKobo(t.revenueKobo)}</span>
                     </div>
                   ))}
                 </div>
@@ -699,18 +700,18 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
             )}
 
             {data.salesTrend.length === 0 ? (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '4px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>Sales trend will appear here once tickets start selling.</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center', marginBottom: '4px' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0 }}>Sales trend will appear here once tickets start selling.</p>
               </div>
             ) : (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '4px' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, marginBottom: '12px' }}>Sales by Date</p>
-                <TrendBars data={data.salesTrend} valueKey="count" color="#A855F7" formatValue={(v) => `${v} sold`} />
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px', marginBottom: '4px' }}>
+                <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, marginBottom: '12px' }}>Sales by Date</p>
+                <TrendBars data={data.salesTrend} valueKey="count" color={ventsColors.accent} formatValue={(v) => `${v} sold`} />
               </div>
             )}
 
             {/* 3. ATTENDANCE */}
-            <SectionHeader icon={<Users size={13} color="#A855F7" />} title="Attendance" />
+            <SectionHeader icon={<Users size={13} color={ventsColors.accent} />} title="Attendance" />
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '14px' }}>
               <StatTile label="Total Checked In" value={data.attendance.checkedInCount.toLocaleString()} />
               <StatTile
@@ -721,20 +722,20 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
             </div>
 
             {data.checkinTrend.length === 0 ? (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0 }}>No check-ins recorded yet.</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0 }}>No check-ins recorded yet.</p>
               </div>
             ) : (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-                  <TrendingUp size={13} color="#10B981" />
-                  <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: 0 }}>Check-ins by Date</p>
+                  <TrendingUp size={13} color={ventsColors.success} />
+                  <p style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, margin: 0 }}>Check-ins by Date</p>
                 </div>
-                <TrendBars data={data.checkinTrend} valueKey="count" color="#10B981" formatValue={(v) => `${v} in`} />
+                <TrendBars data={data.checkinTrend} valueKey="count" color={ventsColors.success} formatValue={(v) => `${v} in`} />
               </div>
             )}
 
-            <p style={{ color: '#555C7A', fontSize: '10.5px', textAlign: 'center', margin: '18px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+            <p style={{ color: ventsColors.ink3, fontSize: '10.5px', textAlign: 'center', margin: '18px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
               <Receipt size={11} /> All figures in NGN — paid, active tickets only.
             </p>
           </>

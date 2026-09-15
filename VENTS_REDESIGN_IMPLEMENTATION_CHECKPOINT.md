@@ -7,7 +7,7 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 14 UNITS MIGRATED (14 of ~35 units)
+## Status: FOUNDATION + 15 UNITS MIGRATED (15 of ~35 units)
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -186,6 +186,26 @@ everything else in the priority list below is not started.
   Scripted substitution (43 replacements). Re-ran the 4 tests that
   actually read this file's source explicitly (33/33 pass) plus full
   typecheck + suite (429/429).
+- [x] **Organizer Dashboard suite**: `OrganizerDashboard.tsx` (891),
+  `ManageEventsScreen.tsx` (566), `CreateEventScreen.tsx` (1905),
+  `SalesAnalyticsScreen.tsx` (745), `PromoteEventScreen.tsx` (419) — only
+  `organizerEventNavigation.test.ts` references any of these filenames
+  (OrganizerDashboard), checked and confirmed logic-only (event-lifecycle
+  tab assertions, no colors). Caught and fixed a real scripting bug mid-run:
+  two files (`OrganizerDashboard.tsx`, `CreateEventScreen.tsx`) use
+  `import React, { ... } from 'react'` instead of `import { ... }`, so the
+  auto-import-insertion regex silently didn't match and left 120+
+  `Cannot find name 'ventsColors'` typecheck errors — caught immediately
+  by the mandatory typecheck-after-edit step (not shipped and found later),
+  fixed by inserting the import line directly. Also deliberately did NOT
+  map 4 colors in `SalesAnalyticsScreen.tsx` (`#D946EF`/`#6366F1`/
+  `#EC4899`/`#374151`) — these read as a categorical chart-series palette
+  (distinct hues per data series), not theme colors; collapsing them onto
+  shared tokens would visually merge chart series that need to stay
+  distinguishable. Scripted substitution (59+21+71+73+43 = 267
+  replacements across 5 files). Typecheck clean (after the fix),
+  `organizerEventNavigation.test.ts` re-run explicitly (4/4 pass), full
+  suite 429/429.
 
 Every item below is genuine, real, and remains — nothing here should be
 implied "basically done":
@@ -255,9 +275,11 @@ maturity — not a batch replace.
 12. Chats / Requests / People Search — color tokens done (ConversationScreen; ExploreScreen done earlier in item 3's pass)
 13. Notifications — color tokens done (see above)
 14. Profile — color tokens done (see above)
-15. Organizer Dashboard suite — **NEXT UP**
-16. Service Provider Dashboard suite — not started
-17. Creator Studio — not started
+15. Organizer Dashboard suite — color tokens done (see above)
+16. Service Provider Dashboard suite — **NEXT UP** (`ManageProviderServicesScreen.tsx`, `ServiceProviderSetupScreen.tsx`, `ServiceProviderVerificationScreen.tsx`)
+17. Creator Studio — per the design-side checkpoint (VENTS_REDESIGN_CHECKPOINT.md),
+    Creator Studio = OrganizerDashboard.tsx (same screen, no separate file) —
+    already covered by item 15
 18. Desktop layouts — not started
 19. Tablet layouts — not started
 20. Global UI states — not started

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Camera, Plus, Check, Phone, AlertCircle, X } from 'lucide-react';
 import { OrganizerEvent } from './types';
 import { supabase } from '../../lib/supabase';
@@ -40,11 +41,11 @@ const CATEGORIES = CATEGORY_LIST.map(c => c.id);
 
 const INPUT_STYLE: React.CSSProperties = {
   width: '100%',
-  background: '#090514',
+  background: ventsColors.surface,
   border: '1px solid rgba(255,255,255,0.08)',
   borderRadius: '12px',
   padding: '12px 14px',
-  color: '#F0F0FF',
+  color: ventsColors.ink1,
   fontSize: '14px',
   fontFamily: 'Inter, sans-serif',
   outline: 'none',
@@ -53,7 +54,7 @@ const INPUT_STYLE: React.CSSProperties = {
 
 function Label({ children }: { children: React.ReactNode }) {
   return (
-    <p style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
+    <p style={{ color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>
       {children}
     </p>
   );
@@ -272,12 +273,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   // server's RLS (organizer_id = auth.uid()) is the real authority.
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center' }}>
         <div style={{ fontSize: '64px', marginBottom: '20px' }}>⏳</div>
-        <h2 style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h2 style={{ color: ventsColors.ink1, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
           Session Expired
         </h2>
-        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
           Your session needs a quick refresh. Go back and sign in again to continue creating your event.
         </p>
         <button onClick={onBack} style={{ background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '14px', padding: '12px 28px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}>
@@ -298,7 +299,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     return (
       <div
         style={{
-          background: '#020005',
+          background: ventsColors.bg,
           width: '100%',
           height: '100%',
           display: 'flex',
@@ -312,7 +313,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         <div style={{ fontSize: '64px', marginBottom: '20px' }}>🔒</div>
         <h2
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '22px',
             fontWeight: 700,
             fontFamily: 'Space Grotesk, sans-serif',
@@ -321,7 +322,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         >
           Access Denied
         </h2>
-        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.6, marginBottom: '32px' }}>
           Only registered event organizers are authorized to create events on VENTS.
         </p>
         <button
@@ -882,7 +883,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -911,7 +912,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             onClick={step === 1 ? onBack : () => setStep((s) => (s - 1) as Step)}
             disabled={submitting}
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '50%',
               width: '36px',
@@ -925,12 +926,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               zIndex: 1,
             }}
           >
-            <ArrowLeft size={16} color="#C4C9E0" />
+            <ArrowLeft size={16} color={ventsColors.ink2} />
           </button>
         ) : <div style={{ width: '36px', flexShrink: 0 }} />}
         <h1
           style={{
-            color: '#F0F0FF', fontSize: '18px', fontWeight: 700,
+            color: ventsColors.ink1, fontSize: '18px', fontWeight: 700,
             position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none',
           }}
         >
@@ -962,10 +963,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       height: '28px',
                       borderRadius: '50%',
                       background: isDone
-                        ? '#10B981'
+                        ? ventsColors.success
                         : isActive
                         ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-                        : '#1A1D2E',
+                        : ventsColors.elevated,
                       border: isActive ? 'none' : '1px solid rgba(255,255,255,0.1)',
                       display: 'flex',
                       alignItems: 'center',
@@ -975,12 +976,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     {isDone ? (
                       <Check size={13} color="#fff" />
                     ) : (
-                      <span style={{ color: isActive ? '#fff' : '#8B8FA8', fontSize: '12px', fontWeight: 700 }}>
+                      <span style={{ color: isActive ? '#fff' : ventsColors.ink2, fontSize: '12px', fontWeight: 700 }}>
                         {s.num}
                       </span>
                     )}
                   </div>
-                  <span style={{ color: isActive ? '#A78BFA' : '#8B8FA8', fontSize: '10px', fontWeight: isActive ? 600 : 400 }}>
+                  <span style={{ color: isActive ? ventsColors.accentSoft : ventsColors.ink2, fontSize: '10px', fontWeight: isActive ? 600 : 400 }}>
                     {s.label}
                   </span>
                 </div>
@@ -989,7 +990,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     style={{
                       flex: 1,
                       height: '1px',
-                      background: step > s.num ? '#10B981' : 'rgba(255,255,255,0.08)',
+                      background: step > s.num ? ventsColors.success : 'rgba(255,255,255,0.08)',
                       marginBottom: '16px',
                       transition: 'background 0.3s',
                     }}
@@ -1027,13 +1028,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               marginBottom: '16px',
             }}
           >
-            <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-            <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4, flex: 1 }}>{errorMessage}</span>
+            <AlertCircle size={18} color={ventsColors.error} style={{ flexShrink: 0 }} />
+            <span style={{ color: ventsColors.error, fontSize: '13px', lineHeight: 1.4, flex: 1 }}>{errorMessage}</span>
             {pendingFlierUpload && (
               <button
                 onClick={() => handleCroppedFlier(pendingFlierUpload.blob, true)}
                 disabled={uploadingImage || uploadingGallery}
-                style={{ flexShrink: 0, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '6px 14px', color: '#EF4444', fontSize: '12px', fontWeight: 700, cursor: (uploadingImage || uploadingGallery) ? 'not-allowed' : 'pointer' }}
+                style={{ flexShrink: 0, background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '8px', padding: '6px 14px', color: ventsColors.error, fontSize: '12px', fontWeight: 700, cursor: (uploadingImage || uploadingGallery) ? 'not-allowed' : 'pointer' }}
               >
                 {(uploadingImage || uploadingGallery) ? 'Retrying…' : 'Retry'}
               </button>
@@ -1043,8 +1044,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
         {loadingEdit && (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '80px 0', gap: '12px' }}>
-            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.15)', borderTopColor: '#A78BFA', animation: 'spin 0.8s linear infinite' }} />
-            <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading event…</p>
+            <div style={{ width: '28px', height: '28px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.15)', borderTopColor: ventsColors.accentSoft, animation: 'spin 0.8s linear infinite' }} />
+            <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>Loading event…</p>
           </div>
         )}
 
@@ -1066,7 +1067,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               onClick={openCoverImagePicker}
               style={{
                 height: '260px',
-                background: '#090514',
+                background: ventsColors.surface,
                 border: imageUrl ? '1px solid rgba(167,139,250,0.4)' : '2px dashed rgba(167,139,250,0.3)',
                 borderRadius: '16px',
                 display: 'flex',
@@ -1111,12 +1112,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       height: '24px',
                       borderRadius: '50%',
                       border: '2px solid rgba(255,255,255,0.2)',
-                      borderTopColor: '#A78BFA',
+                      borderTopColor: ventsColors.accentSoft,
                       animation: 'spin 0.8s linear infinite',
                       margin: '0 auto 8px',
                     }}
                   />
-                  <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Uploading image...</p>
+                  <p style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Uploading image...</p>
                 </div>
               ) : (
                 <>
@@ -1131,10 +1132,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       justifyContent: 'center',
                     }}
                   >
-                    <Camera size={20} color="#A78BFA" />
+                    <Camera size={20} color={ventsColors.accentSoft} />
                   </div>
-                  <p style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Upload Cover Image *</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '11px' }}>JPG, PNG or GIF · Max 15MB</p>
+                  <p style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Upload Cover Image *</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px' }}>JPG, PNG or GIF · Max 15MB</p>
                 </>
               )}
             </div>
@@ -1179,7 +1180,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       flexShrink: 0,
                       borderRadius: '10px',
                       border: '1.5px dashed rgba(167,139,250,0.3)',
-                      background: '#090514',
+                      background: ventsColors.surface,
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -1187,9 +1188,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     }}
                   >
                     {uploadingGallery ? (
-                      <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: '#A78BFA', animation: 'spin 0.8s linear infinite' }} />
+                      <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.2)', borderTopColor: ventsColors.accentSoft, animation: 'spin 0.8s linear infinite' }} />
                     ) : (
-                      <Plus size={18} color="#A78BFA" />
+                      <Plus size={18} color={ventsColors.accentSoft} />
                     )}
                   </button>
                 )}
@@ -1227,11 +1228,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                             : prev.length < 5 ? [...prev, cat] : prev
                       )}
                       style={{
-                        background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
+                        background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
                         border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
                         borderRadius: '20px',
                         padding: '7px 14px',
-                        color: sel ? '#fff' : '#8B8FA8',
+                        color: sel ? '#fff' : ventsColors.ink2,
                         fontSize: '12px',
                         fontWeight: 500,
                         cursor: 'pointer',
@@ -1243,7 +1244,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 })}
               </div>
               {selectedCategories.length > 0 && (
-                <p style={{ fontSize: '11px', color: '#8B8FA8', marginTop: '6px' }}>
+                <p style={{ fontSize: '11px', color: ventsColors.ink2, marginTop: '6px' }}>
                   Selected: {selectedCategories.join(', ')}
                 </p>
               )}
@@ -1286,7 +1287,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               </div>
             </div>
             {endDate && endDate !== date && (
-              <p style={{ fontSize: '11px', color: '#8B8FA8', marginTop: '-8px' }}>
+              <p style={{ fontSize: '11px', color: ventsColors.ink2, marginTop: '-8px' }}>
                 This is a multi-day event — it'll show as running from {date} to {endDate}.
               </p>
             )}
@@ -1407,13 +1408,13 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
         {!loadingEdit && step === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
 
             {ticketTypes.map((ticket, index) => (
               <div
                 key={index}
                 style={{
-                  background: '#090514',
+                  background: ventsColors.surface,
                   border: '1px solid rgba(255,255,255,0.06)',
                   borderRadius: '16px',
                   padding: '14px',
@@ -1421,7 +1422,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-                  <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>
+                  <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>
                     Ticket Type {index + 1}: {ticket.name || `Type ${index + 1}`}
                   </p>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -1435,7 +1436,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                           background: 'rgba(239,68,68,0.1)',
                           border: 'none',
                           borderRadius: '8px',
-                          color: '#EF4444',
+                          color: ventsColors.error,
                           fontSize: '11px',
                           fontWeight: 600,
                           padding: '4px 8px',
@@ -1448,7 +1449,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     <span
                       style={{
                         background: 'rgba(16,185,129,0.1)',
-                        color: '#10B981',
+                        color: ventsColors.success,
                         fontSize: '11px',
                         padding: '4px 8px',
                         borderRadius: '8px',
@@ -1528,7 +1529,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 border: '1px dashed rgba(123,47,190,0.4)',
                 borderRadius: '12px',
                 padding: '12px',
-                color: '#A855F7',
+                color: ventsColors.accent,
                 fontSize: '13px',
                 fontWeight: 600,
                 cursor: 'pointer',
@@ -1541,7 +1542,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             {/* Contact phone toggle */}
             <div
               style={{
-                background: '#090514',
+                background: ventsColors.surface,
                 border: showPhone ? '1px solid rgba(168,85,247,0.3)' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '14px',
                 padding: '14px',
@@ -1563,11 +1564,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                       justifyContent: 'center',
                     }}
                   >
-                    <Phone size={16} color={showPhone ? '#A855F7' : '#8B8FA8'} />
+                    <Phone size={16} color={showPhone ? ventsColors.accent : ventsColors.ink2} />
                   </div>
                   <div>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>Show Contact Number</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Ticket buyers can call or message you</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 500 }}>Show Contact Number</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Ticket buyers can call or message you</p>
                   </div>
                 </div>
                 <div
@@ -1575,7 +1576,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     width: '44px',
                     height: '26px',
                     borderRadius: '13px',
-                    background: showPhone ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#2A2D3E',
+                    background: showPhone ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
                     position: 'relative',
                     transition: 'background 0.2s',
                     flexShrink: 0,
@@ -1605,7 +1606,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     value={contactPhone}
                     onChange={setContactPhone}
                   />
-                  <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '6px' }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '6px' }}>
                     Only visible to attendees who have purchased a ticket for this event.
                   </p>
                 </div>
@@ -1615,7 +1616,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             {/* 18+ toggle */}
             <div
               style={{
-                background: '#090514',
+                background: ventsColors.surface,
                 border: is18Plus ? '1px solid rgba(239,68,68,0.35)' : '1px solid rgba(255,255,255,0.06)',
                 borderRadius: '14px',
                 padding: '14px',
@@ -1630,16 +1631,16 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                     <span style={{ fontSize: '16px' }}>🔞</span>
                   </div>
                   <div>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500 }}>18+ Event</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Mark this event as adults only</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 500 }}>18+ Event</p>
+                    <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Mark this event as adults only</p>
                   </div>
                 </div>
-                <div style={{ width: '44px', height: '26px', borderRadius: '13px', background: is18Plus ? '#EF4444' : '#2A2D3E', position: 'relative', transition: 'background 0.2s' }}>
+                <div style={{ width: '44px', height: '26px', borderRadius: '13px', background: is18Plus ? ventsColors.error : ventsColors.elevated, position: 'relative', transition: 'background 0.2s' }}>
                   <div style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s', left: is18Plus ? '21px' : '3px' }} />
                 </div>
               </div>
               {is18Plus && (
-                <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '8px', lineHeight: 1.4 }}>
+                <p style={{ color: ventsColors.error, fontSize: '11px', marginTop: '8px', lineHeight: 1.4 }}>
                   You are marking this as an 18+ event. Attendees are responsible for verifying their own age. Vents does not verify ages.
                 </p>
               )}
@@ -1672,11 +1673,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   flexShrink: 0,
                 }}
               >
-                <Check size={20} color="#10B981" />
+                <Check size={20} color={ventsColors.success} />
               </div>
               <div>
-                <p style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Ready to save!' : 'Ready to publish!'}</p>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
+                <p style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>{editEventId ? 'Ready to save!' : 'Ready to publish!'}</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>
                   {editEventId ? 'Review your changes before saving.' : 'Review your event details before publishing.'}
                 </p>
               </div>
@@ -1706,15 +1707,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                   justifyContent: 'space-between',
                   alignItems: 'flex-start',
                   padding: '10px 14px',
-                  background: '#090514',
+                  background: ventsColors.surface,
                   borderRadius: '12px',
                   border: '1px solid rgba(255,255,255,0.05)',
                 }}
               >
-                <span style={{ color: '#8B8FA8', fontSize: '13px', flexShrink: 0 }}>{label}</span>
+                <span style={{ color: ventsColors.ink2, fontSize: '13px', flexShrink: 0 }}>{label}</span>
                 <span
                   style={{
-                    color: value.includes('not set') ? '#8B8FA8' : '#F0F0FF',
+                    color: value.includes('not set') ? ventsColors.ink2 : ventsColors.ink1,
                     fontSize: '13px',
                     fontWeight: 600,
                     textAlign: 'right',
@@ -1732,7 +1733,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 changed to any of their linked accounts. */}
             {payoutAccounts.length > 0 && (
               <div style={{ marginTop: '4px' }}>
-                <p style={{ color: '#8B8FA8', fontSize: '13px', fontWeight: 600, margin: '0 0 8px' }}>Ticket sales pay out to</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, margin: '0 0 8px' }}>Ticket sales pay out to</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {payoutAccounts.map(acct => {
                     const selected = (payoutAccountId || payoutAccounts.find(a => a.is_default)?.id) === acct.id;
@@ -1741,14 +1742,14 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                         key={acct.id}
                         type="button"
                         onClick={() => setPayoutAccountId(acct.id)}
-                        style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : '#090514', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer' }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : ventsColors.surface, border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '12px', padding: '12px 14px', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? '#A855F7' : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#A855F7' }} />}
+                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? ventsColors.accent : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: ventsColors.accent }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
-                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{acct.account_number}</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{acct.account_number}</p>
                         </div>
                       </button>
                     );
@@ -1816,7 +1817,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: '14px',
                 padding: '12px',
-                color: '#C4C9E0',
+                color: ventsColors.ink2,
                 fontSize: '14px',
                 fontWeight: 600,
                 fontFamily: 'Space Grotesk, sans-serif',
@@ -1836,7 +1837,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 border: '1px solid rgba(255,255,255,0.12)',
                 borderRadius: '14px',
                 padding: '12px',
-                color: '#8B8FA8',
+                color: ventsColors.ink2,
                 fontSize: '14px',
                 fontWeight: 600,
                 fontFamily: 'Space Grotesk, sans-serif',

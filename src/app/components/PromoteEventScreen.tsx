@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -27,7 +28,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     id: 'spotlight',
     label: 'Spotlight Boost',
     icon: Zap,
-    color: '#3B82F6',
+    color: ventsColors.info,
     price: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
     perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
     ctaVerb: 'Boost',
@@ -36,7 +37,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     id: 'trending',
     label: 'Trending Boost',
     icon: Crown,
-    color: '#FFB830',
+    color: ventsColors.pending,
     price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
     perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
     ctaVerb: 'Boost',
@@ -45,7 +46,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     id: 'featured',
     label: 'Featured Campaign',
     icon: Star,
-    color: '#A855F7',
+    color: ventsColors.accent,
     price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
     perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
     ctaVerb: 'Feature',
@@ -160,7 +161,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Inter, sans-serif' }}>
         Loading promotions...
       </div>
     );
@@ -168,24 +169,24 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
   if (paid) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
         <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(16,185,129,0.15)', border: '2px solid rgba(16,185,129,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '20px', boxShadow: '0 0 40px rgba(16,185,129,0.2)' }}>
-          <CheckCircle size={40} color="#10B981" />
+          <CheckCircle size={40} color={ventsColors.success} />
         </div>
-        <h1 style={{ color: '#F0F0FF', fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px', textAlign: 'center' }}>
+        <h1 style={{ color: ventsColors.ink1, fontSize: '24px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px', textAlign: 'center' }}>
           Promotion Active!
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', lineHeight: 1.6, marginBottom: '8px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '14px', textAlign: 'center', lineHeight: 1.6, marginBottom: '8px' }}>
           Your event is now on the <span style={{ color: plan.color, fontWeight: 600 }}>{plan.label}</span> plan for {selectedDuration} days.
         </p>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '32px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '13px', textAlign: 'center', marginBottom: '32px' }}>
           You'll see increased visibility and analytics in your dashboard.
         </p>
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', width: '100%', marginBottom: '24px' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.07)', borderRadius: '16px', padding: '16px', width: '100%', marginBottom: '24px' }}>
           {plan.perks.map((perk) => (
             <div key={perk} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-              <CheckCircle size={14} color="#10B981" />
-              <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{perk}</span>
+              <CheckCircle size={14} color={ventsColors.success} />
+              <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>{perk}</span>
             </div>
           ))}
         </div>
@@ -197,7 +198,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
   }
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
 
       {/* Scroll region: header + content only. The CTA footer below is a
@@ -208,12 +209,12 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', scrollbarWidth: 'none' }}>
         {/* Header */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
-          <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-            <ArrowLeft size={16} color="#C4C9E0" />
+          <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ArrowLeft size={16} color={ventsColors.ink2} />
           </button>
           <div>
-            <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Promote Your Event</h1>
-            <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Get more visibility on VENTS</p>
+            <h1 style={{ color: ventsColors.ink1, fontSize: '20px', fontWeight: 700 }}>Promote Your Event</h1>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Get more visibility on VENTS</p>
           </div>
         </div>
 
@@ -224,16 +225,16 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             <TrendingUp size={24} color="#fff" />
           </div>
           <div>
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Reach more people</p>
-            <p style={{ color: '#C4C9E0', fontSize: '12px', lineHeight: 1.5 }}>Promoted events get up to 10× more views and sell 3× faster</p>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Reach more people</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px', lineHeight: 1.5 }}>Promoted events get up to 10× more views and sell 3× faster</p>
           </div>
         </div>
 
         {/* Select event */}
-        <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>SELECT EVENT</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>SELECT EVENT</p>
         <div style={{ marginBottom: '24px' }}>
           {events.length === 0 ? (
-            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontSize: '13px' }}>
+            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontSize: '13px' }}>
               No events found. Please create an event first.
             </div>
           ) : (
@@ -257,7 +258,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         )}
 
         {/* Plan selector */}
-        <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>CHOOSE A PLAN</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>CHOOSE A PLAN</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '24px' }}>
           {PLANS.map((p) => {
             const Icon = p.icon;
@@ -267,7 +268,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                 key={p.id}
                 onClick={() => setSelectedPlan(p.id)}
                 style={{
-                  background: isSelected ? `${p.color}12` : '#131629',
+                  background: isSelected ? `${p.color}12` : ventsColors.elevated,
                   border: isSelected ? `1.5px solid ${p.color}50` : '1px solid rgba(255,255,255,0.06)',
                   borderRadius: '16px',
                   padding: '16px',
@@ -280,7 +281,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                     <Icon size={18} color={p.color} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>{p.label}</p>
+                    <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>{p.label}</p>
                     <p style={{ color: p.color, fontSize: '13px', fontWeight: 600 }}>
                       From {formatPrice(p.price[3])}
                     </p>
@@ -291,7 +292,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {p.perks.map((perk) => (
-                    <span key={perk} style={{ background: `${p.color}15`, border: `1px solid ${p.color}25`, borderRadius: '6px', padding: '3px 8px', color: '#C4C9E0', fontSize: '10px' }}>
+                    <span key={perk} style={{ background: `${p.color}15`, border: `1px solid ${p.color}25`, borderRadius: '6px', padding: '3px 8px', color: ventsColors.ink2, fontSize: '10px' }}>
                       {perk}
                     </span>
                   ))}
@@ -302,7 +303,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         </div>
 
         {/* Duration selector */}
-        <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>PROMOTION DURATION</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '12px' }}>PROMOTION DURATION</p>
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
           {DURATIONS.map((d) => {
             const isSelected = selectedDuration === d.value;
@@ -312,7 +313,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                 onClick={() => setSelectedDuration(d.value)}
                 style={{
                   flex: 1,
-                  background: isSelected ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : '#131629',
+                  background: isSelected ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
                   border: isSelected ? 'none' : '1px solid rgba(255,255,255,0.08)',
                   borderRadius: '12px',
                   padding: '12px 6px',
@@ -321,8 +322,8 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
                   transition: 'all 0.2s ease',
                 }}
               >
-                <p style={{ color: isSelected ? '#fff' : '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>{d.label}</p>
-                <p style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>
+                <p style={{ color: isSelected ? '#fff' : ventsColors.ink1, fontSize: '13px', fontWeight: 700 }}>{d.label}</p>
+                <p style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   {formatPrice(plan.price[d.value])}
                 </p>
               </button>
@@ -331,25 +332,25 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         </div>
 
         {/* Price summary */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ color: '#C4C9E0', fontSize: '13px' }}>{plan.label}</span>
-            <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{formatPrice(price)}</span>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>{plan.label}</span>
+            <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600 }}>{formatPrice(price)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Duration</span>
-            <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>{selectedDuration} days</span>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>Duration</span>
+            <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600 }}>{selectedDuration} days</span>
           </div>
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '8px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Total</span>
-            <span style={{ color: '#FFB830', fontSize: '18px', fontWeight: 800 }}>{formatPrice(price)}</span>
+            <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Total</span>
+            <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800 }}>{formatPrice(price)}</span>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-          <Lock size={12} color="#8B8FA8" />
-          <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Secured payment · Cancel anytime</span>
+          <Lock size={12} color={ventsColors.ink2} />
+          <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>Secured payment · Cancel anytime</span>
         </div>
       </div>
       </div>
@@ -358,9 +359,9 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           absolutely-positioned overlay inside it — it can never scroll out
           of place or be painted under content. Background is fully opaque
           (no alpha) so scrolled content can't show through underneath it. */}
-      <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, background: '#060A12', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px calc(24px + env(safe-area-inset-bottom))' }}>
+      <div style={{ position: 'relative', zIndex: 2, flexShrink: 0, background: ventsColors.bg, borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px calc(24px + env(safe-area-inset-bottom))' }}>
         {activationError && (
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '10px 12px', color: '#EF4444', fontSize: '12px', marginBottom: '10px', lineHeight: 1.5 }}>
+          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '10px 12px', color: ventsColors.error, fontSize: '12px', marginBottom: '10px', lineHeight: 1.5 }}>
             {activationError}
           </div>
         )}
@@ -405,7 +406,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
             background: 'none',
             border: 'none',
             padding: '12px',
-            color: '#8B8FA8',
+            color: ventsColors.ink2,
             fontSize: '13px',
             fontWeight: 600,
             cursor: loading ? 'not-allowed' : 'pointer',

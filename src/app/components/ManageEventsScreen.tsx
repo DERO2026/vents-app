@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
   ArrowLeft, Users, Search, Calendar, MapPin, Edit2, Lock, Zap, MoreVertical,
   Trash2, EyeOff, Eye, Wifi, WifiOff, ArrowUpDown, RefreshCw, AlertCircle,
@@ -29,11 +30,11 @@ interface ManageEventsScreenProps {
 // ─── Midnight Neon palette (shared with Door Manager for a consistent
 // organizer-tools look) ────────────────────────────────────────────────────
 const C = {
-  bg: '#020005', card: '#090514', line: 'rgba(255,255,255,0.06)',
-  text: '#F0F0FF', sub: '#8B8FA8', faint: '#555C7A',
-  purple: '#A78BFA', purpleDeep: '#7B2FBE',
-  green: '#10B981', greenGlow: 'rgba(16,185,129,0.16)',
-  red: '#EF4444', gold: '#FFB830', blue: '#3B82F6',
+  bg: ventsColors.bg, card: ventsColors.surface, line: 'rgba(255,255,255,0.06)',
+  text: ventsColors.ink1, sub: ventsColors.ink2, faint: ventsColors.ink3,
+  purple: ventsColors.accentSoft, purpleDeep: ventsColors.accent,
+  green: ventsColors.success, greenGlow: 'rgba(16,185,129,0.16)',
+  red: ventsColors.error, gold: ventsColors.pending, blue: ventsColors.info,
 };
 
 const STATUS_META: Record<OrganizerEventDisplayStatus, { bg: string; color: string; border: string; label: string; icon: any; dot?: boolean }> = {
@@ -198,7 +199,7 @@ export function ManageEventsScreen({
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -275,7 +276,7 @@ export function ManageEventsScreen({
                   className="vents-manage-card"
                   style={{ background: C.card, border: `1px solid ${meta.border}`, borderRadius: '18px', overflow: 'hidden', animationDelay: `${Math.min(idx, 8) * 30}ms` }}
                 >
-                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? 'linear-gradient(90deg, #10B981, #3B82F6)' : event.displayStatus === 'sold_out' ? '#FFB830' : event.displayStatus === 'ended' ? '#2A2D3E' : '#2A2D3E' }} />
+                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? 'linear-gradient(90deg, #10B981, #3B82F6)' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
 
                   <div style={{ padding: '14px' }}>
                     {/* Status + title */}
@@ -353,7 +354,7 @@ export function ManageEventsScreen({
                       <button
                         onClick={() => onPromoteEvent(event.id)}
                         className="vents-action-btn"
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: '#A855F7', fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
                       >
                         <Zap size={12} />
                         Promote Event
@@ -369,7 +370,7 @@ export function ManageEventsScreen({
         {/* Empty state — no events at all */}
         {!loading && !error && filtered.length === 0 && !query && (
           <div style={{ background: 'rgba(168,85,247,0.06)', border: '1.5px dashed rgba(168,85,247,0.2)', borderRadius: '18px', padding: '28px 20px', marginTop: '20px', textAlign: 'center', animation: 'ventsFadeIn 0.3s ease-out' }}>
-            <div style={{ marginBottom: '10px' }}><Ticket size={36} color="#A855F7" strokeWidth={1.5} /></div>
+            <div style={{ marginBottom: '10px' }}><Ticket size={36} color={ventsColors.accent} strokeWidth={1.5} /></div>
             <p style={{ color: C.text, fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>No events yet</p>
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
               Create your first event and manage everything — tickets, attendees, and live sales — right here.
@@ -420,14 +421,14 @@ export function ManageEventsScreen({
       {hideWarningTarget && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', animation: 'ventsFadeIn 0.15s ease-out' }}>
           <div style={{ background: C.card, border: '1px solid rgba(245,158,11,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '340px' }}>
-            <EyeOff size={32} color="#F59E0B" style={{ marginBottom: '12px' }} />
+            <EyeOff size={32} color={ventsColors.pending} style={{ marginBottom: '12px' }} />
             <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Hide an event with sold tickets?</p>
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
               "{hideWarningTarget.title}" has {hideWarningTarget.soldQuantity || hideWarningTarget.soldCount} ticket(s) already sold. Hiding it removes the event page from every public feed immediately — ticket holders will lose access to the event details and won't be notified.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setHideWarningTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => toggleHide(hideWarningTarget)} style={{ flex: 1, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '12px', padding: '12px', color: '#F59E0B', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+              <button onClick={() => setHideWarningTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => toggleHide(hideWarningTarget)} style={{ flex: 1, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '12px', padding: '12px', color: ventsColors.pending, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
                 Hide Anyway
               </button>
             </div>
@@ -445,7 +446,7 @@ export function ManageEventsScreen({
               "{deleteTarget.title}" will be removed from your dashboard and the public feed. Ticket and payment history is preserved — an admin can restore it if needed.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={confirmDelete} disabled={deleting} style={{ flex: 1, background: deleting ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: C.red, fontSize: '14px', fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer' }}>
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>

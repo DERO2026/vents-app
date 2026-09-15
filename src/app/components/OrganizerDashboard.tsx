@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
   ArrowLeft,
   DollarSign,
@@ -132,7 +133,7 @@ export function OrganizerDashboard({
     return (
       <div
         style={{
-          background: '#020005',
+          background: ventsColors.bg,
           width: '100%',
           height: '100%',
           minHeight: '100dvh',
@@ -141,7 +142,7 @@ export function OrganizerDashboard({
           alignItems: 'center',
           justifyContent: 'center',
           fontFamily: 'Inter, sans-serif',
-          color: '#8B8FA8',
+          color: ventsColors.ink2,
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
@@ -161,7 +162,7 @@ export function OrganizerDashboard({
               100% { transform: rotate(360deg); }
             }
           `}</style>
-          <span style={{ fontSize: '14px', letterSpacing: '0.05em', color: '#C4C9E0' }}>
+          <span style={{ fontSize: '14px', letterSpacing: '0.05em', color: ventsColors.ink2 }}>
             Loading Creator Hub...
           </span>
         </div>
@@ -173,7 +174,7 @@ export function OrganizerDashboard({
     return (
       <div
         style={{
-          background: '#020005',
+          background: ventsColors.bg,
           width: '100%',
           height: '100%',
           minHeight: '100dvh',
@@ -186,10 +187,10 @@ export function OrganizerDashboard({
           textAlign: 'center',
         }}
       >
-        <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>
+        <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>
           Couldn't load your dashboard
         </p>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', maxWidth: '280px' }}>{loadError}</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '20px', maxWidth: '280px' }}>{loadError}</p>
         <button
           onClick={onBack}
           style={{
@@ -197,7 +198,7 @@ export function OrganizerDashboard({
             border: '1px solid rgba(123,47,190,0.4)',
             borderRadius: '12px',
             padding: '10px 20px',
-            color: '#C4B5FD',
+            color: ventsColors.accentSoft,
             fontSize: '13px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -212,14 +213,14 @@ export function OrganizerDashboard({
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
         fontFamily: 'Inter, sans-serif',
-        color: '#F0F0FF',
+        color: ventsColors.ink1,
         overflowY: 'auto',
       }}
     >
@@ -265,7 +266,7 @@ export function OrganizerDashboard({
               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
             }}
           >
-            <ArrowLeft size={18} color="#C4C9E0" />
+            <ArrowLeft size={18} color={ventsColors.ink2} />
           </button>
         ) : <div style={{ width: '40px', flexShrink: 0 }} />}
 
@@ -283,12 +284,12 @@ export function OrganizerDashboard({
             pointerEvents: 'none',
           }}
         >
-          <p style={{ color: '#94A3B8', fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <p style={{ color: ventsColors.ink3, fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
             {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
           </p>
           <h1
             style={{
-              color: '#FFFFFF',
+              color: ventsColors.white,
               fontSize: '20px',
               fontWeight: 700,
               fontFamily: 'Space Grotesk, sans-serif',
@@ -335,7 +336,7 @@ export function OrganizerDashboard({
           {/* Card 1: Total Revenue */}
           <div
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: '20px',
               padding: '20px 16px',
@@ -366,12 +367,12 @@ export function OrganizerDashboard({
                 marginBottom: '14px',
               }}
             >
-              <DollarSign size={18} color="#10B981" />
+              <DollarSign size={18} color={ventsColors.success} />
             </div>
-            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Total Revenue
             </span>
-            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {formatPrice(revenue)}
             </span>
           </div>
@@ -379,7 +380,7 @@ export function OrganizerDashboard({
           {/* Card 2: Tickets Sold */}
           <div
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: '20px',
               padding: '20px 16px',
@@ -410,12 +411,12 @@ export function OrganizerDashboard({
                 marginBottom: '14px',
               }}
             >
-              <Ticket size={18} color="#4F46E5" />
+              <Ticket size={18} color={ventsColors.accent} />
             </div>
-            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Tickets Sold
             </span>
-            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
               {ticketsSold}
             </span>
           </div>
@@ -423,22 +424,22 @@ export function OrganizerDashboard({
 
         {/* ── Tickets Sold vs Goal Chart ──────────────────────────────────── */}
         {chartData.length > 0 && (
-          <div style={{ background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Tickets Sold vs Goal</h3>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                <h3 style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Tickets Sold vs Goal</h3>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '2px 0 0' }}>
                   {ticketsSold} sold across {orgEvents.length} event{orgEvents.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A78BFA' }} />
-                  <span style={{ color: '#8B8FA8', fontSize: '10px' }}>Sold</span>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: ventsColors.accentSoft }} />
+                  <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>Sold</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.3)' }} />
-                  <span style={{ color: '#8B8FA8', fontSize: '10px' }}>Goal</span>
+                  <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>Goal</span>
                 </div>
               </div>
             </div>
@@ -446,16 +447,16 @@ export function OrganizerDashboard({
               <BarChart data={chartData} barGap={4} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="orgDashBarGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7B2FBE" />
-                    <stop offset="100%" stopColor="#4F46E5" />
+                    <stop offset="0%" stopColor={ventsColors.accent} />
+                    <stop offset="100%" stopColor={ventsColors.accent} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="name" tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
-                  labelStyle={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '4px' }}
-                  itemStyle={{ color: '#A78BFA' }}
+                  contentStyle={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
+                  labelStyle={{ color: ventsColors.ink1, fontWeight: 700, marginBottom: '4px' }}
+                  itemStyle={{ color: ventsColors.accentSoft }}
                 />
                 <Bar dataKey="goal" fill="rgba(167,139,250,0.15)" radius={[4, 4, 0, 0]} name="Goal" />
                 <Bar dataKey="sold" radius={[4, 4, 0, 0]} name="Sold">
@@ -463,12 +464,12 @@ export function OrganizerDashboard({
                     <Cell
                       key={idx}
                       fill={entry.sold >= entry.goal
-                        ? '#10B981'  // green = hit goal
+                        ? ventsColors.success  // green = hit goal
                         : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty
                       }
                     />
                   ))}
-                  <LabelList dataKey="sold" position="top" style={{ fill: '#A78BFA', fontSize: 10, fontWeight: 700 }} />
+                  <LabelList dataKey="sold" position="top" style={{ fill: ventsColors.accentSoft, fontSize: 10, fontWeight: 700 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -505,7 +506,7 @@ export function OrganizerDashboard({
             border: 'none',
             borderRadius: '16px',
             padding: '16px 24px',
-            color: '#FFFFFF',
+            color: ventsColors.white,
             fontFamily: 'Space Grotesk, sans-serif',
             fontSize: '16px',
             fontWeight: 700,
@@ -548,7 +549,7 @@ export function OrganizerDashboard({
                   background: 'none',
                   border: 'none',
                   padding: '12px 4px 16px',
-                  color: isActive ? '#FFFFFF' : '#8B8FA8',
+                  color: isActive ? ventsColors.white : ventsColors.ink2,
                   fontFamily: 'Space Grotesk, sans-serif',
                   fontSize: '15px',
                   fontWeight: 600,
@@ -616,7 +617,7 @@ export function OrganizerDashboard({
                       key={event.id}
                       onClick={() => onEventPress?.(event)}
                       style={{
-                        background: '#090514',
+                        background: ventsColors.surface,
                         border: '1px solid rgba(255,255,255,0.05)',
                         borderRadius: '16px',
                         padding: '16px',
@@ -636,7 +637,7 @@ export function OrganizerDashboard({
                           <span style={{
                             fontSize: '9px',
                             background: badgeLabel === 'live' ? 'rgba(16, 185, 129, 0.12)' : badgeLabel === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                            color: badgeLabel === 'live' ? '#10B981' : badgeLabel === 'draft' ? '#F59E0B' : '#EF4444',
+                            color: badgeLabel === 'live' ? ventsColors.success : badgeLabel === 'draft' ? ventsColors.pending : ventsColors.error,
                             padding: '2px 6px',
                             borderRadius: '4px',
                             fontWeight: 700,
@@ -644,19 +645,19 @@ export function OrganizerDashboard({
                           }}>
                             {badgeLabel}
                           </span>
-                          <span style={{ color: '#8B8FA8', fontSize: '10px' }}>{event.category}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>{event.category}</span>
                         </div>
-                        <h4 style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
+                        <h4 style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
                           {event.title}
                         </h4>
-                        <p style={{ color: '#94A3B8', fontSize: '12px', margin: 0 }} className="truncate">
+                        <p style={{ color: ventsColors.ink3, fontSize: '12px', margin: 0 }} className="truncate">
                           {dateStr}
                           {(event.location || (event.country && COUNTRY_CODES.find((c) => c.iso === event.country)?.name)) &&
                             ` • ${event.location || COUNTRY_CODES.find((c) => c.iso === event.country)?.name}`}
                         </p>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                        <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700, display: 'block' }}>
+                        <span style={{ color: ventsColors.pending, fontSize: '13px', fontWeight: 700, display: 'block' }}>
                           {formatPrice(Number(event.price || 0))}
                         </span>
                         {activeTab === 'live' && (
@@ -695,7 +696,7 @@ export function OrganizerDashboard({
                               border: '1px solid rgba(16,185,129,0.3)',
                               borderRadius: '8px',
                               padding: '5px 10px',
-                              color: '#10B981',
+                              color: ventsColors.success,
                               fontSize: '10px',
                               fontWeight: 700,
                               cursor: 'pointer',
@@ -725,7 +726,7 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#090514',
+                  background: ventsColors.surface,
                   border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
@@ -744,11 +745,11 @@ export function OrganizerDashboard({
                     border: '1px solid rgba(123, 47, 190, 0.15)',
                   }}
                 >
-                  <Inbox size={28} color="#A855F7" />
+                  <Inbox size={28} color={ventsColors.accent} />
                 </div>
                 <h3
                   style={{
-                    color: '#F0F0FF',
+                    color: ventsColors.ink1,
                     fontFamily: 'Space Grotesk, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
@@ -760,7 +761,7 @@ export function OrganizerDashboard({
                 </h3>
                 <p
                   style={{
-                    color: '#8B8FA8',
+                    color: ventsColors.ink2,
                     fontSize: '13px',
                     margin: 0,
                     lineHeight: '1.5',
@@ -782,7 +783,7 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#090514',
+                  background: ventsColors.surface,
                   border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
@@ -801,11 +802,11 @@ export function OrganizerDashboard({
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                   }}
                 >
-                  <Inbox size={28} color="#8B8FA8" />
+                  <Inbox size={28} color={ventsColors.ink2} />
                 </div>
                 <h3
                   style={{
-                    color: '#F0F0FF',
+                    color: ventsColors.ink1,
                     fontFamily: 'Space Grotesk, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
@@ -817,7 +818,7 @@ export function OrganizerDashboard({
                 </h3>
                 <p
                   style={{
-                    color: '#8B8FA8',
+                    color: ventsColors.ink2,
                     fontSize: '13px',
                     margin: 0,
                     lineHeight: '1.5',
@@ -838,7 +839,7 @@ export function OrganizerDashboard({
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '64px 20px',
-                background: '#090514',
+                background: ventsColors.surface,
                 border: '1px solid rgba(255, 255, 255, 0.05)',
                 borderRadius: '20px',
                 textAlign: 'center',
@@ -857,11 +858,11 @@ export function OrganizerDashboard({
                   border: '1px solid rgba(255, 255, 255, 0.06)',
                 }}
               >
-                <Inbox size={28} color="#8B8FA8" />
+                <Inbox size={28} color={ventsColors.ink2} />
               </div>
               <h3
                 style={{
-                  color: '#F0F0FF',
+                  color: ventsColors.ink1,
                   fontFamily: 'Space Grotesk, sans-serif',
                   fontSize: '16px',
                   fontWeight: 700,
@@ -873,7 +874,7 @@ export function OrganizerDashboard({
               </h3>
               <p
                 style={{
-                  color: '#8B8FA8',
+                  color: ventsColors.ink2,
                   fontSize: '13px',
                   margin: 0,
                   lineHeight: '1.5',
