@@ -128,6 +128,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   // cancelled transfers have somewhere to appear instead of just vanishing
   // once resolved.
   const [transfers, setTransfers] = useState<TicketTransfer[]>([]);
+  // Distinct from transferActionError (an Accept/Decline failure on a
+  // specific transfer) -- this is "the list itself failed to load", which
+  // previously had no UI at all: the catch below just logged and returned,
+  // leaving `transfers` at its initial `[]` so a real fetch failure looked
+  // identical to "you genuinely have no transfers" (TransferEmptyState).
+  const [transfersError, setTransfersError] = useState('');
   const [transferActionBusy, setTransferActionBusy] = useState<string | null>(null);
   const [transferActionError, setTransferActionError] = useState('');
   const [transferSubTab, setTransferSubTab] = useState<'incoming' | 'outgoing' | 'history'>('incoming');
@@ -139,7 +145,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, responded_at, expires_at, fee_kobo, fee_paid_at, tickets(ticket_type, events(title))')
       .or(`from_user_id.eq.${currentUserId},to_user_id.eq.${currentUserId}`)
       .order('created_at', { ascending: false });
-    if (error) { console.error('Failed to load ticket transfers:', error); return; }
+    if (error) {
+      console.error('Failed to load ticket transfers:', error);
+      setTransfersError('Couldn\'t load your transfers. Pull down to try again.');
+      return;
+    }
+    setTransfersError('');
     const rows = data || [];
 
     // Resolve a display name for whichever party ISN'T the current user, via
@@ -610,6 +621,18 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             reorganized. */}
         {activeTab === 'transfers' && (
           <>
+            {transfersError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
+                <span style={{ color: ventsColors.error, fontSize: '12px', flex: 1 }}>{transfersError}</span>
+                <button
+                  onClick={() => loadTransfers()}
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '5px 10px', color: ventsColors.error, fontSize: '11px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
             {transferActionError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
                 <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
