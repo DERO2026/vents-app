@@ -7,7 +7,10 @@ This is a SEPARATE, later-stage checkpoint from that design-side one — that
 file tracks what was *designed*; this one tracks what has actually been
 *built* into working, typechecked, tested React/TypeScript.
 
-## Status: FOUNDATION + 16 UNITS MIGRATED (16 of ~35 units)
+## Status: 16 UNITS COLOR-TOKEN MIGRATED. Items 18-21 (desktop, tablet,
+UI states, final consistency pass) are REAL, UNSTARTED WORK requiring a
+different methodology (see items 18-21 below) — do not read this session's
+color-token progress as implying those are close to done.
 
 Do not read this as "redesign implemented." It is not. The tokens
 foundation plus one shared component and one screen are done and verified;
@@ -289,7 +292,25 @@ maturity — not a batch replace.
 17. Creator Studio — per the design-side checkpoint (VENTS_REDESIGN_CHECKPOINT.md),
     Creator Studio = OrganizerDashboard.tsx (same screen, no separate file) —
     already covered by item 15
-18. Desktop layouts — not started
+18. Desktop layouts — **NOT DONE, real gap.** Confirmed by direct grep:
+    the entire app has exactly one `@media` query anywhere
+    (`OrganizerDashboard.tsx`, a max-width:600px mobile-narrow tweak) — no
+    genuine desktop sidebar/grid layout exists for any of the 3 screens
+    the design calls for it on (Creator Studio, ManageEventsScreen,
+    SalesAnalyticsScreen). This is real layout engineering, not a token
+    substitution, and needs visual verification to do safely. This
+    environment does have headless Chromium + Playwright available, which
+    changes what's possible here — but running the dev server needs
+    Supabase credentials, and the only ones configured
+    (`.env.production`) point at real Production data; clicking through
+    screens against Production for visual QA is not appropriate given
+    this session's established caution around Production reads/writes.
+    Doing this properly needs a safe local/mocked data environment set up
+    first — a separate, real task, not something to improvise here.
+19. Tablet layouts — not started, same visual-verification blocker as item 18
+20. Global UI states (loading/empty/error/success/disabled/processing) — not
+    started; would benefit from the same safe visual-verification setup
+21. Final responsive/visual consistency pass — not started (depends on 18-20)
 19. Tablet layouts — not started
 20. Global UI states — not started
 21. Final responsive/visual consistency pass — not started
