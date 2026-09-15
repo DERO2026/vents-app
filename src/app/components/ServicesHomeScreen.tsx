@@ -137,7 +137,10 @@ export function ServicesHomeScreen({
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <ArrowLeft size={16} color={servicesColors.textSecondary} />
           </button>
-          <h1 style={{ color: servicesColors.textPrimary, fontSize: '26px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Services</h1>
+          {/* Handoff finding P04: Services used Space Grotesk for headings
+              while the rest of the redesign standardized on Manrope --
+              same type-stack fix already applied to HomeScreen/VentsLogo. */}
+          <h1 style={{ color: servicesColors.textPrimary, fontSize: '26px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', letterSpacing: '-0.02em', margin: 0 }}>Services</h1>
           <button
             onClick={() => setPickerOpen(true)}
             style={{
