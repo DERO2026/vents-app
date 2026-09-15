@@ -89,43 +89,6 @@ function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
   );
 }
 
-function DonutChartSVG({ data }: { data: { name: string; value: number; color: string }[] }) {
-  const cx = 60, cy = 60, r = 45, ir = 28;
-  const total = data.reduce((s, d) => s + d.value, 0);
-  let angle = -Math.PI / 2;
-  const slices = data.map((d) => {
-    const sweep = (d.value / total) * 2 * Math.PI;
-    const start = angle;
-    angle += sweep;
-    return { ...d, start, sweep };
-  });
-
-  function arcPath(cx: number, cy: number, r: number, startAngle: number, endAngle: number) {
-    const x1 = cx + r * Math.cos(startAngle);
-    const y1 = cy + r * Math.sin(startAngle);
-    const x2 = cx + r * Math.cos(endAngle);
-    const y2 = cy + r * Math.sin(endAngle);
-    const large = endAngle - startAngle > Math.PI ? 1 : 0;
-    return `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2}`;
-  }
-
-  return (
-    <svg width={120} height={120} viewBox="0 0 120 120" style={{ flexShrink: 0 }}>
-      {slices.map((s, i) => {
-        const outerArc = arcPath(cx, cy, r, s.start, s.start + s.sweep);
-        const innerArcRev = arcPath(cx, cy, ir, s.start + s.sweep, s.start);
-        return (
-          <path
-            key={`donut-${i}`}
-            d={`${outerArc} L ${cx + ir * Math.cos(s.start + s.sweep)} ${cy + ir * Math.sin(s.start + s.sweep)} ${innerArcRev} Z`}
-            fill={s.color}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
 function LineChartSVG({ data }: { data: { day: string; rate: number }[] }) {
   const W = 320, H = 120, PL = 8, PR = 8, PT = 8, PB = 20;
   const maxVal = Math.max(...data.map((d) => d.rate));
@@ -480,19 +443,18 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
                 <BarChartSVG data={analytics.daily} />
               </ChartCard>
 
-              {/* Ticket type breakdown */}
+              {/* Ticket type breakdown -- handoff SA1: "donut replaced with
+                  the same list-bar pattern used everywhere else" -- a color
+                  dot + label + percentage row, no pie/donut chart. */}
               <ChartCard title="Ticket Type Breakdown">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <DonutChartSVG data={analytics.ticketTypes} />
-                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {analytics.ticketTypes.map((t) => (
-                      <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: t.color, flexShrink: 0 }} />
-                        <span style={{ color: ventsColors.ink2, fontSize: '13px', flex: 1 }}>{t.name}</span>
-                        <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
-                      </div>
-                    ))}
-                  </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '9px' }}>
+                  {analytics.ticketTypes.map((t) => (
+                    <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: t.color, flexShrink: 0 }} />
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px', flex: 1 }}>{t.name}</span>
+                      <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
+                    </div>
+                  ))}
                 </div>
               </ChartCard>
 
