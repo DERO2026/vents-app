@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ventsColors } from '../../lib/ventsDesignTokens';
+import { ventsColors, ventsStatusColors } from '../../lib/ventsDesignTokens';
 import { Capacitor } from '@capacitor/core';
 import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
@@ -1081,12 +1081,25 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
             {icon}
           </div>
           <p style={{ margin: '0 0 6px', fontSize: '13px', color: ventsColors.ink2 }}>{title}</p>
-          <p style={{ margin: '0 0 10px', fontSize: '30px', fontWeight: 800, color: isMoneyIn ? ventsColors.success : ventsColors.error, wordBreak: 'break-all' }}>
+          <p style={{ margin: '0 0 10px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums lining-nums', color: isMoneyIn ? ventsColors.success : ventsColors.error, wordBreak: 'break-all' }}>
             {isMoneyIn ? '+' : '-'}{amountLabel}
           </p>
-          <span style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em', padding: '4px 12px', borderRadius: '100px', color: STATUS_COLORS[statusLabel.toLowerCase()] || ventsColors.ink2, background: 'rgba(255,255,255,0.06)' }}>
-            {statusLabel}
-          </span>
+          {/* Handoff F3: mono uppercase status chip tinted by its own status
+              color (e.g. COMPLETED = translucent green), not a flat
+              neutral-gray pill regardless of outcome -- ventsStatusColors
+              already carries the exact bg/fg pairs the design uses. */}
+          {(() => {
+            const key = statusLabel.toLowerCase();
+            const chip = key.includes('cancel') ? ventsStatusColors.transferred
+              : key === 'pending' || key === 'processing' ? ventsStatusColors.pending
+              : key === 'failed' || key === 'rejected' ? ventsStatusColors.error
+              : ventsStatusColors.paid;
+            return (
+              <span style={{ display: 'inline-block', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', padding: '5px 9px', borderRadius: '7px', color: chip.fg, background: chip.bg }}>
+                {statusLabel}
+              </span>
+            );
+          })()}
           <p style={{ margin: '10px 0 0', fontSize: '12px', color: ventsColors.ink2 }}>{dateLabel}</p>
         </div>
 
