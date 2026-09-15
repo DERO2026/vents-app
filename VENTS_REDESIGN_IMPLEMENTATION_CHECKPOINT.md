@@ -582,3 +582,54 @@ Verification for this update: typecheck clean (only the pre-existing
 unrelated `App.tsx:2764` error); full suite 429/429 passing (one
 pre-existing unrelated `ticketToken.test.ts` env-setup failure, file-level
 only); final commit `043c6a9`, pushed to `origin/main`.
+
+---
+
+## UPDATE 3 — Services → Ticket Transfer → Someone Else Pays → Chats
+
+Commits `7fefaa8`, `f03b632`, `c64e706` (this pass). Per-screen, only
+where a real issue was found -- not an audit of every screen for the
+sake of it.
+
+- **Services** (`ServiceBookingsScreen.tsx`): fixed the same
+  perpetual-"Loading…"-under-an-error bug as before, in the booking
+  history/refund screen. `ServicesHomeScreen.tsx` reviewed, already
+  correct (its "Couldn't load providers right now" error state was
+  already properly built). `ServiceProviderProfileScreen.tsx` (booking/
+  payment flow) reviewed, no bug found.
+- **Ticket Transfer** (`MyTicketsScreen.tsx`): `loadTransfers()`'s catch
+  block only console.error'd on a failed `ticket_transfers` fetch,
+  leaving the list empty with zero user-visible indication -- added a
+  `transfersError` state and banner, distinct from the existing
+  per-action `transferActionError`.
+- **Someone Else Pays** (`PaymentRequestScreen.tsx`,
+  `PaymentRequestsScreen.tsx`): reviewed both. Already correctly built
+  -- distinct `loadError`/`payError`/`cancelError`/`notRecipient` states,
+  all rendered. No changes needed.
+- **Chats** (`InboxScreen.tsx`): the most significant find of this batch.
+  `load()`'s `Promise.all` destructured only `{ data }` from all three
+  parallel queries, discarding `error` entirely -- and supabase-js
+  resolves `{ data: null, error }` rather than throwing on a query-level
+  failure (bad RLS, a non-2xx from PostgREST), so this wasn't just a
+  missing-UI gap, the failure never reached any error handling at all.
+  A first-pass fix (adding a `loadError` state gated on the try/catch)
+  looked right by inspection but a qa-harness screenshot with a mocked
+  500 proved it still showed the empty state -- traced to this root
+  cause and fixed by explicitly checking all three results' `error`
+  before proceeding.
+- Checked one more instance of the same destructuring pattern
+  (`useDoorManager.ts`'s `refreshStats`) and judged it NOT a bug: it's a
+  periodic live-poll refresh, and silently keeping the last good stats
+  through one failed poll is defensible UX, not the same class of
+  problem as an initial load that's indistinguishable from "genuinely
+  empty." Left unchanged rather than inventing a fix.
+
+All four fixes verified via qa-harness screenshots (mobile + desktop
+where relevant) with real Playwright route mocking of the failing
+requests, not just code inspection. Typecheck clean and full suite
+429/429 passing after every commit, same pre-existing exceptions as
+every prior update in this document.
+
+**Not yet covered**: Notifications, Profile, Organizer Dashboard suite
+beyond Creator Studio itself, Service Provider Dashboard suite. Final
+commit this update: `c64e706`.
