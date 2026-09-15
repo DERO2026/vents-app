@@ -52,6 +52,7 @@ import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { WalletScreen } from './components/WalletScreen';
 import { UserWalletScreen } from './components/UserWalletScreen';
+import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
@@ -279,6 +280,12 @@ export default function App() {
   // cards call), never a new ticket-detail screen. nonce forces the effect
   // to re-fire even if the same ticket is tapped again from a notification.
   const [myTicketsFocusTicket, setMyTicketsFocusTicket] = useState<{ ticketId: string; nonce: number } | null>(null);
+  // The ticket a "Ticket refunded" notification's push_data.ticketId
+  // points at -- routed to TicketRefundScreen, never MyTicketsScreen: a
+  // refunded ticket's status is flipped to 'cancelled' the moment the
+  // refund starts, which MyTicketsScreen's own `.eq('status', 'active')`
+  // query can never return.
+  const [refundTicketId, setRefundTicketId] = useState<string | null>(null);
   // Set by the shared notification-routing function when a "wants to
   // message you" request notification is tapped -- opens ExploreScreen's
   // own existing Message Requests overlay (never a second Requests UI) and
@@ -2105,13 +2112,33 @@ export default function App() {
       return;
     }
     if (data.ticketId) {
-      // Real existing destination: the same QR/detail view any ticket card
-      // in MyTicketsScreen already opens (App.tsx's own onViewTicket ->
-      // 'payment-success' screen) -- MyTicketsScreen resolves the id
-      // against its own tickets list, never a new ticket-detail screen.
-      setMyTicketsFocusTicket({ ticketId: data.ticketId, nonce: Date.now() });
-      setScreenStack([]);
-      setScreen('my-tickets');
+      // A refunded/refund-pending ticket's status is 'cancelled', which
+      // MyTicketsScreen's own active-tickets query can never return -- so
+      // "Ticket refunded" notifications (the only push carrying ticketId
+      // with no other identifying field) need to check the ticket's real
+      // payment_status before deciding where to send the tap, rather than
+      // always assuming the still-active-ticket destination.
+      supabase
+        .from('tickets')
+        .select('id, payment_status')
+        .eq('id', data.ticketId)
+        .maybeSingle()
+        .then(({ data: row }) => {
+          if (row && (row.payment_status === 'refund_pending' || row.payment_status === 'refunded')) {
+            setRefundTicketId(row.id);
+            setScreenStack([]);
+            setScreen('ticket-refund');
+            return;
+          }
+          // Real existing destination: the same QR/detail view any ticket
+          // card in MyTicketsScreen already opens (App.tsx's own
+          // onViewTicket -> 'payment-success' screen) -- MyTicketsScreen
+          // resolves the id against its own tickets list, never a new
+          // ticket-detail screen.
+          setMyTicketsFocusTicket({ ticketId: data.ticketId, nonce: Date.now() });
+          setScreenStack([]);
+          setScreen('my-tickets');
+        });
       return;
     }
     if (data.requestId && data.userId) {
@@ -3344,6 +3371,15 @@ export default function App() {
           {/* ── WALLET (organizer/provider earnings) ── */}
           {screen === 'wallet' && (
             <WalletScreen currentUser={currentUser} onBack={goBack} />
+          )}
+
+          {/* ── TICKET REFUND (attendee side) ── */}
+          {screen === 'ticket-refund' && refundTicketId && (
+            <TicketRefundScreen
+              ticketId={refundTicketId}
+              onBack={goBack}
+              onViewWallet={() => navigateTo('user-wallet')}
+            />
           )}
 
           {/* ── VENTS WALLET (customer deposit/spend balance) ── */}

@@ -322,7 +322,8 @@ export type Screen =
   | 'service-provider-verify'
   | 'manage-provider-services'
   | 'service-bookings'
-  | 'provider-service-bookings';
+  | 'provider-service-bookings'
+  | 'ticket-refund';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

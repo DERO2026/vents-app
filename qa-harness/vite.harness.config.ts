@@ -9,21 +9,24 @@ import react from '@vitejs/plugin-react';
 
 const FAKE_SUPABASE_PATH = path.resolve(__dirname, 'fakeSupabase.ts');
 
-function fakeSupabasePlugin() {
-  return {
-    name: 'qa-fake-supabase',
-    resolveId(source: string, importer: string | undefined) {
-      if (/(^|\/)supabase$/.test(source)) {
-        console.log('[qa-fake-supabase] redirecting', source, 'from', importer);
-        return FAKE_SUPABASE_PATH;
-      }
-      return null;
-    },
-  };
-}
-
 export default defineConfig({
   root: path.resolve(__dirname),
-  plugins: [fakeSupabasePlugin(), react()],
+  plugins: [react()],
+  // A hand-rolled resolveId plugin here previously never actually fired
+  // (confirmed empty across a fresh process + cleared node_modules/.vite
+  // cache while investigating TicketRefundScreen.tsx hanging on a real,
+  // sandbox-blocked network call instead of the fixture) -- every screen
+  // that "passed" visual review before this only did so because its
+  // initial render didn't block on that fetch. resolve.alias is Vite's own
+  // documented mechanism for exactly this and is what actually resolves
+  // for a relative "../../lib/supabase" specifier.
+  resolve: {
+    // Vite's RegExp alias does a substring .replace(), not a whole-match
+    // swap -- an unanchored /\/lib\/supabase$/ against "../../lib/supabase"
+    // only replaces the matched tail, leaving a mangled
+    // "../.." + absolute-path specifier that then fails to resolve at all.
+    // Anchoring at both ends makes the whole specifier the match.
+    alias: [{ find: /^(\.\.\/)*lib\/supabase$/, replacement: FAKE_SUPABASE_PATH }],
+  },
   server: { port: 5199, strictPort: true, fs: { strict: false } },
 });

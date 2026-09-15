@@ -30,7 +30,14 @@ const FIXTURES: Record<string, Row[]> = {
       created_at: new Date().toISOString(), category: 'Technology',
     },
   ],
-  tickets: [],
+  tickets: [
+    {
+      id: 'tkt-refund-1', ticket_type: 'Regular', quantity: 1, amount: 15000,
+      discount_percentage: 0, payment_status: 'refunded', payment_method: 'wallet',
+      refund_reason: 'Event cancelled by organizer', checked_in: false,
+      events: { title: 'Lagos Music Festival', event_date: new Date(Date.now() + 7 * 86400000).toISOString(), location: 'Eko Atlantic, Lagos' },
+    },
+  ],
   service_bookings: [],
 };
 
