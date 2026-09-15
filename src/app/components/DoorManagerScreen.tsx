@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
   ArrowLeft, ScanLine, Shield, CalendarX, Search, X, CheckCircle2,
   Clock, Wand2, RefreshCw, Ticket as TicketIcon, Mail, Phone, Hash, Wifi, WifiOff,
@@ -11,12 +12,17 @@ import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 // ─── Midnight Neon palette (low-light door environments) ──────────────────────
+// Handoff finding (§18): this screen named its own "Midnight Neon" palette
+// and hardcoded it independently of Home/Services/Chats/ManageEventsScreen
+// -- four near-identical dark-purple palettes instead of one shared token
+// file. Routed through the same ventsColors tokens ManageEventsScreen
+// already uses (same C key names, so nothing below this needs to change).
 const C = {
-  bg: '#020005', card: '#090514', line: 'rgba(255,255,255,0.06)',
-  text: '#F0F0FF', sub: '#8B8FA8', faint: '#555C7A',
-  purple: '#A78BFA', purpleDeep: '#7B2FBE',
-  green: '#10B981', greenGlow: 'rgba(16,185,129,0.16)',
-  red: '#EF4444', gold: '#FFB830',
+  bg: ventsColors.bg, card: ventsColors.surface, line: 'rgba(255,255,255,0.06)',
+  text: ventsColors.ink1, sub: ventsColors.ink2, faint: ventsColors.ink3,
+  purple: ventsColors.accentSoft, purpleDeep: ventsColors.accent,
+  green: ventsColors.success, greenGlow: 'rgba(16,185,129,0.16)',
+  red: ventsColors.error, gold: ventsColors.pending,
 };
 
 const FILTERS: { id: DoorFilter; label: string }[] = [
