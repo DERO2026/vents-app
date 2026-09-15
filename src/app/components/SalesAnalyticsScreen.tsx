@@ -422,7 +422,20 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
       </div>
 
       {/* Content */}
+      <style>{`
+        .sa-portfolio-content { }
+        .sa-portfolio-stats { display: flex; gap: 10px; margin-bottom: 16px; }
+        .sa-portfolio-charts { display: flex; flex-direction: column; }
+        @media (min-width: 900px) {
+          .sa-portfolio-content { max-width: 1080px; width: 100%; margin: 0 auto; }
+          .sa-portfolio-stats { display: grid; grid-template-columns: repeat(2, 1fr); }
+          .sa-portfolio-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+          .sa-portfolio-charts > * { margin-bottom: 0 !important; }
+          .sa-portfolio-charts > .sa-full-width { grid-column: 1 / -1; }
+        }
+      `}</style>
       <div
+        className="sa-portfolio-content"
         style={{
           flex: 1,
           overflowY: 'auto',
@@ -435,7 +448,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         ) : (
           <>
             {/* Top stats */}
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+            <div className="sa-portfolio-stats">
               {[
                 { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: ventsColors.success },
                 { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: ventsColors.accent },
@@ -459,52 +472,57 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
               ))}
             </div>
 
-            {/* Daily revenue chart */}
-            <ChartCard title="Daily Revenue">
-              <BarChartSVG data={analytics.daily} />
-            </ChartCard>
+            <div className="sa-portfolio-charts">
+              {/* Daily revenue chart */}
+              <ChartCard title="Daily Revenue">
+                <BarChartSVG data={analytics.daily} />
+              </ChartCard>
 
-            {/* Ticket type breakdown */}
-            <ChartCard title="Ticket Type Breakdown">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                <DonutChartSVG data={analytics.ticketTypes} />
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {analytics.ticketTypes.map((t) => (
-                    <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: t.color, flexShrink: 0 }} />
-                      <span style={{ color: ventsColors.ink2, fontSize: '13px', flex: 1 }}>{t.name}</span>
-                      <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
-                    </div>
-                  ))}
+              {/* Ticket type breakdown */}
+              <ChartCard title="Ticket Type Breakdown">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <DonutChartSVG data={analytics.ticketTypes} />
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {analytics.ticketTypes.map((t) => (
+                      <div key={t.name} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: t.color, flexShrink: 0 }} />
+                        <span style={{ color: ventsColors.ink2, fontSize: '13px', flex: 1 }}>{t.name}</span>
+                        <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>{t.value}%</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
+              </ChartCard>
+
+              {/* Conversion rate */}
+              <div className="sa-full-width">
+                <ChartCard title="Conversion Rate (%)">
+                  <LineChartSVG data={analytics.conversion} />
+                </ChartCard>
               </div>
-            </ChartCard>
 
-            {/* Conversion rate */}
-            <ChartCard title="Conversion Rate (%)">
-              <LineChartSVG data={analytics.conversion} />
-            </ChartCard>
-
-            {/* Key insights */}
-            <div
-              style={{
-                background: ventsColors.surface,
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '18px',
-                padding: '16px',
-              }}
-            >
-              <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Key Insights</p>
-              {[
-                { icon: '📈', text: 'Real-time sales dashboard is active. Revenue updates directly on ticket bookings.' },
-                { icon: '🎟️', text: 'Ticket sales count shows exact quantity of checked-out attendee tickets.' },
-                { icon: '⚡', text: 'Daily sales breakdown tracks ticket creation date dynamically.' },
-              ].map(({ icon, text }) => (
-                <div key={text} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
-                  <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
-                  <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.5 }}>{text}</p>
-                </div>
-              ))}
+              {/* Key insights */}
+              <div
+                className="sa-full-width"
+                style={{
+                  background: ventsColors.surface,
+                  border: '1px solid rgba(255,255,255,0.06)',
+                  borderRadius: '18px',
+                  padding: '16px',
+                }}
+              >
+                <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px' }}>Key Insights</p>
+                {[
+                  { icon: '📈', text: 'Real-time sales dashboard is active. Revenue updates directly on ticket bookings.' },
+                  { icon: '🎟️', text: 'Ticket sales count shows exact quantity of checked-out attendee tickets.' },
+                  { icon: '⚡', text: 'Daily sales breakdown tracks ticket creation date dynamically.' },
+                ].map(({ icon, text }) => (
+                  <div key={text} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                    <span style={{ fontSize: '18px', flexShrink: 0 }}>{icon}</span>
+                    <p style={{ color: ventsColors.ink2, fontSize: '13px', lineHeight: 1.5 }}>{text}</p>
+                  </div>
+                ))}
+              </div>
             </div>
           </>
         )}
@@ -639,7 +657,16 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 110px', scrollbarWidth: 'none' }}>
+      <style>{`
+        .sa-content { }
+        .sa-two-col { display: flex; flex-direction: column; }
+        @media (min-width: 900px) {
+          .sa-content { max-width: 1080px; width: 100%; margin: 0 auto; }
+          .sa-two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
+          .sa-two-col > div { margin-bottom: 0 !important; }
+        }
+      `}</style>
+      <div className="sa-content" style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 110px', scrollbarWidth: 'none' }}>
         {loading ? (
           <div style={{ color: ventsColors.ink2, textAlign: 'center', padding: '40px' }}>Loading analytics…</div>
         ) : error ? (
@@ -676,6 +703,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
 
             {/* 2. SALES */}
             <SectionHeader icon={<Ticket size={13} color={ventsColors.accent} />} title="Sales" />
+            <div className="sa-two-col">
             {data.byTicketType.length === 0 ? (
               <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
                 <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: 0 }}>No ticket sales yet.</p>
@@ -709,6 +737,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
                 <TrendBars data={data.salesTrend} valueKey="count" color={ventsColors.accent} formatValue={(v) => `${v} sold`} />
               </div>
             )}
+            </div>
 
             {/* 3. ATTENDANCE */}
             <SectionHeader icon={<Users size={13} color={ventsColors.accent} />} title="Attendance" />
