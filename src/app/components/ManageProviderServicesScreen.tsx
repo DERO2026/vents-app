@@ -24,6 +24,12 @@ interface ManageProviderServicesScreenProps {
   accountCountry?: string;
   onBack: () => void;
   onViewBookings?: () => void;
+  // Handoff PMG1: "closes the Provider Profile Management gap" -- App.tsx
+  // already wired a callback into service-provider-setup for this
+  // (navigateTo('service-provider-setup')) but this component never
+  // declared the prop or gave it an entry point, so it silently went
+  // nowhere and typechecking failed on the extra prop.
+  onEditLocation?: () => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -49,7 +55,7 @@ function emptyForm(defaultCategory?: string, defaultCurrency?: string): Provider
 // and the booking/payment flow (create_service_booking, 0054) only accepts
 // NGN for now regardless of what's stored here.
 
-export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack, onViewBookings }: ManageProviderServicesScreenProps) {
+export function ManageProviderServicesScreen({ providerId, providerCategory, accountCountry, onBack, onViewBookings, onEditLocation }: ManageProviderServicesScreenProps) {
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -164,6 +170,11 @@ export function ManageProviderServicesScreen({ providerId, providerCategory, acc
         <h1 style={{ color: servicesColors.textPrimary, fontSize: '19px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0, flex: 1 }}>
           Your Services & Prices
         </h1>
+        {onEditLocation && (
+          <button onClick={onEditLocation} title="Edit Service Profile" style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            <Pencil size={15} color={ventsColors.ink2} />
+          </button>
+        )}
         {onViewBookings && (
           <button onClick={onViewBookings} style={{ background: 'none', border: 'none', padding: 0, color: ventsColors.accent, fontSize: '13px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
             Bookings &rsaquo;
