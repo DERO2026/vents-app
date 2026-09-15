@@ -517,6 +517,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
   return (
     <div
+      className="checkout-content"
       style={{
         background: ventsColors.bg,
         width: '100%',
@@ -527,7 +528,17 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         scrollbarWidth: 'none',
       }}
     >
-      <style>{`input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }
+        /* Interim desktop containment -- see EventDetailsScreen's identical
+           fix for why: the shared #root shell now goes to 1200px by
+           default, and this screen has no max-width of its own yet. The
+           real fix (a two-column layout with a pinned order summary, per
+           the handoff spec) is still pending. */
+        @media (min-width: 900px) {
+          .checkout-content > * { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+        }
+      `}</style>
 
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>

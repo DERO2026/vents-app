@@ -287,11 +287,17 @@ export function ExploreScreen({
 
   return (
     <div
+      className="explore-content"
       style={{ display: 'flex', flexDirection: 'column', height: '100%', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
-      <style>{`input::placeholder { color: #94A3B8; }`}</style>
+      <style>{`
+        input::placeholder { color: #94A3B8; }
+        @media (min-width: 900px) {
+          .explore-content > * { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+        }
+      `}</style>
       {pullRefreshing && (
         <div style={{
           position: 'fixed', top: '50%', left: '50%',

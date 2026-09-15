@@ -112,11 +112,26 @@ button:active, [role="button"]:active {
    only constrains #root's own box, not each screen's internal layout. */
 @media (min-width: 768px) {
   #root {
-    max-width: 640px;
+    max-width: 834px;
     left: 50%;
     right: auto;
     transform: translateX(-50%);
     box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 40px 120px -40px rgba(0,0,0,0.9);
+  }
+}
+/* Desktop default per the handoff spec (§07/§28): "1200px max content
+   width" is the universal desktop target, not a narrow centered phone
+   frame -- the previous 640px cap (a stopgap from an earlier pass) left
+   most of a normal desktop window unused, reported back as a "half-screen"
+   Preview. Screens that already have their own internal max-width
+   (WelcomeScreen, the 4 bespoke-sidebar screens, etc.) are unaffected by
+   widening the outer shell; screens that don't yet (EventDetailsScreen,
+   CheckoutScreen, etc.) are the real remaining work, tracked screen by
+   screen in the checkpoint, not something this shell-width rule can
+   substitute for. */
+@media (min-width: 1200px) {
+  #root {
+    max-width: 1200px;
   }
 }
 
@@ -135,7 +150,7 @@ button:active, [role="button"]:active {
    uses for `legal-scroll`), so every other screen keeps the 640px cap. */
 @media (min-width: 1100px) {
   #root.vents-desktop-wide {
-    max-width: 1240px;
+    max-width: 1200px;
   }
 }
 

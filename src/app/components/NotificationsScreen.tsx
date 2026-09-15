@@ -248,6 +248,7 @@ export function NotificationsScreen({
 
   return (
     <div
+      className="notifications-content"
       style={{
         background: 'radial-gradient(ellipse 520px 300px at 50% -8%, rgba(123,47,190,0.09) 0%, rgba(5,2,10,1) 40%, #050208 100%)',
         width: '100%',
@@ -268,6 +269,11 @@ export function NotificationsScreen({
         }
       }}
     >
+      <style>{`
+        @media (min-width: 900px) {
+          .notifications-content > * { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+        }
+      `}</style>
       {pullRefreshing && (
         <div style={{ position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', zIndex: 200 }}>
           <div style={{ width: '34px', height: '34px', borderRadius: '50%', border: '2.5px solid rgba(168,85,247,0.15)', borderTop: '2.5px solid #A855F7', animation: 'spin 0.8s linear infinite' }} />

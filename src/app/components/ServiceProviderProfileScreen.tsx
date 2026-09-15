@@ -248,7 +248,12 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
 
   return (
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: '110px' }}>
+      <style>{`
+        @media (min-width: 900px) {
+          .sp-profile-content { max-width: 640px; margin-left: auto; margin-right: auto; }
+        }
+      `}</style>
+      <div className="sp-profile-content" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: '110px' }}>
         {/* Photo header */}
         <div style={{ position: 'relative', margin: '0 0 0', height: '260px' }}>
           {coverPhoto ? (

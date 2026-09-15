@@ -546,6 +546,20 @@ export function EventDetailsScreen({
         scrollbarWidth: 'none',
       }}
     >
+      {/* Desktop containment (interim, real fix pending the full TB2/DT
+          media-left/sticky-purchase-panel-right split the handoff spec
+          calls for): without this, widening the shared #root shell to
+          1200px (this session's viewport fix) would stretch this screen's
+          full-bleed hero/content edge-to-edge again -- the exact "desktop
+          is mobile stretched" bug from earlier in this effort. Caps
+          content at a readable width instead of reintroducing that
+          regression while the real two-column rework is still pending. */}
+      <style>{`
+        @media (min-width: 900px) {
+          .event-details-content { max-width: 640px; margin: 0 auto; width: 100%; }
+        }
+      `}</style>
+      <div className="event-details-content" style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
       {/* Full-screen flyer lightbox */}
       {flyerFullScreen && (
         <FlyerLightbox
@@ -1594,6 +1608,7 @@ export function EventDetailsScreen({
           onClose={() => setShowReport(false)}
         />
       )}
+      </div>
     </div>
   );
 }
