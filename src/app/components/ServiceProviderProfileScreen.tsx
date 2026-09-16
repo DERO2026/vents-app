@@ -69,6 +69,13 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
   const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
+  // Real fields create_service_booking already accepts (0054_service_
+  // bookings_marketplace.sql: p_scheduled_date/p_scheduled_time) but this
+  // screen never collected before now -- closing that gap with the actual
+  // backend-supported fields, not a fabricated calendar/availability
+  // system the repo has no support for (see the mockup's own P21 note).
+  const [scheduledDate, setScheduledDate] = useState('');
+  const [scheduledTime, setScheduledTime] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -164,7 +171,8 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
     try {
       const result = await createServiceBooking(
         providerId,
-        selectedServices.map((s) => ({ serviceId: s.id, quantity: selection[s.id] || 1 }))
+        selectedServices.map((s) => ({ serviceId: s.id, quantity: selection[s.id] || 1 })),
+        { scheduledDate: scheduledDate || null, scheduledTime: scheduledTime || null }
       );
       logServiceMarketplaceEvent('checkout_started', { providerId, bookingId: result.bookingId });
 
@@ -392,6 +400,33 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             </span>
             <span style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700 }}>
               {cartCurrency} {subtotal.toLocaleString('en-US')}
+            </span>
+          </div>
+        )}
+
+        {selectedServices.length > 0 && canPayCurrency && (
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <input
+              type="date"
+              value={scheduledDate}
+              onChange={(e) => setScheduledDate(e.target.value)}
+              min={new Date().toISOString().slice(0, 10)}
+              style={{ flex: 1, minWidth: 0, height: '44px', borderRadius: servicesRadii.md, border: `1px solid ${servicesColors.border}`, background: servicesColors.cardBgAlt, color: servicesColors.textPrimary, fontSize: '13px', fontFamily: 'Manrope, sans-serif', padding: '0 12px', colorScheme: 'dark' }}
+            />
+            <input
+              type="time"
+              value={scheduledTime}
+              onChange={(e) => setScheduledTime(e.target.value)}
+              style={{ flex: 1, minWidth: 0, height: '44px', borderRadius: servicesRadii.md, border: `1px solid ${servicesColors.border}`, background: servicesColors.cardBgAlt, color: servicesColors.textPrimary, fontSize: '13px', fontFamily: 'Manrope, sans-serif', padding: '0 12px', colorScheme: 'dark' }}
+            />
+          </div>
+        )}
+
+        {selectedServices.length > 0 && canPayCurrency && (
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '12px 14px', borderRadius: servicesRadii.md, background: 'rgba(96,165,250,0.09)', border: '1px solid rgba(96,165,250,0.28)' }}>
+            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: '#60A5FA', color: '#06121f', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>i</span>
+            <span style={{ color: 'rgba(237,234,245,0.75)', fontSize: '12px', lineHeight: 1.5 }}>
+              Services are paid in NGN through Paystack or your VENTS Wallet, regardless of the currency shown on this provider's profile.
             </span>
           </div>
         )}

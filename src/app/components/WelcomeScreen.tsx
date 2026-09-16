@@ -17,14 +17,14 @@ const STACK_CARDS = [
     src: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=600&fit=crop&crop=center',
     caption: 'Services',
     rotate: -10,
-    top: 34,
+    top: 20,
     side: 'left' as const,
   },
   {
     src: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600&fit=crop&crop=center',
     caption: 'Experiences',
     rotate: 10,
-    top: 34,
+    top: 20,
     side: 'right' as const,
   },
   {
@@ -74,7 +74,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
       {/* Phone stack visual -- handoff A1: 172x224 side cards (rotated
           ±10deg) behind a 196x262 center card, mono uppercase captions
           instead of title+subtitle pairs. */}
-      <div style={{ position: 'relative', flex: 1, minHeight: 0, margin: '34px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: '236px', maxHeight: '260px', margin: '24px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         {STACK_CARDS.map(card => (
           <div
             key={card.caption ?? 'center'}
@@ -84,8 +84,8 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
               left: card.side === 'left' ? '0' : card.side === 'center' ? '50%' : undefined,
               right: card.side === 'right' ? '0' : undefined,
               transform: card.side === 'center' ? `translateX(-50%) rotate(${card.rotate}deg)` : `rotate(${card.rotate}deg)`,
-              width: card.side === 'center' ? '196px' : '172px',
-              height: card.side === 'center' ? '262px' : '224px',
+              width: card.side === 'center' ? '176px' : '154px',
+              height: card.side === 'center' ? '236px' : '200px',
               borderRadius: '22px',
               overflow: 'hidden',
               border: card.side === 'center' ? '1px solid rgba(183,155,255,0.3)' : '1px solid rgba(255,255,255,0.1)',

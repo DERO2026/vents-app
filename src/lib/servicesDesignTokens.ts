@@ -7,7 +7,7 @@
 // etc.) so none of this module's ~9 consumer files need to change how they
 // reference these tokens -- only the values moved.
 
-import { ventsColors } from './ventsDesignTokens';
+import { ventsColors, ventsTypography } from './ventsDesignTokens';
 
 export const servicesColors = {
   bg: ventsColors.bg,
@@ -83,12 +83,12 @@ export const servicesSpacing = {
 } as const;
 
 export const servicesTypography = {
-  screenTitle: { fontFamily: 'Space Grotesk', fontSize: 26, fontWeight: 800 },
-  cardTitle: { fontFamily: 'Inter', fontSize: 14, fontWeight: 700 },
-  body: { fontFamily: 'Inter', fontSize: 14, fontWeight: 400, color: servicesColors.textSecondary },
-  meta: { fontFamily: 'Inter', fontSize: 12, fontWeight: 500, color: servicesColors.textSecondary },
+  screenTitle: { fontFamily: ventsTypography.fontBody, fontSize: 26, fontWeight: 800 },
+  cardTitle: { fontFamily: ventsTypography.fontBody, fontSize: 14, fontWeight: 700 },
+  body: { fontFamily: ventsTypography.fontBody, fontSize: 14, fontWeight: 400, color: servicesColors.textSecondary },
+  meta: { fontFamily: ventsTypography.fontBody, fontSize: 12, fontWeight: 500, color: servicesColors.textSecondary },
   eyebrow: {
-    fontFamily: 'Inter',
+    fontFamily: ventsTypography.fontMono,
     fontSize: 11,
     fontWeight: 700,
     textTransform: 'uppercase' as const,
