@@ -83,42 +83,50 @@ describe('Admin Dashboard: the last two per-row native <select> controls (role c
   });
 });
 
-describe('PickerSheet: matches the screenshot-3 direction -- a centered floating card, not a bottom sheet', () => {
+describe('PickerSheet: matches the Claude Design handoff (PK1/PK3) -- a bottom sheet anchored to the screen edge, not a centered card', () => {
+  // Supersedes an earlier round's "screenshot-3" direction (a centered
+  // floating card), which was itself a deliberate design choice at the
+  // time -- now replaced because the actual Claude Design mockup export
+  // (PK1 "Select Country", PK3 "Select Category") shows a bottom sheet:
+  // anchored to the bottom edge, rounded only on top, a drag handle, and
+  // a plain divided row list instead of per-row cards.
   let pickerSheetSrc: string;
   beforeAll(() => {
     pickerSheetSrc = readFileSync(join(componentsDir, 'shared', 'PickerSheet.tsx'), 'utf8');
   });
 
-  it('centers the card both horizontally and vertically, not anchored to the bottom edge', () => {
-    expect(pickerSheetSrc).toMatch(/alignItems: 'center',\s*\n\s*justifyContent: 'center',/);
-    expect(pickerSheetSrc).not.toMatch(/alignItems: 'flex-end',/);
+  it('anchors to the bottom edge, not centered', () => {
+    expect(pickerSheetSrc).toMatch(/left: 0,\s*\n\s*right: 0,\s*\n\s*bottom: 0,/);
+    expect(pickerSheetSrc).not.toMatch(/alignItems: 'center',\s*\n\s*justifyContent: 'center',/);
   });
 
-  it('is capped to a compact width and height, never edge-to-edge or a large sheet', () => {
-    expect(pickerSheetSrc).toMatch(/maxWidth: '360px',/);
-    expect(pickerSheetSrc).toMatch(/maxHeight: 'min\(50vh, 420px\)',/);
-    expect(pickerSheetSrc).not.toMatch(/width: 'calc\(100% - 24px\)'/);
+  it('opens tall (~86% of viewport) when searchable per PK1, and caps at 60% when not per PK3', () => {
+    expect(pickerSheetSrc).toMatch(/searchable \? \{ top: '14%' \} : \{ maxHeight: '60%' \}/);
   });
 
-  it('is rounded on every corner (not top-only, since it is no longer bottom-anchored)', () => {
-    expect(pickerSheetSrc).toMatch(/borderRadius: '20px',/);
-    expect(pickerSheetSrc).not.toMatch(/borderTopLeftRadius/);
+  it('is rounded only on the top corners, not every corner', () => {
+    expect(pickerSheetSrc).toMatch(/borderRadius: '28px 28px 0 0',/);
   });
 
-  it('has no drag-to-dismiss handle (that gesture belongs to a bottom sheet, not a centered card)', () => {
-    expect(pickerSheetSrc).not.toMatch(/handleDragStart/);
-    expect(pickerSheetSrc).not.toMatch(/width: '36px', height: '4px', borderRadius: '2px'/);
+  it('has a drag-handle bar at the top, matching every other bottom sheet in the app', () => {
+    expect(pickerSheetSrc).toMatch(/width: '38px', height: '4px', borderRadius: '99px', background: 'rgba\(255,255,255,0\.22\)'/);
   });
 
-  it('presents with a scale+fade animation appropriate to a centered card, not a slide-up', () => {
-    expect(pickerSheetSrc).toMatch(/@keyframes pickerCardIn \{ from \{ transform: scale\(0\.94\); opacity: 0; \} to \{ transform: scale\(1\); opacity: 1; \} \}/);
+  it('presents with a slide-up animation appropriate to a bottom sheet, not a scale+fade', () => {
+    expect(pickerSheetSrc).toMatch(/@keyframes pickerSheetIn \{ from \{ transform: translateY\(24px\); opacity: 0; \} to \{ transform: translateY\(0\); opacity: 1; \} \}/);
   });
 
-  it('remains translucent/frosted, keeps search+selected-check+renderOption, and stays keyboard-safe via viewport-relative sizing', () => {
-    expect(pickerSheetSrc).toMatch(/background: 'rgba\(13,10,26,0\.78\)',/);
-    expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(24px\) saturate\(1\.4\)',/);
+  it('rows are a plain divided list (underline dividers), not individually-bordered cards', () => {
+    expect(pickerSheetSrc).toMatch(/borderBottom: i < filtered\.length - 1 \? '1px solid rgba\(255,255,255,0\.05\)' : 'none',/);
+    expect(pickerSheetSrc).not.toMatch(/background: isSelected \? 'rgba\(168,85,247,0\.12\)' : '#131629',/);
+  });
+
+  it('remains translucent/frosted, keeps search+selected-check+renderOption, and respects a safe-area bottom inset', () => {
+    expect(pickerSheetSrc).toMatch(/background: 'rgba\(18,16,25,0\.96\)',/);
+    expect(pickerSheetSrc).toMatch(/backdropFilter: 'blur\(34px\)',/);
     expect(pickerSheetSrc).toMatch(/searchable = true,/);
     expect(pickerSheetSrc).toMatch(/isSelected && <Check/);
     expect(pickerSheetSrc).toMatch(/renderOption\?: \(option: PickerOption, isSelected: boolean\) => ReactNode;/);
+    expect(pickerSheetSrc).toMatch(/env\(safe-area-inset-bottom\)/);
   });
 });

@@ -108,84 +108,58 @@ export function PickerSheet({
   const exactMatchExists = filtered.some((o) => o.label.toLowerCase() === trimmedQuery.toLowerCase());
   const showCustomOption = allowCustom && trimmedQuery.length > 0 && !exactMatchExists;
 
+  // Handoff PK1/PK3: a bottom sheet anchored to the screen edge, not a
+  // centered floating card. Long/searchable lists (country, state) open
+  // tall (top: 14%, ~86% of the viewport, per PK1); short fixed lists that
+  // skip search (category, a handful of options, per P23) size to content
+  // up to 60% of the viewport (PK3). Rows are a plain divided list --
+  // underline dividers, no per-row card background/border -- with a single
+  // purple checkmark marking the selection, not a highlighted card.
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(2,0,5,0.55)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
+        background: 'rgba(4,3,8,0.6)',
         zIndex,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        // Room on every side so the card never touches an edge -- and, with
-        // the keyboard open, this padding responds like any other flex
-        // centering: the card re-centers in whatever visual space is left
-        // above the keyboard rather than getting shoved off-screen.
-        padding: '24px',
-        boxSizing: 'border-box',
         animation: 'pickerBackdropIn 0.2s ease',
       }}
     >
       <style>{`
         @keyframes pickerBackdropIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes pickerCardIn { from { transform: scale(0.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+        @keyframes pickerSheetIn { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          // A centered floating card, not a sheet anchored to any edge --
-          // margins on all four sides via the backdrop's own padding above,
-          // rounded on every corner, capped width so it reads as a compact
-          // control (an action sheet / context menu), never a screen.
-          width: '100%',
-          maxWidth: '360px',
-          // Capped well below "nearly full screen" -- short lists (a handful
-          // of options) size to their own content via the column layout
-          // below; long lists (e.g. every country) stop scrolling within
-          // this, never anywhere near 90-100% of the viewport. min() against
-          // the viewport also keeps it clear of the keyboard: a shorter
-          // visual viewport (keyboard open) shrinks this along with it.
-          maxHeight: 'min(50vh, 420px)',
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          ...(searchable ? { top: '14%' } : { maxHeight: '60%' }),
+          borderRadius: '28px 28px 0 0',
+          background: 'rgba(18,16,25,0.96)',
+          backdropFilter: 'blur(34px)',
+          WebkitBackdropFilter: 'blur(34px)',
+          borderTop: '1px solid rgba(255,255,255,0.12)',
           display: 'flex',
           flexDirection: 'column',
-          // Translucent frosted-glass surface: a solid sheet reads as
-          // "another screen", not a floating overlay. blur+alpha here lets
-          // the dimmed app behind bleed through, the way an iOS blur-
-          // material menu/sheet does.
-          background: 'rgba(13,10,26,0.78)',
-          backdropFilter: 'blur(24px) saturate(1.4)',
-          WebkitBackdropFilter: 'blur(24px) saturate(1.4)',
-          borderRadius: '20px',
-          border: '1px solid rgba(255,255,255,0.1)',
-          boxShadow: '0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03)',
-          padding: '14px 16px 16px',
-          animation: 'pickerCardIn 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+          padding: '12px 20px calc(20px + env(safe-area-inset-bottom))',
+          animation: 'pickerSheetIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
-          <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+        <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', alignSelf: 'center', marginBottom: '14px', flexShrink: 0 }} />
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexShrink: 0 }}>
+          <h3 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             {title}
           </h3>
           <button
             onClick={onClose}
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '50%',
-              width: '28px',
-              height: '28px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            style={{ background: 'none', border: 'none', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
-            <X size={14} color="#C4C9E0" />
+            <X size={18} color="rgba(237,234,245,0.5)" />
           </button>
         </div>
 
@@ -194,16 +168,17 @@ export function PickerSheet({
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              gap: '12px',
+              background: '#1A1724',
+              border: '1px solid rgba(142,92,247,0.4)',
+              borderRadius: '12px',
+              height: '44px',
+              padding: '0 14px',
+              gap: '10px',
               marginBottom: '14px',
               flexShrink: 0,
             }}
           >
-            <Search size={18} color="#8B8FA8" />
+            <Search size={16} color="rgba(237,234,245,0.5)" />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -214,7 +189,7 @@ export function PickerSheet({
                 background: 'none',
                 border: 'none',
                 outline: 'none',
-                color: '#F0F0FF',
+                color: '#fff',
                 fontSize: '14px',
                 fontFamily: 'Manrope, sans-serif',
               }}
@@ -228,14 +203,14 @@ export function PickerSheet({
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px',
             scrollbarWidth: 'none',
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
+            minHeight: 0,
           }}
         >
           {filtered.length === 0 && !showCustomOption && (
-            <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
+            <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
               No results found.
             </p>
           )}
@@ -252,24 +227,23 @@ export function PickerSheet({
                 fontSize: '14px',
                 fontWeight: 600,
                 flexShrink: 0,
+                marginBottom: '4px',
               }}
             >
               {customLabel(trimmedQuery)}
             </div>
           )}
-          {filtered.map((o) => {
+          {filtered.map((o, i) => {
             const isSelected = value === o.value;
             return (
               <div
                 key={o.value}
                 onClick={() => onSelect(o.value)}
                 style={{
-                  background: isSelected ? 'rgba(168,85,247,0.12)' : '#131629',
-                  border: isSelected ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '12px',
-                  padding: '14px 16px',
+                  padding: '13px 0',
+                  borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                   cursor: 'pointer',
-                  color: '#F0F0FF',
+                  color: isSelected ? '#fff' : '#EDEAF5',
                   fontSize: '14px',
                   fontWeight: isSelected ? 700 : 500,
                   display: 'flex',
@@ -283,14 +257,14 @@ export function PickerSheet({
                   renderOption(o, isSelected)
                 ) : (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
                       {o.icon}
                       <div style={{ minWidth: 0 }}>
                         <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</div>
-                        {o.sublabel && <div style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 500 }}>{o.sublabel}</div>}
+                        {o.sublabel && <div style={{ color: 'rgba(237,234,245,0.55)', fontSize: '12px', fontWeight: 500 }}>{o.sublabel}</div>}
                       </div>
                     </div>
-                    {isSelected && <Check size={16} color="#A78BFA" style={{ flexShrink: 0 }} />}
+                    {isSelected && <Check size={16} color="#8E5CF7" style={{ flexShrink: 0 }} />}
                   </>
                 )}
               </div>
