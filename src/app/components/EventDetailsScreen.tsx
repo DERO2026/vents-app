@@ -832,6 +832,47 @@ export function EventDetailsScreen({
           })}
         </div>
 
+        {/* Description -- moved here, directly under the tab strip, matching
+            the exported C1 order (description comes before the Doors/Age-
+            style info cards, not after Capacity/Countdown/Organizer Tools
+            at the very bottom of the page where it used to sit). */}
+        <div style={{ marginBottom: '16px' }}>
+          <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+            About
+          </span>
+          <p
+            style={{
+              color: ventsColors.ink3,
+              fontSize: '14px',
+              lineHeight: 1.5,
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: expanded ? 'unset' : 3,
+              WebkitBoxOrient: 'vertical',
+            }}
+          >
+            {event.description}
+          </p>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: ventsColors.accentSoft,
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: '6px 0 0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
         {/* Info cards */}
         <div ref={aboutRef} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           {[
@@ -1236,44 +1277,6 @@ export function EventDetailsScreen({
             </div>
           </div>
         )}
-
-        {/* Description */}
-        <div style={{ marginBottom: '16px' }}>
-          <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
-            About
-          </span>
-          <p
-            style={{
-              color: ventsColors.ink3,
-              fontSize: '14px',
-              lineHeight: 1.5,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: expanded ? 'unset' : 3,
-              WebkitBoxOrient: 'vertical',
-            }}
-          >
-            {event.description}
-          </p>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: ventsColors.accentSoft,
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              padding: '6px 0 0',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-            }}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-        </div>
 
         {/* Ticket Options — stays available even after a prior purchase, so
             an attendee who already has a ticket can still buy more (extra

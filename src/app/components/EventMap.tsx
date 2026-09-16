@@ -105,8 +105,10 @@ export function EventMap({ latitude, longitude, venue, address, onGetDirections 
         </div>`,
       });
       marker.addListener('click', () => info.open({ map, anchor: marker }));
-      // Open once by default so the venue name is visible without an extra tap.
-      info.open({ map, anchor: marker });
+      // Not auto-opened -- the venue/address is already shown as plain text
+      // right above this map (same info), so the default-open unstyled
+      // white Google InfoWindow just duplicated it while clashing hard with
+      // the dark theme. Still opens normally on marker tap.
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [status, hasCoords]);
