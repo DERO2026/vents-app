@@ -503,29 +503,27 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           }} />
         </div>
       )}
-      {/* Header */}
+      {/* Header -- matches the exported D1 · TicketsScreen · upcoming
+          mockup: left-aligned 28px/800 title, 42px circular icon button on
+          the right (rgba(255,255,255,.07) fill / rgba(255,255,255,.14)
+          border), not the old centered-title/refresh-icon treatment. */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '12px',
-          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
-          position: 'relative',
+          gap: '14px',
+          padding: 'calc(14px + env(safe-area-inset-top)) 20px 0',
         }}
       >
-        <div style={{ width: '36px', flexShrink: 0 }} />
         <h1
           style={{
             color: ventsColors.white,
-            fontSize: '20px',
-            fontWeight: 700,
+            fontSize: '28px',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
             fontFamily: 'Manrope, sans-serif',
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            textAlign: 'center',
-            pointerEvents: 'none',
+            margin: 0,
           }}
         >
           My Tickets
@@ -534,13 +532,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           <button
             onClick={handleRefresh}
             style={{
-              background: 'rgba(255,255,255,0.08)',
-              backdropFilter: 'blur(20px) saturate(180%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.13)',
-              borderRadius: '50%',
-              width: '36px',
-              height: '36px',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              borderRadius: '99px',
+              width: '42px',
+              height: '42px',
+              flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -549,74 +546,54 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           >
             <RefreshCw
               size={16}
-              color={ventsColors.accentSoft}
+              color={ventsColors.white}
               style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}
             />
           </button>
         )}
       </div>
 
-      {/* Tabs -- a single indicator glides between positions (translateX,
-          transitioned) instead of each button's own background flipping on
-          and off, so switching tabs reads as one smooth, premium motion. */}
-      <div style={{ padding: '0 16px 14px' }}>
+      {/* Tabs -- matches the export's flat pill treatment: a solid
+          background on the selected tab (no gradient/sliding-indicator
+          animation), plain labels on Upcoming/Past, and a small dot on
+          Transfers (the export's own "needs attention" marker) shown only
+          when something is actually pending, rather than a bare count. */}
+      <div style={{ padding: '20px 20px 14px' }}>
         <div
           style={{
-            position: 'relative',
             display: 'flex',
             background: 'rgba(255,255,255,0.06)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
             border: '1px solid rgba(255,255,255,0.1)',
-            borderRadius: '100px',
+            borderRadius: '14px',
             padding: '4px',
-            gap: '3px',
+            gap: '4px',
           }}
         >
-          <div
-            style={{
-              position: 'absolute',
-              top: '4px',
-              left: '4px',
-              bottom: '4px',
-              width: 'calc((100% - 8px) / 3)',
-              borderRadius: '100px',
-              background: 'linear-gradient(135deg, #7B2FBE, #5B3FCB)',
-              transform: `translateX(${(['upcoming', 'past', 'transfers'] as const).indexOf(activeTab) * 100}%)`,
-              transition: 'transform 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
-            }}
-          />
           {(['upcoming', 'past', 'transfers'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => { haptics.light(); setActiveTab(tab); }}
               style={{
-                position: 'relative',
-                zIndex: 1,
                 flex: 1,
-                padding: '9px',
-                borderRadius: '100px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                borderRadius: '10px',
                 border: 'none',
-                background: 'transparent',
+                background: activeTab === tab ? 'rgba(255,255,255,0.14)' : 'transparent',
                 color: activeTab === tab ? ventsColors.white : ventsColors.ink3,
-                fontSize: '13px',
-                fontWeight: 600,
+                fontSize: '14px',
+                fontWeight: activeTab === tab ? 700 : 600,
                 cursor: 'pointer',
-                transition: 'color 0.2s ease',
+                transition: 'background 0.2s ease, color 0.2s ease',
               }}
             >
-              {tab === 'upcoming' ? 'Upcoming' : tab === 'past' ? 'Past' : 'Transfers'}{' '}
-              <span
-                style={{
-                  background: activeTab === tab ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)',
-                  borderRadius: '4px',
-                  padding: '1px 6px',
-                  fontSize: '11px',
-                  transition: 'background 0.2s ease',
-                }}
-              >
-                {tab === 'upcoming' ? upcoming.length : tab === 'past' ? past.length : incomingPending.length + outgoingPending.length}
-              </span>
+              {tab === 'upcoming' ? 'Upcoming' : tab === 'past' ? 'Past' : 'Transfers'}
+              {tab === 'transfers' && (incomingPending.length + outgoingPending.length) > 0 && (
+                <span style={{ width: '7px', height: '7px', borderRadius: '99px', background: ventsColors.accent, display: 'block' }} />
+              )}
             </button>
           ))}
         </div>
@@ -631,7 +608,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           // padding — a flat 24px left the last ticket card partially hidden
           // behind it on shorter-safe-area devices. Matches the same
           // clearance convention already used by Home/Explore/Profile/Saved.
-          padding: '0 16px calc(110px + env(safe-area-inset-bottom))',
+          padding: '0 20px calc(110px + env(safe-area-inset-bottom))',
           scrollbarWidth: 'none',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
@@ -896,7 +873,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {displayed.map((ticket) => (
               <div
                 key={ticket.ticketId}
@@ -998,7 +975,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 </div>
 
                 {/* Ticket info */}
-                <div style={{ padding: '14px' }}>
+                <div style={{ padding: '16px 18px 18px' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       <Calendar size={12} color={ventsColors.ink3} />
@@ -1014,22 +991,17 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     </div>
                   </div>
 
-                  {/* Footer row */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingTop: '10px',
-                      borderTop: '1px dashed rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: ventsColors.ink3, fontSize: '13px', fontWeight: 500 }}>
-                        {ticket.quantity} × {ticket.ticketType.name}
-                      </span>
-                    </div>
-                    <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                  {/* Compact price/reference line -- real data the export's
+                      placeholder card doesn't depict at all, but dropping it
+                      would remove real ticket information; kept as one
+                      quiet row instead of the old two-block (dashed-divider
+                      row + separate boxed reference) treatment so the card
+                      still reads close to the export's minimal layout. */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ color: ventsColors.ink3, fontSize: '12px', fontWeight: 500 }}>
+                      {ticket.quantity} × {ticket.ticketType.name} · <span style={{ fontFamily: 'monospace', letterSpacing: '0.02em' }}>{ticketDisplayCode(ticket.ticketId)}</span>
+                    </span>
+                    <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
@@ -1040,7 +1012,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       tickets) is the sole authority on who holds this
                       ticket. Both can show at once. */}
                   {(ticket.paidByName || ticket.transferredFromName) && (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '8px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '10px' }}>
                       {ticket.paidByName && (
                         <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
                           Paid by <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.paidByName}</span>
@@ -1054,41 +1026,42 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     </div>
                   )}
 
-                  {/* Ticket ID */}
-                  <div
-                    style={{
-                      marginTop: '10px',
-                      background: 'rgba(255,255,255,0.05)',
-                      border: '1px solid rgba(255,255,255,0.08)',
-                      borderRadius: '10px',
-                      padding: '8px 12px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>Ticket Reference No.</span>
-                    <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
-                      {ticketDisplayCode(ticket.ticketId)}
-                    </span>
-                  </div>
-
-                  {/* Transfer Ticket -- reachable any time on an eligible
-                      owned ticket, not just right after purchase.
-                      stopPropagation so this doesn't also open the QR view
-                      underneath it. */}
-                  {activeTab === 'upcoming' && isTicketTransferable(ticket) && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); haptics.light(); setTransferTicket(ticket); }}
-                      style={{
-                        width: '100%', marginTop: '10px', display: 'flex', alignItems: 'center',
-                        justifyContent: 'center', gap: '6px', background: 'rgba(168,85,247,0.08)',
-                        border: '1px solid rgba(168,85,247,0.25)', borderRadius: '10px', padding: '9px',
-                        color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-                      }}
-                    >
-                      <Send size={13} /> Transfer Ticket
-                    </button>
+                  {/* Action row -- matches the export's two-button card
+                      footer ("Transfer" / "Show QR"): a glass secondary
+                      button and a filled #8E5CF7 primary button, side by
+                      side. Transfer only appears when the ticket is actually
+                      eligible (real server-enforced rule, same gate as
+                      before); a cancelled/refunded ticket has no valid QR,
+                      so it gets no action row at all -- the status badge on
+                      the hero already tells the whole story, and tapping
+                      the card still opens TicketRefundScreen. */}
+                  {!isCancelledOrRefunded(ticket) && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {activeTab === 'upcoming' && isTicketTransferable(ticket) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); haptics.light(); setTransferTicket(ticket); }}
+                          style={{
+                            flex: 1, height: '44px', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', gap: '6px', background: 'rgba(255,255,255,0.07)',
+                            border: '1px solid rgba(255,255,255,0.14)', borderRadius: '12px',
+                            color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                          }}
+                        >
+                          <Send size={13} /> Transfer
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onViewTicket(ticket); }}
+                        style={{
+                          flex: 1, height: '44px', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', gap: '6px', background: ventsColors.accent,
+                          border: 'none', borderRadius: '12px',
+                          color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        <QrCode size={14} /> Show QR
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>
