@@ -125,6 +125,17 @@ const FIXTURES: Record<string, Row[]> = {
   conversation_requests: [
     { requester_id: 'user-4', recipient_id: 'org-1', status: 'pending', created_at: new Date(Date.now() - 86400000).toISOString() },
   ],
+  // Drives App.tsx's own session-hydration `.from('users').select('*')`
+  // when mounting the real, unmodified App (the 'full-app' harness route)
+  // to verify real in-app navigation end-to-end, not just source reading.
+  users: [
+    {
+      id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', username: 'test.organizer',
+      role: 'organizer', avatar_url: null, cover_url: null, is_verified: true, state: 'Lagos',
+      interests: [], bio: '', vc_badge: null, instagram_handle: null, x_handle: null, tiktok_handle: null,
+      country: 'NG', created_at: new Date().toISOString(),
+    },
+  ],
 };
 
 function chainable(table: string): any {
@@ -229,7 +240,24 @@ const RPC_FIXTURES: Record<string, any> = {
 export const supabase = {
   from: (table: string) => chainable(table),
   auth: {
-    getSession: async () => ({ data: { session: null }, error: null }),
+    // Real, authenticated session ONLY for the 'full-app' harness route
+    // (?screen=full-app), which mounts the actual, unmodified App.tsx to
+    // verify real in-app navigation end-to-end. Every other harness route
+    // mounts one screen directly with fixture props and still needs
+    // getSession() to read "logged out" (e.g. AuthScreen's own states).
+    getSession: async () => {
+      const isFullApp = typeof window !== 'undefined' && window.location.search.includes('screen=full-app');
+      if (!isFullApp) return { data: { session: null }, error: null };
+      return {
+        data: {
+          session: {
+            user: { id: 'org-1', email: 'organizer@example.com' },
+            access_token: 'qa-harness-fake-token',
+          },
+        },
+        error: null,
+      };
+    },
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signUp: async () => ({ data: { user: { id: 'qa-fake-user', email: 'ada@example.com' }, session: null }, error: null }),
     signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Invalid login credentials' } }),

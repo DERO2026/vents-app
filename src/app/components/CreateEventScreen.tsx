@@ -35,7 +35,7 @@ interface CreateEventScreenProps {
 const MAX_GALLERY_FLIERS = 4;
 const ACCEPTED_IMAGE_TYPES = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp']);
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5 | 6;
 
 const CATEGORIES = CATEGORY_LIST.map(c => c.id);
 
@@ -344,11 +344,19 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
     );
   }
 
+  // Matches the exported Claude Design 6-step Creator Studio workflow
+  // (details -> cover image -> schedule/location -> tickets -> settings ->
+  // preview/publish) -- the previous 4 steps bundled cover-image with
+  // details, and settings (contact phone / 18+) with tickets. Every field,
+  // validation and Supabase write below is unchanged; only which step
+  // number renders which existing block moved.
   const STEPS = [
     { num: 1, label: 'Details' },
-    { num: 2, label: 'Venue' },
-    { num: 3, label: 'Tickets' },
-    { num: 4, label: 'Review' },
+    { num: 2, label: 'Cover Image' },
+    { num: 3, label: 'Schedule' },
+    { num: 4, label: 'Tickets' },
+    { num: 5, label: 'Settings' },
+    { num: 6, label: 'Preview' },
   ];
 
   const closeCropper = useCallback(() => {
@@ -797,6 +805,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       }
       setStep(2);
     } else if (step === 2) {
+      // Cover image itself is only enforced at the final publish step (see
+      // step === 6 below) -- unchanged from before this restructuring,
+      // just renumbered. Nothing else to validate on this step alone.
+      setStep(3);
+    } else if (step === 3) {
       if (!date) {
         setErrorMessage('Please select an event date.');
         return;
@@ -837,8 +850,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setErrorMessage('Please enter a valid total capacity.');
         return;
       }
-      setStep(3);
-    } else if (step === 3) {
+      setStep(4);
+    } else if (step === 4) {
       if (ticketTypes.length === 0) {
         setErrorMessage('Please add at least one ticket type.');
         return;
@@ -858,8 +871,12 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           return;
         }
       }
-      setStep(4);
-    } else if (step === 4) {
+      setStep(5);
+    } else if (step === 5) {
+      // Settings (contact phone / 18+) -- neither field is required, same
+      // as before this restructuring (the toggles were always optional).
+      setStep(6);
+    } else if (step === 6) {
       // A flyer wasn't required at all — a published event could carry no
       // image_url and fall back to a generic stock photo on every card.
       // Drafts are private and unpublished, so this only gates going live.
@@ -1008,7 +1025,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         style={{
           flex: 1,
           overflowY: 'auto',
-          padding: `4px 16px ${step === 4 ? '200px' : '120px'}`,
+          padding: `4px 16px ${step === 6 ? '200px' : '120px'}`,
           scrollbarWidth: 'none',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
@@ -1051,7 +1068,70 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
         {!loadingEdit && step === 1 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            {/* Image upload */}
+            <div>
+              <Label>Event Title *</Label>
+              <input
+                placeholder="e.g. Afrobeats Night 2026"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                style={INPUT_STYLE}
+              />
+            </div>
+
+            <div>
+              <Label>Categories * (up to 5)</Label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                {CATEGORIES.map((cat) => {
+                  const sel = selectedCategories.includes(cat);
+                  return (
+                    <button
+                      key={cat}
+                      onClick={() => setSelectedCategories(prev =>
+                        sel ? prev.filter(c => c !== cat)
+                            : prev.length < 5 ? [...prev, cat] : prev
+                      )}
+                      style={{
+                        background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
+                        border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                        borderRadius: '20px',
+                        padding: '7px 14px',
+                        color: sel ? '#fff' : ventsColors.ink2,
+                        fontSize: '12px',
+                        fontWeight: 500,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {cat}
+                    </button>
+                  );
+                })}
+              </div>
+              {selectedCategories.length > 0 && (
+                <p style={{ fontSize: '11px', color: ventsColors.ink2, marginTop: '6px' }}>
+                  Selected: {selectedCategories.join(', ')}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <Label>Description</Label>
+              <textarea
+                placeholder="Tell attendees what to expect..."
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                rows={4}
+                style={{ ...INPUT_STYLE, resize: 'none' }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Cover image -- its own step per the exported 6-step workflow
+            (was bundled with Details above before this restructuring).
+            Same cropper, same upload/gallery handlers, same imageUrl state;
+            only the step number it renders under changed. */}
+        {!loadingEdit && step === 2 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {cropSrc && (
               <ImageCropperModal
                 imageSrc={cropSrc}
@@ -1204,66 +1284,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               onChange={handleGalleryFileChange}
               style={{ display: 'none' }}
             />
-
-            <div>
-              <Label>Event Title *</Label>
-              <input
-                placeholder="e.g. Afrobeats Night 2026"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                style={INPUT_STYLE}
-              />
-            </div>
-
-            <div>
-              <Label>Categories * (up to 5)</Label>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {CATEGORIES.map((cat) => {
-                  const sel = selectedCategories.includes(cat);
-                  return (
-                    <button
-                      key={cat}
-                      onClick={() => setSelectedCategories(prev =>
-                        sel ? prev.filter(c => c !== cat)
-                            : prev.length < 5 ? [...prev, cat] : prev
-                      )}
-                      style={{
-                        background: sel ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : ventsColors.elevated,
-                        border: sel ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                        borderRadius: '20px',
-                        padding: '7px 14px',
-                        color: sel ? '#fff' : ventsColors.ink2,
-                        fontSize: '12px',
-                        fontWeight: 500,
-                        cursor: 'pointer',
-                      }}
-                    >
-                      {cat}
-                    </button>
-                  );
-                })}
-              </div>
-              {selectedCategories.length > 0 && (
-                <p style={{ fontSize: '11px', color: ventsColors.ink2, marginTop: '6px' }}>
-                  Selected: {selectedCategories.join(', ')}
-                </p>
-              )}
-            </div>
-
-            <div>
-              <Label>Description</Label>
-              <textarea
-                placeholder="Tell attendees what to expect..."
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={4}
-                style={{ ...INPUT_STYLE, resize: 'none' }}
-              />
-            </div>
           </div>
         )}
 
-        {!loadingEdit && step === 2 && (
+        {!loadingEdit && step === 3 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <div style={{ display: 'flex', gap: '10px' }}>
               <div style={{ flex: 1, minWidth: 0 }}>
@@ -1406,7 +1430,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           </div>
         )}
 
-        {!loadingEdit && step === 3 && (
+        {!loadingEdit && step === 4 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Ticket Types</p>
 
@@ -1538,7 +1562,15 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             >
               + Add Ticket Type
             </button>
+          </div>
+        )}
 
+        {/* Settings -- its own step per the exported 6-step workflow (was
+            the tail end of Tickets above before this restructuring). Same
+            showPhone/is18Plus state and toggles; only the step number
+            changed. */}
+        {!loadingEdit && step === 5 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {/* Contact phone toggle */}
             <div
               style={{
@@ -1648,7 +1680,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
           </div>
         )}
 
-        {!loadingEdit && step === 4 && (
+        {!loadingEdit && step === 6 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <div
               style={{
@@ -1803,11 +1835,11 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
             ? '✓ Published'
             : submitting
             ? 'Saving...'
-            : step === 4
+            : step === 6
             ? (editEventId ? 'Save Changes' : 'Publish Event')
             : `Next: ${STEPS[step].label}`}
         </button>
-        {step === 4 && !submitting && !editEventId && (
+        {step === 6 && !submitting && !editEventId && (
           published ? (
             <button
               onClick={handleReturnHome}

@@ -37,6 +37,7 @@ import { SettingsScreen } from '../src/app/components/SettingsScreen';
 import { UserProfileScreen } from '../src/app/components/UserProfileScreen';
 import { UserWalletScreen } from '../src/app/components/UserWalletScreen';
 import { ExploreScreen } from '../src/app/components/ExploreScreen';
+import App from '../src/app/App';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -319,6 +320,12 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'explore-chats': () => (
     <ExploreScreen currentUserId="org-1" onUserPress={() => {}} initialTab="chats" />
   ),
+  // Mounts the REAL, unmodified App.tsx (not one screen in isolation) to
+  // verify actual in-app navigation end-to-end -- e.g. the Batch 5 Creator
+  // Studio sidebar wiring (org-dashboard -> manage-events -> sales-analytics
+  // -> back). Only reachable with the fake auth session fakeSupabase.ts
+  // grants specifically to ?screen=full-app.
+  'full-app': () => <App />,
 };
 
 const params = new URLSearchParams(window.location.search);

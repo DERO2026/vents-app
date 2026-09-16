@@ -557,8 +557,57 @@ export function EventDetailsScreen({
       <style>{`
         .event-details-content { display: flex; flex-direction: column; }
         .edt-purchase-panel { display: none; }
-        @media (min-width: 900px) and (max-width: 1199px) {
-          .event-details-content { max-width: 640px; margin: 0 auto; width: 100%; }
+        /* Tablet split (TB2 export, 834px worked example): media-left /
+           content-right instead of the mobile full-bleed hero + sticky
+           footer stack. Reuses the exact same hero, main-content and
+           purchase-panel blocks the mobile and >=1200px desktop layouts
+           already render -- only their grid placement/sizing changes here,
+           no new components and no functional change (ticket selection,
+           promo codes, purchase flow all still the same real code). */
+        /* !important throughout this tier: the hero/main/panel elements
+           carry their own inline styles (mobile padding/margins, the hero's
+           aspect-ratio card sizing) which otherwise always win over an
+           external stylesheet rule for the same property at any width. */
+        @media (min-width: 768px) and (max-width: 1199px) {
+          .event-details-content {
+            display: grid !important;
+            grid-template-columns: 52% 1fr;
+            column-gap: 0;
+            align-items: stretch;
+            height: 100%;
+            max-width: none !important;
+            margin: 0 !important;
+          }
+          .event-details-hero {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            padding: 0 !important;
+            margin: 0 !important;
+            height: 100%;
+            position: sticky;
+            top: 0;
+          }
+          .event-details-hero > div {
+            border-radius: 0 !important;
+            height: 100% !important;
+            aspect-ratio: auto !important;
+          }
+          .event-details-main {
+            grid-column: 2;
+            padding: calc(24px + env(safe-area-inset-top)) 24px 24px !important;
+            overflow-y: auto;
+          }
+          .edt-bottom-bar { display: none !important; }
+          .edt-purchase-panel {
+            display: block;
+            grid-column: 2;
+            margin: 0 24px 24px;
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 20px;
+          }
         }
         @media (min-width: 1200px) {
           .event-details-content {
@@ -572,7 +621,7 @@ export function EventDetailsScreen({
           }
           .event-details-hero { grid-column: 1; }
           .event-details-main { grid-column: 1; padding-bottom: 40px; }
-          .edt-bottom-bar { display: none; }
+          .edt-bottom-bar { display: none !important; }
           .edt-purchase-panel {
             display: block;
             grid-column: 2;
