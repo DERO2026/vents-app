@@ -119,6 +119,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // drives the visual disabled state; this ref is the actual re-entrancy lock.
   const payingRef = useRef(false);
   const [payError, setPayError] = useState<string | null>(null);
+  // Handoff S2: a genuine payment-attempt failure (Paystack's own onError,
+  // or the popup failing to open at all) gets the dedicated full-screen
+  // treatment -- distinct from payError, which stays inline for pre-payment
+  // validation (missing fields, insufficient wallet balance, etc.) that
+  // never actually reached a payment attempt. Only the real amount and the
+  // real message Paystack/openPaystackPopup returned are ever shown here --
+  // no fabricated seat-hold countdown or masked card digits, since neither
+  // exists anywhere in this codebase (Paystack's onError only ever supplies
+  // a plain string; there's no reservation/hold-timer system for tickets).
+  const [paymentFailed, setPaymentFailed] = useState<string | null>(null);
   // "Someone else is paying" -- 'self' preserves today's checkout exactly.
   const [payMode, setPayMode] = useState<'self' | 'someone-else'>('self');
   const [payerIdentifier, setPayerIdentifier] = useState('');
@@ -516,15 +526,57 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         onError: (message) => {
           payingRef.current = false;
           setPaymentLoading(false);
-          setPayError(message);
+          setPaymentFailed(message);
         },
       });
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
-      setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));
+      setPaymentFailed(err?.message || 'Could not start payment. Please try again.');
     }
   };
+
+  if (paymentFailed) {
+    return (
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 'calc(86px + env(safe-area-inset-top)) 20px calc(26px + env(safe-area-inset-bottom))', boxSizing: 'border-box' }}>
+        <span style={{ width: '84px', height: '84px', borderRadius: '50%', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '34px', fontWeight: 800, color: '#F87171', flexShrink: 0 }}>!</span>
+        <h1 style={{ margin: '26px 0 0', fontSize: '27px', lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 800, color: '#fff', textAlign: 'center' }}>Payment didn't go through</h1>
+        <p style={{ margin: '10px 0 0', fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', textAlign: 'center', maxWidth: '310px' }}>{paymentFailed}</p>
+        <div style={{ width: '100%', marginTop: '30px', borderRadius: '20px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', padding: '6px 18px' }}>
+          <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Attempted</span>
+            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: '#fff' }}>{formatPrice(total)}</span>
+          </div>
+          <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Method</span>
+            <span style={{ fontSize: '15px', fontWeight: 700, color: '#EDEAF5' }}>Card / Bank / USSD</span>
+          </div>
+        </div>
+        <div style={{ width: '100%', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            onClick={() => { setPaymentFailed(null); handlePay(); }}
+            style={{ height: '56px', borderRadius: '16px', background: '#8E5CF7', border: 'none', fontSize: '17px', fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
+          >
+            Try again
+          </button>
+          {paymentMethod === 'paystack' && walletBalanceKobo !== null && (
+            <button
+              onClick={() => { setPaymentFailed(null); setPaymentMethod('wallet'); }}
+              style={{ height: '54px', borderRadius: '16px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', fontSize: '16px', fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+            >
+              Use a different method
+            </button>
+          )}
+          <button
+            onClick={() => openExternalUrl('mailto:support@getvents.com')}
+            style={{ height: '46px', background: 'none', border: 'none', fontSize: '16px', fontWeight: 700, color: 'rgba(237,234,245,0.66)', cursor: 'pointer' }}
+          >
+            Contact support
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
