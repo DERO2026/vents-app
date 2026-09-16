@@ -609,7 +609,7 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
                 Spendable Balance
               </p>
               <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                {spendableKobo === null ? '—' : fmt(Math.round(spendableKobo / 100))}
+                {spendableKobo === null ? '—' : fmt(spendableKobo)}
               </p>
               <div style={{ display: 'flex', gap: '10px' }}>
                 <button

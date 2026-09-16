@@ -198,6 +198,66 @@ function InputRow({
   );
 }
 
+// Handoff A3/LG1 anatomy: a mono uppercase label ABOVE a plain field, no
+// leading icon -- distinct from InputRow's icon+placeholder-only style,
+// which stays as-is for the flows this pass didn't touch (forgot/reset).
+function LabeledField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  type = 'text',
+  error,
+  onEnter,
+  right,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  error?: string;
+  onEnter?: () => void;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <span style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)' }}>
+        {label}
+      </span>
+      <div
+        className="auth-input-row"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: FIELD_BG,
+          border: `1px solid ${error ? 'rgba(239,68,68,0.6)' : FIELD_BORDER}`,
+          borderRadius: FIELD_RADIUS,
+          height: '52px',
+          padding: '0 16px',
+          gap: '12px',
+        }}
+      >
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onEnter ? (e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } } : undefined}
+          style={INPUT_STYLE}
+        />
+        {right}
+      </div>
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', paddingLeft: '4px' }}>
+          <AlertCircle size={12} color="#EF4444" />
+          <span style={{ color: '#EF4444', fontSize: '11px' }}>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AuthScreen({ initialMode, userRole, selectedState, selectedCountryIso, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
@@ -1517,9 +1577,20 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       </div>
 
       <div style={{ flex: 1, padding: '20px 24px 48px' }}>
-        <div style={{ marginBottom: '22px' }}>
-          <VentsLogo size={34} />
-        </div>
+        {/* Handoff A3/LG1: Sign Up has no logo at all (just the step
+            indicator + headline); Login centers a larger logo above its
+            headline instead of this small top-left mark. Every other mode
+            (forgot/reset/OTP) keeps the original placement unchanged. */}
+        {mode !== 'signup' && mode !== 'login' && (
+          <div style={{ marginBottom: '22px' }}>
+            <VentsLogo size={34} />
+          </div>
+        )}
+        {mode === 'login' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', marginTop: '36px', marginBottom: '8px' }}>
+            <VentsLogo size={86} />
+          </div>
+        )}
 
         {mode === 'forgot' && forgotSent && forgotOtpStep && !forgotPasswordStep ? (
           /* ── Step 1: Verification Code ── */
@@ -1991,70 +2062,46 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           </div>
         ) : (
           <>
-            {(mode === 'login' || mode === 'signup') && (
+            {/* Handoff A3/LG1: no segmented Sign Up/Log In tab -- each is
+                its own screen, switched via the plain text links at the
+                bottom of the form ("New to VENTS? Create an account" /
+                "Already have an account? Log in"), not a tab control. */}
+            {mode === 'signup' ? (
+              <div style={{ marginBottom: '28px' }}>
+                <p style={{ margin: '0 0 8px', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#B79BFF' }}>
+                  Step 2 of 3
+                </p>
+                <h1 style={{ margin: 0, color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                  Create your account
+                </h1>
+              </div>
+            ) : mode === 'login' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', marginBottom: '40px', textAlign: 'center' }}>
+                <h1 style={{ margin: 0, color: '#fff', fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'Manrope, sans-serif' }}>
+                  Welcome back
+                </h1>
+                <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.6)' }}>Log in to your VENTS account</span>
+              </div>
+            ) : (
               <>
-                {/* Segmented Sign Up / Log In tab */}
-                <div
+                <h2
                   style={{
-                    display: 'flex',
-                    background: '#090514',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: '100px',
-                    padding: '4px',
-                    marginBottom: '24px',
-                    position: 'relative',
+                    color: '#FFFFFF',
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    fontFamily: 'Manrope, sans-serif',
+                    marginBottom: '6px',
                   }}
                 >
-                  {(['signup', 'login'] as const).map((tab) => {
-                    const active = mode === tab;
-                    return (
-                      <button
-                        key={tab}
-                        onClick={() => { setMode(tab); setErrorMessage(null); setSuccessMessage(null); }}
-                        style={{
-                          flex: 1,
-                          padding: '10px',
-                          borderRadius: '100px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: active ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : 'transparent',
-                          color: active ? '#FFFFFF' : '#94A3B8',
-                          fontSize: '14px',
-                          fontWeight: 700,
-                          fontFamily: 'Manrope, sans-serif',
-                          boxShadow: active ? '0 0 20px rgba(123,47,190,0.5)' : 'none',
-                          transition: 'background 0.3s ease, box-shadow 0.3s ease, color 0.3s ease',
-                        }}
-                      >
-                        {tab === 'signup' ? 'Sign Up' : 'Log In'}
-                      </button>
-                    );
-                  })}
-                </div>
-
+                  {mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
+                </h2>
+                <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '28px' }}>
+                  {mode === 'forgot'
+                    ? 'Enter your email to receive a verification code'
+                    : 'Enter your new password below'}
+                </p>
               </>
             )}
-
-            <h2
-              style={{
-                color: '#FFFFFF',
-                fontSize: '24px',
-                fontWeight: 700,
-                fontFamily: 'Manrope, sans-serif',
-                marginBottom: '6px',
-              }}
-            >
-              {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
-            </h2>
-            <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '28px' }}>
-              {mode === 'login'
-                ? 'Sign in to continue your Vents experience'
-                : mode === 'signup'
-                ? 'Join thousands of event lovers on Vents'
-                : mode === 'forgot'
-                ? 'Enter your email to receive a verification code'
-                : 'Enter your new password below'}
-            </p>
 
             {mode === 'signup' && signupsDisabled && (
               <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
@@ -2142,15 +2189,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                     )}
                   </div>
 
-                  <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} onEnter={submitOnEnter} />
-                  <InputRow icon={User} placeholder="Username" value={username} onChange={setUsername} onEnter={submitOnEnter} />
+                  <LabeledField label="Full name" placeholder="Your full name" value={name} onChange={setName} onEnter={submitOnEnter} />
+                  <LabeledField label="Username" placeholder="Pick a username" value={username} onChange={setUsername} onEnter={submitOnEnter} />
                 </>
               )}
               {mode !== 'reset' && (
                 <div onBlur={handleEmailBlur}>
-                  <InputRow
-                    icon={Mail}
-                    placeholder={mode === 'login' ? "Email address or username" : "Email address (e.g. name@gmail.com)"}
+                  <LabeledField
+                    label={mode === 'login' ? 'Email or username' : 'Email'}
+                    placeholder={mode === 'login' ? "ada@example.com or @username" : "ada@example.com"}
                     value={email}
                     onChange={(v) => { setEmail(v); if (emailTouched) setEmailTouched(true); setSuccessMessage(null); }}
                     type={mode === 'login' ? 'text' : 'email'}
@@ -2211,10 +2258,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   {dobError && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>{dobError}</p>}
                 </div>
               )}
-              {mode !== 'forgot' && (
+              {mode === 'login' ? (
+                <LabeledField
+                  label="Password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={setPassword}
+                  type={showPassword ? 'text' : 'password'}
+                  error={passwordError}
+                  onEnter={submitOnEnter}
+                  right={
+                    <button onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#B79BFF', fontSize: '13px', fontWeight: 700 }}>
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  }
+                />
+              ) : mode !== 'forgot' && (
                 <InputRow
                   icon={Lock}
-                  placeholder={mode === 'signup' ? "Create password" : mode === 'reset' ? "New password" : "Password"}
+                  placeholder={mode === 'signup' ? "Create password" : "New password"}
                   value={password}
                   onChange={setPassword}
                   type={showPassword ? 'text' : 'password'}
@@ -2230,8 +2292,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   }
                 />
               )}
+              {/* Handoff A3: a segmented strength bar (one segment per met
+                  rule) above the existing rule-by-rule checklist -- kept
+                  the checklist itself since it's more useful than the
+                  mockup's single summary line and reflects the real,
+                  already-enforced password rules rather than an invented
+                  generic label. */}
               {(mode === 'signup' || mode === 'reset') && password.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', padding: '2px 4px' }}>
+                <div style={{ display: 'flex', gap: '5px', marginTop: '-6px' }}>
+                  {passwordRules.map(({ met }, i) => (
+                    <span key={i} style={{ flex: 1, height: '3px', borderRadius: '2px', background: met ? '#34D399' : 'rgba(255,255,255,0.12)' }} />
+                  ))}
+                </div>
+              )}
+              {(mode === 'signup' || mode === 'reset') && password.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '2px 4px' }}>
                   {passwordRules.map(({ met, label }) => (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {met ? <Check size={12} color="#10B981" /> : <X size={12} color="#EF4444" />}
@@ -2312,21 +2387,22 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             </div>
 
             {mode === 'login' && (
-              <button
-                onClick={() => setMode('forgot')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#C084FC',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  marginBottom: '24px',
-                  padding: 0,
-                  display: 'block',
-                }}
-              >
-                Forgot password?
-              </button>
+              <div style={{ textAlign: 'right', marginBottom: '24px' }}>
+                <button
+                  onClick={() => setMode('forgot')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#B79BFF',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
             )}
 
             <button
@@ -2342,13 +2418,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               {loading
                 ? 'Please wait...'
                 : mode === 'login'
-                ? 'Sign In'
+                ? 'Log in'
                 : mode === 'signup'
-                ? 'Create Account'
+                ? 'Create account'
                 : mode === 'forgot'
                 ? 'Send Verification Code'
                 : 'Reset Password'}
             </button>
+
+            {/* Handoff A3/LG1: the mode switch lives here as a plain text
+                link (matching each mockup's own footer line), replacing
+                the segmented tab control removed above. */}
+            {(mode === 'login' || mode === 'signup') && (
+              <p style={{ textAlign: 'center', fontSize: '15px', fontWeight: 600, color: 'rgba(237,234,245,0.66)', marginBottom: '20px' }}>
+                {mode === 'login' ? "New to VENTS? " : 'Already have an account? '}
+                <span
+                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMessage(null); setSuccessMessage(null); }}
+                  style={{ color: '#B79BFF', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  {mode === 'login' ? 'Create an account' : 'Log in'}
+                </span>
+              </p>
+            )}
 
             {mode === 'signup' && (
               <div style={{ marginTop: '-8px', marginBottom: '14px' }}>

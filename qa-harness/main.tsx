@@ -23,6 +23,7 @@ import { TicketRefundScreen } from '../src/app/components/TicketRefundScreen';
 import { PaymentRequestScreen } from '../src/app/components/PaymentRequestScreen';
 import { CountrySelectScreen } from '../src/app/components/CountrySelectScreen';
 import { WalletScreen } from '../src/app/components/WalletScreen';
+import { AuthScreen } from '../src/app/components/AuthScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -181,6 +182,12 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   wallet: () => (
     <WalletScreen currentUser={FIXTURE_USER} onBack={() => {}} onOpenUserWallet={() => {}} />
+  ),
+  'auth-signup': () => (
+    <AuthScreen initialMode="signup" onBack={() => {}} onSuccess={() => {}} />
+  ),
+  'auth-login': () => (
+    <AuthScreen initialMode="login" onBack={() => {}} onSuccess={() => {}} />
   ),
 };
 
