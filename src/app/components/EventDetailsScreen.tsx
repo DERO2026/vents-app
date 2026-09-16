@@ -783,66 +783,53 @@ export function EventDetailsScreen({
           </div>
         </div>
 
-        {/* Organizer -- moved directly under the title/attendee row (matches
-            reference layout); also serves as the "Organizer" tab's scroll
-            target below. */}
+        {/* Section navigation -- moved here, directly under the title/
+            attendee row, matching the exported design's C1 layout exactly
+            (tabs sit right below the title/date, ABOVE the About-tab
+            content -- not below the Organizer card, which used to sit
+            here and made the Organizer tab scroll target appear ABOVE its
+            own nav bar, before the tab strip even rendered). About /
+            Tickets / Organizer / More scroll to the corresponding section
+            already on the page (same anchor-scroll pattern as Home's
+            Trending/Near You chips); no conditional rendering, so nothing
+            below moves or unmounts. */}
         <div
-          ref={organizerRef}
-          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
+          className="no-scrollbar"
           style={{
-            background: 'rgba(255,255,255,0.04)',
-            backdropFilter: 'blur(20px) saturate(160%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-            border: '1px solid rgba(255,255,255,0.08)',
-            borderRadius: '16px',
-            padding: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
+            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: '999px',
+            padding: '4px',
           }}
         >
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
-            </span>
-            {organizerProfile?.avatar_url && (
-              <img
-                src={organizerProfile.avatar_url}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            )}
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
-                {organizerProfile?.full_name || event.organizer}
-              </span>
-              {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill={ventsColors.accent} color="#fff" />
-              )}
-              <BadgeChip tier={organizerProfile?.vc_badge} />
-            </div>
-            <span style={{ color: ventsColors.ink2, fontSize: '12px', textTransform: 'capitalize' }}>
-              {organizerProfile?.role || 'Event Organizer'}
-            </span>
-          </div>
+          {[
+            { label: 'About', ref: aboutRef },
+            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
+            { label: 'Organizer', ref: organizerRef },
+            { label: 'More', ref: moreRef },
+          ].filter((t) => t.show !== false).map((t) => {
+            const active = activeSection === t.label;
+            return (
+              <button
+                key={t.label}
+                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                style={{
+                  flex: 1,
+                  flexShrink: 0,
+                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '9px 14px',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: active ? '#fff' : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Info cards */}
@@ -937,47 +924,69 @@ export function EventDetailsScreen({
           />
         </div>
 
-        {/* Section navigation -- About / Tickets / Organizer / More scroll
-            to the corresponding section already on this page (same
-            anchor-scroll pattern as Home's Trending/Near You chips); no
-            conditional rendering, so nothing below moves or unmounts. */}
+        {/* Organizer -- moved here, after Date/Time and Location/Map,
+            matching the exported design's C1 order (About-tab content:
+            description → info cards → Organizer row → Map is roughly the
+            export's order; Organizer/Map both sit inside About, below the
+            tab strip, never above it). Still serves as the "Organizer"
+            tab's scroll target. */}
         <div
-          className="no-scrollbar"
+          ref={organizerRef}
+          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
           style={{
-            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
-            background: 'rgba(255,255,255,0.05)',
-            backdropFilter: 'blur(20px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-            border: '1px solid rgba(255,255,255,0.09)',
-            borderRadius: '999px',
-            padding: '4px',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '16px',
+            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
           }}
         >
-          {[
-            { label: 'About', ref: aboutRef },
-            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
-            { label: 'Organizer', ref: organizerRef },
-            { label: 'More', ref: moreRef },
-          ].filter((t) => t.show !== false).map((t) => {
-            const active = activeSection === t.label;
-            return (
-              <button
-                key={t.label}
-                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                style={{
-                  flex: 1,
-                  flexShrink: 0,
-                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
-                  border: 'none',
-                  borderRadius: '999px',
-                  padding: '9px 14px',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ color: active ? '#fff' : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
-              </button>
-            );
-          })}
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
+            </span>
+            {organizerProfile?.avatar_url && (
+              <img
+                src={organizerProfile.avatar_url}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            )}
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
+                {organizerProfile?.full_name || event.organizer}
+              </span>
+              {(event.organizerVerified || organizerProfile?.is_verified) && (
+                <CheckCircle size={14} fill={ventsColors.accent} color="#fff" />
+              )}
+              <BadgeChip tier={organizerProfile?.vc_badge} />
+            </div>
+            <span style={{ color: ventsColors.ink2, fontSize: '12px', textTransform: 'capitalize' }}>
+              {organizerProfile?.role || 'Event Organizer'}
+            </span>
+          </div>
         </div>
 
         {/* Organizer Tools — door-staff scanner access. Only ever visible to
