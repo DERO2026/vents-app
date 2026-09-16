@@ -1888,40 +1888,40 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             </button>
           </div>
         ) : isVerifying ? (
-          <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-            <div style={{ fontSize: '52px', marginBottom: '16px' }}>✉️</div>
-            <h2
-              style={{
-                color: '#F0F0FF',
-                fontSize: '22px',
-                fontWeight: 700,
-                fontFamily: 'Manrope, sans-serif',
-                marginBottom: '10px',
-              }}
-            >
-              Verify your email
-            </h2>
-            <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65, marginBottom: '24px' }}>
-              We've sent a {EMAIL_OTP_LENGTH}-digit verification code to<br />
-              <span style={{ color: '#A78BFA', fontWeight: 600 }}>{email}</span>
-            </p>
+          <div>
+            {/* Handoff A4/A5: step eyebrow + big headline (matches the
+                Sign Up step pattern), not a centered envelope-emoji intro. */}
+            <div style={{ marginBottom: '32px' }}>
+              <p style={{ margin: '0 0 8px', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#B79BFF' }}>
+                Step 3 of 3
+              </p>
+              <h1 style={{ margin: '0 0 8px', color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                Confirm your email
+              </h1>
+              <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
+                We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
+              </p>
+            </div>
 
             {errorMessage && (
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  background: 'rgba(248,113,113,0.09)',
+                  border: '1px solid rgba(248,113,113,0.3)',
+                  borderRadius: '14px',
+                  padding: '16px',
                   marginBottom: '20px',
                   textAlign: 'left',
                 }}
               >
-                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#F87171', color: '#1a0808', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#FCA5A5' }}>That code isn't right</span>
+                  <span style={{ fontSize: '14px', lineHeight: 1.5, color: 'rgba(237,234,245,0.66)' }}>{errorMessage}</span>
+                </div>
               </div>
             )}
 
@@ -1953,33 +1953,41 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               style={{ position: 'relative', marginBottom: '24px' }}
             >
             <div
-              style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}
+              style={{ display: 'flex', gap: '8px', cursor: 'text' }}
             >
-              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: '32px',
-                    height: '52px',
-                    background: FIELD_BG,
-                    border: `1.5px solid ${
-                      verificationCode.length > i
-                        ? '#A78BFA'
-                        : errorMessage
-                        ? 'rgba(239,68,68,0.4)'
-                        : 'rgba(255,255,255,0.08)'
-                    }`,
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>
-                    {verificationCode[i] ?? ''}
-                  </span>
-                </div>
-              ))}
+              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
+                // Handoff A4/A5: filled/empty boxes are plain neutral --
+                // only the box about to receive the next digit gets the
+                // purple focus glow. An error (wrong code just submitted)
+                // tints every box red instead, per A5.
+                const isActive = i === verificationCode.length;
+                const border = errorMessage
+                  ? '1px solid rgba(248,113,113,0.6)'
+                  : isActive
+                  ? '1px solid rgba(142,92,247,0.7)'
+                  : '1px solid rgba(255,255,255,0.12)';
+                const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      height: '64px',
+                      background: bg,
+                      border,
+                      boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
+                      borderRadius: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      {verificationCode[i] ?? ''}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             <input
@@ -2016,6 +2024,27 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             />
             </div>
 
+            {/* Handoff A4/A5: "Didn't get it? / Resend code" as one row,
+                not a separate centered button below Verify. */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '20px', marginBottom: '28px' }}>
+              <span style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(237,234,245,0.66)' }}>Didn't get it?</span>
+              <button
+                onClick={handleResendCode}
+                disabled={resending || resendCooldown > 0}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: (resending || resendCooldown > 0) ? 'rgba(237,234,245,0.55)' : '#B79BFF',
+                  fontSize: '15px',
+                  cursor: (resending || resendCooldown > 0) ? 'not-allowed' : 'pointer',
+                  fontWeight: 700,
+                  padding: 0,
+                }}
+              >
+                {resending ? 'Sending…' : resendCooldown > 0 ? `Resend in 0:${resendCooldown.toString().padStart(2, '0')}` : 'Resend code'}
+              </button>
+            </div>
+
             <button
               onClick={handleVerifyOtp}
               disabled={loading || verificationCode.length !== EMAIL_OTP_LENGTH}
@@ -2023,27 +2052,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 ...BTN_PRIMARY,
                 opacity: (loading || verificationCode.length !== EMAIL_OTP_LENGTH) ? 0.6 : 1,
                 cursor: loading || verificationCode.length !== EMAIL_OTP_LENGTH ? 'not-allowed' : 'pointer',
-                marginBottom: '20px',
+                marginBottom: '10px',
               }}
             >
-              {loading ? 'Verifying...' : 'Verify Code'}
-            </button>
-
-            <button
-              onClick={handleResendCode}
-              disabled={resending || resendCooldown > 0}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: (resending || resendCooldown > 0) ? '#555C7A' : '#A78BFA',
-                fontSize: '14px',
-                cursor: (resending || resendCooldown > 0) ? 'not-allowed' : 'pointer',
-                fontWeight: 600,
-                display: 'block',
-                margin: '0 auto 14px',
-              }}
-            >
-              {resending ? 'Sending…' : resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
+              {loading ? 'Verifying...' : 'Verify'}
             </button>
 
             <button
@@ -2051,13 +2063,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#8B8FA8',
-                fontSize: '14px',
+                color: '#B79BFF',
+                fontSize: '16px',
+                fontWeight: 700,
                 cursor: 'pointer',
-                fontWeight: 500,
+                display: 'block',
+                margin: '0 auto',
+                height: '52px',
               }}
             >
-              Change Email
+              Change email address
             </button>
           </div>
         ) : (
