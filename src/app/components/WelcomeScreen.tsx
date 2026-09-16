@@ -81,8 +81,16 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
             style={{
               position: 'absolute',
               top: `${card.top}px`,
-              left: card.side === 'left' ? '0' : card.side === 'center' ? '50%' : undefined,
-              right: card.side === 'right' ? '0' : undefined,
+              // Side cards get a small inward inset (not flush against the
+              // true screen edge) -- rotating a ±10deg box widens its
+              // rendered footprint by ~16-20px beyond its own pre-rotation
+              // edge, which a flush left:0/right:0 anchor pushed straight
+              // past the container's clipping boundary, truncating the
+              // caption text unevenly on each side ("Experiences" showing
+              // only "ENCES"). The inset gives that rotation spill room to
+              // stay inside the visible/clipped area.
+              left: card.side === 'left' ? '20px' : card.side === 'center' ? '50%' : undefined,
+              right: card.side === 'right' ? '20px' : undefined,
               transform: card.side === 'center' ? `translateX(-50%) rotate(${card.rotate}deg)` : `rotate(${card.rotate}deg)`,
               width: card.side === 'center' ? '176px' : '154px',
               height: card.side === 'center' ? '236px' : '200px',

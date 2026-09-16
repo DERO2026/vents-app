@@ -8,7 +8,6 @@ import { openExternalUrl } from '../../lib/externalLink';
 import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
-import { PickerSheet } from './shared/PickerSheet';
 import { verifyTOTP } from '../../lib/totp';
 import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
@@ -272,6 +271,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
     : null
   );
   const [showStateDropdown, setShowStateDropdown] = useState(false);
+  const [stateDropdownQuery, setStateDropdownQuery] = useState('');
+  const stateDropdownRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   // Raw national-number digits only — the country dial code is tracked
@@ -311,6 +312,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Close the state dropdown (the small anchored panel, not a full-screen
+  // sheet) when tapping anywhere outside it -- same behavior as PhoneInput's
+  // country dropdown.
+  useEffect(() => {
+    if (!showStateDropdown) { setStateDropdownQuery(''); return; }
+    const handleClick = (e: MouseEvent) => {
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(e.target as Node)) setShowStateDropdown(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showStateDropdown]);
 
   // Resume a signup left mid-verification: either the caller told us
   // exactly which email (arrived via the "Verify Account" email link), or
@@ -2364,41 +2377,114 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                       list; every other country falls back to a free-text
                       State/Region/Province field. */}
                   {signupSubdivisions ? (
-                    <div
-                      onClick={() => setShowStateDropdown(true)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        background: FIELD_BG,
-                        border: `1px solid ${FIELD_BORDER}`,
-                        borderRadius: FIELD_RADIUS,
-                        padding: '14px 16px',
-                        gap: '12px',
-                        position: 'relative',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <MapPin size={18} color="#8B8FA8" />
+                    <div ref={stateDropdownRef} style={{ position: 'relative' }}>
                       <div
+                        onClick={() => setShowStateDropdown((v) => !v)}
                         style={{
-                          flex: 1,
-                          color: signupState ? '#F0F0FF' : '#8B8FA8',
-                          fontSize: '14px',
-                          fontFamily: 'Manrope, sans-serif',
-                          textAlign: 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: FIELD_BG,
+                          border: `1px solid ${FIELD_BORDER}`,
+                          borderRadius: FIELD_RADIUS,
+                          padding: '14px 16px',
+                          gap: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
                         }}
                       >
-                        {signupState || `Select ${signupSubdivisions.label}`}
+                        <MapPin size={18} color="#8B8FA8" />
+                        <div
+                          style={{
+                            flex: 1,
+                            color: signupState ? '#F0F0FF' : '#8B8FA8',
+                            fontSize: '14px',
+                            fontFamily: 'Manrope, sans-serif',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {signupState || `Select ${signupSubdivisions.label}`}
+                        </div>
+                        <ChevronDown
+                          size={16}
+                          color="#8B8FA8"
+                          style={{
+                            pointerEvents: 'none',
+                            position: 'absolute',
+                            right: '16px',
+                          }}
+                        />
                       </div>
-                      <ChevronDown
-                        size={16}
-                        color="#8B8FA8"
-                        style={{
-                          pointerEvents: 'none',
-                          position: 'absolute',
-                          right: '16px',
-                        }}
-                      />
+
+                      {/* Small anchored dropdown, same pattern as PhoneInput's
+                          country picker -- not the full-screen PickerSheet. */}
+                      {showStateDropdown && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 8px)',
+                            left: 0,
+                            right: 0,
+                            maxHeight: '280px',
+                            zIndex: 1000,
+                            background: 'rgba(18,16,25,0.98)',
+                            backdropFilter: 'blur(24px)',
+                            WebkitBackdropFilter: 'blur(24px)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            borderRadius: '16px',
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.45)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            padding: '10px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              background: '#1A1724', border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '10px', height: '38px', padding: '0 10px', marginBottom: '8px', flexShrink: 0,
+                            }}
+                          >
+                            <span style={{ width: '13px', height: '13px', borderRadius: '99px', border: '2px solid rgba(237,234,245,0.5)', flexShrink: 0 }} />
+                            <input
+                              autoFocus
+                              value={stateDropdownQuery}
+                              onChange={(e) => setStateDropdownQuery(e.target.value)}
+                              placeholder={`Search ${signupSubdivisions.label.toLowerCase()}...`}
+                              style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '13px' }}
+                            />
+                          </div>
+                          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                            {(() => {
+                              const filteredStates = stateDropdownQuery.trim()
+                                ? signupSubdivisions.options.filter((n) => n.toLowerCase().includes(stateDropdownQuery.trim().toLowerCase()))
+                                : signupSubdivisions.options;
+                              if (filteredStates.length === 0) {
+                                return <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '12px', textAlign: 'center', margin: '16px 0' }}>No results found.</p>;
+                              }
+                              return filteredStates.map((name, i) => (
+                                <div
+                                  key={name}
+                                  onClick={() => {
+                                    setSignupState(name);
+                                    setShowStateDropdown(false);
+                                    setStateDropdownQuery('');
+                                  }}
+                                  style={{
+                                    padding: '11px 4px',
+                                    borderBottom: i < filteredStates.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    color: name === signupState ? '#fff' : '#EDEAF5',
+                                    fontWeight: name === signupState ? 700 : 500,
+                                  }}
+                                >
+                                  {name}
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <InputRow
@@ -2518,20 +2604,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         )}
       </div>
       
-      {showStateDropdown && signupSubdivisions && (
-        <PickerSheet
-          title={`Select ${signupSubdivisions.label}`}
-          searchPlaceholder={`Search ${signupSubdivisions.label.toLowerCase()}...`}
-          value={signupState}
-          options={signupSubdivisions.options.map((name) => ({ value: name, label: name }))}
-          onSelect={(v) => {
-            setSignupState(v);
-            setShowStateDropdown(false);
-          }}
-          onClose={() => setShowStateDropdown(false)}
-        />
-      )}
-
       {cropImageSrc && (
         <ImageCropperModal
           imageSrc={cropImageSrc}

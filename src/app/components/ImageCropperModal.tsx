@@ -146,11 +146,16 @@ export function ImageCropperModal({
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   // Start deliberately far BELOW any real fit value (never 1 = react-easy-
-  // crop's cover/cropped scale). Worst case this shows one frame more
-  // zoomed-out than the final fit — never a cropped one — until the exact
-  // fit is computed below from react-easy-crop's own measurements.
-  const [zoom, setZoom] = useState(0.05);
-  const [minZoom, setMinZoom] = useState(0.05);
+  // crop's cover/cropped scale) for the FLYER variant only — worst case
+  // this shows one frame more zoomed-out than the final fit until the
+  // exact fit is computed below from react-easy-crop's own measurements.
+  // The avatar variant has no such correction effect (it's gated to
+  // isFlyer further down), so starting it at the same 0.05 left the
+  // image permanently stuck at 5% scale -- a tiny postage-stamp image in
+  // the middle of the crop frame. Avatar's minZoom is a fixed 1 (see the
+  // Cropper prop below), so 1 is its correct starting value too.
+  const [zoom, setZoom] = useState(variant === 'flyer' ? 0.05 : 1);
+  const [minZoom, setMinZoom] = useState(variant === 'flyer' ? 0.05 : 1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<PixelCrop | null>(null);
   const [cropSize, setCropSize] = useState<{ width: number; height: number } | null>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
