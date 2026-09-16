@@ -89,6 +89,36 @@ const FIXTURES: Record<string, Row[]> = {
     { provider_id: 'sp-2', category: 'Beauty' },
   ],
   service_provider_ratings: [],
+  public_profiles: [
+    {
+      id: 'user-2', full_name: 'Priya Nair', username: 'priya.n', avatar_url: null, vc_badge: null,
+      role: 'attendee', last_active_at: new Date().toISOString(), bio: 'Lagos-based, loves live music.',
+      state: 'Lagos', is_verified: false, interests: [],
+    },
+    {
+      id: 'user-3', full_name: 'Tobi Oyelaran', username: 'tobi.o', avatar_url: null, vc_badge: null,
+      role: 'organizer', last_active_at: new Date(Date.now() - 3 * 3600000).toISOString(), bio: '',
+      state: 'Abuja', is_verified: true, interests: [],
+    },
+    {
+      id: 'user-4', full_name: 'Ada Chukwu', username: 'ada.chukwu', avatar_url: null, vc_badge: null,
+      role: 'attendee', last_active_at: new Date(Date.now() - 2 * 86400000).toISOString(), bio: '',
+      state: 'Lagos', is_verified: false, interests: [],
+    },
+  ],
+  direct_messages: [
+    {
+      id: 'dm-1', sender_id: 'user-2', recipient_id: 'org-1', body: 'Hey! Are you still doing the meet & greet after the show?',
+      created_at: new Date(Date.now() - 5 * 60000).toISOString(), read_at: null,
+    },
+    {
+      id: 'dm-2', sender_id: 'org-1', recipient_id: 'user-3', body: 'Thanks for confirming the booth setup time.',
+      created_at: new Date(Date.now() - 3 * 3600000).toISOString(), read_at: new Date().toISOString(),
+    },
+  ],
+  conversation_requests: [
+    { requester_id: 'user-4', recipient_id: 'org-1', status: 'pending', created_at: new Date(Date.now() - 86400000).toISOString() },
+  ],
 };
 
 function chainable(table: string): any {

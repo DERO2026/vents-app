@@ -350,7 +350,7 @@ export function ExploreScreen({
             { key: 'all' as const, label: 'All' },
             { key: 'unread' as const, label: 'Unread', count: unreadTotal },
             { key: 'organizers' as const, label: 'Organizers' },
-            { key: 'providers' as const, label: 'Service Providers' },
+            { key: 'providers' as const, label: 'Providers' },
             { key: 'attendees' as const, label: 'Attendees' },
           ]).map((f) => {
             const active = chatFilter === f.key;
@@ -493,15 +493,21 @@ export function ExploreScreen({
                             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0, flexWrap: 'wrap' }}>
                               <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
                               <span style={{ flexShrink: 0 }}><BadgeChip tier={profile?.vc_badge} /></span>
-                              {badge && (
-                                <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
-                              )}
                             </div>
                             <span style={{ color: ventsColors.ink3, fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
                           </div>
-                          <span style={{ color: isUnread ? ventsColors.ink1 : ventsColors.ink3, fontSize: '13px', fontWeight: isUnread ? 600 : 400, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
-                          </span>
+                          {/* Handoff CH1: role badge sits inline with the
+                              message preview, not the name -- the export
+                              treats it as context for the message, not a
+                              name suffix. */}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', minWidth: 0 }}>
+                            {badge && (
+                              <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
+                            )}
+                            <span style={{ color: isUnread ? ventsColors.ink1 : ventsColors.ink3, fontSize: '13px', fontWeight: isUnread ? 600 : 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>
+                              {lastMsg.sender_id === currentUserId ? 'You: ' : ''}{lastMsg.body}
+                            </span>
+                          </div>
                         </div>
                         {isUnread && (
                           <div style={{ minWidth: '18px', height: '18px', borderRadius: '50%', background: ventsColors.accent, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: '0 4px', boxSizing: 'border-box' }}>
