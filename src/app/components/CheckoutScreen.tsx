@@ -131,6 +131,17 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // state below, never trusted as anything authoritative -- the actual
   // balance check happens server-side, under a row lock, at confirm time.
   const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
+  // Handoff S1 ("Insufficient wallet balance -- shows the shortfall, not
+  // just the failure"): previously just disabled the Pay button with a
+  // static "Insufficient Wallet Balance" label and no way forward except
+  // manually re-picking Card above. This sheet shows the real shortfall
+  // and offers the one recovery action that's actually wired to something
+  // real (switching to the already-fully-supported Paystack path). It
+  // deliberately does NOT offer the design's "Add ₦X and pay" -- that
+  // would need a real inline top-up-then-resume-payment flow, which
+  // doesn't exist anywhere in this codebase, and building one here would
+  // be inventing new payment logic rather than fixing this screen.
+  const [showInsufficientSheet, setShowInsufficientSheet] = useState(false);
   const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
   const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
 
@@ -906,10 +917,10 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {(() => {
           const walletInsufficient = payMode === 'self' && paymentMethod === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
-          const disabled = paymentLoading || walletInsufficient;
+          const disabled = paymentLoading;
           return (
             <button
-              onClick={handlePay}
+              onClick={() => { if (walletInsufficient) { setShowInsufficientSheet(true); return; } handlePay(); }}
               disabled={disabled}
               style={{
                 width: '100%',
@@ -944,7 +955,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                     : payMode === 'someone-else'
                     ? `Send Payment Request (${formatPrice(total)})`
                     : walletInsufficient
-                    ? 'Insufficient Wallet Balance'
+                    ? 'Insufficient Balance — See Options'
                     : `Pay ${formatPrice(total)}`}
                 </>
               )}
@@ -959,6 +970,54 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         </p>
       </div>
 
+      {showInsufficientSheet && (
+        <div
+          onClick={() => setShowInsufficientSheet(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', zIndex: 400 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', background: ventsColors.bg, borderRadius: '22px 22px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '20px 20px calc(20px + env(safe-area-inset-bottom))' }}
+          >
+            <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', margin: '0 auto 20px' }} />
+            <h2 style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 8px' }}>
+              You're {formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))} short
+            </h2>
+            <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.55, margin: '0 0 20px' }}>
+              Your wallet has {formatPrice(Math.round((walletBalanceKobo || 0) / 100))} and this order is {formatPrice(total)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
+            </p>
+            <div style={{ padding: '16px', borderRadius: '16px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                <span style={{ color: ventsColors.ink2 }}>Order total</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                <span style={{ color: ventsColors.ink2 }}>Wallet balance</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round((walletBalanceKobo || 0) / 100))}</span>
+              </div>
+              <div style={{ height: '1px', background: 'rgba(255,255,255,0.09)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ color: ventsColors.pending, fontSize: '15px', fontWeight: 700 }}>Top up needed</span>
+                <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
+                style={{ width: '100%', height: '54px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+              >
+                Pay {formatPrice(total)} by card instead
+              </button>
+              <button
+                onClick={() => setShowInsufficientSheet(false)}
+                style={{ width: '100%', height: '46px', background: 'transparent', border: 'none', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
