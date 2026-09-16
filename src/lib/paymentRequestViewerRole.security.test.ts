@@ -63,4 +63,9 @@ describe('Redefines the real, existing get_payment_request_details RPC', () => {
   it('does not touch cancel_payment_request or any other function in this file', () => {
     expect(m0078).not.toMatch(/CREATE OR REPLACE FUNCTION public\.cancel_payment_request/);
   });
+
+  it('drops the old signature before redefining it (Postgres rejects a changed RETURNS TABLE column set otherwise) -- only for get_payment_request_details itself', () => {
+    expect(m0078).toMatch(/DROP FUNCTION IF EXISTS public\.get_payment_request_details\(text\);/);
+    expect(m0078).not.toMatch(/DROP FUNCTION IF EXISTS public\.cancel_payment_request/);
+  });
 });

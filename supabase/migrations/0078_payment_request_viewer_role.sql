@@ -26,6 +26,13 @@
 -- for payment request reminders exists anywhere in this schema, and
 -- inventing one is out of scope for what this migration does (fixing an
 -- existing detail RPC to tell the truth about who's asking).
+--
+-- Postgres refuses CREATE OR REPLACE when the new RETURNS TABLE column set
+-- differs from the existing function's (42P13: "cannot change return type
+-- of existing function ... Row type defined by OUT parameters is
+-- different"), so the old signature must be dropped first.
+DROP FUNCTION IF EXISTS public.get_payment_request_details(text);
+
 CREATE OR REPLACE FUNCTION public.get_payment_request_details(p_payment_ref text)
  RETURNS TABLE(
    event_title text,
