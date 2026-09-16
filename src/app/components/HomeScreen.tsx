@@ -1489,8 +1489,19 @@ export function HomeScreen({
                   </>
                 )}
 
-                {/* Event results */}
-                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
+                {/* Event results -- handoff B4: result-count header + active
+                    filter chip (real, from the same activeCategory/priceFilter
+                    state the main feed uses -- not a fabricated filter count),
+                    and a per-event availability badge computed from real
+                    ticketTypes[].available stock, not a placeholder. */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 10px' }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: 0 }}>
+                    {searchLoading ? 'EVENTS' : `${filteredEvents.length} RESULT${filteredEvents.length !== 1 ? 'S' : ''}`}
+                  </p>
+                  {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
+                    <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
+                  )}
+                </div>
                 {searchLoading ? (
                   <>
                     {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="row" />)}
@@ -1498,21 +1509,31 @@ export function HomeScreen({
                 ) : filteredEvents.length === 0 ? (
                   <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>No events found</p>
                 ) : (
-                  filteredEvents.slice(0, 8).map(ev => (
-                    <div
-                      key={ev.id}
-                      onClick={() => { setSearchOpen(false); onEventPress(ev); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                    >
-                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
-                        <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  filteredEvents.slice(0, 8).map(ev => {
+                    const totalAvailable = ev.ticketTypes?.reduce((sum, t) => sum + (t.available || 0), 0) ?? 0;
+                    const availability =
+                      totalAvailable <= 0 ? { label: 'SOLD OUT', color: '#F87171', bg: 'rgba(248,113,113,0.12)' }
+                      : totalAvailable < 20 ? { label: 'FEW LEFT', color: '#FBBF24', bg: 'rgba(251,191,36,0.12)' }
+                      : { label: 'AVAILABLE', color: '#4ADE80', bg: 'rgba(74,222,128,0.12)' };
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => { setSearchOpen(false); onEventPress(ev); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
+                          <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em', color: availability.color, background: availability.bg, border: `1px solid ${availability.color}33`, borderRadius: '999px', padding: '4px 8px' }}>
+                          {availability.label}
+                        </span>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </>
             )}
