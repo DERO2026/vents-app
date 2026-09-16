@@ -44,9 +44,12 @@ describe('Become an Organizer: capability state machine', () => {
     expect(profileScreenSrc).toMatch(/onClick=\{submitOrgRequest\}/);
   });
 
-  it('an approved organizer sees organizer access (Wallet), not the application CTA -- trusted immediately via isOrganizerEffective, not only the role-sync poll', () => {
+  it('an approved organizer sees organizer access, not the application CTA -- trusted immediately via isOrganizerEffective, not only the role-sync poll', () => {
     expect(profileScreenSrc).toMatch(/const isOrganizerEffective = isOrganizer \|\| orgRequestStatus === 'approved';/);
-    expect(profileScreenSrc).toMatch(/\{\(isOrganizerEffective \|\| isAdmin \|\| isSubAdmin\) && \(/);
+    // Wallet is a single universal menu entry now (not a second,
+    // organizer-only button gated on isOrganizerEffective) -- the earnings
+    // section itself is gated inside WalletScreen, not here.
+    expect(profileScreenSrc).toMatch(/screen: 'wallet',/);
   });
 
   it('being a Service Provider does not block or hide the Become-an-Organizer capability (independent capabilities)', () => {

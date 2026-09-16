@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Gift,
   Camera,
-  Wallet,
   WalletCards,
   Briefcase,
 } from 'lucide-react';
@@ -361,10 +360,14 @@ export function ProfileScreen({
   const menuItems = [
     {
       icon: WalletCards,
-      label: 'VENTS Wallet',
-      sublabel: 'Deposit & spend balance',
+      // One Wallet screen for everyone now (spendable balance +, for
+      // organizers/admins, earnings) -- routes to 'wallet', not the old
+      // standalone 'user-wallet' screen, so there's a single wallet entry
+      // point instead of two that showed overlapping information.
+      label: 'Wallet',
+      sublabel: 'Balance, deposits & statement',
       color: ventsColors.accent,
-      screen: 'user-wallet',
+      screen: 'wallet',
     },
     {
       icon: Bell,
@@ -716,26 +719,10 @@ export function ProfileScreen({
           </div>
         </div>
 
-        {/* Organizer Wallet */}
-        {(isOrganizerEffective || isAdmin || isSubAdmin) && (
-          <div className="px-4 mb-3">
-            <button
-              onClick={() => onNavigate('wallet')}
-              className="w-full flex items-center justify-center gap-2 p-4"
-              style={{
-                background: 'linear-gradient(135deg, rgba(79,70,229,0.15), rgba(168,85,247,0.1))',
-                backdropFilter: 'blur(20px) saturate(160%)',
-                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-                borderRadius: '14px',
-                border: '1px solid rgba(196,181,253,0.28)',
-                cursor: 'pointer',
-              }}
-            >
-              <Wallet size={16} color={ventsColors.accentSoft} />
-              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>My Wallet</span>
-            </button>
-          </div>
-        )}
+        {/* Wallet now lives only in the menu list above ("Wallet" ->
+            'wallet' for everyone) -- this used to be a second, organizer-
+            only entry point to the same screen; removed rather than kept
+            as a redundant shortcut. */}
 
         {/* Admin Dashboard (Admin/Sub-Admin/Root) */}
         {(isAdmin || isSubAdmin) && (

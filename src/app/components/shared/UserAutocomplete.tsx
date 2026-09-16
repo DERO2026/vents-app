@@ -107,26 +107,44 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
       const el = fieldRef.current;
       if (!el) return;
       const rect = el.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom - MARGIN;
+      // window.innerHeight is the LAYOUT viewport -- on mobile it doesn't
+      // shrink when the on-screen keyboard opens (that's visualViewport's
+      // job), and neither 'resize' nor 'scroll' reliably fires on window
+      // for a keyboard-only viewport change. Using visualViewport when
+      // available means spaceBelow/spaceAbove reflect what's actually
+      // still visible above the keyboard, not the full unobstructed page.
+      const vv = window.visualViewport;
+      const viewportHeight = vv ? vv.height + vv.offsetTop : window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom - MARGIN;
       const spaceAbove = rect.top - MARGIN;
 
       const openBelow = spaceBelow >= MIN_DROPDOWN_HEIGHT || spaceBelow >= spaceAbove;
       const available = openBelow ? spaceBelow : spaceAbove;
       const maxHeight = Math.max(MIN_DROPDOWN_HEIGHT, Math.min(MAX_DROPDOWN_HEIGHT, available));
+      const rawTop = openBelow ? rect.bottom + MARGIN : rect.top - MARGIN - maxHeight;
+      // Clamp so a stale/late measurement (e.g. mid keyboard-open
+      // animation) can never place the dropdown off past the top of the
+      // visible area -- worst case it sits flush against the edge instead
+      // of jumping to an unrelated part of the screen.
+      const top = Math.max(MARGIN, Math.min(rawTop, viewportHeight - maxHeight - MARGIN));
 
-      setDropdownRect({
-        top: openBelow ? rect.bottom + MARGIN : rect.top - MARGIN - maxHeight,
-        left: rect.left,
-        width: rect.width,
-        maxHeight,
-      });
+      setDropdownRect({ top, left: rect.left, width: rect.width, maxHeight });
     };
     measure();
+    // The keyboard's open/close animation keeps moving the field for a few
+    // hundred ms after focus -- one extra measure once it settles corrects
+    // a position computed mid-animation.
+    const settleTimer = setTimeout(measure, 350);
     window.addEventListener('scroll', measure, true);
     window.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('resize', measure);
+    window.visualViewport?.addEventListener('scroll', measure);
     return () => {
+      clearTimeout(settleTimer);
       window.removeEventListener('scroll', measure, true);
       window.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('resize', measure);
+      window.visualViewport?.removeEventListener('scroll', measure);
     };
   }, [showDropdown]);
 

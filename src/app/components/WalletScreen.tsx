@@ -8,16 +8,11 @@ import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { AmbientGlow } from './shared/AmbientGlow';
-import { fetchMyWalletBalanceKobo } from '../../lib/userWallet';
+import { fetchMyWalletBalanceKobo, fetchMyWalletTransactions, depositToWallet, UserWalletTransaction } from '../../lib/userWallet';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
   onBack: () => void;
-  // Opens UserWalletScreen (the customer-facing deposit/spend balance
-  // screen) -- "Add money" and "Statement" on the Spendable Balance card
-  // both go there rather than duplicating its Paystack deposit flow and
-  // transaction history here.
-  onOpenUserWallet?: () => void;
 }
 
 interface WalletData {
@@ -86,7 +81,19 @@ interface WithdrawalRequest {
 // and including both would show the same withdrawal twice.
 type FeedItem =
   | { kind: 'ledger'; sortKey: string; row: Transaction }
-  | { kind: 'withdrawal_request'; sortKey: string; row: WithdrawalRequest };
+  | { kind: 'withdrawal_request'; sortKey: string; row: WithdrawalRequest }
+  // The customer-facing Spendable Balance's own ledger (user_wallet_
+  // transactions, via userWallet.ts) -- merged into the SAME feed as
+  // organizer earnings so "one Wallet screen" also means one statement,
+  // not two disconnected transaction lists under one roof.
+  | { kind: 'spendable'; sortKey: string; row: UserWalletTransaction };
+
+const SPENDABLE_CREDIT_TYPES = new Set<UserWalletTransaction['type']>(['deposit', 'refund']);
+const SPENDABLE_TYPE_LABELS: Record<UserWalletTransaction['type'], string> = {
+  deposit: 'Wallet Top-up',
+  spend: 'Wallet Payment',
+  refund: 'Refund to Wallet',
+};
 
 // Money actually leaving the wallet vs. coming into/back into it — used to
 // pick the icon, color, and +/- sign for each transaction row.
@@ -150,13 +157,23 @@ async function authedFetch(path: string, body: any) {
   return json;
 }
 
-export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletScreenProps) {
+export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
+  // Earnings/withdrawal/bank-account sections only apply to accounts that
+  // can actually earn -- a plain attendee has no organizer_wallets row, so
+  // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
+  // can never use would be confusing, not just visually redundant.
+  const isEarner = currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin';
   const [wallet, setWallet] = useState<WalletData | null>(null);
   // Spendable Balance (the customer-facing VENTS Wallet deposit balance --
   // same source UserWalletScreen reads) shown as its own card above
   // Earnings, per the handoff: one Wallet screen, not two disconnected
   // ones for the same account.
   const [spendableKobo, setSpendableKobo] = useState<number | null>(null);
+  const [spendableTxns, setSpendableTxns] = useState<UserWalletTransaction[]>([]);
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositing, setDepositing] = useState(false);
+  const [depositError, setDepositError] = useState('');
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -293,14 +310,34 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
 
   useEffect(() => { load(); }, [currentUser?.id]);
 
-  useEffect(() => {
-    if (!currentUser?.id) { setSpendableKobo(null); return; }
-    let cancelled = false;
-    fetchMyWalletBalanceKobo()
-      .then((kobo) => { if (!cancelled) setSpendableKobo(kobo); })
-      .catch(() => { if (!cancelled) setSpendableKobo(null); });
-    return () => { cancelled = true; };
-  }, [currentUser?.id]);
+  const loadSpendable = () => {
+    if (!currentUser?.id) { setSpendableKobo(null); setSpendableTxns([]); return; }
+    fetchMyWalletBalanceKobo().then(setSpendableKobo).catch(() => setSpendableKobo(null));
+    fetchMyWalletTransactions().then(setSpendableTxns).catch(() => setSpendableTxns([]));
+  };
+  useEffect(loadSpendable, [currentUser?.id]);
+
+  const handleDeposit = async () => {
+    const naira = Number(depositAmount);
+    if (!naira || naira < 500) { setDepositError('Enter at least ₦500.'); return; }
+    if (depositing) return;
+    setDepositing(true);
+    setDepositError('');
+    try {
+      const result = await depositToWallet(currentUser?.email || '', Math.round(naira * 100));
+      if (result.status === 'success') {
+        setShowDeposit(false);
+        setDepositAmount('');
+        loadSpendable();
+      } else if (result.error !== 'cancelled') {
+        setDepositError(result.error || 'Deposit could not be completed.');
+      }
+    } catch (e: any) {
+      setDepositError(e?.message || 'Deposit could not be started.');
+    } finally {
+      setDepositing(false);
+    }
+  };
 
   // Ledger rows + open/failed/rejected withdrawal requests, merged into one
   // reverse-chronological feed. Loading more ledger pages naturally
@@ -308,6 +345,7 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
   const feed: FeedItem[] = [
     ...txns.map((row): FeedItem => ({ kind: 'ledger', sortKey: row.created_at, row })),
     ...withdrawalRequests.map((row): FeedItem => ({ kind: 'withdrawal_request', sortKey: row.updated_at || row.created_at, row })),
+    ...spendableTxns.map((row): FeedItem => ({ kind: 'spendable', sortKey: row.createdAt, row })),
   ].sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
 
   // Detect a real platform authenticator (Face ID / Touch ID / Android
@@ -598,82 +636,78 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
             </div>
           )}
           {/* Spendable Balance -- the customer-facing deposit/spend
-              balance (UserWalletScreen's own data), shown here so Wallet
-              is one screen instead of two disconnected ones for the same
-              account. Add money/Statement both open UserWalletScreen
-              itself rather than duplicating its deposit flow and
-              transaction history here. */}
-          {onOpenUserWallet && (
-            <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '22px 22px', marginBottom: '14px' }}>
-              <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
-                Spendable Balance
-              </p>
-              <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                {spendableKobo === null ? '—' : fmt(spendableKobo)}
-              </p>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              balance (same source as the old, now-retired standalone
+              UserWalletScreen). Add money deposits inline right here, and
+              its transactions are merged into the ONE feed below instead
+              of living behind a separate "Statement" screen -- one Wallet
+              means one balance-to-history relationship per section, not a
+              second screen that duplicates this one. */}
+          <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '22px 22px', marginBottom: '14px' }}>
+            <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
+              Spendable Balance
+            </p>
+            <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {spendableKobo === null ? '—' : fmt(spendableKobo)}
+            </p>
+            <button
+              onClick={() => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); }}
+              style={{ width: '100%', height: '44px', borderRadius: '13px', background: '#fff', border: 'none', color: '#2A1550', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Add money
+            </button>
+          </div>
+
+          {isEarner && (
+            <>
+              {/* Earnings -- withdrawable, organizer-only, never spendable
+                  in-app. Mockup shows Withdraw as one inline button on the
+                  right of this card, not a separate full-width action row
+                  below it. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '20px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: '0 0 6px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
+                    Earnings · Withdrawable
+                  </p>
+                  <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
+                  {pending > 0 && (
+                    <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
+                  )}
+                </div>
                 <button
-                  onClick={onOpenUserWallet}
-                  style={{ flex: 1, height: '44px', borderRadius: '13px', background: '#fff', border: 'none', color: '#2A1550', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+                  onClick={() => setShowWithdraw(true)}
+                  style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
+                  disabled={balance === 0 || emailVerified === false}
+                  title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
                 >
-                  Add money
-                </button>
-                <button
-                  onClick={onOpenUserWallet}
-                  style={{ flex: 1, height: '44px', borderRadius: '13px', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
-                >
-                  Statement
+                  <ArrowDownCircle size={16} color={ventsColors.white} />
+                  <span style={{ color: ventsColors.white, fontWeight: 700, fontSize: '14px' }}>Withdraw</span>
                 </button>
               </div>
-            </div>
+
+              {/* Total earned + Add Bank Account -- real functionality that
+                  isn't part of the mockup's crop, kept reachable as a small
+                  secondary link instead of a competing full-width button. */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '0 2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={14} color={ventsColors.ink3} />
+                  <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+                </div>
+                <button
+                  onClick={openAddBank}
+                  disabled={emailVerified === false || bankAccounts.length >= 3}
+                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+                  title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
+                >
+                  <Plus size={13} color={ventsColors.accentSoft} />
+                  <span style={{ color: ventsColors.accentSoft, fontWeight: 600, fontSize: '12px' }}>Add Bank</span>
+                </button>
+              </div>
+            </>
           )}
 
-          {/* Earnings -- withdrawable, organizer-only, never spendable in-app.
-              Mockup shows Withdraw as one inline button on the right of
-              this card, not a separate full-width action row below it. */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '20px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <p style={{ margin: '0 0 6px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
-                Earnings · Withdrawable
-              </p>
-              <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
-              <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
-              {pending > 0 && (
-                <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
-              )}
-            </div>
-            <button
-              onClick={() => setShowWithdraw(true)}
-              style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
-              disabled={balance === 0 || emailVerified === false}
-              title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
-            >
-              <ArrowDownCircle size={16} color={ventsColors.white} />
-              <span style={{ color: ventsColors.white, fontWeight: 700, fontSize: '14px' }}>Withdraw</span>
-            </button>
-          </div>
-
-          {/* Total earned + Add Bank Account -- real functionality that
-              isn't part of the mockup's crop, kept reachable as a small
-              secondary link instead of a competing full-width button. */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '0 2px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <TrendingUp size={14} color={ventsColors.ink3} />
-              <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
-            </div>
-            <button
-              onClick={openAddBank}
-              disabled={emailVerified === false || bankAccounts.length >= 3}
-              style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
-              title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
-            >
-              <Plus size={13} color={ventsColors.accentSoft} />
-              <span style={{ color: ventsColors.accentSoft, fontWeight: 600, fontSize: '12px' }}>Add Bank</span>
-            </button>
-          </div>
-
           {/* Payout bank accounts (multiple; one Default) */}
-          {bankAccounts.length > 0 && (
+          {isEarner && bankAccounts.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
               <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -747,6 +781,28 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
                         </div>
                         <span style={{ color: isCredit ? ventsColors.success : ventsColors.error, fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
                           {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
+                        </span>
+                      </button>
+                    );
+                  }
+                  if (item.kind === 'spendable') {
+                    const t = item.row;
+                    const isCredit = SPENDABLE_CREDIT_TYPES.has(t.type);
+                    return (
+                      <button
+                        key={`sp-${t.id}`}
+                        onClick={() => setSelectedItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || SPENDABLE_TYPE_LABELS[t.type]}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(t.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        </div>
+                        <span style={{ color: isCredit ? ventsColors.success : ventsColors.error, fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                          {isCredit ? '+' : '-'}{fmt(t.amountKobo)}
                         </span>
                       </button>
                     );
@@ -835,6 +891,37 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
               <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deposit modal -- adds to the Spendable Balance, inline (no
+          navigation to a separate screen). Mirrors the Withdraw modal's
+          shape/pattern above. */}
+      {showDeposit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Add Money</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Current balance: {spendableKobo === null ? '—' : fmt(spendableKobo)}</p>
+            <input
+              type="number"
+              placeholder="Amount in ₦ (min. 500)"
+              value={depositAmount}
+              onChange={e => setDepositAmount(e.target.value)}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+            />
+            {depositError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{depositError}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => { setShowDeposit(false); setDepositError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleDeposit} disabled={depositing} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: depositing ? 'not-allowed' : 'pointer', opacity: depositing ? 0.6 : 1 }}>
+                {depositing ? 'Processing…' : 'Add Money'}
               </button>
             </div>
           </div>
@@ -1089,6 +1176,21 @@ function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => v
         { label: 'Date & time', value: fmtDateTime(t.created_at) },
       ];
     }
+  } else if (item.kind === 'spendable') {
+    const t = item.row;
+    isMoneyIn = SPENDABLE_CREDIT_TYPES.has(t.type);
+    amountLabel = fmt(t.amountKobo);
+    title = SPENDABLE_TYPE_LABELS[t.type];
+    statusLabel = 'Completed';
+    dateLabel = fmtDateTime(t.createdAt);
+    icon = <Wallet size={22} color={isMoneyIn ? ventsColors.success : ventsColors.error} />;
+    rows = [
+      { label: 'Amount', value: fmt(t.amountKobo) },
+      { label: 'Description', value: na(t.description) },
+      ...(t.metadata?.paystack_reference ? [{ label: 'Paystack reference', value: String(t.metadata.paystack_reference) }] : []),
+      { label: 'Status', value: 'Completed', valueColor: STATUS_COLORS.completed },
+      { label: 'Date & time', value: fmtDateTime(t.createdAt) },
+    ];
   } else {
     const wr = item.row;
     const isReversed = wr.status === 'failed' || wr.status === 'rejected';

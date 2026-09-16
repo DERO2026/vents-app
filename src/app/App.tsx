@@ -3369,9 +3369,10 @@ export default function App() {
             />
           )}
 
-          {/* ── WALLET (organizer/provider earnings) ── */}
+          {/* ── WALLET (spendable balance + organizer/provider earnings,
+              merged into one screen and one transaction feed) ── */}
           {screen === 'wallet' && (
-            <WalletScreen currentUser={currentUser} onBack={goBack} onOpenUserWallet={() => navigateTo('user-wallet')} />
+            <WalletScreen currentUser={currentUser} onBack={goBack} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}
@@ -3379,7 +3380,7 @@ export default function App() {
             <TicketRefundScreen
               ticketId={refundTicketId}
               onBack={goBack}
-              onViewWallet={() => navigateTo('user-wallet')}
+              onViewWallet={() => navigateTo('wallet')}
             />
           )}
 
