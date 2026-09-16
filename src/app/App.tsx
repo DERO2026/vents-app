@@ -3033,6 +3033,7 @@ export default function App() {
                 refreshSignal={myTicketsRefreshSignal}
                 focusTransfersSignal={myTicketsFocusTransfersSignal}
                 focusTicket={myTicketsFocusTicket}
+                onExploreEvents={() => { setScreen('home'); setActiveTab('home'); }}
               />
             </div>
           )}

@@ -38,6 +38,11 @@ interface MyTicketsScreenProps {
   // `tickets` prop below and opened via the same onViewTicket every ticket
   // card already calls. nonce forces a retrigger even for the same ticket.
   focusTicket?: { ticketId: string; nonce: number } | null;
+  // Handoff S3 ("empty state with a way out"): the never-booked-anything
+  // empty state previously had no CTA at all, just text. Optional so an
+  // older caller that doesn't pass it just keeps today's text-only state
+  // instead of a broken button.
+  onExploreEvents?: () => void;
 }
 
 // Short, consistent date/time format for transfer cards -- expiry, sent-at,
@@ -81,7 +86,7 @@ function TransferEmptyState({ text }: { text: string }) {
   );
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal, focusTicket }: MyTicketsScreenProps) {
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal, focusTicket, onExploreEvents }: MyTicketsScreenProps) {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
@@ -848,8 +853,13 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
               )}
               <button
                 onClick={() => {
-                  // Signal parent to switch to home tab
-                  onBack();
+                  // Was calling onBack() -- MyTicketsScreen is a bottom-tab
+                  // root screen with nothing to pop back to, so this button's
+                  // own "switch to home tab" comment never actually
+                  // happened. onExploreEvents is the real switch-to-Home
+                  // callback (falls back to onBack only if a caller hasn't
+                  // been updated to pass it).
+                  (onExploreEvents || onBack)();
                 }}
                 style={{
                   marginTop: activeTab === 'upcoming' ? '12px' : '0',
