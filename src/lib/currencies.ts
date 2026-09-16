@@ -226,3 +226,13 @@ export function currencyByCode(code?: string | null): CurrencyOption | undefined
   if (!code) return undefined;
   return CURRENCIES.find((c) => c.code === code.toUpperCase());
 }
+
+// Shared money formatter for Services (a real symbol, e.g. ₦85,000, sitting
+// flush against the number -- matching every exported Services mockup --
+// falling back to "CODE 85,000" with a space only for a currency with no
+// common symbol on file, rather than always showing a bare ISO code).
+export function formatServiceAmount(amount: number, code?: string | null): string {
+  const symbol = currencyByCode(code)?.symbol;
+  const formatted = amount.toLocaleString('en-US');
+  return symbol ? `${symbol}${formatted}` : `${code || ''} ${formatted}`.trim();
+}

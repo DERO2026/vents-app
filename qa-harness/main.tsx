@@ -121,6 +121,9 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'service-bookings': () => (
     <ServiceBookingsScreen mode="customer" onBack={() => {}} />
   ),
+  'provider-bookings': () => (
+    <ServiceBookingsScreen mode="provider" providerId="prov-1" onBack={() => {}} />
+  ),
   'my-tickets': () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };
     const event = mapDbEventToFrontend(dbEvent);

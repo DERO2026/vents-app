@@ -24,12 +24,21 @@
 
 QA harness additions made to enable this batch (routes only, no behavior change to real app code): `auth-verify-otp` and `auth-forgot-otp` harness routes using the AuthScreen's own existing `pendingVerificationEmail`/`pendingResetEmail` props — both are real props already used by production deep-link flows, not new test-only code paths.
 
-### Batch 2 — SERVICES + BOOKING
-- SV2 ServiceCategoryScreen — confirmed renders (screenshot taken), never compared to export markup in detail.
-- SV3 ServiceProviderProfileScreen — real code has hero image + Services list + Book&Pay CTA (richer than export), but organizes content as one continuous scroll instead of the export's Services/About/Reviews tab strip. Real structural deviation, not yet fixed.
-- SV4 BookingSheet — never independently rendered/verified this session (booking flow lives inline in SV3, not a separate sheet route in the harness).
-- SV5 ServiceBookingsScreen, PB1/PB2 provider bookings — screenshotted earlier in the broader project, not re-verified this pass.
-- PMG1/PV1-3 provider setup/management/verification — confirmed via screenshot this session but not deep-compared line-by-line to export copy.
+### Batch 2 — SERVICES + BOOKING — ✅ DONE (real screenshot comparison against SV1-SV5/PB1/PMG1/PV3)
+- SV1 ServicesHomeScreen: re-confirmed MATCH (category grid, provider carousel).
+- SV2 ServiceCategoryScreen: rendered with real fixture data (previously showed a false "0 providers" empty state because the harness's `service_provider_categories` fixture table was empty, not because of a UI bug) — now shows the real provider card matching the export's layout.
+- SV3 ServiceProviderProfileScreen: rendered and compared against the export in detail.
+  - **Fixed a real bug**: prices everywhere on this screen (starting price, each service's price, cart subtotal, Book & Pay button) showed a bare ISO code ("NGN 85,000") instead of the real currency symbol the export uses everywhere ("₦85,000"). Added a shared `formatServiceAmount()` helper (`src/lib/currencies.ts`) and used it here.
+  - **Fixed a real gap**: the export's "No reviews yet for this provider — ratings only appear once real bookings are reviewed" honest-empty banner was completely missing, and worse, this screen never even fetched the real `service_provider_ratings` aggregate that exists for exactly this purpose (`withProviderRatings`, already used by the provider list view but never wired into this profile view). Wired it in: shows the real ★ rating/review count when reviews exist, the honest empty-state banner when they don't — never fabricated.
+  - Confirmed real structural deviation, left as-is (not fabricated, not fixed): the export organizes content into Services/About/Reviews tabs; the real screen shows it all in one continuous scroll with a richer multi-service booking cart (checkboxes, quantity, scheduling, wallet/Paystack toggle) that the export's simpler single-tap "Book this provider" doesn't have. This is real, working, more capable functionality — restructuring it into three tabs would be presentation-only churn on business logic that works, not a "fix."
+- SV4 BookingSheet: confirmed the export's booking flow (service selection → schedule → pay) lives inline in SV3 above, not a separate sheet — same functional coverage via a different, real interaction pattern.
+- SV5 ServiceBookingsScreen / PB1 provider bookings: rendered both customer and provider modes.
+  - **Fixed the same currency-symbol bug** here (subtotal, fee, item lines, total).
+  - **Fixed a real copy bug**: a refunded booking showed "Total due" (customer) / "You will earn" (provider) instead of "Refunded" — fixed to show "Refunded" whenever `paymentStatus === 'refunded'`, regardless of viewer mode.
+- PMG1 ServiceProviderSetupScreen, PV3 ServiceProviderVerificationScreen: re-confirmed MATCH.
+- `ServiceProviderCard.tsx` (used on Home's carousel and the category list): same currency-symbol bug found and fixed here too, since it's shared across B1/SV1/SV2.
+
+QA harness additions: `provider-bookings` route (provider-mode `ServiceBookingsScreen`), plus real fixture rows for `provider_services`, `service_provider_categories`, `service_provider_ratings`, and `service_bookings` (with embedded `service_providers`/`service_booking_items`) — needed to actually see these screens' populated states instead of their (also-correct) empty states.
 
 ### Batch 3 — CHAT + SEARCH
 - CH1 ExploreScreen (Chats tab), CH2 Message Requests overlay, PS1 People/Messages search split — CH1 confirmed rendering; CH2 and PS1 never independently screenshotted/compared this session (PS1's underlying logic was read and looks correct — search-active state shows a labeled PEOPLE section above MESSAGES — but never seen rendered with an actual active search query).

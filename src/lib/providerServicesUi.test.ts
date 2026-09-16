@@ -41,8 +41,9 @@ describe('public provider profile: shows real priced services, not just tag chip
     expect(publicProfileSrc).toMatch(/fetchActiveServicesForProvider\(providerId\)/);
   });
 
-  it('renders each service with its own price and currency', () => {
-    expect(publicProfileSrc).toMatch(/\{svc\.currency\} \{svc\.price\.toLocaleString\('en-US'\)\}/);
+  it('renders each service with its own price and currency, as a real symbol not a bare ISO code (handoff SV3)', () => {
+    expect(publicProfileSrc).toMatch(/\{formatServiceAmount\(svc\.price, svc\.currency\)\}/);
+    expect(publicProfileSrc).toMatch(/import \{ formatServiceAmount \} from '\.\.\/\.\.\/lib\/currencies';/);
   });
 
   it('still uses VENTS Chat as the contact CTA -- no phone/WhatsApp primary action added', () => {

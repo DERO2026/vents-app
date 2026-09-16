@@ -2,12 +2,13 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check } from 'lucide-react';
 import { ServiceProvider, ProviderService } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
-import { fetchServiceProviderById } from '../../lib/serviceProviders';
+import { fetchServiceProviderById, withProviderRatings } from '../../lib/serviceProviders';
 import { fetchServiceProviderCategories } from '../../lib/serviceProviderCategories';
 import { fetchActiveServicesForProvider } from '../../lib/providerServices';
 import { createServiceBooking, verifyServiceBookingPayment, logServiceMarketplaceEvent } from '../../lib/serviceBookings';
 import { openPaystackPopup } from '../../lib/paystack';
 import { fetchMyWalletBalanceKobo, payServiceBookingWithWallet } from '../../lib/userWallet';
+import { formatServiceAmount } from '../../lib/currencies';
 
 interface ServiceProviderProfileScreenProps {
   providerId: string;
@@ -93,7 +94,11 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
     setProvider(undefined);
     setNotFound(false);
     fetchServiceProviderById(providerId)
-      .then((p) => { if (!cancelled) { setProvider(p); if (!p) setNotFound(true); } })
+      .then(async (p) => {
+        if (cancelled || !p) { if (!cancelled) { setProvider(p); setNotFound(!p); } return; }
+        const [rated] = await withProviderRatings([p]);
+        if (!cancelled) setProvider(rated);
+      })
       .catch(() => { if (!cancelled) { setProvider(null); setNotFound(true); } });
     return () => { cancelled = true; };
   }, [providerId, initialProvider]);
@@ -245,7 +250,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
 
   const accent = categoryAccents[provider.category] || servicesColors.accentPurple;
   const priceLabel = provider.startingPrice != null
-    ? `${provider.startingPriceCurrency || ''} ${provider.startingPrice.toLocaleString('en-US')}`.trim()
+    ? formatServiceAmount(provider.startingPrice, provider.startingPriceCurrency)
     : '—';
   const badgeLabels = [
     provider.offersHomeService && 'Home',
@@ -300,6 +305,26 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           </div>
         )}
 
+        {/* Handoff SV3: an honest "no reviews yet" banner instead of a
+            fabricated rating. provider.reviewCount comes from the real
+            service_provider_ratings aggregate (0057) via withProviderRatings
+            -- when it's actually 0/unset, say so plainly rather than
+            showing a 0-star widget; when real reviews exist, show the real
+            number instead of hiding it behind a stale "no reviews" banner. */}
+        {provider.reviewCount ? (
+          <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ color: '#FCD34D', fontSize: '14px', fontWeight: 700 }}>★ {provider.avgRating?.toFixed(1) ?? '—'}</span>
+            <span style={{ color: servicesColors.textSecondary, fontSize: '13px' }}>({provider.reviewCount} review{provider.reviewCount === 1 ? '' : 's'})</span>
+          </div>
+        ) : (
+          <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '14px', borderRadius: servicesRadii.lg, background: 'rgba(255,255,255,0.04)', border: `1px solid ${servicesColors.border}` }}>
+            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(237,234,245,0.16)', color: '#EDEAF5', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>i</span>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
+              No reviews yet for this provider — ratings only appear once real bookings are reviewed.
+            </p>
+          </div>
+        )}
+
         {services && services.length > 0 && (
           <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
             <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Services</p>
@@ -341,7 +366,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                       </div>
                     </div>
                     <span style={{ color: accent, fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {svc.currency} {svc.price.toLocaleString('en-US')}
+                      {formatServiceAmount(svc.price, svc.currency)}
                     </span>
                   </div>
                 );
@@ -399,7 +424,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
               {selectedServices.length} selected
             </span>
             <span style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700 }}>
-              {cartCurrency} {subtotal.toLocaleString('en-US')}
+              {formatServiceAmount(subtotal, cartCurrency)}
             </span>
           </div>
         )}
@@ -489,7 +514,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 ? 'Processing…'
                 : walletInsufficient
                 ? 'Insufficient Wallet Balance'
-                : `Book & Pay ${cartCurrency || ''} ${subtotal.toLocaleString('en-US')}`}
+                : `Book & Pay ${formatServiceAmount(subtotal, cartCurrency)}`}
             </button>
           );
         })()}

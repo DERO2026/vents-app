@@ -1,12 +1,11 @@
 import { MapPin, Home, Truck, Zap, ChevronRight } from 'lucide-react';
 import { ServiceProvider } from './types';
 import { servicesColors, servicesRadii, categoryAccents } from '../../lib/servicesDesignTokens';
+import { formatServiceAmount } from '../../lib/currencies';
 
 function formatStartingPrice(provider: ServiceProvider): string | null {
   if (provider.startingPrice == null) return null;
-  const amount = provider.startingPrice.toLocaleString('en-US');
-  const currency = provider.startingPriceCurrency || '';
-  return currency ? `From ${currency} ${amount}` : `From ${amount}`;
+  return `From ${formatServiceAmount(provider.startingPrice, provider.startingPriceCurrency)}`;
 }
 
 function BadgeChips({ provider, compact }: { provider: ServiceProvider; compact?: boolean }) {

@@ -44,19 +44,51 @@ const FIXTURES: Record<string, Row[]> = {
       events: { title: 'Lagos Music Festival', event_date: new Date(Date.now() + 7 * 86400000).toISOString(), location: 'Eko Atlantic, Lagos' },
     },
   ],
-  service_bookings: [],
+  service_bookings: [
+    {
+      id: 'bk-1', provider_id: 'prov-1', customer_id: 'org-1', status: 'cancelled', payment_status: 'refunded',
+      scheduled_date: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), scheduled_time: '14:00',
+      location: 'Victoria Island, Lagos', customer_notes: null, currency: 'NGN',
+      subtotal_kobo: 8500000, fee_kobo: 425000, total_kobo: 8925000, created_at: new Date().toISOString(),
+      service_providers: { business_name: 'Ada Photography' },
+      service_booking_items: [{ id: 'bki-1', service_name: 'Full studio session', unit_price_kobo: 8500000, quantity: 1, line_total_kobo: 8500000 }],
+    },
+  ],
   service_providers: [
     {
       id: 'prov-1', user_id: 'org-1', business_name: 'Ada Photography', category: 'Photography',
-      state: 'Lagos', country: 'NG', status: 'approved', starting_price: 85000, cover_image_url: null,
-      rating: 0, review_count: 0,
+      location: 'Victoria Island, Lagos', latitude: null, longitude: null, country: 'NG',
+      description: 'Full studio and event photography with same-day previews. Over 200 shoots across Lagos.',
+      photo_urls: [], starting_price: 85000, starting_price_currency: 'NGN',
+      services_offered: ['Portraits', 'Events', 'Weddings'],
+      offers_home_service: true, offers_delivery: false, offers_same_day: true,
+      status: 'approved', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     },
     {
       id: 'sp-2', user_id: 'org-1', business_name: 'Glow Beauty Studio', category: 'Beauty',
-      state: 'Abuja', country: 'NG', status: 'approved', starting_price: 25000, cover_image_url: null,
-      rating: 0, review_count: 0,
+      location: 'Wuse, Abuja', latitude: null, longitude: null, country: 'NG',
+      description: null, photo_urls: [], starting_price: 25000, starting_price_currency: 'NGN',
+      services_offered: [], offers_home_service: false, offers_delivery: true, offers_same_day: false,
+      status: 'approved', created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
     },
   ],
+  provider_services: [
+    {
+      id: 'psv-1', provider_id: 'prov-1', name: 'Full studio session', description: '2 hours · outdoor or studio',
+      price: 85000, currency: 'NGN', duration_minutes: 120, category: 'Photography', is_active: true,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    },
+    {
+      id: 'psv-2', provider_id: 'prov-1', name: 'Event coverage', description: 'Full day · edited gallery',
+      price: 220000, currency: 'NGN', duration_minutes: 480, category: 'Photography', is_active: true,
+      created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    },
+  ],
+  service_provider_categories: [
+    { provider_id: 'prov-1', category: 'Photography' },
+    { provider_id: 'sp-2', category: 'Beauty' },
+  ],
+  service_provider_ratings: [],
 };
 
 function chainable(table: string): any {

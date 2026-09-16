@@ -4,6 +4,7 @@ import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servic
 import { fetchMyServiceBookings, fetchProviderServiceBookings, ServiceBookingRow } from '../../lib/serviceBookings';
 import { getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
+import { formatServiceAmount } from '../../lib/currencies';
 
 // Booking history/receipt screen for the Services marketplace
 // (0054_service_bookings_marketplace.sql). Two real, RLS-scoped data
@@ -176,7 +177,7 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                     {b.items.map((item) => (
                       <div key={item.id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12.5px' }}>
                         <span style={{ color: '#C9C9D9' }}>{item.quantity} &times; {item.serviceName}</span>
-                        <span style={{ color: servicesColors.textSecondary }}>{b.currency} {item.lineTotal.toLocaleString('en-US')}</span>
+                        <span style={{ color: servicesColors.textSecondary }}>{formatServiceAmount(item.lineTotal, b.currency)}</span>
                       </div>
                     ))}
                   </div>
@@ -207,20 +208,22 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', paddingTop: '10px', borderTop: `1px dashed ${servicesColors.border}` }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px' }}>
                       <span style={{ color: servicesColors.textTertiary }}>Subtotal</span>
-                      <span style={{ color: servicesColors.textSecondary }}>{b.currency} {b.subtotal.toLocaleString('en-US')}</span>
+                      <span style={{ color: servicesColors.textSecondary }}>{formatServiceAmount(b.subtotal, b.currency)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11.5px' }}>
                       <span style={{ color: servicesColors.textTertiary }}>VENTS fee</span>
-                      <span style={{ color: servicesColors.textSecondary }}>{b.currency} {b.fee.toLocaleString('en-US')}</span>
+                      <span style={{ color: servicesColors.textSecondary }}>{formatServiceAmount(b.fee, b.currency)}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginTop: '2px' }}>
                       <span style={{ color: servicesColors.textPrimary, fontWeight: 700 }}>
-                        {mode === 'provider'
+                        {b.paymentStatus === 'refunded'
+                          ? 'Refunded'
+                          : mode === 'provider'
                           ? (b.paymentStatus === 'paid' ? 'You earned' : 'You will earn')
                           : (b.paymentStatus === 'paid' ? 'Total paid' : 'Total due')}
                       </span>
                       <span style={{ color: servicesColors.textPrimary, fontWeight: 700 }}>
-                        {b.currency} {(mode === 'provider' ? b.subtotal : b.total).toLocaleString('en-US')}
+                        {formatServiceAmount(mode === 'provider' ? b.subtotal : b.total, b.currency)}
                       </span>
                     </div>
                   </div>
