@@ -75,7 +75,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onEventPress={() => {}}
       savedEvents={[]}
       onToggleSave={() => {}}
-      dbEvents={FIXTURE_EVENTS}
+      dbEvents={FIXTURE_EVENTS.map((e) => mapDbEventToFrontend({ ...e, ticket_types: [{ id: 't1', name: 'Regular', price: e.price, description: 'General Admission', available: 500 }] }))}
       loading={false}
       fetchEvents={() => {}}
       currentUser={FIXTURE_USER}
