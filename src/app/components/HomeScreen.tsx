@@ -1560,18 +1560,36 @@ export function HomeScreen({
           }}
         >
           <VentsLogo size={26} />
+          {/* Compact "Search" pill per the export (was a full-width input
+              showing its own placeholder text -- this still opens the same
+              real search overlay via setSearchOpen). */}
           <button
             onClick={() => setSearchOpen(true)}
             style={{
-              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px',
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
               border: '1px solid rgba(255,255,255,0.12)',
               borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
             }}
           >
             <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
-            <span style={{ color: ventsColors.ink3, fontSize: '13px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Search events, services…</span>
+            <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>Search</span>
           </button>
+          {/* Services entry point -- the export's Home has no Services
+              affordance at all, but removing this would make the entire
+              Services vertical (ServicesHomeScreen and everything under
+              it) unreachable from anywhere in the app; this is the only
+              call site for onServicesPress. Kept as a single header icon
+              instead of the old two-card Events/Services row below. */}
+          {onServicesPress && (
+            <button
+              onClick={onServicesPress}
+              aria-label="Services"
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <Store size={16} color={ventsColors.ink2} />
+            </button>
+          )}
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
@@ -1673,36 +1691,6 @@ export function HomeScreen({
           as the first thing in the normal scroll flow, so it moves with the
           rest of Home instead of staying pinned in the fixed hero above. */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
-
-        {/* Events / Services quick-switch -- both verticals as equal, premium
-            entry points right under the hero header. Events is always the
-            "active" surface here (this is the Events home), Services hands
-            off to the existing ServicesHomeScreen via onServicesPress. */}
-        <div style={{ display: 'flex', gap: '10px', padding: '14px 16px 16px' }}>
-          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: 'linear-gradient(135deg, rgba(123,47,190,0.28), rgba(79,70,229,0.24))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '12px 14px' }}>
-            <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <CalendarDays size={17} color="#fff" />
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <p style={{ margin: 0, color: '#fff', fontSize: '13px', fontWeight: 800 }}>Events</p>
-              <p style={{ margin: 0, color: 'rgba(255,255,255,0.65)', fontSize: '10px', fontWeight: 500 }}>Concerts, parties & more</p>
-            </div>
-          </div>
-          {onServicesPress && (
-            <button
-              onClick={onServicesPress}
-              style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '12px 14px', cursor: 'pointer', textAlign: 'left' }}
-            >
-              <div style={{ width: '34px', height: '34px', borderRadius: '10px', background: 'rgba(34,211,238,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Store size={17} color="#22D3EE" />
-              </div>
-              <div style={{ minWidth: 0 }}>
-                <p style={{ margin: 0, color: ventsColors.ink1, fontSize: '13px', fontWeight: 800 }}>Services</p>
-                <p style={{ margin: 0, color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>Beauty, home, photo & more</p>
-              </div>
-            </button>
-          )}
-        </div>
 
         {/* Combined active-filter summary -- one place to see (and clear)
             category/state/price filters narrowing the feed. Country is
@@ -1823,7 +1811,7 @@ export function HomeScreen({
                   <div className="mb-6" ref={nearbyProvidersRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
                       <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                        {homeGeo.status === 'granted' ? 'Providers Near You' : 'Top Service Providers'}
+                        {homeGeo.status === 'granted' ? 'Providers Near You' : 'Book a Service'}
                       </h3>
                       {onServicesPress && (
                         <button onClick={onServicesPress} style={{ background: 'none', border: 'none', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
