@@ -628,43 +628,47 @@ export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletSc
             </div>
           )}
 
-          {/* Earnings -- withdrawable, organizer-only, never spendable in-app. */}
-          <div style={{ background: ventsColors.surface, borderRadius: '20px', padding: '20px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.09)' }}>
-            <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
-              Earnings · Withdrawable
-            </p>
-            <p style={{ fontSize: `clamp(20px, ${Math.max(20, 32 - Math.max(0, fmt(balance).length - 10) * 2)}px, 32px)`, fontWeight: 800, margin: '0 0 6px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
-            <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
-              <TrendingUp size={14} color={ventsColors.ink3} />
-              <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+          {/* Earnings -- withdrawable, organizer-only, never spendable in-app.
+              Mockup shows Withdraw as one inline button on the right of
+              this card, not a separate full-width action row below it. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '20px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <p style={{ margin: '0 0 6px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
+                Earnings · Withdrawable
+              </p>
+              <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
+              <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
+              {pending > 0 && (
+                <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
+              )}
             </div>
-            {pending > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</span>
-              </div>
-            )}
-          </div>
-
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
             <button
               onClick={() => setShowWithdraw(true)}
-              style={{ flex: 1, background: balance > 0 && emailVerified !== false ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '14px', padding: '14px', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+              style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
               disabled={balance === 0 || emailVerified === false}
               title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
             >
-              <ArrowDownCircle size={18} color={balance > 0 && emailVerified !== false ? ventsColors.accent : '#555'} />
-              <span style={{ color: balance > 0 && emailVerified !== false ? ventsColors.accent : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
+              <ArrowDownCircle size={16} color={ventsColors.white} />
+              <span style={{ color: ventsColors.white, fontWeight: 700, fontSize: '14px' }}>Withdraw</span>
             </button>
+          </div>
+
+          {/* Total earned + Add Bank Account -- real functionality that
+              isn't part of the mockup's crop, kept reachable as a small
+              secondary link instead of a competing full-width button. */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '0 2px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <TrendingUp size={14} color={ventsColors.ink3} />
+              <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+            </div>
             <button
               onClick={openAddBank}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
               disabled={emailVerified === false || bankAccounts.length >= 3}
+              style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
               title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
             >
-              <Plus size={18} color={ventsColors.ink2} />
-              <span style={{ color: ventsColors.ink2, fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
+              <Plus size={13} color={ventsColors.accentSoft} />
+              <span style={{ color: ventsColors.accentSoft, fontWeight: 600, fontSize: '12px' }}>Add Bank</span>
             </button>
           </div>
 
