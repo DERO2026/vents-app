@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { ArrowLeft, Wallet, Plus, ArrowDownLeft, ArrowUpRight, RotateCcw, Loader, ChevronRight, Ticket, Sparkles, CreditCard } from 'lucide-react';
+import { ArrowLeft, Wallet, Plus, ArrowDownLeft, ArrowUpRight, RotateCcw, Loader, ChevronRight, Ticket, Sparkles, CreditCard, CheckCircle2 } from 'lucide-react';
 import { fetchMyWalletBalanceKobo, fetchMyWalletTransactions, depositToWallet, findTicketIdForPaymentRef, UserWalletTransaction } from '../../lib/userWallet';
 import { classifyWalletTransaction } from '../../lib/walletTransactionClassifier';
 import { haptics } from '../../lib/haptics';
@@ -72,6 +72,11 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
   const [depositAmount, setDepositAmount] = useState('');
   const [depositing, setDepositing] = useState(false);
   const [depositError, setDepositError] = useState('');
+  // Handoff F2 (DepositScreen): a successful deposit used to just close the
+  // sheet and silently refresh the list -- no confirmation at all. Real
+  // data only: amountKobo/reference come from the actual deposit result,
+  // newBalanceKobo from the balance re-fetched right after.
+  const [depositSuccess, setDepositSuccess] = useState<{ amountKobo: number; reference: string; newBalanceKobo: number } | null>(null);
   const [selectedTx, setSelectedTx] = useState<UserWalletTransaction | null>(null);
   const [resolvingTicket, setResolvingTicket] = useState(false);
   const [resolveTicketError, setResolveTicketError] = useState('');
@@ -112,7 +117,9 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
       if (result.status === 'success') {
         haptics.success();
         setShowDeposit(false);
+        const freshBalance = await fetchMyWalletBalanceKobo().catch(() => balanceKobo || 0);
         await load();
+        setDepositSuccess({ amountKobo: result.amountKobo || Math.round(naira * 100), reference: result.reference || '', newBalanceKobo: freshBalance });
       } else if (result.error !== 'cancelled') {
         haptics.error();
         setDepositError(result.error || 'Deposit could not be completed.');
@@ -124,6 +131,56 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
       setDepositing(false);
     }
   };
+
+  if (depositSuccess) {
+    return (
+      <div style={{ background: '#08070C', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(20px + env(safe-area-inset-top)) 16px 0' }}>
+          <button onClick={() => setDepositSuccess(null)} style={{ background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '50%', width: '42px', height: '42px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+            <ArrowLeft size={18} color="#fff" />
+          </button>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '36px 20px 0' }}>
+          <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(52,211,153,0.14)', border: '1px solid rgba(52,211,153,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <CheckCircle2 size={30} color={ventsColors.success} />
+          </div>
+          <span style={{ fontSize: '38px', fontWeight: 800, letterSpacing: '-0.035em', fontVariantNumeric: 'tabular-nums lining-nums', color: '#fff', lineHeight: 1 }}>
+            +{fmtNaira(depositSuccess.amountKobo)}
+          </span>
+          <span style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(237,234,245,0.66)' }}>Deposit successful</span>
+        </div>
+        <div style={{ margin: '32px 20px 0', borderRadius: '22px', background: '#121019', border: '1px solid rgba(255,255,255,0.09)', padding: '4px 20px' }}>
+          <div style={{ padding: '16px 0', display: 'flex', justifyContent: 'space-between', gap: '16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Status</span>
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', padding: '5px 9px', borderRadius: '7px', background: 'rgba(52,211,153,0.16)', color: '#6EE7B7' }}>COMPLETED</span>
+          </div>
+          <div style={{ padding: '16px 0', display: 'flex', justifyContent: 'space-between', gap: '16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Method</span>
+            <span style={{ fontSize: '15px', fontWeight: 700, color: '#EDEAF5' }}>Paystack</span>
+          </div>
+          <div style={{ padding: '16px 0', display: 'flex', justifyContent: 'space-between', gap: '16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Date</span>
+            <span style={{ fontSize: '15px', fontWeight: 700, color: '#EDEAF5' }}>{new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}</span>
+          </div>
+          {depositSuccess.reference && (
+            <div style={{ padding: '16px 0', display: 'flex', justifyContent: 'space-between', gap: '16px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Reference</span>
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: '13px', color: '#EDEAF5', wordBreak: 'break-all', textAlign: 'right' }}>{depositSuccess.reference}</span>
+            </div>
+          )}
+          <div style={{ padding: '16px 0', display: 'flex', justifyContent: 'space-between', gap: '16px' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>New balance</span>
+            <span style={{ fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: '#fff' }}>{fmtNaira(depositSuccess.newBalanceKobo)}</span>
+          </div>
+        </div>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px', padding: '0 20px calc(24px + env(safe-area-inset-bottom))' }}>
+          <button onClick={() => setDepositSuccess(null)} style={{ height: '56px', borderRadius: '16px', background: '#8E5CF7', border: 'none', color: '#fff', fontSize: '17px', fontWeight: 700, cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}>
+            Back to Wallet
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

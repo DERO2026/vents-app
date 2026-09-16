@@ -56,6 +56,11 @@ export async function fetchMyWalletTransactions(limit = 50, offset = 0): Promise
 export interface DepositResult {
   status: 'success' | 'error';
   error?: string;
+  /** Only set for status === 'success' -- real Paystack reference + the
+   *  exact kobo amount actually charged, for the deposit confirmation
+   *  screen (handoff F2). */
+  reference?: string;
+  amountKobo?: number;
 }
 
 // Opens the Paystack popup for a wallet top-up and resolves once the
@@ -98,7 +103,7 @@ export async function depositToWallet(email: string, amountKobo: number): Promis
             resolve({ status: 'error', error: resolvedError });
             return;
           }
-          resolve({ status: 'success' });
+          resolve({ status: 'success', reference, amountKobo: chargeAmountKobo });
         } catch (e: any) {
           resolve({ status: 'error', error: e?.message || 'Could not verify your deposit.' });
         }
