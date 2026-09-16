@@ -203,25 +203,25 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       >
         <div
           style={{
-            width: '72px',
-            height: '72px',
+            width: '84px',
+            height: '84px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.05))',
-            border: '2px solid rgba(16,185,129,0.4)',
+            background: 'rgba(52,211,153,0.14)',
+            border: '1px solid rgba(52,211,153,0.4)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 16px',
-            boxShadow: '0 0 32px rgba(16,185,129,0.25)',
           }}
         >
-          <CheckCircle size={36} color={ventsColors.success} fill="rgba(16,185,129,0.15)" />
+          <CheckCircle size={40} color="#34D399" fill="rgba(52,211,153,0.15)" />
         </div>
         <h1
           style={{
             color: ventsColors.ink1,
-            fontSize: '24px',
+            fontSize: '27px',
             fontWeight: 800,
+            letterSpacing: '-0.03em',
             fontFamily: 'Manrope, sans-serif',
             marginBottom: '6px',
           }}
@@ -343,7 +343,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
               <div
                 style={{
-                  background: '#fff',
+                  background: '#EDEAF5',
                   borderRadius: '16px',
                   padding: '12px',
                   boxShadow: '0 0 40px rgba(168,85,247,0.2)',
