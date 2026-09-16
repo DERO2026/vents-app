@@ -37,6 +37,7 @@ import { SettingsScreen } from '../src/app/components/SettingsScreen';
 import { UserProfileScreen } from '../src/app/components/UserProfileScreen';
 import { UserWalletScreen } from '../src/app/components/UserWalletScreen';
 import { ExploreScreen } from '../src/app/components/ExploreScreen';
+import { ReferralScreen } from '../src/app/components/ReferralScreen';
 import App from '../src/app/App';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
@@ -326,6 +327,9 @@ const SCREENS: Record<string, () => JSX.Element> = {
   // -> back). Only reachable with the fake auth session fakeSupabase.ts
   // grants specifically to ?screen=full-app.
   'full-app': () => <App />,
+  referrals: () => (
+    <ReferralScreen onBack={() => {}} currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer' }} />
+  ),
 };
 
 const params = new URLSearchParams(window.location.search);
