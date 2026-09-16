@@ -1593,31 +1593,35 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         )}
 
         {mode === 'forgot' && forgotSent && forgotOtpStep && !forgotPasswordStep ? (
-          /* ── Step 1: Verification Code ── */
-          <div style={{ paddingTop: '20px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '52px', marginBottom: '16px' }}>🔐</div>
-              <h2
-                style={{
-                  color: '#F0F0FF',
-                  fontSize: '22px',
-                  fontWeight: 700,
-                  fontFamily: 'Manrope, sans-serif',
-                  marginBottom: '10px',
-                }}
-              >
-                Enter Verification Code
-              </h2>
-              <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65 }}>
-                We've sent a verification code to{' '}
-                <span style={{ color: '#A78BFA' }}>{email}</span>.
+          /* ── Step 1: Verification Code -- same anatomy as the signup OTP
+              screen below (A4/A5-derived): big headline, equal-width boxes
+              where only the next one glows purple, all-red on a wrong code,
+              "Didn't get it?/Resend code" row. No "Step X of 3" eyebrow --
+              password reset isn't part of the numbered onboarding flow. ── */
+          <div>
+            <div style={{ marginBottom: '32px' }}>
+              <h1 style={{ margin: '0 0 8px', color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                Enter verification code
+              </h1>
+              <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
+                We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
               </p>
             </div>
 
             {errorMessage && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
-                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: 'rgba(248,113,113,0.09)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '14px', padding: '16px', marginBottom: '20px' }}>
+                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#F87171', color: '#1a0808', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#FCA5A5' }}>That code isn't right</span>
+                  <span style={{ fontSize: '14px', lineHeight: 1.5, color: 'rgba(237,234,245,0.66)' }}>{errorMessage}</span>
+                </div>
+              </div>
+            )}
+
+            {successMessage && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
+                <Check size={18} color="#22C55E" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#22C55E', fontSize: '13px', lineHeight: 1.4 }}>{successMessage}</span>
               </div>
             )}
 
@@ -1626,20 +1630,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 field relying solely on the wrapper's onClick -- makes every box,
                 including the first, directly tappable/focusable, and lets native
                 typing/paste/backspace work without any manual per-box logic. */}
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}>
-                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: '32px', height: '52px', background: FIELD_BG,
-                      border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
-                      borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>{forgotOtpCode[i] ?? ''}</span>
-                  </div>
-                ))}
+            <div style={{ position: 'relative', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', gap: '8px', cursor: 'text' }}>
+                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
+                  const isActive = i === forgotOtpCode.length;
+                  const border = errorMessage
+                    ? '1px solid rgba(248,113,113,0.6)'
+                    : isActive
+                    ? '1px solid rgba(142,92,247,0.7)'
+                    : '1px solid rgba(255,255,255,0.12)';
+                  const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1, height: '64px', background: bg, border,
+                        boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
+                        borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{forgotOtpCode[i] ?? ''}</span>
+                    </div>
+                  );
+                })}
               </div>
               <input
                 ref={forgotOtpRef}

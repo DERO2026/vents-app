@@ -107,15 +107,28 @@ describe('Admin Dashboard: Services filters and service-form selectors migrated'
   });
 });
 
-describe('PhoneInput: dial-code picker migrated onto the same shared PickerSheet', () => {
-  it('uses PickerSheet instead of its own bespoke modal', () => {
-    expect(phoneInputSrc).toMatch(/import \{ PickerSheet \} from '\.\/shared\/PickerSheet';/);
-    expect(phoneInputSrc).toMatch(/<PickerSheet/);
-    expect(phoneInputSrc).not.toMatch(/position: 'fixed', inset: 0, background: 'rgba\(0,0,0,0\.65\)'/);
+describe('PhoneInput: dial-code picker is its own inline dropdown, distinct from the shared PickerSheet (handoff PK2)', () => {
+  // Supersedes an earlier round's decision to route this through the shared
+  // PickerSheet -- the actual Claude Design mockup (PK2) is explicit that
+  // the phone country-code selector is "PhoneInput's inline flag+dial-code
+  // dropdown, distinct from the full-screen PickerSheet" used for account
+  // country/state/category pickers. Rebuilt as a small panel anchored to
+  // and opening below the dial-code chip, not a screen-covering sheet.
+  it('does not use the shared PickerSheet component', () => {
+    expect(phoneInputSrc).not.toMatch(/import \{ PickerSheet \}/);
+    expect(phoneInputSrc).not.toMatch(/<PickerSheet/);
   });
 
-  it('preserves multi-field search (name, dial code, ISO) via the label, and preserves the flag/format/dial-code row via renderOption', () => {
-    expect(phoneInputSrc).toMatch(/label: `\$\{c\.name\} \$\{c\.code\} \$\{c\.iso\}`/);
-    expect(phoneInputSrc).toMatch(/renderOption=\{\(o\) => \{/);
+  it('renders an anchored dropdown panel positioned below the dial-code chip, not a full-screen backdrop', () => {
+    expect(phoneInputSrc).toMatch(/position: 'absolute',\s*\n\s*top: `calc\(\$\{height\}px \+ 8px\)`,/);
+  });
+
+  it('still supports search (the real list is ~195 countries, not the mockup\'s illustrative 3 rows) and closes on an outside click', () => {
+    expect(phoneInputSrc).toMatch(/Search country or code\.\.\./);
+    expect(phoneInputSrc).toMatch(/document\.addEventListener\('mousedown', handleClick\);/);
+  });
+
+  it('preserves the flag + name + dial-code row anatomy', () => {
+    expect(phoneInputSrc).toMatch(/<CountryMark country=\{c\} size=\{15\} \/>/);
   });
 });
