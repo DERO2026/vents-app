@@ -128,17 +128,27 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'my-tickets': () => {
     const dbEvent = { ...FIXTURE_EVENTS[0] };
     const event = mapDbEventToFrontend(dbEvent);
-    const ticket = {
+    const activeTicket = {
       event, ticketType: { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 },
       quantity: 1, ticketId: 'tkt-1', purchasedAt: new Date().toISOString(), totalAmount: 15000,
       holderName: 'Test Organizer', holderEmail: 'organizer@example.com',
+      status: 'active', paymentStatus: 'paid',
+    };
+    // Verifies the refunded/cancelled navigation fix: a real cancelled
+    // ticket for a future event must land in Past (never Upcoming) and
+    // route to TicketRefundScreen on tap, not the QR view.
+    const refundedTicket = {
+      event, ticketType: { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 },
+      quantity: 1, ticketId: 'tkt-refund-1', purchasedAt: new Date().toISOString(), totalAmount: 15000,
+      holderName: 'Test Organizer', holderEmail: 'organizer@example.com',
+      status: 'cancelled', paymentStatus: 'refunded',
     };
     return (
       <MyTicketsScreen
-        tickets={[ticket as any]}
+        tickets={[activeTicket as any, refundedTicket as any]}
         loading={false}
         onBack={() => {}}
-        onViewTicket={() => {}}
+        onViewTicket={(t: any) => { (window as any).__lastViewedTicket = t; }}
         currentUserId="org-1"
         currentUserEmail="organizer@example.com"
       />

@@ -75,6 +75,16 @@ function transferStatusBadge(status: TicketTransfer['status'], isOutgoing: boole
   }
 }
 
+// Real ticket-status badge, from tickets.status/payment_status -- shown on
+// a Past ticket card in place of the "View QR" pill when there's no valid
+// QR to show.
+function ticketStatusBadge(t: PurchasedTicket): { label: string; color: string; bg: string } | null {
+  if (t.status === 'cancelled') return { label: 'Cancelled', color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)' };
+  if (t.paymentStatus === 'refunded') return { label: 'Refunded', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)' };
+  if (t.paymentStatus === 'refund_pending') return { label: 'Refund Pending', color: ventsColors.pending, bg: 'rgba(245,158,11,0.14)' };
+  return null;
+}
+
 function TransferEmptyState({ text }: { text: string }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '56px', gap: '16px' }}>
@@ -440,7 +450,14 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   };
 
   const now = Date.now();
+  // A cancelled/refunded ticket (tickets.status/payment_status, real
+  // check-constraint values) has no valid entry regardless of the event's
+  // date -- it belongs in Past/history, never in Upcoming, even for a
+  // future event.
+  const isCancelledOrRefunded = (t: PurchasedTicket) =>
+    t.status === 'cancelled' || t.paymentStatus === 'refunded' || t.paymentStatus === 'refund_pending';
   const upcoming = tickets.filter((t) => {
+    if (isCancelledOrRefunded(t)) return false;
     try {
       return new Date(`${t.event.date} ${t.event.time}`).getTime() > now;
     } catch {
@@ -448,6 +465,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     }
   });
   const past = tickets.filter((t) => {
+    if (isCancelledOrRefunded(t)) return true;
     try {
       return new Date(`${t.event.date} ${t.event.time}`).getTime() <= now;
     } catch {
@@ -923,27 +941,46 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                       {ticket.ticketType.name.toUpperCase()}
                     </span>
                   </div>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '12px',
-                      right: '12px',
-                      background: 'rgba(255,255,255,0.1)',
-                      backdropFilter: 'blur(16px) saturate(180%)',
-                      WebkitBackdropFilter: 'blur(16px) saturate(180%)',
-                      border: '1px solid rgba(255,255,255,0.16)',
-                      borderRadius: '100px',
-                      padding: '5px 10px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                    }}
-                  >
-                    <QrCode size={13} color={ventsColors.ink1} />
-                    <span style={{ color: ventsColors.ink1, fontSize: '11px', fontWeight: 700 }}>
-                      View QR
-                    </span>
-                  </div>
+                  {(() => {
+                    const statusBadge = ticketStatusBadge(ticket);
+                    return statusBadge ? (
+                      <div
+                        style={{
+                          position: 'absolute', top: '12px', right: '12px',
+                          background: statusBadge.bg, backdropFilter: 'blur(16px) saturate(180%)',
+                          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                          border: `1px solid ${statusBadge.color}55`, borderRadius: '100px',
+                          padding: '5px 10px',
+                        }}
+                      >
+                        <span style={{ color: statusBadge.color, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          backdropFilter: 'blur(16px) saturate(180%)',
+                          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                          border: '1px solid rgba(255,255,255,0.16)',
+                          borderRadius: '100px',
+                          padding: '5px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <QrCode size={13} color={ventsColors.ink1} />
+                        <span style={{ color: ventsColors.ink1, fontSize: '11px', fontWeight: 700 }}>
+                          View QR
+                        </span>
+                      </div>
+                    );
+                  })()}
                   <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '10px' }}>
                     <h3
                       style={{

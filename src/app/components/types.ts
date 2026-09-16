@@ -117,6 +117,13 @@ export interface PurchasedTicket {
   // is the sole authority on who holds/can check in this ticket.
   paidByName?: string;
   transferredFromName?: string;
+  // tickets.status / payment_status (real, enforced check-constraint
+  // values -- 0005_primary_unique_check_constraints.sql). A ticket whose
+  // status is 'cancelled' or payment_status is 'refunded'/'refund_pending'
+  // has no valid QR to show; My Tickets routes it to TicketRefundScreen
+  // (real refund_id/refund_reason data) instead of QRTicket.
+  status?: 'active' | 'cancelled';
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending';
 }
 
 export type TicketTransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';

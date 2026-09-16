@@ -1115,11 +1115,17 @@ export default function App() {
   const fetchUserTickets = useCallback(async (userId: string) => {
     setTicketsLoading(true);
     try {
+      // Real cancelled/refunded tickets (tickets.status/payment_status,
+      // 0005_primary_unique_check_constraints.sql) used to be excluded
+      // entirely by the old .eq('status', 'active') filter -- the ticket
+      // remains fully selectable under select_tickets RLS regardless of
+      // status, so this only ever hid real data, never restricted access.
+      // My Tickets now shows them in Past with a real status badge, routed
+      // to TicketRefundScreen instead of the QR screen.
       const { data, error } = await supabase
         .from('tickets')
         .select('*, events(*)')
         .eq('user_id', userId)
-        .eq('status', 'active')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -1212,6 +1218,8 @@ export default function App() {
             holderName: t.holder_name || currentUser?.full_name || 'Attendee',
             holderEmail: t.holder_email || undefined,
             checkedIn: !!t.checked_in,
+            status: t.status,
+            paymentStatus: t.payment_status,
           };
         });
 
@@ -3024,6 +3032,16 @@ export default function App() {
                 loading={ticketsLoading}
                 onBack={goBack}
                 onViewTicket={(ticket) => {
+                  // A cancelled/refunded ticket has no valid QR to show --
+                  // route to the real refund detail screen (real
+                  // refund_id/refund_reason/timestamp) instead of the QR
+                  // view, reusing the same mechanism a refund notification
+                  // tap already uses (see refundTicketId above).
+                  if (ticket.status === 'cancelled' || ticket.paymentStatus === 'refunded' || ticket.paymentStatus === 'refund_pending') {
+                    setRefundTicketId(ticket.ticketId);
+                    navigateTo('ticket-refund');
+                    return;
+                  }
                   setPurchasedTicket(ticket);
                   navigateTo('payment-success');
                 }}
