@@ -3350,10 +3350,11 @@ export default function App() {
                 setSavedEvents((prev) => prev.filter((id) => id !== eventId));
                 if (selectedEvent?.id === eventId) setSelectedEvent(null);
               }}
+              onNavigate={handleOrgNavigate}
             />
           )}
           {screen === 'sales-analytics' && (
-            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} eventId={analyticsEventId} eventTitle={analyticsEventTitle} />
+            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} eventId={analyticsEventId} eventTitle={analyticsEventTitle} onNavigate={handleOrgNavigate} />
           )}
           {screen === 'attendee-list' && (
             <AttendeeListScreen onBack={goBack} eventId={selectedEvent?.id} eventTitle={selectedEvent?.title} />

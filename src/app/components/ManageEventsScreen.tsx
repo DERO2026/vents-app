@@ -26,6 +26,12 @@ interface ManageEventsScreenProps {
   // Saved, event-details) — this screen's own list already self-heals via
   // useOrganizerEvents' refresh, but nothing else in the app knows to.
   onEventDeleted?: (eventId: string) => void;
+  // Desktop-only Creator Studio sidebar (DT1 export) -- same nav items and
+  // real navigation targets as OrganizerDashboard's own `.cs-sidebar`
+  // (CS1), so the desktop organizer surfaces read as one shell instead of
+  // each tool being its own disconnected full-page screen. Optional so a
+  // caller that hasn't been updated just doesn't render the sidebar.
+  onNavigate?: (screen: 'org-dashboard' | 'sales-analytics' | 'promote-event' | 'wallet') => void;
 }
 
 // ─── Midnight Neon palette (shared with Door Manager for a consistent
@@ -59,7 +65,7 @@ function fmtDate(iso: string | null): string {
 
 export function ManageEventsScreen({
   onBack, currentUser, onOpenEdit, onCreateEvent, onViewAttendees, onViewAnalytics,
-  onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted,
+  onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted, onNavigate,
 }: ManageEventsScreenProps) {
   useDesktopWideShell();
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
@@ -203,7 +209,19 @@ export function ManageEventsScreen({
            responsive card grid rather than one wide stacked list. */
         .vents-manage-shell { }
         .vents-manage-list { display: flex; flex-direction: column; gap: 12px; }
+        .vents-manage-sidebar { display: none; }
         @media (min-width: 900px) {
+          .vents-manage-outer { display: flex; align-items: flex-start; max-width: 1300px; width: 100%; margin: 0 auto; }
+          .vents-manage-sidebar {
+            display: flex; flex-direction: column; gap: 4px; width: 220px; flex: none;
+            padding: 20px 14px; border-right: 1px solid rgba(255,255,255,0.07);
+            position: sticky; top: 0;
+          }
+          .vents-manage-sidebar-item {
+            display: flex; align-items: center; height: 42px; border-radius: 12px; padding: 0 12px;
+            font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+            background: none; text-align: left; width: 100%; color: ${C.sub};
+          }
           .vents-manage-shell { max-width: 1100px; width: 100%; margin: 0 auto; padding-left: 8px; padding-right: 8px; box-sizing: border-box; }
           .vents-manage-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
         }
@@ -212,6 +230,32 @@ export function ManageEventsScreen({
         }
       `}</style>
 
+      <div className="vents-manage-outer">
+      {/* Desktop-only sidebar (DT1) -- same nav items/targets as CS1's own
+          `.cs-sidebar` in OrganizerDashboard.tsx, "Events" marked active. */}
+      <nav className="vents-manage-sidebar" aria-label="Creator Studio navigation">
+        {[
+          { key: 'overview', label: 'Overview', action: onNavigate ? () => onNavigate('org-dashboard') : undefined },
+          { key: 'events', label: 'Events', action: undefined },
+          { key: 'sales', label: 'Sales & Analytics', action: onNavigate ? () => onNavigate('sales-analytics') : undefined },
+          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promote-event') : undefined },
+          { key: 'earnings', label: 'Earnings', action: onNavigate ? () => onNavigate('wallet') : undefined },
+        ].map((item) => (
+          <button
+            key={item.key}
+            className="vents-manage-sidebar-item"
+            onClick={item.action}
+            disabled={!item.action}
+            style={
+              item.key === 'events'
+                ? { background: 'rgba(142,92,247,0.14)', border: '1px solid rgba(142,92,247,0.4)', color: C.text }
+                : { color: C.sub, cursor: item.action ? 'pointer' : 'default' }
+            }
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
       <div className="vents-manage-shell">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
@@ -404,6 +448,7 @@ export function ManageEventsScreen({
             No events match "{query}".
           </div>
         )}
+      </div>
       </div>
       </div>
 

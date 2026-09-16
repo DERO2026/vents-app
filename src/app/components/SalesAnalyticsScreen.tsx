@@ -5,6 +5,7 @@ import { ArrowLeft, Ticket, Wallet, Receipt, Users, TrendingUp } from 'lucide-re
 import { formatPrice } from './data';
 import { supabase } from '../../lib/supabase';
 import { Sentry } from '../../lib/sentry';
+import { hasEventEnded } from '../../lib/eventLifecycle';
 
 interface SalesAnalyticsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -14,6 +15,12 @@ interface SalesAnalyticsScreenProps {
   // organizer's full portfolio.
   eventId?: string;
   eventTitle?: string;
+  // Desktop-only Creator Studio sidebar (DT2 export), same real nav targets
+  // as OrganizerDashboard's `.cs-sidebar` (CS1) and ManageEventsScreen's
+  // equivalent (DT1) -- only shown on the all-events portfolio view, not
+  // the per-event drill-down, since the export's DT2 is the "Sales &
+  // Analytics" landing page, not a single event's numbers.
+  onNavigate?: (screen: 'org-dashboard' | 'manage-events' | 'promote-event' | 'wallet') => void;
 }
 
 function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
@@ -163,28 +170,32 @@ function ChartCard({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: SalesAnalyticsScreenProps) {
+export function SalesAnalyticsScreen({ currentUser, onBack, eventId, eventTitle, onNavigate }: SalesAnalyticsScreenProps) {
   // Per-event mode gets a purpose-built overview/sales/attendance layout
   // (Stage 11) built on the new get_event_analytics RPC. Portfolio mode
   // (no eventId — the organizer's whole account) is untouched below.
   if (eventId) {
     return <EventAnalyticsScreen currentUser={currentUser} onBack={onBack} eventId={eventId} eventTitle={eventTitle} />;
   }
-  return <PortfolioAnalyticsScreen currentUser={currentUser} onBack={onBack} />;
+  return <PortfolioAnalyticsScreen currentUser={currentUser} onBack={onBack} onNavigate={onNavigate} />;
 }
 
-function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void }) {
+function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { currentUser: SalesAnalyticsScreenProps['currentUser']; onBack: () => void; onNavigate?: SalesAnalyticsScreenProps['onNavigate'] }) {
   useDesktopWideShell();
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<{
     totalRevenue: number;
     totalSales: number;
+    liveEvents: number;
+    avgAttendance: number;
     daily: { day: string; revenue: number }[];
     ticketTypes: { name: string; value: number; color: string }[];
     conversion: { day: string; rate: number }[];
   }>({
     totalRevenue: 0,
     totalSales: 0,
+    liveEvents: 0,
+    avgAttendance: 0,
     daily: [
       { day: 'Mon', revenue: 0 },
       { day: 'Tue', revenue: 0 },
@@ -219,7 +230,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
       try {
         const { data: myEvents, error: eventsError } = await supabase
           .from('events')
-          .select('id, ticket_goal')
+          .select('id, ticket_goal, event_date, end_date, status')
           .eq('organizer_id', currentUser.id)
           .is('deleted_at', null);
 
@@ -231,6 +242,13 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         }
         const eventIds = myEvents.map((e: any) => e.id);
         const totalCapacity = myEvents.reduce((sum: number, e: any) => sum + (e.ticket_goal || 0), 0);
+
+        // "Live events" -- exported DT2 stat card the mobile SA1 screen
+        // never had. Same published-and-not-yet-ended definition
+        // OrganizerDashboard's own Live/Drafts/Past tabs already use.
+        const liveEventsCount = myEvents.filter((e: any) =>
+          (e.status ?? 'live') !== 'draft' && !hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null })
+        ).length;
 
         // Matches the canonical "sold" definition used everywhere else
         // (get_event_ticket_stats, see Data Consistency migration):
@@ -251,6 +269,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
 
         let totalRev = 0;
         let totalQty = 0;
+        let checkedInQty = 0;
         const dailyRevenue: Record<string, number> = {
           'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
         };
@@ -272,6 +291,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
             const rev = Number(t.amount) || 0;
             totalRev += rev;
             totalQty += qty;
+            if (t.checked_in) checkedInQty += qty;
 
             const typeName: string = t.ticket_type || 'Regular';
             typeCount[typeName] = (typeCount[typeName] || 0) + qty;
@@ -319,6 +339,8 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         setAnalytics({
           totalRevenue: totalRev,
           totalSales: totalQty,
+          liveEvents: liveEventsCount,
+          avgAttendance: totalQty > 0 ? Math.round((checkedInQty / totalQty) * 100) : 0,
           daily,
           ticketTypes: computedTypes,
           conversion
@@ -391,14 +413,50 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         .sa-portfolio-content { }
         .sa-portfolio-stats { display: flex; gap: 10px; margin-bottom: 16px; }
         .sa-portfolio-charts { display: flex; flex-direction: column; }
+        .sa-sidebar { display: none; }
         @media (min-width: 900px) {
+          .sa-shell { display: flex; align-items: flex-start; max-width: 1300px; width: 100%; margin: 0 auto; }
+          .sa-sidebar {
+            display: flex; flex-direction: column; gap: 4px; width: 220px; flex: none;
+            padding: 20px 14px; border-right: 1px solid rgba(255,255,255,0.07);
+            position: sticky; top: 0;
+          }
+          .sa-sidebar-item {
+            display: flex; align-items: center; height: 42px; border-radius: 12px; padding: 0 12px;
+            font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+            background: none; text-align: left; width: 100%;
+          }
           .sa-portfolio-content { max-width: 1080px; width: 100%; margin: 0 auto; }
-          .sa-portfolio-stats { display: grid; grid-template-columns: repeat(2, 1fr); }
+          .sa-portfolio-stats { display: grid; grid-template-columns: repeat(4, 1fr); }
           .sa-portfolio-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-items: start; }
           .sa-portfolio-charts > * { margin-bottom: 0 !important; }
           .sa-portfolio-charts > .sa-full-width { grid-column: 1 / -1; }
         }
       `}</style>
+      <div className="sa-shell">
+      <nav className="sa-sidebar" aria-label="Creator Studio navigation">
+        {[
+          { key: 'overview', label: 'Overview', action: onNavigate ? () => onNavigate('org-dashboard') : undefined },
+          { key: 'events', label: 'Events', action: onNavigate ? () => onNavigate('manage-events') : undefined },
+          { key: 'sales', label: 'Sales & Analytics', action: undefined },
+          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promote-event') : undefined },
+          { key: 'earnings', label: 'Earnings', action: onNavigate ? () => onNavigate('wallet') : undefined },
+        ].map((item) => (
+          <button
+            key={item.key}
+            className="sa-sidebar-item"
+            onClick={item.action}
+            disabled={!item.action}
+            style={
+              item.key === 'sales'
+                ? { background: 'rgba(142,92,247,0.14)', border: '1px solid rgba(142,92,247,0.4)', color: '#fff' }
+                : { color: ventsColors.ink2, cursor: item.action ? 'pointer' : 'default' }
+            }
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
       <div
         className="sa-portfolio-content"
         style={{
@@ -417,6 +475,8 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
               {[
                 { label: 'Total Revenue', value: `₦${(analytics.totalRevenue).toLocaleString()}`, sub: 'All paid tickets', color: ventsColors.success },
                 { label: 'Tickets Sold', value: analytics.totalSales.toLocaleString(), sub: 'Active tickets', color: ventsColors.accent },
+                { label: 'Live Events', value: analytics.liveEvents.toLocaleString(), sub: 'Published, not ended', color: '#93C5FD' },
+                { label: 'Avg. Attendance', value: `${analytics.avgAttendance}%`, sub: 'Checked in / sold', color: ventsColors.pending },
               ].map(({ label, value, sub, color }) => (
                 <div
                   key={label}
@@ -490,6 +550,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
             </div>
           </>
         )}
+      </div>
       </div>
     </div>
   );

@@ -43,6 +43,12 @@ const FIXTURES: Record<string, Row[]> = {
       refund_reason: 'Event cancelled by organizer', checked_in: false,
       events: { title: 'Lagos Music Festival', event_date: new Date(Date.now() + 7 * 86400000).toISOString(), location: 'Eko Atlantic, Lagos' },
     },
+    // Drives SalesAnalyticsScreen (DT2 desktop) -- it queries tickets
+    // directly (status='active' AND payment_status='paid'), not an RPC, so
+    // the aggregate RPC fixture above isn't enough on its own for this screen.
+    { id: 'tkt-sa-1', event_id: 'evt-1', ticket_type: 'Regular', quantity: 1, amount: 15000, status: 'active', payment_status: 'paid', created_at: new Date().toISOString() },
+    { id: 'tkt-sa-2', event_id: 'evt-1', ticket_type: 'VIP', quantity: 1, amount: 30000, status: 'active', payment_status: 'paid', created_at: new Date().toISOString() },
+    { id: 'tkt-sa-3', event_id: 'evt-2', ticket_type: 'Regular', quantity: 1, amount: 5000, status: 'active', payment_status: 'paid', created_at: new Date().toISOString() },
   ],
   service_bookings: [
     {
@@ -172,6 +178,39 @@ export async function getAuthToken(): Promise<string> {
 }
 
 const RPC_FIXTURES: Record<string, any> = {
+  // Drives the real ManageEventsScreen / useOrganizerEvents.ts data layer
+  // (DT1 desktop table) -- rows in the same raw shape the real RPC returns,
+  // mapped by mapRow() in useOrganizerEvents.ts, not a hand-shaped UI object.
+  get_organizer_events_overview: [
+    {
+      id: 'evt-1', title: 'Lagos Music Festival', description: null, location: 'Eko Atlantic, Lagos',
+      event_date: '2026-09-23T20:00:00Z', price: 15000, ticket_goal: 120, ticket_types: [],
+      status: 'live', is_18_plus: false, created_at: new Date().toISOString(),
+      sold_count: 86, sold_quantity: 86, pending_count: 0, cancelled_count: 0, refunded_count: 0,
+      revenue_kobo: 172000000, checked_in_count: 61, is_ended: false, is_sold_out: false,
+    },
+    {
+      id: 'evt-2', title: 'Comedy Night Lagos', description: null, location: 'Lekki, Lagos',
+      event_date: '2026-10-05T19:00:00Z', price: 8000, ticket_goal: 150, ticket_types: [],
+      status: 'live', is_18_plus: false, created_at: new Date().toISOString(),
+      sold_count: 142, sold_quantity: 142, pending_count: 0, cancelled_count: 0, refunded_count: 0,
+      revenue_kobo: 213000000, checked_in_count: 0, is_ended: false, is_sold_out: false,
+    },
+    {
+      id: 'evt-3', title: 'Tech Summit Lagos', description: null, location: 'Victoria Island, Lagos',
+      event_date: '2026-08-01T09:00:00Z', price: 15000, ticket_goal: 64, ticket_types: [],
+      status: 'live', is_18_plus: false, created_at: new Date().toISOString(),
+      sold_count: 64, sold_quantity: 64, pending_count: 0, cancelled_count: 0, refunded_count: 0,
+      revenue_kobo: 96000000, checked_in_count: 0, is_ended: false, is_sold_out: true,
+    },
+  ],
+  // Drives SalesAnalyticsScreen (DT2 desktop) -- get_event_ticket_stats is
+  // the same aggregate RPC OrganizerDashboard/ManageEventsScreen call.
+  get_event_ticket_stats: [
+    { event_id: 'evt-1', sold_count: 86, sold_quantity: 86, revenue_kobo: 172000000, checked_in_count: 61 },
+    { event_id: 'evt-2', sold_count: 142, sold_quantity: 142, revenue_kobo: 213000000, checked_in_count: 0 },
+    { event_id: 'evt-3', sold_count: 64, sold_quantity: 64, revenue_kobo: 96000000, checked_in_count: 0 },
+  ],
   get_payment_request_details: {
     event_title: 'Lagos Music Festival', event_image_url: null, ticket_type: 'Regular',
     attendee_count: 2, amount_kobo: 4200000, recipient_name: 'Ada Okonkwo',

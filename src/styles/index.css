@@ -1,5 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 @import "tailwindcss";
+/* Explicit content source (Tailwind v4) so utility classes still generate
+   when this file is bundled from a Vite project whose `root` isn't the
+   repo root -- the real app's own vite.config.ts root already covers all
+   of src/ via Tailwind's automatic detection, so this is a no-op there,
+   but qa-harness/vite.harness.config.ts sets `root: qa-harness/`, which
+   silently scoped auto-detection to just that folder and produced an
+   almost-empty utility stylesheet (found while investigating why every
+   Tailwind-class screen, not just one, rendered as unstyled blocks). */
+@source "../";
 @import "../../default_shadcn_theme.css";
 
 /* ── Midnight Neon Token System ─────────────────────────────────────────────── */

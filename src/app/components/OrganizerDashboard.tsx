@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
@@ -8,6 +8,7 @@ import {
   Inbox,
   Sparkles,
   ScanLine,
+  Clock,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import {
@@ -131,6 +132,15 @@ export function OrganizerDashboard({
     }
     loadDashboardData();
   }, [currentUser]);
+
+  // Real "Live events" count -- the exported CS1 desktop grid shows a third
+  // stat card the mobile Overview never had. Same live-event definition the
+  // Live/Drafts/Past tabs below already use (published, not yet ended),
+  // just computed once here instead of duplicating it inline in the JSX.
+  const liveEventsCount = useMemo(
+    () => orgEvents.filter((e: any) => (e.status ?? 'live') !== 'draft' && !hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null })).length,
+    [orgEvents]
+  );
 
   if (loading) {
     return (
@@ -321,6 +331,14 @@ export function OrganizerDashboard({
             gap: 16px;
           }
         }
+        /* Exported CS1 desktop grid shows 3 stat cards (Total Revenue,
+           Tickets Sold, Live events), not 2 -- matches at the same
+           min-width the sidebar/shell itself switches on below. */
+        @media (min-width: 900px) {
+          .metrics-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
         .cs-sidebar { display: none; }
         @media (min-width: 900px) {
           .cs-shell {
@@ -493,6 +511,52 @@ export function OrganizerDashboard({
             </span>
             <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
               {ticketsSold}
+            </span>
+          </div>
+
+          {/* Card 3: Live events -- real count (see liveEventsCount above),
+              not shown at all on the old mobile 2-card layout; the exported
+              CS1 desktop grid adds it as a third card. */}
+          <div
+            style={{
+              background: ventsColors.surface,
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '20px',
+              padding: '20px 16px',
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'transform 0.2s ease, border-color 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+            }}
+          >
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'rgba(96, 165, 250, 0.14)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '14px',
+              }}
+            >
+              <Clock size={18} color="#93C5FD" />
+            </div>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+              Live events
+            </span>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
+              {liveEventsCount}
             </span>
           </div>
         </div>
