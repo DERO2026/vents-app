@@ -136,7 +136,7 @@ export function PaymentRequestsScreen({ currentUser, onBack, onOpenRequest }: Pa
                 </p>
               </div>
               <div style={{ textAlign: 'right' }}>
-                <p style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 600 }}>{formatPrice(Math.round(r.amount_kobo / 100))}</p>
+                <p style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round(r.amount_kobo / 100))}</p>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '4px', justifyContent: 'flex-end', marginTop: '2px' }}>
                   {statusBadge(r)}
                 </div>

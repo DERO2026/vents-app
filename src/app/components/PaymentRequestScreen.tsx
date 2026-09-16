@@ -230,7 +230,7 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
                 <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{details.event_title}</p>
                 <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{details.ticket_type} × {details.attendee_count}</p>
               </div>
-              <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
+              <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
             </div>
 
             {/* Handoff C4 vs C5: the requester (the eventual ticket holder,

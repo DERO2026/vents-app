@@ -330,7 +330,7 @@ export function ManageEventsScreen({
                           <span style={{ color: C.sub, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{event.location}</span>
                         </div>
                       )}
-                      <span style={{ color: C.purple, fontSize: '11px', fontWeight: 600 }}>
+                      <span style={{ color: C.purple, fontSize: '11px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {event.price > 0 ? formatPrice(event.price) : 'Free'}
                       </span>
                     </div>
@@ -556,7 +556,7 @@ export function ManageEventsScreen({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.line}`, borderRadius: '10px', padding: '8px 6px', textAlign: 'center' }}>
-      <div style={{ color: C.text, fontSize: '13px', fontWeight: 800, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ color: C.text, fontSize: '13px', fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums lining-nums' }}>{value}</div>
       <div style={{ color: C.faint, fontSize: '9.5px', fontWeight: 600, marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
     </div>
   );

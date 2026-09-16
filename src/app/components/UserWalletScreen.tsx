@@ -171,7 +171,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
               Spendable Balance
             </span>
           </div>
-          <p style={{ color: '#fff', fontSize: '34px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: '0 0 4px' }}>
+          <p style={{ color: '#fff', fontSize: '34px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums lining-nums', margin: '0 0 4px' }}>
             {loading ? '—' : fmtNaira(balanceKobo || 0)}
           </p>
           <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '0 0 18px' }}>
@@ -236,7 +236,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
                     </p>
                     <p style={{ color: ventsColors.ink3, fontSize: '11px', margin: 0 }}>{fmtDate(tx.createdAt)}</p>
                   </div>
-                  <span style={{ color, fontSize: '14px', fontWeight: 700, flexShrink: 0 }}>
+                  <span style={{ color, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums', flexShrink: 0 }}>
                     {sign}{fmtNaira(tx.amountKobo)}
                   </span>
                   <ChevronRight size={15} color={ventsColors.ink3} style={{ flexShrink: 0 }} />

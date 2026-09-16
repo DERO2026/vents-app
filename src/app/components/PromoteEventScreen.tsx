@@ -335,7 +335,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
         <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>{plan.label}</span>
-            <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600 }}>{formatPrice(price)}</span>
+            <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(price)}</span>
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
             <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>Duration</span>
@@ -344,7 +344,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
           <div style={{ height: '1px', background: 'rgba(255,255,255,0.07)', margin: '8px 0' }} />
           <div style={{ display: 'flex', justifyContent: 'space-between' }}>
             <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Total</span>
-            <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800 }}>{formatPrice(price)}</span>
+            <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(price)}</span>
           </div>
         </div>
 

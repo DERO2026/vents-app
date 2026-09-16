@@ -393,7 +393,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
             style={{ background: ventsColors.surface, borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)' }}
           >
             <span style={{ color: ventsColors.ink2, fontSize: '14px' }}>Total Paid</span>
-            <span style={{ color: ventsColors.success, fontSize: '18px', fontWeight: 800 }}>
+            <span style={{ color: ventsColors.success, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
               {formatPrice(ticket.totalAmount)}
             </span>
           </div>

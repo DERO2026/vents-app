@@ -442,7 +442,7 @@ export function OrganizerDashboard({
             <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Total Revenue
             </span>
-            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
               {formatPrice(revenue)}
             </span>
           </div>
@@ -727,7 +727,7 @@ export function OrganizerDashboard({
                         </p>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                        <span style={{ color: ventsColors.pending, fontSize: '13px', fontWeight: 700, display: 'block' }}>
+                        <span style={{ color: ventsColors.pending, fontSize: '13px', fontWeight: 700, display: 'block', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                           {formatPrice(Number(event.price || 0))}
                         </span>
                         {activeTab === 'live' && (

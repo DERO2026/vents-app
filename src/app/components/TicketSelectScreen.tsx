@@ -277,7 +277,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                     )}
                   </div>
                   <div style={{ textAlign: 'right' }}>
-                    <div style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800 }}>
+                    <div style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                       {formatPrice(ticket.price)}
                     </div>
                   </div>
@@ -367,13 +367,13 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
                 <span style={{ color: '#C4C9E0', fontSize: '13px' }}>
                   {selected?.name} × {qty}
                 </span>
-                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
+                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(subtotal)}
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Service fee (5%)</span>
-                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600 }}>
+                <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(serviceFee)}
                 </span>
               </div>
@@ -386,7 +386,7 @@ export function TicketSelectScreen({ event, onBack, onContinue }: TicketSelectSc
               />
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Total</span>
-                <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800 }}>
+                <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                   {formatPrice(total)}
                 </span>
               </div>

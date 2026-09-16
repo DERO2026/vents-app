@@ -982,7 +982,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                         {ticket.quantity} × {ticket.ticketType.name}
                       </span>
                     </div>
-                    <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700 }}>
+                    <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
