@@ -402,7 +402,7 @@ export function ImageCropperModal({
           crop={crop}
           zoom={zoom}
           minZoom={isFlyer ? minZoom : 1}
-          maxZoom={5}
+          maxZoom={3}
           // Lower than react-easy-crop's default (1) so both pinch and
           // wheel/trackpad zoom feel controlled rather than twitchy —
           // a small gesture should nudge the zoom, not jump several steps.
@@ -456,7 +456,7 @@ export function ImageCropperModal({
 
           {/* Slim zoom fallback — pinch is the primary gesture; this covers
               one-handed and non-touch use without adding a label row. */}
-          <input type="range" value={zoom} min={minZoom} max={5} step={0.01} aria-label="Zoom"
+          <input type="range" value={zoom} min={minZoom} max={3} step={0.01} aria-label="Zoom"
             onChange={(e) => { setZoom(Number(e.target.value)); setDirty(true); }} onPointerUp={() => haptic(4)}
             style={{ width: '100%', height: '3px', borderRadius: '3px', outline: 'none', accentColor: '#A78BFA', cursor: 'pointer' }} />
 

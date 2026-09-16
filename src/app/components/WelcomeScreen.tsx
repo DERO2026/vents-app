@@ -112,7 +112,23 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
                 </span>
               </>
             ) : (
-              <span style={{ position: 'absolute', left: '14px', right: '14px', bottom: '14px', fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 500, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.7)', textShadow: '0 1px 6px rgba(0,0,0,0.6)' }}>
+              // The higher z-index center card overlaps the INNER half of
+              // each side card (they're stacked, not side-by-side). Text
+              // starting flush against that inner edge renders mostly
+              // underneath the center card -- "Experiences" showed only its
+              // last few letters because it started right where the overlap
+              // begins. Anchoring each caption to its card's OUTER edge
+              // (left card -> left-aligned, right card -> right-aligned)
+              // keeps the whole word in the clear, unobstructed area.
+              <span
+                style={{
+                  position: 'absolute', left: '14px', right: '14px', bottom: '14px',
+                  fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 500,
+                  letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.7)',
+                  textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                  textAlign: card.side === 'right' ? 'right' : 'left',
+                }}
+              >
                 {card.caption}
               </span>
             )}
