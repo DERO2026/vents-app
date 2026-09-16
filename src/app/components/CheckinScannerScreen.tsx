@@ -219,7 +219,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           <style>{`@keyframes ventsSpin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
-      {cam.status === 'error' && (
+      {/* outcome === null guard: without it, a manual/simulated check-in
+          result (ScanResultCard) rendered ON TOP of this permanent camera-
+          error state instead of replacing it, since this block had no
+          reason to ever unmount once the camera failed -- a real, visible
+          collision on any device with a broken/denied camera that still
+          uses the manual-code fallback (which stays reachable exactly
+          because the camera doesn't work). */}
+      {cam.status === 'error' && outcome === null && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 28px', gap: '12px' }}>
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Camera size={32} color="#EF4444" />

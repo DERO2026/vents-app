@@ -6,12 +6,21 @@
 import { defineConfig } from 'vite';
 import path from 'path';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 
 const FAKE_SUPABASE_PATH = path.resolve(__dirname, 'fakeSupabase.ts');
 
 export default defineConfig({
   root: path.resolve(__dirname),
-  plugins: [react()],
+  // Tailwind v4 is a Vite PLUGIN (@tailwindcss/vite), not a postcss.config.js
+  // entry -- this harness config never included it, so every component that
+  // uses Tailwind utility classes instead of inline styles (QRTicket.tsx,
+  // among others) rendered with those classes as complete no-ops: severe
+  // layout collapse/overlap that looked like a real component bug but was
+  // actually this config missing the one plugin that makes `flex`, `px-4`,
+  // etc. do anything at all. Found while investigating an apparent QRTicket
+  // rendering bug that turned out not to exist in the real app.
+  plugins: [react(), tailwindcss()],
   // A hand-rolled resolveId plugin here previously never actually fired
   // (confirmed empty across a fresh process + cleared node_modules/.vite
   // cache while investigating TicketRefundScreen.tsx hanging on a real,

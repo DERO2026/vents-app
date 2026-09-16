@@ -13,6 +13,7 @@ import { CheckoutScreen } from '../src/app/components/CheckoutScreen';
 import { ServicesHomeScreen } from '../src/app/components/ServicesHomeScreen';
 import { ServiceBookingsScreen } from '../src/app/components/ServiceBookingsScreen';
 import { MyTicketsScreen } from '../src/app/components/MyTicketsScreen';
+import { QRTicket } from '../src/app/components/QRTicket';
 import { InboxScreen } from '../src/app/components/InboxScreen';
 import { NotificationsScreen } from '../src/app/components/NotificationsScreen';
 import { ManageProviderServicesScreen } from '../src/app/components/ManageProviderServicesScreen';
@@ -142,6 +143,17 @@ const SCREENS: Record<string, () => JSX.Element> = {
         currentUserEmail="organizer@example.com"
       />
     );
+  },
+  'qr-ticket': () => {
+    const dbEvent = { ...FIXTURE_EVENTS[0] };
+    const event = mapDbEventToFrontend(dbEvent);
+    const ticket = {
+      event, ticketType: { id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 },
+      quantity: 1, ticketId: 'tkt-1', purchasedAt: new Date().toISOString(), totalAmount: 15000,
+      holderName: 'Ada Chukwu', holderEmail: 'ada@example.com',
+      paidByName: 'Tobi Oyelaran', transferredFromName: null, checkedIn: false,
+    };
+    return <QRTicket ticket={ticket as any} onBack={() => {}} onGoHome={() => {}} />;
   },
   inbox: () => (
     <InboxScreen currentUser={{ id: 'org-1' }} onBack={() => {}} onOpenConversation={() => {}} />

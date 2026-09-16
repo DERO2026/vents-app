@@ -200,7 +200,36 @@ export const supabase = {
     resend: async () => ({ data: {}, error: null }),
     signOut: async () => ({ error: null }),
   },
-  rpc: async (fn: string) => ({ data: RPC_FIXTURES[fn] ?? null, error: null }),
+  rpc: async (fn: string, args?: any) => {
+    // QA-only: verify_entry_pass keyed off a magic p_ticket_id prefix so
+    // the real scanner UI's own dev simulator input can drive every real
+    // ScanOutcome branch (ticketValidation.ts) without a live backend.
+    // Typed exactly as the RPC's real response shape -- this is exercising
+    // the actual client-side result-mapping code, not inventing new UI.
+    if (fn === 'verify_entry_pass') {
+      const id = String(args?.p_ticket_id || '').toUpperCase();
+      if (id.startsWith('VALID')) {
+        return { data: { ok: true, holder_name: 'Ada Chukwu', ticket_type: 'Regular', event_name: 'Lagos Music Festival', checked_in_at: new Date().toISOString() }, error: null };
+      }
+      if (id.startsWith('USED')) {
+        return { data: { ok: false, reason: 'already_scanned', holder_name: 'Tobi Oyelaran', ticket_type: 'VIP', event_name: 'Lagos Music Festival', checked_in_at: new Date(Date.now() - 3600000).toISOString(), scanner_id: 'Gate A' }, error: null };
+      }
+      if (id.startsWith('EXPIRED')) {
+        return { data: { ok: false, reason: 'expired', message: 'This pass has expired.' }, error: null };
+      }
+      if (id.startsWith('WRONG')) {
+        return { data: { ok: false, reason: 'wrong_organizer', message: 'This ticket is for a different event.' }, error: null };
+      }
+      if (id.startsWith('REFUNDED')) {
+        return { data: { ok: false, reason: 'not_active', message: 'This ticket was refunded.' }, error: null };
+      }
+      if (id.startsWith('CANCELLED')) {
+        return { data: { ok: false, reason: 'not_active', message: 'This ticket was cancelled.' }, error: null };
+      }
+      return { data: { ok: false, reason: 'not_found', message: 'This ticket could not be validated.' }, error: null };
+    }
+    return { data: RPC_FIXTURES[fn] ?? null, error: null };
+  },
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} }),
   removeChannel: () => {},
 } as any;
