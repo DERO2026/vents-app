@@ -24,6 +24,18 @@ import { PaymentRequestScreen } from '../src/app/components/PaymentRequestScreen
 import { CountrySelectScreen } from '../src/app/components/CountrySelectScreen';
 import { WalletScreen } from '../src/app/components/WalletScreen';
 import { AuthScreen } from '../src/app/components/AuthScreen';
+import { CreateEventScreen } from '../src/app/components/CreateEventScreen';
+import { PaymentFailedScreen } from '../src/app/components/PaymentFailedScreen';
+import { ProfileScreen } from '../src/app/components/ProfileScreen';
+import { PromoteEventScreen } from '../src/app/components/PromoteEventScreen';
+import { ServiceCategoryScreen } from '../src/app/components/ServiceCategoryScreen';
+import { ServiceProviderProfileScreen } from '../src/app/components/ServiceProviderProfileScreen';
+import { ServiceProviderSetupScreen } from '../src/app/components/ServiceProviderSetupScreen';
+import { ServiceProviderVerificationScreen } from '../src/app/components/ServiceProviderVerificationScreen';
+import { SettingsScreen } from '../src/app/components/SettingsScreen';
+import { UserProfileScreen } from '../src/app/components/UserProfileScreen';
+import { UserWalletScreen } from '../src/app/components/UserWalletScreen';
+import { ExploreScreen } from '../src/app/components/ExploreScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -80,6 +92,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
       fetchEvents={() => {}}
       currentUser={FIXTURE_USER}
       countryFilter="NG"
+      onCountryFilterChange={() => {}}
     />
   ),
   'event-details': () => {
@@ -181,13 +194,96 @@ const SCREENS: Record<string, () => JSX.Element> = {
     <CountrySelectScreen onContinue={() => {}} onBack={() => {}} />
   ),
   wallet: () => (
-    <WalletScreen currentUser={FIXTURE_USER} onBack={() => {}} onOpenUserWallet={() => {}} />
+    <WalletScreen currentUser={FIXTURE_USER} onBack={() => {}} />
   ),
   'auth-signup': () => (
     <AuthScreen initialMode="signup" onBack={() => {}} onSuccess={() => {}} />
   ),
   'auth-login': () => (
     <AuthScreen initialMode="login" onBack={() => {}} onSuccess={() => {}} />
+  ),
+  'create-event': () => (
+    <CreateEventScreen currentUser={FIXTURE_USER} onBack={() => {}} onCreated={() => {}} />
+  ),
+  'payment-failed': () => (
+    <PaymentFailedScreen eventTitle="Lagos Music Festival" reference="VN-8F42-K19C" message="Your card was declined by your bank. No charge was made." onGoHome={() => {}} />
+  ),
+  profile: () => (
+    <ProfileScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', is_verified: true }}
+      onSignOut={() => {}}
+      tickets={[]}
+      savedCount={2}
+      onViewTicket={() => {}}
+      onNavigate={() => {}}
+      setActiveView={() => {}}
+      userRole="organizer"
+    />
+  ),
+  'promote-event': () => (
+    <PromoteEventScreen onBack={() => {}} currentUser={FIXTURE_USER} />
+  ),
+  'service-category': () => (
+    <ServiceCategoryScreen category="Photography" onBack={() => {}} onProviderPress={() => {}} />
+  ),
+  'service-provider-profile': () => (
+    <ServiceProviderProfileScreen providerId="prov-1" onBack={() => {}} currentUserId="user-1" currentUserEmail="user1@example.com" />
+  ),
+  'service-provider-setup': () => (
+    <ServiceProviderSetupScreen currentUser={FIXTURE_USER} onBack={() => {}} onSaved={() => {}} />
+  ),
+  'service-provider-verification': () => (
+    <ServiceProviderVerificationScreen currentUser={{ id: 'org-1', country: 'NG' }} onBack={() => {}} />
+  ),
+  settings: () => (
+    <SettingsScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      onBack={() => {}}
+      onSignOut={() => {}}
+      isDark
+      onToggleDark={() => {}}
+    />
+  ),
+  'settings-profile-details': () => (
+    <SettingsScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      onBack={() => {}}
+      onSignOut={() => {}}
+      isDark
+      onToggleDark={() => {}}
+      initialSubScreen="profile"
+    />
+  ),
+  'connected-accounts': () => (
+    <SettingsScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      onBack={() => {}}
+      onSignOut={() => {}}
+      isDark
+      onToggleDark={() => {}}
+      initialSubScreen="connected-accounts"
+    />
+  ),
+  'user-profile': () => (
+    <UserProfileScreen
+      user={{
+        id: 'user-2', name: 'Adaeze Okonkwo', username: 'adaeze.o', avatarColor: '#A855F7', avatarInitials: 'AO',
+        city: 'Lagos', bio: 'Event photographer & hype woman. Lagos based.', eventsAttended: 12, interests: ['Music', 'Technology'],
+        role: 'organizer', isOrganizer: true, isVerified: true,
+        instagram_handle: 'adaeze.creates', x_handle: null, tiktok_handle: null,
+      }}
+      onBack={() => {}}
+      currentUserId="org-1"
+    />
+  ),
+  'user-wallet': () => (
+    <UserWalletScreen currentUser={{ id: 'org-1', email: 'organizer@example.com' }} onBack={() => {}} />
+  ),
+  explore: () => (
+    <ExploreScreen currentUserId="org-1" onUserPress={() => {}} initialTab="people" />
+  ),
+  'explore-chats': () => (
+    <ExploreScreen currentUserId="org-1" onUserPress={() => {}} initialTab="chats" />
   ),
 };
 

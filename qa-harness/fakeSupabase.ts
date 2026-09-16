@@ -42,23 +42,39 @@ const FIXTURES: Record<string, Row[]> = {
 };
 
 function chainable(table: string): any {
-  const state: { filters: Array<[string, any]> } = { filters: [] };
+  const state: { filters: Array<[string, any]>; inFilters: Array<[string, any[]]>; limit: number | null; head: boolean } = {
+    filters: [], inFilters: [], limit: null, head: false,
+  };
   const api: any = {
-    select: () => api,
+    select: (_cols?: string, opts?: { head?: boolean }) => { if (opts?.head) state.head = true; return api; },
     eq: (k: string, v: any) => { state.filters.push([k, v]); return api; },
+    neq: () => api,
+    gte: () => api,
+    lte: () => api,
     is: () => api,
+    // Real .or() takes a Postgrest filter string like "a.eq.1,b.eq.2" -- the
+    // fixture table is tiny, so this just passes every row through rather
+    // than parsing that mini-language; good enough for a QA render check,
+    // never used to assert on filtered results.
+    or: () => api,
+    ilike: () => api,
+    in: (k: string, values: any[]) => { state.inFilters.push([k, values]); return api; },
     order: () => api,
-    limit: (n: number) => resolve(n),
+    limit: (n: number) => { state.limit = n; return api; },
+    range: () => api,
     single: () => resolveSingle(),
     maybeSingle: () => resolveSingle(),
-    then: (resolveFn: any) => resolve().then(resolveFn),
+    then: (resolveFn: any, rejectFn?: any) => resolve().then(resolveFn, rejectFn),
   };
   function applyFilters(rows: Row[]) {
-    return rows.filter((r) => state.filters.every(([k, v]) => r[k] === v));
+    return rows
+      .filter((r) => state.filters.every(([k, v]) => r[k] === v))
+      .filter((r) => state.inFilters.every(([k, values]) => values.includes(r[k])));
   }
-  function resolve(limit?: number) {
+  function resolve() {
     let rows = applyFilters(FIXTURES[table] || []);
-    if (limit) rows = rows.slice(0, limit);
+    if (state.limit) rows = rows.slice(0, state.limit);
+    if (state.head) return Promise.resolve({ data: null, error: null, count: rows.length });
     return Promise.resolve({ data: rows, error: null });
   }
   function resolveSingle() {

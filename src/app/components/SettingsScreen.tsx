@@ -37,6 +37,10 @@ interface SettingsScreenProps {
   isDark: boolean;
   onToggleDark: () => void;
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
+  // QA-harness-only deep link into a sub-screen (see qa-harness/main.tsx) --
+  // real app callers never pass this, so subScreen still always starts at
+  // the main list for every real navigation into Settings.
+  initialSubScreen?: SubScreen;
 }
 
 type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'connected-accounts';
@@ -1729,6 +1733,7 @@ export function SettingsScreen({
   isDark,
   onToggleDark,
   onProfileUpdated,
+  initialSubScreen,
 }: SettingsScreenProps) {
   if (!currentUser) {
     return (
@@ -1742,7 +1747,7 @@ export function SettingsScreen({
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [promoNotifs, setPromoNotifs] = useState(true);
   const [locationServices, setLocationServices] = useState(true);
-  const [subScreen, setSubScreen] = useState<SubScreen>(null);
+  const [subScreen, setSubScreen] = useState<SubScreen>(initialSubScreen ?? null);
   const [clearingNotifs, setClearingNotifs] = useState(false);
   const [notifsCleared, setNotifsCleared] = useState(false);
   const [showClearNotifsConfirm, setShowClearNotifsConfirm] = useState(false);
