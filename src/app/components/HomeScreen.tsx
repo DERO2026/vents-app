@@ -1080,16 +1080,42 @@ export function HomeScreen({
   // People search state (for full-screen search overlay)
   const [searchPeople, setSearchPeople] = useState<any[]>([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
-  const [suggestedPeople, setSuggestedPeople] = useState<any[]>([]);
 
+  // Handoff B2: the pre-typing state shows "Recent" (past search terms) and
+  // "Browse categories" -- not a suggested-people/popular-events preview.
+  // Recent searches are real, locally-remembered past queries (no backend
+  // search-suggestion API exists to power the mockup's keyword-autocomplete
+  // list, so that part isn't fabricated here); per-account key so they don't
+  // leak across accounts on a shared device.
+  const recentSearchesKey = currentUser?.id ? `vents_recent_searches_${currentUser.id}` : 'vents_recent_searches_guest';
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   useEffect(() => {
-    supabase
-      .from('public_profiles')
-      .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
-      .eq('is_verified', true)
-      .limit(5)
-      .then(({ data }) => setSuggestedPeople(data || []), () => { /* ignore */ });
-  }, []);
+    try {
+      const saved = localStorage.getItem(recentSearchesKey);
+      if (saved) setRecentSearches(JSON.parse(saved));
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentSearchesKey]);
+
+  const saveRecentSearch = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setRecentSearches((prev) => {
+      const next = [trimmed, ...prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(recentSearchesKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentSearchesKey]);
+
+  // Remembers a search once the user has paused typing (same 300ms debounce
+  // as the query itself commits on) -- only while the overlay is actually
+  // open, so unrelated searchQuery changes elsewhere never pollute Recent.
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) return;
+    saveRecentSearch(searchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchOpen]);
 
   useEffect(() => {
     const q = inputValue.trim();
@@ -1392,50 +1418,42 @@ export function HomeScreen({
           <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '0 16px 32px' }}>
             {!inputValue.trim() ? (
               <>
-                {/* Suggested People */}
-                {suggestedPeople.length > 0 && (
+                {/* Handoff B2: Recent (real past search terms, per-account,
+                    localStorage-backed) then Browse categories -- not a
+                    suggested-people/popular-events preview. There's no
+                    backend keyword-suggestion API to power the mockup's
+                    "afrobeats"/"afro house night" autocomplete list, so that
+                    part isn't fabricated; Recent is genuinely what the user
+                    searched before. */}
+                {recentSearches.length > 0 && (
                   <>
-                    <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
-                    {suggestedPeople.map((u: any) => (
-                      <div
-                        key={u.id}
-                        onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                      >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                          <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
-                          {u.avatar_url && (
-                            <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                          )}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
-                            <BadgeChip tier={u.vc_badge} />
-                          </div>
-                          <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>@{u.username}</span>
-                        </div>
-                      </div>
-                    ))}
+                    <p style={{ color: 'rgba(237,234,245,0.55)', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '12px' }}>Recent</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '22px' }}>
+                      {recentSearches.map((term) => (
+                        <button
+                          key={term}
+                          onClick={() => setInputValue(term)}
+                          style={{ height: '36px', padding: '0 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
                   </>
                 )}
-                {/* Popular Events */}
-                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
-                {dbEvents.slice(0, 4).map(ev => (
-                  <div
-                    key={ev.id}
-                    onClick={() => { setSearchOpen(false); setInputValue(''); onEventPress(ev); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                  >
-                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
-                      <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                      <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
-                    </div>
-                  </div>
-                ))}
+
+                <p style={{ color: 'rgba(237,234,245,0.55)', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '12px' }}>Browse categories</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {CATEGORY_LIST.slice(0, 6).map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setActiveCategory(cat.id); setSearchOpen(false); setInputValue(''); }}
+                      style={{ height: '62px', borderRadius: '14px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', padding: '0 16px', fontSize: '15px', fontWeight: 700, color: ventsColors.ink1, cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
               </>
             ) : (
               <>
