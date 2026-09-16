@@ -26,7 +26,16 @@ export default defineConfig({
     // only replaces the matched tail, leaving a mangled
     // "../.." + absolute-path specifier that then fails to resolve at all.
     // Anchoring at both ends makes the whole specifier the match.
-    alias: [{ find: /^(\.\.\/)*lib\/supabase$/, replacement: FAKE_SUPABASE_PATH }],
+    alias: [
+      { find: /^(\.\.\/)*lib\/supabase$/, replacement: FAKE_SUPABASE_PATH },
+      // Files that already live inside src/lib/ (serviceProviders.ts,
+      // userWallet.ts, ...) import the client as a same-dir relative
+      // './supabase' rather than '../../lib/supabase' -- the pattern
+      // above never matches that specifier, so those files hit the real
+      // (sandbox-blocked) network instead of the fixture, hanging on
+      // "Loading..." or surfacing a raw fetch error in the UI.
+      { find: /^\.\/supabase$/, replacement: FAKE_SUPABASE_PATH },
+    ],
   },
   server: { port: 5199, strictPort: true, fs: { strict: false } },
 });
