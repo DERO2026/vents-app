@@ -202,6 +202,15 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'auth-login': () => (
     <AuthScreen initialMode="login" onBack={() => {}} onSuccess={() => {}} />
   ),
+  'auth-verify-otp': () => (
+    <AuthScreen initialMode="signup" onBack={() => {}} onSuccess={() => {}} pendingVerificationEmail="ada@example.com" />
+  ),
+  'auth-forgot': () => (
+    <AuthScreen initialMode="forgot" onBack={() => {}} onSuccess={() => {}} />
+  ),
+  'auth-forgot-otp': () => (
+    <AuthScreen initialMode="forgot" onBack={() => {}} onSuccess={() => {}} pendingResetEmail="ada@example.com" />
+  ),
   'create-event': () => (
     <CreateEventScreen currentUser={FIXTURE_USER} onBack={() => {}} onCreated={() => {}} />
   ),

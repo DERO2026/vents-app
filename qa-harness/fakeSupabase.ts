@@ -84,6 +84,7 @@ function chainable(table: string): any {
     range: () => api,
     single: () => resolveSingle(),
     maybeSingle: () => resolveSingle(),
+    upsert: () => Promise.resolve({ data: null, error: null }),
     then: (resolveFn: any, rejectFn?: any) => resolve().then(resolveFn, rejectFn),
   };
   function applyFilters(rows: Row[]) {
@@ -118,11 +119,24 @@ const RPC_FIXTURES: Record<string, any> = {
   },
 };
 
+// QA-ONLY auth mocks so AuthScreen's real OTP/verification UI is reachable
+// without live Supabase credentials -- each mirrors the shape the real
+// client returns on the SUCCESS path only (email-confirmation-required
+// signup, code-sent password reset, correct-code verify), just enough to
+// drive the screen's own state machine into each visual state for
+// comparison against the export. Never used by the real app build.
 export const supabase = {
   from: (table: string) => chainable(table),
   auth: {
     getSession: async () => ({ data: { session: null }, error: null }),
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
+    signUp: async () => ({ data: { user: { id: 'qa-fake-user', email: 'ada@example.com' }, session: null }, error: null }),
+    signInWithPassword: async () => ({ data: { user: null, session: null }, error: { message: 'Invalid login credentials' } }),
+    resetPasswordForEmail: async () => ({ data: {}, error: null }),
+    verifyOtp: async () => ({ data: { user: { id: 'qa-fake-user' }, session: { access_token: 'qa-fake' } }, error: null }),
+    updateUser: async () => ({ data: {}, error: null }),
+    resend: async () => ({ data: {}, error: null }),
+    signOut: async () => ({ error: null }),
   },
   rpc: async (fn: string) => ({ data: RPC_FIXTURES[fn] ?? null, error: null }),
   channel: () => ({ on: () => ({ subscribe: () => {} }), subscribe: () => {} }),

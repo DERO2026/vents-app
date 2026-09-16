@@ -807,6 +807,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         analytics.passwordResetRequested();
         setForgotSent(true);
         setForgotOtpStep(true);
+        // Same reasoning as the signup OTP screen: resetPasswordForEmail
+        // just sent the code, so start the cooldown immediately rather
+        // than leaving "Resend Code" tappable the instant this screen
+        // appears.
+        setForgotResendCooldown(30);
 
       } else if (mode === 'reset') {
         // Legacy InsForge deep-link recovery — superseded by the in-app OTP
@@ -996,6 +1001,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         if (data?.user && !data.session) {
           analytics.signedUp(strictRole);
           setIsVerifying(true);
+          // A code was just emailed by signUp() itself -- start the same
+          // 30s resend cooldown a manual resend uses, so "Resend code" isn't
+          // immediately tappable on arrival (matches the export's A4, which
+          // shows the cooldown already counting down the moment this screen
+          // is reached, not a bare "Resend code" link).
+          setResendCooldown(30);
           // Persist the full form, not just the email — the immediate
           // upsert above has no session yet (email confirmation pending)
           // and is RLS-rejected, so this is the only place this data
