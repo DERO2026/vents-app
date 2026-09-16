@@ -68,7 +68,7 @@ export function ConfirmDialog({
           <SecondaryButton
             onClick={onCancel}
             size="sm"
-            style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#C4C9E0', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
+            style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#C4C9E0', fontFamily: 'Manrope, sans-serif', fontWeight: 600 }}
           >
             {cancelLabel}
           </SecondaryButton>

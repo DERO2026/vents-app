@@ -170,7 +170,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
   };
 
   return (
-    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(18px + env(safe-area-inset-top)) 18px 12px', flexShrink: 0, borderBottom: `1px solid ${C.line}` }}>
         <button onClick={onBack} aria-label="Back" style={iconBtn}>

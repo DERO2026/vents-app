@@ -143,7 +143,7 @@ export function OrganizerDashboard({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Manrope, sans-serif',
           color: ventsColors.ink2,
         }}
       >
@@ -184,7 +184,7 @@ export function OrganizerDashboard({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Manrope, sans-serif',
           padding: '24px',
           textAlign: 'center',
         }}
@@ -221,7 +221,7 @@ export function OrganizerDashboard({
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
         color: ventsColors.ink1,
         overflowY: 'auto',
       }}

@@ -47,7 +47,7 @@ export function PickerField({
         style={{
           color: value ? '#F0F0FF' : '#8B8FA8',
           fontSize: '14px',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Manrope, sans-serif',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -216,7 +216,7 @@ export function PickerSheet({
                 outline: 'none',
                 color: '#F0F0FF',
                 fontSize: '14px',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
               }}
               autoFocus
             />

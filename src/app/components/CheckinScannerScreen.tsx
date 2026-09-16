@@ -195,7 +195,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const showFrame = cam.status === 'ready' && outcome === null;
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', fontFamily: 'Manrope, sans-serif' }}>
       {/* Live camera preview — owned by us, fills the screen, cannot collapse. */}
       <video
         ref={cam.videoRef}

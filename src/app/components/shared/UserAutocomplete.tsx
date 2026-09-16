@@ -182,7 +182,7 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
             // dropdown unmounts.
             setTimeout(() => setOpen(false), 150);
           }}
-          style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+          style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#FFFFFF', fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
         />
       </div>
 

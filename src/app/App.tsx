@@ -2486,7 +2486,7 @@ export default function App() {
         style={{
           background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
@@ -2519,7 +2519,7 @@ export default function App() {
         style={{
           background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
@@ -2540,7 +2540,7 @@ export default function App() {
       className="min-h-screen flex items-center justify-center"
       style={{
         background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       {appToastError && (

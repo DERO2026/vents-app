@@ -66,7 +66,7 @@ function TextField({ value, onChange, placeholder, maxLength }: { value: string;
         width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt,
         border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm,
         padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px',
-        outline: 'none', fontFamily: 'Inter, sans-serif',
+        outline: 'none', fontFamily: 'Manrope, sans-serif',
       }}
     />
   );
@@ -122,7 +122,7 @@ function OverlayPicker<T>({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '11px 14px' }}>
           <Search size={16} color={servicesColors.textSecondary} style={{ flexShrink: 0 }} />
-          <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Inter, sans-serif' }} />
+          <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder={placeholder} style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }} />
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px 40px', scrollbarWidth: 'none' }}>
@@ -519,7 +519,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             onChange={(e) => setDescription(e.target.value.slice(0, DESCRIPTION_LIMIT))}
             placeholder="Tell customers what you offer..."
             rows={4}
-            style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'Inter, sans-serif' }}
+            style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', resize: 'none', fontFamily: 'Manrope, sans-serif' }}
           />
           <p style={{ color: servicesColors.textTertiary, fontSize: '11px', textAlign: 'right', margin: '6px 0 0' }}>{description.length}/{DESCRIPTION_LIMIT}</p>
         </div>
@@ -566,7 +566,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
               onChange={(e) => setStartingPrice(e.target.value.replace(/[^0-9.]/g, ''))}
               placeholder="Amount"
               inputMode="decimal"
-              style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif' }}
+              style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'Manrope, sans-serif' }}
             />
           </div>
           <button
@@ -586,7 +586,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
               onChange={(e) => setServiceInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addServiceChip(); } }}
               placeholder="e.g. Bridal makeup"
-              style={{ flex: 1, boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif' }}
+              style={{ flex: 1, boxSizing: 'border-box', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '13px 14px', color: servicesColors.textPrimary, fontSize: '14px', outline: 'none', fontFamily: 'Manrope, sans-serif' }}
             />
             <button onClick={addServiceChip} style={{ width: '46px', flexShrink: 0, background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <Plus size={18} color={servicesColors.textSecondary} />

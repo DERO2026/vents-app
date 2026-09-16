@@ -133,7 +133,7 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       {/* Header */}

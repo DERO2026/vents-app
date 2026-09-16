@@ -330,7 +330,7 @@ export function ProfileScreen({
 
   if (!currentUser) {
     return (
-      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: ventsColors.ink3, fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: ventsColors.ink3, fontFamily: 'Manrope, sans-serif', textAlign: 'center' }}>
         <div style={{ fontSize: '20px', fontWeight: 700, color: ventsColors.white }}>Sign in to view your profile</div>
         <div style={{ fontSize: '14px', color: ventsColors.ink3, maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
         <button

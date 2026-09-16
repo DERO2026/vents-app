@@ -36,7 +36,7 @@ const inputStyle: React.CSSProperties = {
   width: '100%', boxSizing: 'border-box', background: servicesColors.cardBgAlt,
   border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm,
   padding: '12px 14px', color: servicesColors.textPrimary, fontSize: '14px',
-  outline: 'none', fontFamily: 'Inter, sans-serif',
+  outline: 'none', fontFamily: 'Manrope, sans-serif',
 };
 
 function emptyForm(defaultCategory?: string, defaultCurrency?: string): ProviderServiceInput {

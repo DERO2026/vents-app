@@ -162,7 +162,7 @@ export function ServicesHomeScreen({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search services or providers"
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
           />
         </div>
 

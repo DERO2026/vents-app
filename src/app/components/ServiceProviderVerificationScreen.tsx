@@ -133,7 +133,7 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
 
   const inputStyle: React.CSSProperties = {
     width: '100%', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px',
-    padding: '12px 14px', color: ventsColors.ink1, fontSize: '14px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box',
+    padding: '12px 14px', color: ventsColors.ink1, fontSize: '14px', outline: 'none', fontFamily: 'Manrope, sans-serif', boxSizing: 'border-box',
   };
 
   const handleFileSelect = useCallback((f: File | null) => {

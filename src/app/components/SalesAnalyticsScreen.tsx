@@ -336,7 +336,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
 
   if (!currentUser) {
     return (
-      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Manrope, sans-serif' }}>
         Loading analytics...
       </div>
     );
@@ -350,7 +350,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack }: { currentUser: SalesA
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       {/* Header */}
@@ -605,7 +605,7 @@ function EventAnalyticsScreen({ currentUser, onBack, eventId, eventTitle }: { cu
   }, [currentUser?.id, eventId]);
 
   return (
-    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button

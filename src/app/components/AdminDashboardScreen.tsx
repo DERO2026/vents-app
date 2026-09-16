@@ -2003,7 +2003,7 @@ export function AdminDashboardScreen({
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
 
       {confirmModal && (
         <ConfirmModal
@@ -2810,7 +2810,7 @@ export function AdminDashboardScreen({
                   value={cacSearchInput}
                   onChange={e => setCacSearchInput(e.target.value)}
                   placeholder="Search by business/organizer name, CAC/ID number, or email…"
-                  style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                  style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Manrope, sans-serif' }}
                 />
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -2914,7 +2914,7 @@ export function AdminDashboardScreen({
                               onChange={e => setCacRejectReason(e.target.value)}
                               placeholder="Reason for rejecting this request (shown to the organizer)…"
                               rows={2}
-                              style={{ width: '100%', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                              style={{ width: '100%', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'Manrope, sans-serif' }}
                             />
                           </div>
                         )}
@@ -3629,7 +3629,7 @@ export function AdminDashboardScreen({
               onChange={e => setBroadcastMsg(e.target.value)}
               placeholder="Type your announcement…"
               rows={3}
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif' }}
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', resize: 'none', outline: 'none', fontFamily: 'Manrope, sans-serif' }}
             />
             <button
               onClick={handleBroadcast}

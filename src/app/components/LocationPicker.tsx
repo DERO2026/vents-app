@@ -42,7 +42,7 @@ const INPUT_STYLE: React.CSSProperties = {
   padding: '12px 38px 12px 14px',
   color: '#F0F0FF',
   fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: 'Manrope, sans-serif',
   outline: 'none',
   boxSizing: 'border-box',
 };

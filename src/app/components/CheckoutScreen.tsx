@@ -34,7 +34,7 @@ const INPUT_STYLE: React.CSSProperties = {
   outline: 'none',
   color: ventsColors.white,
   fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: 'Manrope, sans-serif',
 };
 
 function isValidEmail(email: string) {

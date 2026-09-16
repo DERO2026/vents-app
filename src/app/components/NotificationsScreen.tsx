@@ -256,7 +256,7 @@ export function NotificationsScreen({
         display: 'flex',
         flexDirection: 'column',
         position: 'relative',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
       onTouchStart={(e) => { pullStartY.current = e.touches[0].clientY; }}
       onTouchEnd={(e) => {

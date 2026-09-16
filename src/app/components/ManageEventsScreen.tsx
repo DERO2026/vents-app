@@ -186,7 +186,7 @@ export function ManageEventsScreen({
   }
 
   return (
-    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: 'Manrope, sans-serif' }}>
       <style>{`
         input::placeholder { color: ${C.sub}; }
         @keyframes ventsCardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -240,7 +240,7 @@ export function ManageEventsScreen({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search your events..."
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
           />
         </div>
         <button
@@ -522,7 +522,7 @@ export function ManageEventsScreen({
                     value={announceBody}
                     onChange={e => setAnnounceBody(e.target.value.slice(0, ANNOUNCE_BODY_MAX))}
                     rows={4}
-                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', outline: 'none', resize: 'none', fontFamily: 'Inter, sans-serif' }}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', outline: 'none', resize: 'none', fontFamily: 'Manrope, sans-serif' }}
                   />
                   <p style={{ margin: '4px 2px 0', textAlign: 'right', fontSize: '11px', color: C.faint }}>{announceBody.length}/{ANNOUNCE_BODY_MAX}</p>
                 </div>

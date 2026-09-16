@@ -25,7 +25,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
         background: '#07030F',
         minHeight: '100dvh',
         color: '#C4C9E0',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       <header

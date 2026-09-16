@@ -1372,7 +1372,7 @@ export function HomeScreen({
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 placeholder="Search people and events..."
-                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.ink1, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.ink1, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
               />
               {inputValue && (
                 <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>

@@ -60,7 +60,7 @@ export function PrivacyPolicyScreen({ onBack }: PrivacyPolicyScreenProps) {
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px', paddingBottom: `calc(20px + env(safe-area-inset-bottom))` }}>
-        <div style={{ whiteSpace: 'pre-wrap', color: '#C4C9E0', fontSize: '13px', lineHeight: 1.7, fontFamily: 'Inter, sans-serif', maxWidth: '100%' }}>
+        <div style={{ whiteSpace: 'pre-wrap', color: '#C4C9E0', fontSize: '13px', lineHeight: 1.7, fontFamily: 'Manrope, sans-serif', maxWidth: '100%' }}>
           {PRIVACY_POLICY_TEXT}
         </div>
 

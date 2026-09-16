@@ -2281,7 +2281,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                           flex: 1,
                           color: signupState ? '#F0F0FF' : '#8B8FA8',
                           fontSize: '14px',
-                          fontFamily: 'Inter, sans-serif',
+                          fontFamily: 'Manrope, sans-serif',
                           textAlign: 'left',
                         }}
                       >
@@ -2387,7 +2387,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontSize: '14px',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: 'Manrope, sans-serif',
                   }}
                 >
                   Back to Sign In

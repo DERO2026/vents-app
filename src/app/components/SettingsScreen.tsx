@@ -369,7 +369,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
     color: '#F0F0FF',
     fontSize: '14px',
     outline: 'none',
-    fontFamily: 'Inter, sans-serif',
+    fontFamily: 'Manrope, sans-serif',
     boxSizing: 'border-box',
   };
 
@@ -1062,13 +1062,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
     color: '#F0F0FF',
     fontSize: '14px',
     outline: 'none',
-    fontFamily: 'Inter, sans-serif',
+    fontFamily: 'Manrope, sans-serif',
     boxSizing: 'border-box',
   };
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Manrope, sans-serif' }}>
         Loading profile details...
       </div>
     );
@@ -1723,7 +1723,7 @@ export function SettingsScreen({
 }: SettingsScreenProps) {
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Manrope, sans-serif' }}>
         Loading settings...
       </div>
     );
@@ -1950,7 +1950,7 @@ function DeleteAccountScreen({
 
   if (step === 'done') {
     return (
-      <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Manrope, sans-serif' }}>
         <span style={{ fontSize: '48px', marginBottom: '20px' }}>✓</span>
         <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '12px' }}>Account Deleted</p>
         <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '16px' }}>
@@ -1966,7 +1966,7 @@ function DeleteAccountScreen({
   }
 
   return (
-    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#8B8FA8', cursor: 'pointer', padding: '4px' }}>
           <ArrowLeft size={20} />

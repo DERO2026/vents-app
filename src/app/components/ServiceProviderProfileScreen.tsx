@@ -275,7 +275,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 </span>
               ))}
             </div>
-            <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: 700, fontFamily: 'Inter, sans-serif', margin: 0 }}>{provider.businessName}</h1>
+            <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0 }}>{provider.businessName}</h1>
           </div>
         </div>
 

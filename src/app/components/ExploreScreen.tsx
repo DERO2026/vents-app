@@ -328,7 +328,7 @@ export function ExploreScreen({
             value={query}
             onChange={e => setQuery(e.target.value)}
             placeholder="Search people and messages..."
-            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.white, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.white, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
           />
           {query && (
             <button onClick={() => setQuery('')} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>

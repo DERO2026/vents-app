@@ -161,7 +161,7 @@ export function PromoteEventScreen({ onBack, currentUser, initialEventId, onProm
 
   if (!currentUser) {
     return (
-      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: ventsColors.ink2, fontFamily: 'Manrope, sans-serif' }}>
         Loading promotions...
       </div>
     );
