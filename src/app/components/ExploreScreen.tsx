@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ventsColors } from '../../lib/ventsDesignTokens';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import { Search, X, CheckCircle, MessageCircle, Check, ChevronRight } from 'lucide-react';
 import { UserProfile } from './types';
@@ -491,7 +491,7 @@ export function ExploreScreen({
                               <span style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', minWidth: 0 }}>{name}</span>
                               <span style={{ flexShrink: 0 }}><BadgeChip tier={profile?.vc_badge} /></span>
                               {badge && (
-                                <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
+                                <span style={{ flexShrink: 0, background: badge.bg, color: badge.color, fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, padding: '2px 7px', borderRadius: '999px' }}>{badge.label}</span>
                               )}
                             </div>
                             <span style={{ color: ventsColors.ink3, fontSize: '11px', flexShrink: 0, marginLeft: '4px' }}>{timeAgo(lastMsg.created_at)}</span>
