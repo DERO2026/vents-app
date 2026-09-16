@@ -21,6 +21,8 @@ import { DoorManagerScreen } from '../src/app/components/DoorManagerScreen';
 import { BottomNav } from '../src/app/components/BottomNav';
 import { TicketRefundScreen } from '../src/app/components/TicketRefundScreen';
 import { PaymentRequestScreen } from '../src/app/components/PaymentRequestScreen';
+import { CountrySelectScreen } from '../src/app/components/CountrySelectScreen';
+import { WalletScreen } from '../src/app/components/WalletScreen';
 
 const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
 
@@ -173,6 +175,12 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   'payment-request': () => (
     <PaymentRequestScreen paymentRef="pr-1" currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer' }} onBack={() => {}} onPaid={() => {}} />
+  ),
+  'country-select': () => (
+    <CountrySelectScreen onContinue={() => {}} onBack={() => {}} />
+  ),
+  wallet: () => (
+    <WalletScreen currentUser={FIXTURE_USER} onBack={() => {}} onOpenUserWallet={() => {}} />
   ),
 };
 

@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ArrowLeft, Search, Check, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Search, Check } from 'lucide-react';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
+import { currencyForCountry, currencyByCode } from '../../lib/currencies';
 import { ventsColors, ventsTypography, ventsRadii } from '../../lib/ventsDesignTokens';
 
 // The account/home-country step in the signup flow (Choose Country ->
@@ -70,6 +71,11 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
         >
           <ArrowLeft size={18} color={ventsColors.white} />
         </button>
+        {/* Handoff A2: step indicator eyebrow above the headline -- was
+            missing entirely. */}
+        <p style={{ margin: '0 0 8px', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: ventsColors.accentSoft }}>
+          Step 1 of 3
+        </p>
         <h1
           style={{
             margin: 0,
@@ -82,11 +88,10 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
             marginBottom: '8px',
           }}
         >
-          Where's home{' '}
-          <span style={{ color: ventsColors.accentSoft }}>for you?</span>
+          Where are you?
         </h1>
         <p style={{ margin: 0, color: ventsColors.ink2, fontSize: '15px', lineHeight: 1.55, maxWidth: '300px' }}>
-          This sets your account's home country — you'll still see and book events everywhere on VENTS.
+          This sets your account's home country and currency — you'll still see and book events everywhere on VENTS.
         </p>
       </div>
 
@@ -98,7 +103,7 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
             autoFocus
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search countries"
+            placeholder="Search countries..."
             style={{ flex: 1, minWidth: 0, height: '100%', background: 'none', border: 'none', outline: 'none', color: ventsColors.white, fontSize: '16px', fontFamily: ventsTypography.fontBody }}
           />
         </div>
@@ -157,7 +162,15 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
                     <span style={{ color: isSelected ? ventsColors.white : ventsColors.ink1, fontSize: '16px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {country.name}
                     </span>
-                    <span style={{ color: isSelected ? ventsColors.ink2 : ventsColors.ink3, fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.1em' }}>{country.code}</span>
+                    {/* Handoff A2: shows the currency this country resolves
+                        to ("NGN · ₦"), not the phone dial code -- currency
+                        is the actual thing this screen sets. */}
+                    <span style={{ color: isSelected ? ventsColors.ink2 : ventsColors.ink3, fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.1em' }}>
+                      {(() => {
+                        const cur = currencyByCode(currencyForCountry(country.iso));
+                        return cur ? `${cur.code} · ${cur.symbol}` : country.code;
+                      })()}
+                    </span>
                   </div>
                   {isSelected && (
                     <div
@@ -212,12 +225,10 @@ export function CountrySelectScreen({ onContinue, onBack, selectedIso }: Country
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            gap: '10px',
             transition: 'all 0.2s ease',
           }}
         >
-          {selectedCountry ? `Continue with ${selectedCountry.name}` : 'Select your country'}
-          {selectedCountry && <ChevronRight size={16} />}
+          Continue
         </button>
       </div>
     </div>

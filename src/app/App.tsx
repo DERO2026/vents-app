@@ -3371,7 +3371,7 @@ export default function App() {
 
           {/* ── WALLET (organizer/provider earnings) ── */}
           {screen === 'wallet' && (
-            <WalletScreen currentUser={currentUser} onBack={goBack} />
+            <WalletScreen currentUser={currentUser} onBack={goBack} onOpenUserWallet={() => navigateTo('user-wallet')} />
           )}
 
           {/* ── TICKET REFUND (attendee side) ── */}

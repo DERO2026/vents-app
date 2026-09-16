@@ -8,10 +8,16 @@ import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { AmbientGlow } from './shared/AmbientGlow';
+import { fetchMyWalletBalanceKobo } from '../../lib/userWallet';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
   onBack: () => void;
+  // Opens UserWalletScreen (the customer-facing deposit/spend balance
+  // screen) -- "Add money" and "Statement" on the Spendable Balance card
+  // both go there rather than duplicating its Paystack deposit flow and
+  // transaction history here.
+  onOpenUserWallet?: () => void;
 }
 
 interface WalletData {
@@ -144,8 +150,13 @@ async function authedFetch(path: string, body: any) {
   return json;
 }
 
-export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
+export function WalletScreen({ currentUser, onBack, onOpenUserWallet }: WalletScreenProps) {
   const [wallet, setWallet] = useState<WalletData | null>(null);
+  // Spendable Balance (the customer-facing VENTS Wallet deposit balance --
+  // same source UserWalletScreen reads) shown as its own card above
+  // Earnings, per the handoff: one Wallet screen, not two disconnected
+  // ones for the same account.
+  const [spendableKobo, setSpendableKobo] = useState<number | null>(null);
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
@@ -281,6 +292,15 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   useEffect(() => { load(); }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) { setSpendableKobo(null); return; }
+    let cancelled = false;
+    fetchMyWalletBalanceKobo()
+      .then((kobo) => { if (!cancelled) setSpendableKobo(kobo); })
+      .catch(() => { if (!cancelled) setSpendableKobo(null); });
+    return () => { cancelled = true; };
+  }, [currentUser?.id]);
 
   // Ledger rows + open/failed/rejected withdrawal requests, merged into one
   // reverse-chronological feed. Loading more ledger pages naturally
@@ -577,20 +597,51 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               <span style={{ color: ventsColors.pending, fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
             </div>
           )}
-          {/* Balance card */}
-          <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Wallet size={18} color="rgba(255,255,255,0.7)" />
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>Available Balance</span>
+          {/* Spendable Balance -- the customer-facing deposit/spend
+              balance (UserWalletScreen's own data), shown here so Wallet
+              is one screen instead of two disconnected ones for the same
+              account. Add money/Statement both open UserWalletScreen
+              itself rather than duplicating its deposit flow and
+              transaction history here. */}
+          {onOpenUserWallet && (
+            <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '22px 22px', marginBottom: '14px' }}>
+              <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
+                Spendable Balance
+              </p>
+              <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                {spendableKobo === null ? '—' : fmt(Math.round(spendableKobo / 100))}
+              </p>
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <button
+                  onClick={onOpenUserWallet}
+                  style={{ flex: 1, height: '44px', borderRadius: '13px', background: '#fff', border: 'none', color: '#2A1550', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Add money
+                </button>
+                <button
+                  onClick={onOpenUserWallet}
+                  style={{ flex: 1, height: '44px', borderRadius: '13px', background: 'rgba(255,255,255,0.16)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Statement
+                </button>
+              </div>
             </div>
-            <p style={{ fontSize: `clamp(20px, ${Math.max(20, 36 - Math.max(0, fmt(balance).length - 10) * 2)}px, 36px)`, fontWeight: 800, margin: '0 0 16px', color: '#fff', wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <TrendingUp size={14} color="rgba(255,255,255,0.6)" />
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+          )}
+
+          {/* Earnings -- withdrawable, organizer-only, never spendable in-app. */}
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', padding: '20px', marginBottom: '20px', border: '1px solid rgba(255,255,255,0.09)' }}>
+            <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
+              Earnings · Withdrawable
+            </p>
+            <p style={{ fontSize: `clamp(20px, ${Math.max(20, 32 - Math.max(0, fmt(balance).length - 10) * 2)}px, 32px)`, fontWeight: 800, margin: '0 0 6px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
+            <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px' }}>
+              <TrendingUp size={14} color={ventsColors.ink3} />
+              <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
             </div>
             {pending > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</span>
+                <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</span>
               </div>
             )}
           </div>
