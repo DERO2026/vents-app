@@ -643,9 +643,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               means one balance-to-history relationship per section, not a
               second screen that duplicates this one. */}
           <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '22px 22px', marginBottom: '14px' }}>
-            <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
-              Spendable Balance
-            </p>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+              <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
+                Spendable Balance
+              </p>
+              <img src="/brand/vents-logo-small.png" alt="" style={{ height: '15px', width: 'auto', display: 'block', opacity: 0.95, flexShrink: 0 }} />
+            </div>
             <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
               {spendableKobo === null ? '—' : fmt(spendableKobo)}
             </p>
