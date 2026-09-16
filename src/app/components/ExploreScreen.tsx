@@ -49,6 +49,9 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     isOrganizer: dbUser.role === 'organizer',
     isVerified: dbUser.is_verified === true,
     vc_badge: dbUser.vc_badge || undefined,
+    instagram_handle: dbUser.instagram_handle || null,
+    x_handle: dbUser.x_handle || null,
+    tiktok_handle: dbUser.tiktok_handle || null,
   };
 }
 

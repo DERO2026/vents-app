@@ -6,6 +6,8 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { ReportModal } from './ReportModal';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
+import { openExternalUrl } from '../../lib/externalLink';
+import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -374,6 +376,29 @@ export function UserProfileScreen({
       >
         {user.bio}
       </p>
+
+      {/* Connected Accounts (handoff PD2) -- real per-user handles
+          (users.instagram_handle/x_handle/tiktok_handle), only rendered
+          when actually set rather than showing empty/placeholder icons. */}
+      {(user.instagram_handle || user.x_handle || user.tiktok_handle) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '0 16px', marginBottom: '16px' }}>
+          {user.instagram_handle && (
+            <button onClick={() => openExternalUrl(`https://instagram.com/${user.instagram_handle}`)} title={`@${user.instagram_handle} on Instagram`} style={{ width: '32px', height: '32px', borderRadius: '9px', background: 'linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <SiInstagram size={14} color="#fff" />
+            </button>
+          )}
+          {user.x_handle && (
+            <button onClick={() => openExternalUrl(`https://x.com/${user.x_handle}`)} title={`@${user.x_handle} on X`} style={{ width: '32px', height: '32px', borderRadius: '9px', background: '#000', border: '1px solid rgba(255,255,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <SiX size={13} color="#fff" />
+            </button>
+          )}
+          {user.tiktok_handle && (
+            <button onClick={() => openExternalUrl(`https://www.tiktok.com/@${user.tiktok_handle}`)} title={`@${user.tiktok_handle} on TikTok`} style={{ width: '32px', height: '32px', borderRadius: '9px', background: '#000', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+              <SiTiktok size={13} color="#fff" />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Location — hidden entirely when unset rather than showing a fake/blank state */}
       {user.city && (

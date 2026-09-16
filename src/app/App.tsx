@@ -627,7 +627,7 @@ export default function App() {
           Promise.resolve(
             supabase
               .from('public_profiles')
-              .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+              .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
               .eq('id', userDeepLink)
               .maybeSingle()
           )
@@ -2236,7 +2236,7 @@ export default function App() {
     if (data.userId) {
       supabase
         .from('public_profiles')
-        .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+        .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
         .eq('id', data.userId)
         .maybeSingle()
         .then(({ data: userData, error: userError }) => {
@@ -2851,7 +2851,7 @@ export default function App() {
               onUserPress={async (u) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', u.id)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -3085,7 +3085,7 @@ export default function App() {
               onOrganizerPress={async (organizerId) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', organizerId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -3427,7 +3427,7 @@ export default function App() {
               onNavigateToProfile={async (userId) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', userId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }

@@ -39,7 +39,7 @@ interface SettingsScreenProps {
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
 }
 
-type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account';
+type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'connected-accounts';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -701,7 +701,7 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
   );
 }
 
-function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteAccount }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void; onDeleteAccount?: () => void }) {
+function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteAccount, onOpenConnectedAccounts }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void; onDeleteAccount?: () => void; onOpenConnectedAccounts?: () => void }) {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -1255,6 +1255,15 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Email Address</p>
                 <input value={currentUser?.email || ''} readOnly style={{ ...inputStyle, opacity: 0.5 }} />
               </div>
+              {onOpenConnectedAccounts && (
+                <button
+                  onClick={onOpenConnectedAccounts}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '13px 14px', color: '#F0F0FF', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Connected Accounts
+                  <ChevronRight size={16} color="#94A3B8" />
+                </button>
+              )}
             </div>
 
             {saved && (
@@ -1782,10 +1791,11 @@ export function SettingsScreen({
       .eq('id', currentUser.id);
   };
 
-  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} />;
+  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} onOpenConnectedAccounts={() => setSubScreen('connected-accounts')} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
   if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
+  if (subScreen === 'connected-accounts') return <ConnectedAccountsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
@@ -1907,6 +1917,171 @@ export function SettingsScreen({
         onConfirm={handleClearNotifications}
         onCancel={() => setShowClearNotifsConfirm(false)}
       />
+    </div>
+  );
+}
+
+// Handoff PD2: real per-user Instagram/X/TikTok handles (users.
+// instagram_handle/x_handle/tiktok_handle, 0079_user_social_handles.sql),
+// editable here and shown on the public organizer profile
+// (UserProfileScreen) -- distinct from the "RESOURCES" section's static
+// links to VENTS' own corporate social accounts, which this screen does
+// not touch.
+const SOCIAL_HANDLE_FIELDS = [
+  { key: 'instagram_handle' as const, label: 'Instagram', icon: SiInstagram, background: 'linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)', placeholder: 'username' },
+  { key: 'x_handle' as const, label: 'X (Twitter)', icon: SiX, background: '#000', placeholder: 'username' },
+  { key: 'tiktok_handle' as const, label: 'TikTok', icon: SiTiktok, background: '#000', placeholder: 'username' },
+];
+
+function ConnectedAccountsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
+  const [handles, setHandles] = useState<Record<string, string>>({ instagram_handle: '', x_handle: '', tiktok_handle: '' });
+  const [loading, setLoading] = useState(true);
+  const [editingField, setEditingField] = useState<typeof SOCIAL_HANDLE_FIELDS[number] | null>(null);
+  const [draftValue, setDraftValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      if (!currentUser?.id) return;
+      try {
+        const { data, error: err } = await supabase
+          .from('users')
+          .select('instagram_handle, x_handle, tiktok_handle')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+        if (err) throw err;
+        if (data) {
+          setHandles({
+            instagram_handle: data.instagram_handle || '',
+            x_handle: data.x_handle || '',
+            tiktok_handle: data.tiktok_handle || '',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load connected accounts:', err);
+        Sentry.captureException(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [currentUser?.id]);
+
+  function openEditor(field: typeof SOCIAL_HANDLE_FIELDS[number]) {
+    setError(null);
+    setDraftValue(handles[field.key]);
+    setEditingField(field);
+  }
+
+  async function saveHandle() {
+    if (!editingField || !currentUser?.id) return;
+    const cleaned = draftValue.trim().replace(/^@/, '');
+    const format = editingField.key === 'x_handle' ? /^[A-Za-z0-9_]{1,15}$/ : editingField.key === 'tiktok_handle' ? /^[A-Za-z0-9._]{1,24}$/ : /^[A-Za-z0-9._]{1,30}$/;
+    if (cleaned && !format.test(cleaned)) {
+      setError(`Enter a valid ${editingField.label} handle, or leave blank to disconnect.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase
+        .from('users')
+        .update({ [editingField.key]: cleaned || null })
+        .eq('id', currentUser.id);
+      if (err) throw err;
+      setHandles((prev) => ({ ...prev, [editingField.key]: cleaned }));
+      onProfileUpdated?.({ [editingField.key]: cleaned || null });
+      setEditingField(null);
+    } catch (err: any) {
+      setError(err?.message || 'Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '14px',
+    outline: 'none', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, margin: 0 }}>Connected Accounts</h1>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px calc(24px + env(safe-area-inset-bottom))' }}>
+        {loading ? (
+          <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
+        ) : (
+          <>
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', margin: '8px 0 8px 4px' }}>Social</p>
+            <div style={{ borderRadius: '16px', background: '#121019', border: '1px solid rgba(255,255,255,0.06)', padding: '0 14px' }}>
+              {SOCIAL_HANDLE_FIELDS.map((field, i) => (
+                <button
+                  key={field.key}
+                  onClick={() => openEditor(field)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '14px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+                    borderBottom: i < SOCIAL_HANDLE_FIELDS.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                  }}
+                >
+                  <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: field.background, border: field.key === 'x_handle' ? '1px solid rgba(255,255,255,0.12)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <field.icon size={16} color="#fff" />
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#fff', display: 'block' }}>{field.label}</span>
+                    <span style={{ fontSize: '12px', color: 'rgba(237,234,245,0.55)' }}>{handles[field.key] ? `@${handles[field.key]}` : 'Not connected'}</span>
+                  </div>
+                  <ChevronRight size={16} color="rgba(237,234,245,0.4)" />
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: '12px', lineHeight: 1.5, color: 'rgba(237,234,245,0.45)', margin: '14px 4px 0' }}>
+              Connected accounts show on your public organizer profile so attendees can find you elsewhere.
+            </p>
+          </>
+        )}
+      </div>
+
+      {editingField && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }} onClick={() => setEditingField(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', background: '#121019', borderRadius: '20px 20px 0 0', border: '1px solid rgba(255,255,255,0.1)', padding: '20px 20px calc(20px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
+            <span style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', alignSelf: 'center', marginBottom: '4px' }} />
+            <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#fff' }}>{editingField.label} handle</h2>
+            {error && <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '0 14px' }}>
+              <span style={{ color: 'rgba(237,234,245,0.5)', fontSize: '14px' }}>@</span>
+              <input
+                value={draftValue}
+                onChange={(e) => setDraftValue(e.target.value.replace(/^@/, ''))}
+                placeholder={editingField.placeholder}
+                autoFocus
+                style={{ ...inputStyle, border: 'none', padding: '12px 0', background: 'none' }}
+              />
+            </div>
+            <button
+              onClick={saveHandle}
+              disabled={saving}
+              style={{ height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => setEditingField(null)} style={{ height: '44px', background: 'none', border: 'none', color: 'rgba(237,234,245,0.66)', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

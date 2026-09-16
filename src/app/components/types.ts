@@ -173,6 +173,13 @@ export interface UserProfile {
   // publicly-readable capability data (service_providers_public_select_
   // approved RLS policy), not a role-column value.
   isServiceProvider?: boolean;
+  // Real per-user social handles (users.instagram_handle/x_handle/
+  // tiktok_handle, 0079_user_social_handles.sql) -- shown on the public
+  // profile's Connected Accounts row. Distinct from SettingsScreen's
+  // static "Follow VENTS on..." links to VENTS' own corporate accounts.
+  instagram_handle?: string | null;
+  x_handle?: string | null;
+  tiktok_handle?: string | null;
 }
 
 // Mirrors notifications.push_data (jsonb, nullable) -- shape varies by
