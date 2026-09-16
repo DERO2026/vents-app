@@ -358,10 +358,16 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                     scanner strictly rejects it), so there is nothing safe
                     to show until the signed token is ready. */}
                 <div className="flex flex-col items-center py-2">
+                  {/* Handoff D2: a solid light surface behind the QR (not the
+                      near-transparent dark tile this used to be) -- a real
+                      scanner-reliability improvement (more even exposure/
+                      contrast for a phone camera), not just a cosmetic
+                      match. Doesn't touch the surrounding dark ticket
+                      card/fields -- only the QR's immediate backing. */}
                   <div
                     className="p-3 mb-3 flex items-center justify-center"
                     style={{
-                      background: 'rgba(255,255,255,0.04)',
+                      background: '#EDEAF5',
                       borderRadius: '16px',
                       border: '1px solid rgba(34,211,238,0.25)',
                       boxShadow: '0 0 24px rgba(34,211,238,0.15)',
@@ -372,7 +378,7 @@ export function QRTicket({ ticket, onBack, onGoHome }: QRTicketProps) {
                   >
                     {signedToken
                       ? <QRCodeDisplay value={signedToken} size={280} />
-                      : <p style={{ color: ventsColors.ink2, fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
+                      : <p style={{ color: '#0B0812', fontSize: '12px', textAlign: 'center', padding: '0 12px' }}>Generating secure pass…</p>}
                   </div>
                   <div className="flex items-center gap-1.5" style={{ marginTop: '4px' }}>
                     <Zap size={11} color={signedToken ? ventsColors.info : ventsColors.ink3} />
