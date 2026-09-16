@@ -47,7 +47,7 @@ const FIXTURES: Record<string, Row[]> = {
   service_bookings: [],
   service_providers: [
     {
-      id: 'sp-1', user_id: 'org-1', business_name: 'Ada Photography', category: 'Photography',
+      id: 'prov-1', user_id: 'org-1', business_name: 'Ada Photography', category: 'Photography',
       state: 'Lagos', country: 'NG', status: 'approved', starting_price: 85000, cover_image_url: null,
       rating: 0, review_count: 0,
     },
