@@ -15,6 +15,7 @@ import {
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
+import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { hasEventEnded } from '../../lib/eventLifecycle';
 
@@ -443,7 +444,11 @@ export function OrganizerDashboard({
               Total Revenue
             </span>
             <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
-              {formatPrice(revenue)}
+              {/* formatPrice(0) intentionally reads "Free" for a ticket
+                  PRICE (0 = free ticket) -- wrong here, where 0 means "no
+                  revenue collected yet", not "this organizer's events are
+                  free". */}
+              {revenue ? formatPrice(revenue) : `${REGION.currencySymbol}0`}
             </span>
           </div>
 
