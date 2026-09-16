@@ -12,22 +12,28 @@ const FIXTURES: Record<string, Row[]> = {
       id: 'evt-1', organizer_id: 'org-1', title: 'Lagos Music Festival',
       location: 'Eko Atlantic, Lagos', price: 15000, status: 'live',
       event_date: new Date(Date.now() + 7 * 86400000).toISOString(),
-      hidden_by_admin: false, deleted_at: null, image_url: null,
-      created_at: new Date().toISOString(), category: 'Music',
+      hidden_by_admin: false, deleted_at: null, archived_at: null, image_url: null,
+      created_at: new Date().toISOString(), category: 'Music', country: 'NG', is_featured: true,
+      is_18_plus: false, capacity: 2000, ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
+      users: { username: 'lagosfest', full_name: 'Lagos Fest Org', vc_badge: null },
     },
     {
       id: 'evt-2', organizer_id: 'org-1', title: 'Comedy Night Abuja',
       location: 'Transcorp Hilton, Abuja', price: 5000, status: 'live',
       event_date: new Date(Date.now() + 14 * 86400000).toISOString(),
-      hidden_by_admin: false, deleted_at: null, image_url: null,
-      created_at: new Date().toISOString(), category: 'Comedy',
+      hidden_by_admin: false, deleted_at: null, archived_at: null, image_url: null,
+      created_at: new Date().toISOString(), category: 'Comedy', country: 'NG',
+      is_18_plus: false, capacity: 500, ticket_types: [{ id: 't1', name: 'Regular', price: 5000, description: 'General Admission', available: 200 }],
+      users: { username: 'comedyabj', full_name: 'Comedy Abuja', vc_badge: null },
     },
     {
       id: 'evt-3', organizer_id: 'org-1', title: 'Tech Summit 2026',
       location: 'Landmark Centre, Lagos', price: 25000, status: 'draft',
       event_date: new Date(Date.now() + 30 * 86400000).toISOString(),
-      hidden_by_admin: false, deleted_at: null, image_url: null,
-      created_at: new Date().toISOString(), category: 'Technology',
+      hidden_by_admin: false, deleted_at: null, archived_at: null, image_url: null,
+      created_at: new Date().toISOString(), category: 'Technology', country: 'NG',
+      is_18_plus: false, capacity: 1000, ticket_types: [{ id: 't1', name: 'Regular', price: 25000, description: 'General Admission', available: 800 }],
+      users: { username: 'techsummit', full_name: 'Tech Summit', vc_badge: null },
     },
   ],
   tickets: [
@@ -39,6 +45,18 @@ const FIXTURES: Record<string, Row[]> = {
     },
   ],
   service_bookings: [],
+  service_providers: [
+    {
+      id: 'sp-1', user_id: 'org-1', business_name: 'Ada Photography', category: 'Photography',
+      state: 'Lagos', country: 'NG', status: 'approved', starting_price: 85000, cover_image_url: null,
+      rating: 0, review_count: 0,
+    },
+    {
+      id: 'sp-2', user_id: 'org-1', business_name: 'Glow Beauty Studio', category: 'Beauty',
+      state: 'Abuja', country: 'NG', status: 'approved', starting_price: 25000, cover_image_url: null,
+      rating: 0, review_count: 0,
+    },
+  ],
 };
 
 function chainable(table: string): any {
@@ -49,8 +67,10 @@ function chainable(table: string): any {
     select: (_cols?: string, opts?: { head?: boolean }) => { if (opts?.head) state.head = true; return api; },
     eq: (k: string, v: any) => { state.filters.push([k, v]); return api; },
     neq: () => api,
+    gt: () => api,
     gte: () => api,
     lte: () => api,
+    not: () => api,
     is: () => api,
     // Real .or() takes a Postgrest filter string like "a.eq.1,b.eq.2" -- the
     // fixture table is tiny, so this just passes every row through rather
