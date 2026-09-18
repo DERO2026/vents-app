@@ -132,6 +132,120 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
     }
   };
 
+  // F2 handoff: dedicated full-screen Deposit view, replacing the old
+  // bottom-sheet modal. Same real state/handlers as before (depositAmount,
+  // handleDeposit, DEPOSIT_PRESETS_NAIRA) -- only the layout changed.
+  if (showDeposit) {
+    const amountKobo = Math.round((Number(depositAmount) || 0) * 100);
+    return (
+      <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: 'Manrope, sans-serif' }}>
+        <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.32), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
+
+        <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: 'calc(16px + env(safe-area-inset-top)) 20px 0' }}>
+          <button
+            onClick={() => !depositing && setShowDeposit(false)}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <ArrowLeft size={16} color="#f6f4f9" />
+          </button>
+          <div style={{ fontSize: '16px', fontWeight: 800, color: '#f6f4f9' }}>Deposit to Wallet</div>
+          <div style={{ width: '36px', height: '36px' }} />
+        </div>
+
+        <div style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '0 0 24px' }}>
+          <div style={{ margin: '18px 20px 0', textAlign: 'center', fontSize: '12px', letterSpacing: '1.5px', color: '#9a93a8', fontWeight: 700 }}>
+            CURRENT BALANCE {loading ? '—' : fmtNaira(balanceKobo || 0)}
+          </div>
+
+          <div style={{ margin: '20px 20px 0', textAlign: 'center' }}>
+            <div style={{ fontSize: '13px', color: '#9a93a8', marginBottom: '6px' }}>Enter amount</div>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '28px', fontWeight: 700, color: '#c3bdd1' }}>₦</span>
+              <style>{`.vents-deposit-amount-input::-webkit-outer-spin-button,.vents-deposit-amount-input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;} .vents-deposit-amount-input{-moz-appearance:textfield;}`}</style>
+              <input
+                className="vents-deposit-amount-input"
+                type="number"
+                inputMode="numeric"
+                autoFocus
+                placeholder="0"
+                value={depositAmount}
+                onChange={(e) => setDepositAmount(e.target.value)}
+                style={{
+                  width: '180px', background: 'transparent', border: 'none', outline: 'none',
+                  fontSize: '48px', fontWeight: 900, color: '#f6f4f9', textAlign: 'center',
+                  fontFamily: 'Manrope, sans-serif',
+                }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '10px', margin: '20px 20px 0' }}>
+            {DEPOSIT_PRESETS_NAIRA.map((n) => {
+              const active = depositAmount === String(n);
+              return (
+                <button
+                  key={n}
+                  onClick={() => setDepositAmount(String(n))}
+                  style={{
+                    flex: 1, textAlign: 'center', padding: '10px 0', borderRadius: '12px', cursor: 'pointer',
+                    background: active ? 'rgba(168,85,247,0.28)' : 'rgba(255,255,255,0.06)',
+                    border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.1)',
+                    fontSize: '13px', fontWeight: 700, color: active ? '#fff' : '#f6f4f9',
+                  }}
+                >
+                  ₦{n.toLocaleString()}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ margin: '26px 20px 0', fontSize: '12px', letterSpacing: '1.5px', color: '#9a93a8', fontWeight: 700 }}>PAYMENT METHOD</div>
+          <div style={{ margin: '12px 20px 0' }}>
+            {/* Only one real deposit path exists (Paystack's own popup,
+                where the user picks card/bank/USSD themselves) -- there is
+                no saved card on file and no real "pay with Vents Cents"
+                deposit option, so this shows that one real method honestly
+                instead of fabricating a selectable multi-method list. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '14px', borderRadius: '14px', background: 'rgba(168,85,247,0.14)', border: '1px solid rgba(168,85,247,0.4)' }}>
+              <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <CreditCard size={16} color="#f6f4f9" />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#f6f4f9' }}>Card, Bank Transfer or USSD</div>
+                <div style={{ fontSize: '11.5px', color: '#9a93a8', marginTop: '2px' }}>Choose your method in the next step — powered by Paystack</div>
+              </div>
+              <div style={{ width: '20px', height: '20px', borderRadius: '50%', border: '2px solid #a855f7', background: '#a855f7' }} />
+            </div>
+          </div>
+
+          <div style={{ margin: '22px 20px 0', padding: '14px', borderRadius: '14px', background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'space-between', fontSize: '12.5px', color: '#9a93a8' }}>
+            <span>Processing fee</span><span style={{ color: '#f6f4f9', fontWeight: 600 }}>₦0</span>
+          </div>
+
+          {depositError && (
+            <p style={{ color: ventsColors.error, fontSize: '12.5px', margin: '16px 20px 0', textAlign: 'center' }}>{depositError}</p>
+          )}
+
+          <div style={{ margin: '24px 20px 0' }}>
+            <button
+              onClick={handleDeposit}
+              disabled={depositing || amountKobo < 50000}
+              style={{
+                width: '100%', textAlign: 'center', padding: '16px 0', borderRadius: '14px',
+                background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none',
+                fontWeight: 700, fontSize: '15px', color: '#fff',
+                boxShadow: '0 8px 26px rgba(168,85,247,0.35)',
+                cursor: depositing ? 'not-allowed' : 'pointer', opacity: depositing ? 0.6 : 1,
+              }}
+            >
+              {depositing ? 'Processing…' : `Deposit ${depositAmount ? fmtNaira(amountKobo) : ''}`}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   if (depositSuccess) {
     return (
       <div style={{ background: '#08070C', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
@@ -303,67 +417,6 @@ export function UserWalletScreen({ currentUser, onBack, onViewTicket, onViewServ
           </div>
         )}
       </div>
-
-      {/* Deposit sheet */}
-      {showDeposit && (
-        <div
-          onClick={() => !depositing && setShowDeposit(false)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', zIndex: 300 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              width: '100%', background: ventsColors.bg, border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '22px 22px 0 0', padding: '22px 20px calc(22px + env(safe-area-inset-bottom))',
-            }}
-          >
-            <h2 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: '0 0 16px' }}>
-              Deposit to Wallet
-            </h2>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
-              {DEPOSIT_PRESETS_NAIRA.map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setDepositAmount(String(n))}
-                  style={{
-                    padding: '9px 14px', borderRadius: '10px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
-                    background: depositAmount === String(n) ? 'rgba(168,85,247,0.18)' : 'rgba(255,255,255,0.05)',
-                    border: depositAmount === String(n) ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
-                    color: depositAmount === String(n) ? ventsColors.accentSoft : ventsColors.ink2,
-                  }}
-                >
-                  ₦{n.toLocaleString()}
-                </button>
-              ))}
-            </div>
-            <input
-              type="number"
-              inputMode="numeric"
-              placeholder="Enter amount (₦)"
-              value={depositAmount}
-              onChange={(e) => setDepositAmount(e.target.value)}
-              style={{
-                width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '12px', padding: '13px 14px', color: '#fff', fontSize: '15px', outline: 'none', marginBottom: '10px',
-              }}
-            />
-            {depositError && (
-              <p style={{ color: ventsColors.error, fontSize: '12.5px', margin: '0 0 12px' }}>{depositError}</p>
-            )}
-            <button
-              onClick={handleDeposit}
-              disabled={depositing}
-              style={{
-                width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '14px',
-                padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700,
-                cursor: depositing ? 'not-allowed' : 'pointer', opacity: depositing ? 0.6 : 1,
-              }}
-            >
-              {depositing ? 'Processing…' : 'Continue to Payment'}
-            </button>
-          </div>
-        </div>
-      )}
 
       {selectedTx && (
         <TransactionReceipt

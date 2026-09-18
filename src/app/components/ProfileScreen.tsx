@@ -473,186 +473,195 @@ export function ProfileScreen({
           }} />
         </div>
       )}
-      {/* Header */}
+      {/* Header -- matches the "Main Profile" export: a left-aligned
+          uppercase eyebrow label instead of a centered "Profile" title,
+          and a circular gear icon (real: opens Settings) instead of the
+          avatar itself being the only way there. */}
       <div
-        className="flex items-center justify-center px-4 pb-3"
-        style={{ paddingTop: 'calc(20px + env(safe-area-inset-top))' }}
+        className="flex items-center justify-between px-5"
+        style={{ paddingTop: 'calc(16px + env(safe-area-inset-top))', paddingBottom: '4px' }}
       >
-        <h1
-          style={{
-            color: ventsColors.ink1,
-            fontSize: '20px',
-            fontWeight: 800,
-            fontFamily: 'Manrope, sans-serif',
-          }}
+        <span style={{ color: ventsColors.ink3, fontSize: '12px', fontWeight: 700, letterSpacing: '2px' }}>PROFILE</span>
+        <button
+          onClick={() => onNavigate('settings')}
+          aria-label="Settings"
+          style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          Profile
-        </h1>
+          <Settings size={16} color={ventsColors.ink1} />
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(110px + env(safe-area-inset-bottom))' }}>
-        {/* Profile card */}
-        <div className="px-4 mb-4">
-          <div
-            className="p-5"
-            style={{
-              background: 'linear-gradient(135deg, rgba(123,47,190,0.16), rgba(79,70,229,0.1))',
-              backdropFilter: 'blur(20px) saturate(160%)',
-              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
-              borderRadius: '22px',
-              border: '1px solid rgba(255,255,255,0.1)',
-              boxShadow: '0 10px 26px rgba(0,0,0,0.28)',
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            {(!effectiveCoverUrl || coverLoadFailed) && (
+        {/* Profile header -- centered avatar/name, matching the export.
+            Cover image (real data, when set) still renders as a backdrop
+            band behind the avatar rather than being dropped, since it's
+            real uploaded content the export's generic mockup never had to
+            account for. */}
+        <div className="px-5 pt-2 pb-1" style={{ position: 'relative' }}>
+          {effectiveCoverUrl && !coverLoadFailed && (
+            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '90px', borderRadius: '0 0 24px 24px', overflow: 'hidden' }}>
+              <img src={effectiveCoverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
+              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0) 30%, rgba(6,10,18,0.92) 100%)' }} />
+            </div>
+          )}
+          <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: effectiveCoverUrl && !coverLoadFailed ? '30px' : 0 }}>
+            <button
+              onClick={() => onNavigate('settings')}
+              style={{ position: 'relative', padding: 0, background: 'none', border: 'none', cursor: 'pointer' }}
+              aria-label="Change profile photo"
+            >
               <div
                 style={{
-                  position: 'absolute',
-                  top: '-40px',
-                  right: '-40px',
-                  width: '160px',
-                  height: '160px',
-                  background: 'radial-gradient(circle, rgba(123,47,190,0.25) 0%, transparent 70%)',
-                  borderRadius: '50%',
-                  pointerEvents: 'none',
+                  width: '96px', height: '96px', borderRadius: '50%',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+                  background: 'linear-gradient(145deg, #A855F7, #4C1D95)',
+                  boxShadow: `0 0 0 3px rgba(168,85,247,0.35), 0 0 30px rgba(168,85,247,0.5)`,
                 }}
-              />
-            )}
-
-            {effectiveCoverUrl && !coverLoadFailed && (
-              <div style={{ margin: '-20px -20px 16px', borderRadius: '20px 20px 0 0', overflow: 'hidden', height: '100px', position: 'relative' }}>
-                <img src={effectiveCoverUrl} alt="cover" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} onError={() => setCoverLoadFailed(true)} />
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(6,10,18,0) 50%, rgba(26,13,46,0.85) 100%)' }} />
+              >
+                {currentUser?.avatar_url && !avatarLoadFailed ? (
+                  <img
+                    src={currentUser.avatar_url}
+                    alt="Avatar"
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={() => setAvatarLoadFailed(true)}
+                  />
+                ) : (
+                  <span style={{ color: '#fff', fontSize: '34px', fontWeight: 800 }}>{initial}</span>
+                )}
               </div>
-            )}
+              <div style={{
+                position: 'absolute', bottom: -2, right: -2,
+                background: ventsColors.accentSoft, borderRadius: '50%', width: '28px', height: '28px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: '2px solid #08050F',
+              }}>
+                <Camera size={13} color="#1A0B2E" />
+              </div>
+            </button>
 
-            <div className="flex items-center gap-4 mb-4">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '14px' }}>
+              <h2 style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
+                {displayName}
+              </h2>
+              {isVerified && (
+                <span title="Verified" style={{ display: 'inline-flex' }}>
+                  <BadgeCheck size={16} color={ventsColors.info} style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
+                </span>
+              )}
+            </div>
+            {currentUser?.state ? (
+              <div className="flex items-center gap-1" style={{ marginTop: '4px' }}>
+                <MapPin size={11} color={ventsColors.ink3} />
+                <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>
+                  {currentUser.state}
+                  {(() => {
+                    const iso = currentUser.country || 'NG';
+                    const name = COUNTRY_CODES.find((c) => c.iso === iso)?.name;
+                    return name ? `, ${name}` : '';
+                  })()}
+                </span>
+              </div>
+            ) : (
               <button
                 onClick={() => onNavigate('settings')}
-                style={{ position: 'relative', padding: 0, background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}
-                aria-label="Change profile photo"
+                style={{ background: 'none', border: 'none', padding: 0, marginTop: '4px', color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
               >
-                <div
-                  className="w-16 h-16 rounded-full flex items-center justify-center overflow-hidden"
-                  style={{
-                    background: 'linear-gradient(135deg, #7B2FBE 0%, #5B3FCB 100%)',
-                    boxShadow: '0 6px 18px rgba(0,0,0,0.3)',
-                    border: '2px solid rgba(255,255,255,0.14)',
-                    boxSizing: 'border-box',
-                  }}
-                >
-                  {currentUser?.avatar_url && !avatarLoadFailed ? (
-                    <img
-                      src={currentUser.avatar_url}
-                      alt="Avatar"
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                      onError={() => setAvatarLoadFailed(true)}
-                    />
-                  ) : (
-                    <span style={{ color: '#fff', fontSize: '26px', fontWeight: 700 }}>{initial}</span>
-                  )}
-                </div>
-                <div style={{
-                  position: 'absolute', bottom: -4, right: -4,
-                  background: ventsColors.accent, borderRadius: '50%', width: '22px', height: '22px',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  border: '2px solid #020005',
-                }}>
-                  <Camera size={11} color="#fff" />
-                </div>
+                Add your state
               </button>
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <h2
-                    style={{
-                      color: ventsColors.white,
-                      fontSize: '20px',
-                      fontWeight: 700,
-                      fontFamily: 'Manrope, sans-serif',
-                      margin: 0,
-                    }}
-                  >
-                    {displayName}
-                  </h2>
-                  {isVerified && (
-                    <span title="Verified" style={{ display: 'inline-flex' }}>
-                      <BadgeCheck size={16} color={ventsColors.info} style={{ filter: 'drop-shadow(0 0 6px rgba(59,130,246,0.6))' }} />
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <MapPin size={12} color={ventsColors.ink2} />
-                  {currentUser?.state ? (
-                    <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>
-                      {currentUser.state}
-                      {(() => {
-                        // Unset (legacy pre-country-column accounts) falls
-                        // back to Nigeria -- accurate historical default,
-                        // same reasoning as ProfileDetailsScreen's
-                        // isNigeriaAccount. Previously this was a bare
-                        // hardcoded ", Nigeria" regardless of the account's
-                        // actual country.
-                        const iso = currentUser.country || 'NG';
-                        const name = COUNTRY_CODES.find((c) => c.iso === iso)?.name;
-                        return name ? `, ${name}` : '';
-                      })()}
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => onNavigate('settings')}
-                      style={{ background: 'none', border: 'none', padding: 0, color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
-                    >
-                      Add your state
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 mt-1" style={{ flexWrap: 'wrap', gap: '6px' }}>
-                  <div
-                    style={{
-                      background: badgeGradient,
-                      borderRadius: '5px',
-                      padding: '2px 7px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '3px',
-                    }}
-                  >
-                    <Star size={10} color={starColor} fill={starColor} />
-                    <span style={{ color: badgeTextColor, fontSize: '10px', fontWeight: 700 }}>
-                      {roleLabel}
-                    </span>
-                  </div>
-                  <BadgeChip tier={currentUser?.vc_badge} />
-                  {vcBalance !== null && (
-                    <div
-                      onClick={() => onNavigate('referral')}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('referral'); } }}
-                      role="button" tabIndex={0}
-                      style={{
-                        background: 'rgba(245,158,11,0.12)',
-                        border: '1px solid rgba(245,158,11,0.3)',
-                        borderRadius: '5px',
-                        padding: '2px 7px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '3px',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <span style={{ fontSize: '10px', fontWeight: 700, color: ventsColors.pending }}>
-                        ⭐ {vcBalance.toLocaleString()} VC
-                      </span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+            )}
 
-            {/* Organizer/admin: switching is now via the Create tab FAB or the banner */}
+            <div className="flex items-center" style={{ flexWrap: 'wrap', gap: '6px', marginTop: '10px', justifyContent: 'center' }}>
+              <div style={{ background: badgeGradient, borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <Star size={10} color={starColor} fill={starColor} />
+                <span style={{ color: badgeTextColor, fontSize: '10px', fontWeight: 700 }}>{roleLabel}</span>
+              </div>
+              <BadgeChip tier={currentUser?.vc_badge} />
+            </div>
           </div>
         </div>
+
+        {/* Stats row -- the export's version of this row is Events /
+            Followers / Following, but VENTS has no follower/following
+            system at all (no `follows` table, no counts anywhere in the
+            schema) -- showing those would mean fabricating numbers, which
+            the design source-of-truth rules explicitly forbid. Using the
+            real, already-fetched equivalents instead: ticket count and
+            saved-events count for attendees (both already passed into this
+            screen as real props), or real Events-created/Attendees for
+            organizers (already fetched above via eventsCreated/attendees). */}
+        <div className="px-5" style={{ marginTop: '18px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '18px', padding: '16px 0' }}>
+            {isOrganizer ? (
+              <>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800 }}>{eventsCreated}</div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '11px', letterSpacing: '1px', marginTop: '3px' }}>EVENTS</div>
+                </div>
+                <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800 }}>{attendees}</div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '11px', letterSpacing: '1px', marginTop: '3px' }}>ATTENDEES</div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800 }}>{tickets.length}</div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '11px', letterSpacing: '1px', marginTop: '3px' }}>TICKETS</div>
+                </div>
+                <div style={{ width: '1px', background: 'rgba(255,255,255,0.1)' }} />
+                <div style={{ flex: 1, textAlign: 'center' }}>
+                  <div style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800 }}>{savedCount}</div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '11px', letterSpacing: '1px', marginTop: '3px' }}>SAVED</div>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Edit Profile CTA -- export pairs this with a share icon button;
+            no real share/export-profile handler exists anywhere in the app
+            today, so that button was left out rather than wired to a fake
+            no-op. */}
+        <div className="px-5" style={{ marginTop: '16px' }}>
+          <button
+            onClick={() => onNavigate('settings')}
+            style={{ width: '100%', padding: '13px 0', borderRadius: '14px', background: 'linear-gradient(135deg, #8E5CF7, #6D3DE0)', border: 'none', color: '#fff', fontWeight: 700, fontSize: '14px', cursor: 'pointer', boxShadow: '0 6px 20px rgba(142,92,247,0.35)' }}
+          >
+            Edit Profile
+          </button>
+        </div>
+
+        {/* VENTS Cents highlight card -- was a small inline pill before;
+            the export gives it its own full-width card. Real vcBalance
+            data (already fetched above), same onNavigate('referral')
+            target the old pill used. */}
+        {vcBalance !== null && (
+          <div className="px-5" style={{ marginTop: '16px' }}>
+            <div
+              onClick={() => onNavigate('referral')}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate('referral'); } }}
+              role="button" tabIndex={0}
+              style={{
+                padding: '16px', borderRadius: '16px',
+                background: 'linear-gradient(135deg, rgba(168,85,247,0.16), rgba(124,58,237,0.06))',
+                border: '1px solid rgba(168,85,247,0.28)',
+                display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer',
+              }}
+            >
+              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(168,85,247,0.25)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Gift size={18} color={ventsColors.accentSoft} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: ventsColors.ink2, fontSize: '12px', letterSpacing: '1px' }}>VENTS CENTS</div>
+                <div style={{ color: ventsColors.white, fontSize: '17px', fontWeight: 800, marginTop: '2px' }}>
+                  {vcBalance.toLocaleString()} <span style={{ fontSize: '12px', color: ventsColors.ink3, fontWeight: 600 }}>cents</span>
+                </div>
+              </div>
+              <ChevronRight size={18} color={ventsColors.accentSoft} />
+            </div>
+          </div>
+        )}
 
         {/* Menu items */}
         <div className="px-4 mb-4">
@@ -926,10 +935,25 @@ export function ProfileScreen({
           </div>
         )}
 
-        {/* Sign Out lives only in Settings now -- a destructive account
-            action showing up twice (once here, once in Settings) was
-            redundant and inconsistent with every other account-management
-            action, which is Settings-only. */}
+        {/* Main Profile export shows a "Log Out" row here after all --
+            reinstated to match it. Calls the same real onSignOut the app
+            already passes into this screen (identical to Settings' own
+            Sign Out button) -- no new auth logic, no duplicated backend
+            behavior, and Settings keeps its own Sign Out working exactly
+            as before. */}
+        <div className="px-4 mb-3">
+          <button
+            onClick={onSignOut}
+            className="w-full text-center"
+            style={{
+              padding: '13px 0', borderRadius: '14px', fontSize: '14px', fontWeight: 600,
+              color: '#F87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)',
+              cursor: 'pointer',
+            }}
+          >
+            Log Out
+          </button>
+        </div>
 
         <AppVersionFooter />
       </div>
