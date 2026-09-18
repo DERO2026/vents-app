@@ -14,7 +14,9 @@ interface ScannerFrameProps {
   accent?: string;
 }
 
-export function ScannerFrame({ ratio = 0.68, paused = false, accent = '#A78BFA' }: ScannerFrameProps) {
+// Door Manager export's corner-bracket/scanline color is #c084fc -- was
+// #A78BFA (a slightly different app-wide purple shade used elsewhere).
+export function ScannerFrame({ ratio = 0.68, paused = false, accent = '#c084fc' }: ScannerFrameProps) {
   const pct = `${Math.round(ratio * 100)}%`;
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', overflow: 'hidden' }}>

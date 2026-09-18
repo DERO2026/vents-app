@@ -9,10 +9,10 @@ import {
   ArrowLeft, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, Copy, ThumbsUp,
-  Eye, EyeOff, Check, Clock, MessageSquare,
+  Eye, EyeOff, Check, Clock, MessageSquare, User, Link2,
+  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
-import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { Sentry } from '../../lib/sentry';
@@ -1802,49 +1802,44 @@ export function SettingsScreen({
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
   if (subScreen === 'connected-accounts') return <ConnectedAccountsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
 
-  const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
-  const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
-  const displayEmail = currentUser?.email || '';
-
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', position: 'relative' }}>
+    <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.3), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
+      {/* Header -- matches PD3: left-aligned back + title, not centered. */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '14px', padding: 'calc(16px + env(safe-area-inset-top)) 20px 4px' }}>
         <button
           onClick={onBack}
-          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', zIndex: 1 }}
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color="#f6f4f9" />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>Settings</h1>
-        <div style={{ width: '36px', flexShrink: 0 }} />
+        <h1 style={{ color: '#f6f4f9', fontSize: '20px', fontWeight: 800, margin: 0 }}>Settings</h1>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
-        {/* Profile card — shows avatar if available */}
-        <div style={{ background: '#090514', border: '1px solid rgba(168,85,247,0.1)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 0 16px rgba(168,85,247,0.3)' }}>
+      <div style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '0 0 calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
+        {/* Profile card -- PD3 has this at the top after all (real avatar/
+            name/handle/email), opens the same ProfileDetailsScreen as
+            "Edit Profile" below. */}
+        <button
+          onClick={() => setSubScreen('profile')}
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 40px)', margin: '18px 20px 0', padding: '14px', borderRadius: '16px', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(145deg,#a855f7,#4c1d95)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
             {(currentUser as any)?.avatar_url ? (
               <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              <span style={{ color: '#fff', fontSize: '22px', fontWeight: 700 }}>{initial}</span>
+              (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase()
             )}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</p>
-              <BadgeChip tier={(currentUser as any)?.vc_badge} />
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#f6f4f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser?.full_name || currentUser?.email || 'Guest User'}</div>
+            <div style={{ fontSize: '12px', color: '#9a93a8', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentUser?.username ? `@${currentUser.username} • ` : ''}{currentUser?.email}
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayEmail}</p>
           </div>
-          <button
-            onClick={() => setSubScreen('profile')}
-            style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '7px 12px', color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
-          >
-            Edit
-          </button>
-        </div>
+          <span style={{ color: '#6b6478', fontSize: '16px' }}>›</span>
+        </button>
 
         {/* Become an Organizer / Get Verified as an Organizer moved to
             ProfileScreen, directly below Become a Service Provider -- one
@@ -1852,14 +1847,77 @@ export function SettingsScreen({
             of a duplicate here. */}
 
         <Section title="ACCOUNT">
-          {/* "Profile Details" row removed — it duplicated the Edit button on the
-              Profile Card above (both open the same editor). */}
-          <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
+          <SettingRow icon={User} label="Edit Profile" onPress={() => setSubScreen('profile')} />
+          <Divider />
+          {/* Same real destination as Edit Profile -- ProfileDetailsScreen
+              already shows email (read-only) and phone (editable) fields,
+              this is just the export's second named entry point to them. */}
+          <SettingRow icon={Mail} label="Email & Phone" onPress={() => setSubScreen('profile')} />
+          <Divider />
+          <SettingRow icon={Link2} label="Connected Accounts" onPress={() => setSubScreen('connected-accounts')} />
+          {currentUser?.role !== 'organizer' && (
+            <>
+              <Divider />
+              {/* No standalone "switch role" toggle exists -- the real
+                  Become-an-Organizer flow lives on the Profile tab, so this
+                  honestly routes there rather than fabricating an instant
+                  role-switch action. */}
+              <SettingRow icon={ArrowLeftRight} label="Switch to Organizer" onPress={() => onNavigate?.('profile')} />
+            </>
+          )}
         </Section>
 
-        <Section title="NOTIFICATIONS">
+        <Section title="PREFERENCES">
           <SettingRow icon={Bell} label="Push Notifications" toggle={pushNotifs} onToggle={setPushNotifs} />
           <Divider />
+          <SettingRow icon={Moon} label="Dark Mode" toggle={isDark} onToggle={onToggleDark} />
+          <Divider />
+          {/* No real localization system exists yet (single hardcoded
+              English UI) -- shown as an honest static value rather than a
+              working picker, instead of fabricating language options. */}
+          <SettingRow icon={Globe} label="Language" value="English" />
+        </Section>
+
+        <Section title="SECURITY">
+          <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
+          <Divider />
+          <SettingRow icon={Shield} label="Location Services" toggle={locationServices} onToggle={setLocationServices} />
+          <Divider />
+          <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
+          {/* No "Face ID Login" or "Linked Devices" row -- there is no
+              login-time biometric toggle or active-session list anywhere in
+              the backend (the only real biometric check in the app is
+              WalletScreen's local transaction-confirmation gate, a
+              different feature), so PD3's third/fourth Security rows are
+              not reproduced rather than faked. */}
+        </Section>
+
+        <Section title="PAYMENTS">
+          <SettingRow icon={Wallet} label="Wallet & Cards" onPress={() => onNavigate?.('user-wallet')} />
+          <Divider />
+          <SettingRow icon={Gift} label="Vents Cents" onPress={() => onNavigate?.('referral')} />
+          <Divider />
+          {/* No separate transaction-history screen exists -- the wallet
+              screen already lists real transactions, so this is a second
+              real entry point into that same data, not a new feature. */}
+          <SettingRow icon={Receipt} label="Transaction History" onPress={() => onNavigate?.('user-wallet')} />
+        </Section>
+
+        <Section title="SUPPORT & LEGAL">
+          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
+          <Divider />
+          <SettingRow icon={Shield} label="Terms & Privacy" onPress={() => openExternalUrl('https://getvents.com/terms')} />
+          <Divider />
+          {/* No dedicated About screen exists -- shown as a real, static
+              version value rather than inventing new "about" content. */}
+          <SettingRow icon={Info} label="About VENTS" value={appVersionLabel()} />
+        </Section>
+
+        {/* Additional real, working settings that PD3 doesn't depict but
+            that would otherwise be deleted functionality if dropped --
+            kept below the PD3-matching primary structure rather than
+            removed. */}
+        <Section title="MORE NOTIFICATIONS">
           <SettingRow icon={Bell} label="Email Updates" toggle={emailNotifs} onToggle={setEmailNotifs} />
           <Divider />
           <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={handlePromoToggle} />
@@ -1871,22 +1929,10 @@ export function SettingsScreen({
           />
         </Section>
 
-        <Section title="PRIVACY & SECURITY">
-          <SettingRow icon={Shield} label="Location Services" toggle={locationServices} onToggle={setLocationServices} />
-          <Divider />
-          <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
-        </Section>
-
-        {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
-
-        <Section title="SUPPORT & LEGAL">
+        <Section title="LEGAL LINKS">
           <SettingRow icon={Shield} label="Privacy Policy" onPress={() => openExternalUrl('https://getvents.com/privacy')} />
           <Divider />
-          <SettingRow icon={Shield} label="Terms of Use" onPress={() => openExternalUrl('https://getvents.com/terms')} />
-          <Divider />
           <SettingRow icon={Shield} label="Refund Policy" onPress={() => openExternalUrl('https://getvents.com/refunds')} />
-          <Divider />
-          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
         </Section>
 
         <Section title="RESOURCES">
@@ -1899,16 +1945,22 @@ export function SettingsScreen({
           <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@vents.app')} />
         </Section>
 
-        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Log Out -- matches PD3's centered red pill (not the old left-
+            aligned row-with-icon treatment). Delete Account kept as its own
+            separate danger row underneath, same as before. */}
+        <div
+          onClick={onSignOut}
+          style={{ textAlign: 'center', margin: '26px 20px 6px', fontSize: '14px', fontWeight: 600, color: '#f87171', padding: '13px 0', borderRadius: '14px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', cursor: 'pointer' }}
+        >
+          Log Out
+        </div>
+        <div style={{ margin: '0 20px 8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '0 14px' }}>
-            <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
+            <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
           </div>
         </div>
-        {/* Delete Account now lives in Profile Details (Edit Profile) as a
-            clearly-separated destructive action, not directly under Sign
-            Out -- see ProfileDetailsScreen's Danger Zone section. */}
 
-        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
+        <p style={{ textAlign: 'center', color: '#5c5566', fontSize: '12px', margin: '0 20px 30px' }}>
           {appVersionLabel()}
         </p>
       </div>

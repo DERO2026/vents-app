@@ -191,6 +191,13 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onOpenScanner={() => {}}
     />
   ),
+  'checkin-scanner': () => (
+    <CheckinScannerScreen
+      onBack={() => {}}
+      currentUser={{ id: 'org-1', role: 'organizer' }}
+      selectedEvent={{ id: 'evt-1', title: 'Lagos Music Festival' } as any}
+    />
+  ),
   'bottom-nav': () => (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: '#08070C' }}>
       <BottomNav activeTab="home" onTabChange={() => {}} hasUnreadChats />
@@ -280,6 +287,15 @@ const SCREENS: Record<string, () => JSX.Element> = {
       onToggleDark={() => {}}
     />
   ),
+  settings: () => (
+    <SettingsScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      onBack={() => {}}
+      onSignOut={() => {}}
+      isDark
+      onToggleDark={() => {}}
+    />
+  ),
   'settings-profile-details': () => (
     <SettingsScreen
       currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
@@ -310,10 +326,55 @@ const SCREENS: Record<string, () => JSX.Element> = {
       }}
       onBack={() => {}}
       currentUserId="org-1"
+      onMessage={() => {}}
     />
   ),
   'user-wallet': () => (
     <UserWalletScreen currentUser={{ id: 'org-1', email: 'organizer@example.com' }} onBack={() => {}} />
+  ),
+  home: () => (
+    <HomeScreen
+      onEventPress={() => {}}
+      savedEvents={[]}
+      onToggleSave={() => {}}
+      dbEvents={FIXTURE_EVENTS.map(mapDbEventToFrontend)}
+      loading={false}
+      fetchEvents={() => {}}
+      currentUser={FIXTURE_USER}
+      countryFilter="NG"
+      onCountryFilterChange={() => {}}
+      onServicesPress={() => {}}
+    />
+  ),
+  profile: () => (
+    <ProfileScreen
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' }}
+      onSignOut={() => {}}
+      tickets={[]}
+      savedCount={3}
+      onViewTicket={() => {}}
+      onNavigate={() => {}}
+      setActiveView={() => {}}
+      userRole="attendee"
+    />
+  ),
+  'public-user-profile': () => (
+    <UserProfileScreen
+      user={{
+        id: 'user-3', name: 'Chidera Nwosu', username: 'chidera.n', avatarColor: '#F472B6', avatarInitials: 'CN',
+        city: 'Lagos', bio: 'Always at the next big thing.', eventsAttended: 8, interests: ['Music', 'Comedy'],
+        role: 'attendee', isOrganizer: false, isVerified: false,
+      }}
+      onBack={() => {}}
+      currentUserId="org-1"
+      onMessage={() => {}}
+    />
+  ),
+  referral: () => (
+    <ReferralScreen
+      onBack={() => {}}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' }}
+    />
   ),
   explore: () => (
     <ExploreScreen currentUserId="org-1" onUserPress={() => {}} initialTab="people" />

@@ -188,6 +188,23 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
   const isRequester = details?.viewer_is_requester === true;
 
+  // Real 5% VENTS service fee, baked server-side into amount_kobo itself
+  // (0058_ticket_payment_requests.sql: v_amount_kobo := unit_price * count *
+  // (1.05 - discount)). Reconstructing subtotal/fee here as amount/1.05 is
+  // exact when no promo was applied; the details view doesn't expose the
+  // original discount_pct, so this can be slightly approximate for a
+  // promo'd request -- still the real formula, not an invented ratio.
+  const feeBreakdown = details
+    ? (() => {
+        const total = details.amount_kobo;
+        const subtotal = Math.round(total / 1.05);
+        return { subtotal, fee: total - subtotal, total };
+      })()
+    : null;
+
+  const otherPartyName = isRequester ? (details?.payer_name || 'the payer') : (details?.recipient_name || '');
+  const otherPartyInitials = otherPartyName.split(' ').map((n) => n[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '?';
+
   return (
     <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
@@ -222,7 +239,19 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
 
         {!loading && details && (
           <>
-            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '14px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            {/* Avatar + counterparty name, matching C4's "Request from
+                {name}" header -- real name data (recipient_name for the
+                payer's view, payer_name for the requester's view), no
+                fabricated identity. */}
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '6px 0 18px' }}>
+              <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'linear-gradient(145deg,#f472b6,#7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '26px', fontWeight: 800, color: '#fff', boxShadow: '0 0 0 3px rgba(168,85,247,0.25)' }}>
+                {otherPartyInitials}
+              </div>
+              <div style={{ marginTop: '12px', fontSize: '14px', color: ventsColors.ink2 }}>{isRequester ? 'Waiting on' : 'Request from'}</div>
+              <div style={{ fontSize: '18px', fontWeight: 800, color: ventsColors.white, marginTop: '2px' }}>{otherPartyName}</div>
+            </div>
+
+            <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '24px', padding: '14px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
               {details.event_image_url && (
                 <img src={details.event_image_url} alt="" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
               )}
@@ -231,6 +260,61 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
                 <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{details.ticket_type} × {details.attendee_count}</p>
               </div>
               <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round(details.amount_kobo / 100))}</p>
+            </div>
+
+            {/* Fee breakdown, matching C4's subtotal/service-fee/total card
+                -- derived from the real 5% fee already baked server-side
+                into amount_kobo (see feeBreakdown comment above). */}
+            {feeBreakdown && (
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px', marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', color: ventsColors.ink2 }}>
+                  <span>Subtotal</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatPrice(Math.round(feeBreakdown.subtotal / 100))}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', padding: '6px 0', color: ventsColors.ink2 }}>
+                  <span>VENTS service fee (5%)</span><span style={{ fontWeight: 600, color: ventsColors.white }}>{formatPrice(Math.round(feeBreakdown.fee / 100))}</span>
+                </div>
+                <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '6px 0' }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14.5px', padding: '4px 0' }}>
+                  <span style={{ fontWeight: 700, color: ventsColors.white }}>Total</span><span style={{ fontWeight: 800, color: ventsColors.accentSoft }}>{formatPrice(Math.round(feeBreakdown.total / 100))}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Status chip row, matching C4's Pending/In Progress/Paid/
+                Declined states -- driven by the real request status plus
+                the client-side `paying` flag while a live Paystack popup
+                is open (real 'in progress' data, not the export's manual
+                demo toggle). */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '20px' }}>
+              {(() => {
+                const current: 'pending' | 'progress' | 'paid' | 'declined' | 'expired' =
+                  paid || details.status === 'completed' ? 'paid'
+                  : details.status === 'cancelled' ? 'declined'
+                  : (details.status === 'expired' || details.is_expired) ? 'expired'
+                  : paying ? 'progress'
+                  : 'pending';
+                const opts: { key: typeof current; label: string }[] = [
+                  { key: 'pending', label: 'Pending' },
+                  { key: 'progress', label: 'In Progress' },
+                  { key: 'paid', label: 'Paid' },
+                  { key: 'declined', label: 'Declined' },
+                ];
+                return opts.map((o) => {
+                  const active = current === o.key || (current === 'expired' && o.key === 'declined');
+                  return (
+                    <div
+                      key={o.key}
+                      style={{
+                        flex: 1, textAlign: 'center', padding: '12px 6px', borderRadius: '12px',
+                        background: active ? 'rgba(168,85,247,0.28)' : 'rgba(255,255,255,0.04)',
+                        border: active ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.08)',
+                      }}
+                    >
+                      <span style={{ fontSize: '12px', fontWeight: 700, color: active ? '#fff' : ventsColors.ink2 }}>{o.label}</span>
+                    </div>
+                  );
+                });
+              })()}
             </div>
 
             {/* Handoff C4 vs C5: the requester (the eventual ticket holder,

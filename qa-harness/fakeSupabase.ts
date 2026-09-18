@@ -7,6 +7,9 @@
 type Row = Record<string, any>;
 
 const FIXTURES: Record<string, Row[]> = {
+  app_config: [
+    { id: true, vc_naira_per_1000: 500 },
+  ],
   events: [
     {
       id: 'evt-1', organizer_id: 'org-1', title: 'Lagos Music Festival',
@@ -25,6 +28,15 @@ const FIXTURES: Record<string, Row[]> = {
       created_at: new Date().toISOString(), category: 'Comedy', country: 'NG',
       is_18_plus: false, capacity: 500, ticket_types: [{ id: 't1', name: 'Regular', price: 5000, description: 'General Admission', available: 200 }],
       users: { username: 'comedyabj', full_name: 'Comedy Abuja', vc_badge: null },
+    },
+    {
+      id: 'evt-adaeze-1', organizer_id: 'user-2', title: 'Golden Hour Portraits Pop-Up',
+      location: 'Freedom Park, Lagos', venue: 'Freedom Park', price: 5000, status: 'live',
+      event_date: new Date(Date.now() + 5 * 86400000).toISOString(),
+      hidden_by_admin: false, deleted_at: null, archived_at: null, image_url: null,
+      created_at: new Date().toISOString(), category: 'Arts', country: 'NG',
+      is_18_plus: false, capacity: 100, ticket_types: [{ id: 't1', name: 'Regular', price: 5000, description: 'General Admission', available: 50 }],
+      users: { username: 'adaeze.o', full_name: 'Adaeze Okonkwo', vc_badge: null },
     },
     {
       id: 'evt-3', organizer_id: 'org-1', title: 'Tech Summit 2026',

@@ -77,6 +77,9 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   // system the repo has no support for (see the mockup's own P21 note).
   const [scheduledDate, setScheduledDate] = useState('');
   const [scheduledTime, setScheduledTime] = useState('');
+  // SV3 handoff: Services/About/Reviews tab strip. Purely a view switch
+  // over data this screen already fetches -- no new data source.
+  const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
 
   useEffect(() => {
     let cancelled = false;
@@ -267,28 +270,55 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         }
       `}</style>
       <div className="sp-profile-content" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: '110px' }}>
-        {/* Photo header */}
-        <div style={{ position: 'relative', margin: '0 0 0', height: '260px' }}>
+        {/* SV3 hero -- shorter cover band (200px, was 260px) with a
+            floating profile card overlapping it, rather than the name
+            baked into the photo itself. Real cover photo (photoUrls[0])
+            kept when set; falls back to the export's gradient-glow
+            treatment otherwise. */}
+        <div style={{ position: 'relative', height: '200px', background: coverPhoto ? undefined : 'linear-gradient(160deg,#3b0764,#0d0616 70%)', overflow: 'hidden' }}>
           {coverPhoto ? (
             <img src={coverPhoto} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           ) : (
-            <div style={{ width: '100%', height: '100%', background: `linear-gradient(135deg, ${accent}33, ${servicesColors.bg})` }} />
+            <div style={{ position: 'absolute', top: '-80px', left: '50%', transform: 'translateX(-50%)', width: '420px', height: '300px', background: `radial-gradient(ellipse at center, ${accent}66, transparent 65%)` }} />
           )}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(2,0,5,0.1) 0%, rgba(2,0,5,0.85) 100%)' }} />
-          <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '16px' }}>
-            <button onClick={onBack} style={{ background: 'rgba(9,5,20,0.7)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '20px' }}>
+            <button onClick={onBack} style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <ArrowLeft size={16} color="#fff" />
             </button>
           </div>
-          <div style={{ position: 'absolute', bottom: '18px', left: '20px', right: '20px' }}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-              {(categories.length ? categories : [provider.category]).map((cat) => (
-                <span key={cat} style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: servicesRadii.pill, background: `${categoryAccents[cat] || accent}33`, color: categoryAccents[cat] || accent, border: `1px solid ${categoryAccents[cat] || accent}66` }}>
-                  {cat}
-                </span>
-              ))}
+          {/* No real "save/favorite provider" capability exists in the
+              backend -- the export's heart icon isn't reproduced here
+              rather than wiring it to nothing. */}
+        </div>
+
+        {/* Floating profile card -- real business name, category, rating
+            (service_provider_ratings aggregate) and location. No verified
+            checkmark: ServiceProvider has no isVerified/is_verified field
+            anywhere, so that part of the export isn't reproduced either. */}
+        <div style={{ position: 'relative', margin: '-40px 20px 0', padding: '18px', borderRadius: '20px', background: 'rgba(20,12,30,0.85)', border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(16px)' }}>
+          <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+            <div style={{ width: '64px', height: '64px', borderRadius: '16px', background: `linear-gradient(145deg, ${accent}, #4c1d95)`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '24px', fontWeight: 800, color: '#fff', flexShrink: 0, boxShadow: '0 0 0 3px rgba(8,5,15,0.9)', overflow: 'hidden' }}>
+              {coverPhoto ? null : provider.businessName.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()}
             </div>
-            <h1 style={{ color: '#fff', fontSize: '24px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', margin: 0 }}>{provider.businessName}</h1>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '4px' }}>
+                {(categories.length ? categories : [provider.category]).map((cat) => (
+                  <span key={cat} style={{ display: 'inline-block', fontSize: '11px', fontWeight: 700, padding: '3px 10px', borderRadius: servicesRadii.pill, background: `${categoryAccents[cat] || accent}33`, color: categoryAccents[cat] || accent, border: `1px solid ${categoryAccents[cat] || accent}66` }}>
+                    {cat}
+                  </span>
+                ))}
+              </div>
+              <span style={{ fontSize: '17px', fontWeight: 800, color: '#f6f4f9' }}>{provider.businessName}</span>
+              <div style={{ display: 'flex', gap: '10px', marginTop: '6px', fontSize: '12px', color: '#c3bdd1', flexWrap: 'wrap' }}>
+                {provider.reviewCount ? (
+                  <span>★ {provider.avgRating?.toFixed(1) ?? '—'} ({provider.reviewCount})</span>
+                ) : (
+                  <span>No reviews yet</span>
+                )}
+                {provider.location && <><span>•</span><span>{provider.location}</span></>}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -299,104 +329,144 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           <StatTile icon={Zap} label="Offers" value={badgeLabels.length ? badgeLabels.join(', ') : 'Standard'} />
         </div>
 
-        {provider.description && (
-          <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
-            <p style={{ color: servicesColors.textSecondary, fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{provider.description}</p>
-          </div>
-        )}
+        {/* Services / About / Reviews tab strip (SV3) */}
+        <div style={{ display: 'flex', margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, borderBottom: `1px solid ${servicesColors.border}` }}>
+          {([
+            { key: 'services', label: 'Services' },
+            { key: 'about', label: 'About' },
+            { key: 'reviews', label: 'Reviews' },
+          ] as const).map((t) => (
+            <button
+              key={t.key}
+              onClick={() => setActiveTab(t.key)}
+              style={{
+                flex: 1, textAlign: 'center', padding: '0 0 12px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: '13.5px', fontWeight: 700,
+                color: activeTab === t.key ? servicesColors.textPrimary : servicesColors.textSecondary,
+                borderBottom: activeTab === t.key ? `2px solid ${accent}` : '2px solid transparent',
+                marginBottom: '-1px',
+              }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
 
-        {/* Handoff SV3: an honest "no reviews yet" banner instead of a
-            fabricated rating. provider.reviewCount comes from the real
-            service_provider_ratings aggregate (0057) via withProviderRatings
-            -- when it's actually 0/unset, say so plainly rather than
-            showing a 0-star widget; when real reviews exist, show the real
-            number instead of hiding it behind a stale "no reviews" banner. */}
-        {provider.reviewCount ? (
-          <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span style={{ color: '#FCD34D', fontSize: '14px', fontWeight: 700 }}>★ {provider.avgRating?.toFixed(1) ?? '—'}</span>
-            <span style={{ color: servicesColors.textSecondary, fontSize: '13px' }}>({provider.reviewCount} review{provider.reviewCount === 1 ? '' : 's'})</span>
-          </div>
-        ) : (
-          <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '14px', borderRadius: servicesRadii.lg, background: 'rgba(255,255,255,0.04)', border: `1px solid ${servicesColors.border}` }}>
-            <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(237,234,245,0.16)', color: '#EDEAF5', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>i</span>
-            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-              No reviews yet for this provider — ratings only appear once real bookings are reviewed.
-            </p>
-          </div>
-        )}
-
-        {services && services.length > 0 && (
-          <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
-            <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Services</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {services.map((svc) => {
-                const qty = selection[svc.id];
-                const isSelected = !!qty;
-                return (
-                  <div
-                    key={svc.id}
-                    onClick={() => toggleService(svc)}
-                    style={{
-                      background: isSelected ? `${accent}14` : servicesColors.cardBg,
-                      border: isSelected ? `1.5px solid ${accent}` : `1px solid ${servicesColors.border}`,
-                      borderRadius: servicesRadii.lg, padding: '14px', display: 'flex', justifyContent: 'space-between',
-                      alignItems: 'flex-start', gap: '12px', cursor: 'pointer',
-                    }}
-                  >
-                    <div style={{ display: 'flex', gap: '10px', minWidth: 0, flex: 1 }}>
-                      <div style={{
-                        width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0, marginTop: '2px',
-                        border: isSelected ? `1.5px solid ${accent}` : `1.5px solid ${servicesColors.border}`,
-                        background: isSelected ? accent : 'transparent',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}>
-                        {isSelected && <Check size={13} color="#fff" />}
-                      </div>
-                      <div style={{ minWidth: 0 }}>
-                        <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
-                        {svc.description && <p style={{ color: servicesColors.textSecondary, fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
-                        {svc.durationMinutes && <p style={{ color: servicesColors.textTertiary, fontSize: '11px', margin: '4px 0 0' }}>{svc.durationMinutes} min</p>}
-                        {isSelected && (
-                          <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
-                            <button onClick={() => setQuantity(svc.id, qty - 1)} style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${servicesColors.border}`, background: 'none', color: servicesColors.textPrimary, cursor: 'pointer' }}>−</button>
-                            <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700, minWidth: '16px', textAlign: 'center' }}>{qty}</span>
-                            <button onClick={() => setQuantity(svc.id, qty + 1)} style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${servicesColors.border}`, background: 'none', color: servicesColors.textPrimary, cursor: 'pointer' }}>+</button>
+        {activeTab === 'services' && (
+          <>
+            {services && services.length > 0 ? (
+              <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {services.map((svc) => {
+                    const qty = selection[svc.id];
+                    const isSelected = !!qty;
+                    return (
+                      <div
+                        key={svc.id}
+                        onClick={() => toggleService(svc)}
+                        style={{
+                          background: isSelected ? `${accent}14` : servicesColors.cardBg,
+                          border: isSelected ? `1.5px solid ${accent}` : `1px solid ${servicesColors.border}`,
+                          borderRadius: servicesRadii.lg, padding: '14px', display: 'flex', justifyContent: 'space-between',
+                          alignItems: 'flex-start', gap: '12px', cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ display: 'flex', gap: '10px', minWidth: 0, flex: 1 }}>
+                          <div style={{
+                            width: '20px', height: '20px', borderRadius: '6px', flexShrink: 0, marginTop: '2px',
+                            border: isSelected ? `1.5px solid ${accent}` : `1.5px solid ${servicesColors.border}`,
+                            background: isSelected ? accent : 'transparent',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}>
+                            {isSelected && <Check size={13} color="#fff" />}
                           </div>
-                        )}
+                          <div style={{ minWidth: 0 }}>
+                            <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
+                            {svc.description && <p style={{ color: servicesColors.textSecondary, fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{svc.description}</p>}
+                            {svc.durationMinutes && <p style={{ color: servicesColors.textTertiary, fontSize: '11px', margin: '4px 0 0' }}>{svc.durationMinutes} min</p>}
+                            {isSelected && (
+                              <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '8px' }}>
+                                <button onClick={() => setQuantity(svc.id, qty - 1)} style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${servicesColors.border}`, background: 'none', color: servicesColors.textPrimary, cursor: 'pointer' }}>−</button>
+                                <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700, minWidth: '16px', textAlign: 'center' }}>{qty}</span>
+                                <button onClick={() => setQuantity(svc.id, qty + 1)} style={{ width: '24px', height: '24px', borderRadius: '6px', border: `1px solid ${servicesColors.border}`, background: 'none', color: servicesColors.textPrimary, cursor: 'pointer' }}>+</button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <span style={{ color: accent, fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          {formatServiceAmount(svc.price, svc.currency)}
+                        </span>
                       </div>
-                    </div>
-                    <span style={{ color: accent, fontSize: '14px', fontWeight: 700, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                      {formatServiceAmount(svc.price, svc.currency)}
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: 0 }}>This provider hasn't listed priced services yet.</p>
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === 'about' && (
+          <>
+            {provider.description && (
+              <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '14px', lineHeight: 1.6, margin: 0 }}>{provider.description}</p>
+              </div>
+            )}
+            {provider.servicesOffered.length > 0 && (
+              <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                  {provider.servicesOffered.map((s) => (
+                    <span key={s} style={{ fontSize: '12px', fontWeight: 600, padding: '6px 12px', borderRadius: servicesRadii.pill, background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, color: servicesColors.textPrimary }}>
+                      {s}
                     </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {provider.photoUrls.length > 1 && (
+              <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Photos</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {provider.photoUrls.slice(1).map((url, i) => (
+                    <img key={i} src={url} alt="" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: servicesRadii.sm }} />
+                  ))}
+                </div>
+              </div>
+            )}
+            {!provider.description && provider.servicesOffered.length === 0 && provider.photoUrls.length <= 1 && (
+              <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, padding: '20px', textAlign: 'center' }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: 0 }}>This provider hasn't added an About section yet.</p>
+              </div>
+            )}
+          </>
         )}
 
-        {provider.servicesOffered.length > 0 && (
-          <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
-            <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Services Offered</p>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {provider.servicesOffered.map((s) => (
-                <span key={s} style={{ fontSize: '12px', fontWeight: 600, padding: '6px 12px', borderRadius: servicesRadii.pill, background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, color: servicesColors.textPrimary }}>
-                  {s}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {provider.photoUrls.length > 1 && (
-          <div style={{ padding: `0 ${servicesSpacing.lg}px` }}>
-            <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Photos</p>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              {provider.photoUrls.slice(1).map((url, i) => (
-                <img key={i} src={url} alt="" style={{ width: '100%', aspectRatio: '1 / 1', objectFit: 'cover', borderRadius: servicesRadii.sm }} />
-              ))}
-            </div>
-          </div>
+        {activeTab === 'reviews' && (
+          <>
+            {/* Handoff SV3: the export's Reviews tab shows individual named
+                review quotes, but the schema only stores an AGGREGATE
+                (service_provider_ratings: avg_rating, review_count) -- no
+                per-review text/reviewer is fetchable anywhere. Showing the
+                real aggregate honestly, rather than inventing reviewer
+                names and quotes to visually match the mockup. */}
+            {provider.reviewCount ? (
+              <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: '#FCD34D', fontSize: '14px', fontWeight: 700 }}>★ {provider.avgRating?.toFixed(1) ?? '—'}</span>
+                <span style={{ color: servicesColors.textSecondary, fontSize: '13px' }}>({provider.reviewCount} review{provider.reviewCount === 1 ? '' : 's'})</span>
+              </div>
+            ) : (
+              <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', gap: '10px', alignItems: 'flex-start', padding: '14px', borderRadius: servicesRadii.lg, background: 'rgba(255,255,255,0.04)', border: `1px solid ${servicesColors.border}` }}>
+                <span style={{ width: '18px', height: '18px', borderRadius: '50%', background: 'rgba(237,234,245,0.16)', color: '#EDEAF5', fontSize: '11px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>i</span>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
+                  No reviews yet for this provider — ratings only appear once real bookings are reviewed.
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -415,6 +485,31 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         {bookingError && (
           <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: servicesRadii.md, padding: '12px 14px' }}>
             <p style={{ color: servicesColors.error, fontSize: '13px', fontWeight: 600, margin: 0 }}>{bookingError}</p>
+          </div>
+        )}
+
+        {/* SV3 idle state: no services selected yet -- "Starting from ₦X" +
+            a single "Book this provider" CTA, matching the export. Tapping
+            it jumps to the real Services tab so the user can actually pick
+            something, rather than faking an instant one-tap purchase this
+            multi-service marketplace was never built to support. */}
+        {selectedServices.length === 0 && (
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: '11px', color: servicesColors.textSecondary }}>Starting from</div>
+              <div style={{ fontSize: '16px', fontWeight: 800, color: servicesColors.textPrimary }}>{priceLabel}</div>
+            </div>
+            <button
+              onClick={() => setActiveTab('services')}
+              style={{
+                flex: 2, textAlign: 'center', padding: '15px 0', borderRadius: servicesRadii.md,
+                background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none',
+                fontWeight: 700, fontSize: '14.5px', color: '#fff', cursor: 'pointer',
+                boxShadow: '0 8px 26px rgba(168,85,247,0.4)',
+              }}
+            >
+              Book this provider
+            </button>
           </div>
         )}
 
