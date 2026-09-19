@@ -1,4 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
+/* The Manrope/JetBrains Mono @import that used to sit here has moved to a
+   <link rel="stylesheet"> in index.html. Same fonts, same weights, same
+   `display=swap` — only the discovery timing changes, and it changes for the
+   better: a CSS `@import` can only be found AFTER the browser has downloaded
+   and started parsing this stylesheet, so the font CSS was a second,
+   *serialized* round trip chained behind main-*.css. Declared as a <link> in
+   the HTML head it is discovered by the preload scanner in the initial
+   document parse and fetched in PARALLEL with this stylesheet instead, over
+   the connection index.html already warms with its existing
+   <link rel="preconnect"> to fonts.googleapis.com/fonts.gstatic.com.
+   Keeping it here would have left that preconnect half-wasted. */
 @import "tailwindcss";
 /* Explicit content source (Tailwind v4) so utility classes still generate
    when this file is bundled from a Vite project whose `root` isn't the

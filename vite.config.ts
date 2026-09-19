@@ -125,8 +125,24 @@ export default defineConfig(({ mode }) => {
         mapEmbed: path.resolve(__dirname, 'embed/map.html'),
       },
       output: {
+        // NOTE ON WHAT THIS DOES AND DOES NOT BUY:
+        // Every library named here is genuinely needed at startup (the
+        // Supabase client, Sentry's error boundary, PostHog's autocapture),
+        // so pulling them out does NOT reduce first-load bytes — the browser
+        // still downloads all of them. What it buys is cache stability on
+        // REPEAT visits: previously these ~1.9 MB of rendered vendor modules
+        // were inlined into the same `main` chunk as application code, so
+        // every single deploy — including a one-line copy change — produced a
+        // new content hash and forced a returning user to re-download all of
+        // it. Split out, they keep their hash across deploys that don't bump
+        // the dependency, and Vercel's CDN serves them immutable-cached.
+        // First-load reduction comes from the route-level React.lazy split in
+        // App.tsx, not from here.
         manualChunks: {
           vendor: ['react', 'react-dom'],
+          supabase: ['@supabase/supabase-js'],
+          sentry: ['@sentry/react'],
+          analytics: ['posthog-js'],
         },
       },
     },

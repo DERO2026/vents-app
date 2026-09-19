@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
@@ -25,7 +25,19 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { getVcBalance } from '../../lib/vcBalanceCache';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { AppVersionFooter } from './shared/AppVersionFooter';
-import { CACVerificationScreen } from './SettingsScreen';
+// Lazy, not static. CACVerificationScreen lives inside SettingsScreen.tsx,
+// so a static import here dragged that entire ~109 kB module (plus its
+// transitive imports) into the initial chunk via ProfileScreen — which is
+// eager, being a bottom-nav tab. The build said so directly:
+// "SettingsScreen.tsx is dynamically imported by App.tsx but also statically
+// imported by ProfileScreen.tsx, dynamic import will not move module into
+// another chunk" — i.e. this single line was cancelling App.tsx's split of
+// Settings. It renders behind a `showCacVerify` early return that only a
+// deliberate "Get Verified as an Organizer" tap reaches, so deferring it
+// costs nothing on the profile tab itself and changes no verification logic.
+const CACVerificationScreen = lazy(async () => ({
+  default: (await import('./SettingsScreen')).CACVerificationScreen,
+}));
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
@@ -445,11 +457,13 @@ export function ProfileScreen({
   // directly below Become a Service Provider.
   if (showCacVerify) {
     return (
-      <CACVerificationScreen
-        currentUser={currentUser}
-        onBack={() => setShowCacVerify(false)}
-        onContactSupport={() => { setShowCacVerify(false); onNavigate('help-support'); }}
-      />
+      <Suspense fallback={<div style={{ width: '100%', height: '100%', background: '#020005' }} />}>
+        <CACVerificationScreen
+          currentUser={currentUser}
+          onBack={() => setShowCacVerify(false)}
+          onContactSupport={() => { setShowCacVerify(false); onNavigate('help-support'); }}
+        />
+      </Suspense>
     );
   }
 

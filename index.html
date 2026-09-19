@@ -50,10 +50,46 @@
 
       <link rel="preconnect" href="https://fonts.googleapis.com">
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+      <!-- Primary UI fonts. Moved here out of src/styles/index.css's @import
+           so the preload scanner finds them during the initial document
+           parse and fetches them in parallel with the app stylesheet,
+           instead of in a second round trip chained behind it. Weights are
+           unchanged from what index.css requested. -->
+      <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
+      <!-- Outfit is used by exactly ONE element in the whole app — the event
+           title on EventDetailsScreen (EventDetailsScreen.tsx:814) — and
+           that element renders at `fontWeight: 700`. This request previously
+           asked for six weights (300;400;500;600;700;800), so five font
+           files were fetched on every single page load and never painted.
+           Narrowed to the one weight actually rendered: byte-for-byte
+           identical output, five fewer unused font downloads. -->
+      <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@700&display=swap" rel="stylesheet">
 
-      <!-- Paystack Inline Payment SDK -->
-      <script src="https://js.paystack.co/v1/inline.js"></script>
+      <!-- Paystack Inline Payment SDK.
+           `defer` (added for performance) does NOT weaken any payment
+           guarantee this tag previously provided, and deliberately stops
+           short of `async`:
+             * Without it, this is a synchronous third-party <script> in
+               <head>, so HTML parsing — and therefore first paint — blocks on
+               a round trip to js.paystack.co for EVERY visitor, including the
+               landing page, the legal pages, and the large majority who never
+               reach checkout.
+             * A deferred classic script is still fetched immediately and is
+               still guaranteed to execute before DOMContentLoaded, and
+               deferred classic scripts and module scripts execute in DOCUMENT
+               ORDER. This tag precedes /src/main.tsx (a module script, which
+               is deferred by default) below, so `window.PaystackPop` is still
+               defined before the app module ever runs — the exact ordering
+               that held before. `async` would break that ordering, which is
+               why it is not used here.
+             * Every consumer additionally reaches this only on an explicit
+               user action, seconds later at the earliest, and already guards
+               on `window.PaystackPop` first (CheckoutScreen.tsx:331,
+               PaymentRequestScreen.tsx:118, src/lib/paystack.ts) — so the
+               pre-existing "script hasn't loaded" path is untouched.
+           Net: no change to payment initialization, one less render-blocking
+           request on the critical path. -->
+      <script defer src="https://js.paystack.co/v1/inline.js"></script>
     </head>
 
     <body>

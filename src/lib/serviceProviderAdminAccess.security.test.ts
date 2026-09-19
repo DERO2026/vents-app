@@ -74,6 +74,14 @@ describe('App.tsx: is_service_provider is kept in sync without re-login', () => 
 
   it('the new KYC screen route is wired up', () => {
     expect(appSrc).toMatch(/screen === 'service-provider-verify'/);
-    expect(appSrc).toMatch(/import \{ ServiceProviderVerificationScreen \} from '\.\/components\/ServiceProviderVerificationScreen';/);
+    // Accepts EITHER the original static import OR the route-level
+    // React.lazy form (`screenChunk(() => import('./components/X'), 'X')`)
+    // introduced when App.tsx was code-split for bundle size. The security
+    // guarantee this test protects is unchanged and still fully enforced:
+    // App.tsx must still reference this exact KYC screen module, AND must
+    // still route to it (assertion above). Only the import syntax may vary.
+    expect(appSrc).toMatch(
+      /(import \{ ServiceProviderVerificationScreen \} from '\.\/components\/ServiceProviderVerificationScreen';|screenChunk\(\(\) => import\('\.\/components\/ServiceProviderVerificationScreen'\), 'ServiceProviderVerificationScreen'\))/,
+    );
   });
 });

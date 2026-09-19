@@ -16,29 +16,37 @@ import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID }
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
 
+// ── EAGER SCREENS ──────────────────────────────────────────────────────────
+// Everything statically imported here lands in the initial JS chunk, so this
+// list is deliberately short and deliberately conservative. Three categories
+// stay eager on purpose:
+//
+//  1. First-paint / auth path (Welcome, CountrySelect, Auth, Home) — these are
+//     what a cold visitor actually sees, so a lazy chunk here would ADD a
+//     round trip to the very metric we are trying to improve.
+//  2. The other three bottom-nav tabs (Explore, MyTickets, Profile) — tab
+//     switching must stay instant; a Suspense fallback flashing on a tab tap
+//     would trade a real UX regression for a small byte win.
+//  3. The entire payment path (EventDetails -> TicketSelect -> Checkout ->
+//     PaymentRequest(s) -> PaymentSuccess/Failed) and the wallet/refund
+//     screens. Splitting these would introduce a NEW network fetch partway
+//     through a money flow, where a flaky connection could strand a user
+//     mid-checkout in a way it cannot today. Per this pass's constraints,
+//     financial flows do not get traded against bundle size — so they stay
+//     eager even though Checkout/Wallet are individually large.
+//
+// HomeScreen/ExploreScreen additionally export helper functions
+// (mapDbEventToFrontend / mapDbUserToUserProfile) that App's own logic calls
+// directly, so they could not be lazified without restructuring regardless.
 import { WelcomeScreen } from './components/WelcomeScreen';
 import { CountrySelectScreen } from './components/CountrySelectScreen';
-import { ServicesHomeScreen } from './components/ServicesHomeScreen';
-import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
-import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
-import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
-import { ServiceProviderVerificationScreen } from './components/ServiceProviderVerificationScreen';
-import { ManageProviderServicesScreen } from './components/ManageProviderServicesScreen';
-import { ServiceBookingsScreen } from './components/ServiceBookingsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
-import { SavedScreen } from './components/SavedScreen';
 import { ProfileScreen } from './components/ProfileScreen';
+import { MyTicketsScreen } from './components/MyTicketsScreen';
 import { BottomNav } from './components/BottomNav';
 import { OrgTab } from './components/OrganizerBottomNav';
-import { NotificationsScreen } from './components/NotificationsScreen';
-import { MyTicketsScreen } from './components/MyTicketsScreen';
-import { SettingsScreen } from './components/SettingsScreen';
-import { PrivacyPolicyScreen } from './components/PrivacyPolicyScreen';
-import { HelpSupportScreen } from './components/HelpSupportScreen';
-import { InboxScreen } from './components/InboxScreen';
-import { ConversationScreen } from './components/ConversationScreen';
 import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
@@ -46,23 +54,81 @@ import { PaymentRequestScreen } from './components/PaymentRequestScreen';
 import { PaymentRequestsScreen } from './components/PaymentRequestsScreen';
 import { PaymentSuccessScreen } from './components/PaymentSuccessScreen';
 import { PaymentFailedScreen } from './components/PaymentFailedScreen';
-import { OrganizerDashboard } from './components/OrganizerDashboard';
-import { CreateEventScreen } from './components/CreateEventScreen';
-import { ManageEventsScreen } from './components/ManageEventsScreen';
-import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { WalletScreen } from './components/WalletScreen';
 import { UserWalletScreen } from './components/UserWalletScreen';
 import { TicketRefundScreen } from './components/TicketRefundScreen';
-import { AttendeeListScreen } from './components/AttendeeListScreen';
-import { UserProfileScreen } from './components/UserProfileScreen';
-import { PromoteEventScreen } from './components/PromoteEventScreen';
-import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
-import { AdminDashboardScreen } from './components/AdminDashboardScreen';
-import { CheckinScannerScreen } from './components/CheckinScannerScreen';
-import { DoorManagerScreen } from './components/DoorManagerScreen';
-import { ReferralScreen } from './components/ReferralScreen';
-import { InterestsScreen } from './components/InterestsScreen';
-import { PrivacySecurityScreen } from './components/PrivacySecurityScreen';
+
+// ── LAZY SCREENS ───────────────────────────────────────────────────────────
+// Measured motivation (rollup per-module stats on the pre-split build, see
+// the 2,782 kB single `main` chunk): these screens pulled ~1.5 MB of rendered
+// module bytes into the initial chunk that a cold visitor never executes,
+// including every heavy leaf library that only they use —
+//   recharts + d3-* + lodash + decimal.js-light (~850 kB) via OrganizerDashboard
+//   jsqr (~270 kB) via CheckinScanner/DoorManager's useQrScanner
+//   AdminDashboardScreen alone (~215 kB) / SettingsScreen (~109 kB)
+// Lighthouse independently flagged 578 KiB of unused JS on first load.
+//
+// Each of these is reached only by an explicit navigation (a menu tap, an
+// admin/organizer role, a deep link), never by first paint, so the chunk
+// fetch overlaps with the navigation the user just initiated. None of them
+// sit inside a payment/wallet/auth flow. `screenChunk` preserves the named
+// export -> default shape React.lazy requires without touching any component.
+// Typed so the lazy component keeps the EXACT props of the original named
+// export — every call site below stays fully type-checked, so this split
+// cannot silently drop or mistype a prop on any screen.
+const screenChunk = <K extends string, T extends Record<K, React.ComponentType<never>>>(
+  loader: () => Promise<T>,
+  name: K,
+): React.LazyExoticComponent<T[K]> =>
+  React.lazy(async () => ({ default: (await loader())[name] }));
+
+const ServicesHomeScreen = screenChunk(() => import('./components/ServicesHomeScreen'), 'ServicesHomeScreen');
+const ServiceCategoryScreen = screenChunk(() => import('./components/ServiceCategoryScreen'), 'ServiceCategoryScreen');
+const ServiceProviderProfileScreen = screenChunk(() => import('./components/ServiceProviderProfileScreen'), 'ServiceProviderProfileScreen');
+const ServiceProviderSetupScreen = screenChunk(() => import('./components/ServiceProviderSetupScreen'), 'ServiceProviderSetupScreen');
+const ServiceProviderVerificationScreen = screenChunk(() => import('./components/ServiceProviderVerificationScreen'), 'ServiceProviderVerificationScreen');
+const ManageProviderServicesScreen = screenChunk(() => import('./components/ManageProviderServicesScreen'), 'ManageProviderServicesScreen');
+const ServiceBookingsScreen = screenChunk(() => import('./components/ServiceBookingsScreen'), 'ServiceBookingsScreen');
+const SavedScreen = screenChunk(() => import('./components/SavedScreen'), 'SavedScreen');
+const NotificationsScreen = screenChunk(() => import('./components/NotificationsScreen'), 'NotificationsScreen');
+const SettingsScreen = screenChunk(() => import('./components/SettingsScreen'), 'SettingsScreen');
+const PrivacyPolicyScreen = screenChunk(() => import('./components/PrivacyPolicyScreen'), 'PrivacyPolicyScreen');
+const HelpSupportScreen = screenChunk(() => import('./components/HelpSupportScreen'), 'HelpSupportScreen');
+const InboxScreen = screenChunk(() => import('./components/InboxScreen'), 'InboxScreen');
+const ConversationScreen = screenChunk(() => import('./components/ConversationScreen'), 'ConversationScreen');
+const OrganizerDashboard = screenChunk(() => import('./components/OrganizerDashboard'), 'OrganizerDashboard');
+const CreateEventScreen = screenChunk(() => import('./components/CreateEventScreen'), 'CreateEventScreen');
+const ManageEventsScreen = screenChunk(() => import('./components/ManageEventsScreen'), 'ManageEventsScreen');
+const SalesAnalyticsScreen = screenChunk(() => import('./components/SalesAnalyticsScreen'), 'SalesAnalyticsScreen');
+const AttendeeListScreen = screenChunk(() => import('./components/AttendeeListScreen'), 'AttendeeListScreen');
+const UserProfileScreen = screenChunk(() => import('./components/UserProfileScreen'), 'UserProfileScreen');
+const PromoteEventScreen = screenChunk(() => import('./components/PromoteEventScreen'), 'PromoteEventScreen');
+const NigeriaLiveScreen = screenChunk(() => import('./components/NigeriaLiveScreen'), 'NigeriaLiveScreen');
+const AdminDashboardScreen = screenChunk(() => import('./components/AdminDashboardScreen'), 'AdminDashboardScreen');
+const CheckinScannerScreen = screenChunk(() => import('./components/CheckinScannerScreen'), 'CheckinScannerScreen');
+const DoorManagerScreen = screenChunk(() => import('./components/DoorManagerScreen'), 'DoorManagerScreen');
+const ReferralScreen = screenChunk(() => import('./components/ReferralScreen'), 'ReferralScreen');
+const InterestsScreen = screenChunk(() => import('./components/InterestsScreen'), 'InterestsScreen');
+const PrivacySecurityScreen = screenChunk(() => import('./components/PrivacySecurityScreen'), 'PrivacySecurityScreen');
+
+// Shown only while a lazy screen's chunk is in flight. Deliberately just the
+// app's own background at the full size of the phone frame: the screens that
+// mount into this slot all paint their own headers/skeletons immediately on
+// mount, so drawing any placeholder chrome here would flash a second, wrong
+// layout and introduce layout shift that the pre-split build did not have.
+// Matching the frame's box exactly keeps CLS at the measured 0.
+function ScreenChunkFallback() {
+  return (
+    <div
+      aria-busy="true"
+      style={{
+        width: '100%',
+        height: '100%',
+        background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
+      }}
+    />
+  );
+}
 
 // Bump this on every release. Compared against app_config.min_client_version
 // on launch — if this build is older, the client shows a blocking update
@@ -2665,7 +2731,7 @@ export default function App() {
           <div className="absolute inset-0" style={swipeBack.style} {...swipeBack.handlers}>
             {/* ── AUTH FLOW ── */}
             {authLoading || screen === 'splash' ? null : (
-              <>
+              <React.Suspense fallback={<ScreenChunkFallback />}>
                 {screen === 'welcome' && (
             <WelcomeScreen
               onGetStarted={() => {
@@ -3478,7 +3544,7 @@ export default function App() {
               }}
             />
           )}
-              </>
+              </React.Suspense>
             )}
           </div>
 

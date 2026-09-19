@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, lazy, Suspense } from 'react';
 import { ArrowLeft, Eye, EyeOff, Mail, Lock, User, AlertCircle, MapPin, X, ChevronRight, ChevronDown, Check, ShieldCheck } from 'lucide-react';
 import { PhoneInput } from './PhoneInput';
 import { AuthMode } from './types';
@@ -7,7 +7,15 @@ import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
 import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { pickImage } from '../../lib/pickImage';
-import { ImageCropperModal } from './ImageCropperModal';
+// Lazy, not static. AuthScreen itself stays eager (it is the auth path), but
+// the avatar cropper it hosts does not have to be: ImageCropperModal pulls in
+// react-easy-crop (~36 kB rendered) plus its own ~23 kB, and it only renders
+// once `cropImageSrc` is set — i.e. only after the user has already gone
+// through an async image *picker*, which dwarfs the chunk fetch. Nothing in
+// the sign-in/sign-up/OTP logic touches this component.
+const ImageCropperModal = lazy(async () => ({
+  default: (await import('./ImageCropperModal')).ImageCropperModal,
+}));
 import { verifyTOTP } from '../../lib/totp';
 import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
@@ -2616,11 +2624,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       </div>
       
       {cropImageSrc && (
-        <ImageCropperModal
-          imageSrc={cropImageSrc}
-          onCropComplete={handleCropComplete}
-          onClose={() => setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return null; })}
-        />
+        <Suspense fallback={null}>
+          <ImageCropperModal
+            imageSrc={cropImageSrc}
+            onCropComplete={handleCropComplete}
+            onClose={() => setCropImageSrc((prev) => { if (prev) URL.revokeObjectURL(prev); return null; })}
+          />
+        </Suspense>
       )}
       </div>{/* end inner scroll wrapper */}
     </div>

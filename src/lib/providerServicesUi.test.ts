@@ -22,7 +22,15 @@ beforeAll(() => {
 
 describe('routing: Manage Services is reachable and wired in App.tsx', () => {
   it('the screen is imported and routed', () => {
-    expect(appSrc).toMatch(/import \{ ManageProviderServicesScreen \} from '\.\/components\/ManageProviderServicesScreen';/);
+    // Accepts EITHER the original static import OR the route-level
+    // React.lazy form (`screenChunk(() => import('./components/X'), 'X')`)
+    // introduced when App.tsx was code-split for bundle size. The guarantee
+    // this test exists to protect is unchanged and still fully enforced:
+    // App.tsx must still reference this exact module path, AND must still
+    // route to it (second assertion). Only the import *syntax* may vary.
+    expect(appSrc).toMatch(
+      /(import \{ ManageProviderServicesScreen \} from '\.\/components\/ManageProviderServicesScreen';|screenChunk\(\(\) => import\('\.\/components\/ManageProviderServicesScreen'\), 'ManageProviderServicesScreen'\))/,
+    );
     expect(appSrc).toMatch(/screen === 'manage-provider-services'/);
   });
 
