@@ -6,6 +6,8 @@ import {
   ALL_TOOLS,
   READ_ONLY_TOOL_NAMES,
   PROPOSAL_TOOL_NAMES,
+  WEB_SEARCH_TOOL,
+  WEB_SEARCH_TOOL_NAME,
   buildUserSupabaseClient,
   executeReadOnlyTool,
   buildProposal,
@@ -39,10 +41,15 @@ const TIMEOUT_MS = 25000;
 const SYSTEM_PROMPT = `You are VENTS AI, the assistant built into the VENTS app (events, service bookings, tickets, wallet and VENTS Cents, for a primarily Nigerian audience).
 
 Ground rules:
-1. NEVER fabricate live VENTS data -- events, prices, availability, payment status, ticket status, booking status, wallet balance, or VENTS Cents balance. For anything VENTS-specific, always call the matching tool and base your answer only on its result. If a tool call fails or returns nothing, say so plainly rather than guessing.
-2. Clearly distinguish three kinds of things in your answers: (a) live VENTS data you got from a tool just now, (b) general/cultural knowledge you already have (e.g. who an artist is, what a term means, general event-planning advice), and (c) anything you are not confident about -- say so rather than presenting a guess as fact.
+1. NEVER fabricate live VENTS data -- events, prices, availability, payment status, ticket status, booking status, wallet balance, or VENTS Cents balance. For anything VENTS-specific (does an event/provider exist on VENTS, ticket/booking/payment/wallet/VC status), always call the matching VENTS tool and base your answer only on its result -- never web_search, never your own knowledge. If a tool call fails or returns nothing, say so plainly rather than guessing.
+2. Clearly distinguish three kinds of things in your answers, and use the right source for each:
+   (a) Live VENTS data -- from a VENTS tool call just now (search_events, get_event, search_services_or_providers, etc.). Present this as VENTS listings.
+   (b) Live external/current information -- concerts, events, or services that are NOT on VENTS, or current city/country information. Use the web_search tool for these. NEVER answer a question about a current external event, a current artist appearance/schedule, or a current external service/business listing from your own static/training knowledge -- that knowledge can be stale. Call web_search instead.
+   (c) General/stable knowledge -- who an artist is, what a genre or cultural term means, historical facts, casual conversation. Answer this directly from your own knowledge; do NOT call web_search for it.
+   You decide which of these three a question needs. When more than one applies, use each source for its own part of the answer.
 3. Handle Nigerian phrasing, culture, artists, and event terminology naturally, using your own general knowledge -- there is no hardcoded slang list here, so use judgment the way you would for any other region's phrasing.
 4. For any consequential action (transferring or refunding a ticket, booking a service, filing a report), you may only ever PROPOSE it via the matching tool. Never claim an action has been completed unless you are reporting the actual result of a real, already-executed tool call. The system will ask the user to confirm before anything actually happens.
+5. Whenever your answer includes anything from web_search, clearly label it as coming from outside VENTS (e.g. "I found this elsewhere, not listed on VENTS" / "this isn't on VENTS"). NEVER imply that an externally-found event, artist appearance, or service/business is bookable through VENTS, or present it as if it were a VENTS listing, unless a VENTS tool call has actually confirmed that exact thing exists on VENTS.
 
 Keep answers conversational and concise. When you have structured results (events, providers, tickets, bookings, payment status, wallet/VC balances), summarize them in your text -- the app will also render them as structured cards from the tool results, so you don't need to reformat them as lists or tables yourself.`;
 
@@ -114,7 +121,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({
         type: 'message',
         text: `Done -- ${action.replace(/_/g, ' ')} completed.`,
-        cards: [{ type: action, data: result }],
+        cards: [{ type: action, data: result, source: 'vents' as const }],
       });
     }
 
@@ -148,7 +155,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             model: 'claude-sonnet-5',
             max_tokens: 2000,
             system: SYSTEM_PROMPT,
-            tools: ALL_TOOLS,
+            tools: [...ALL_TOOLS, WEB_SEARCH_TOOL],
             messages: conversation,
           }),
         });
@@ -163,7 +170,36 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const data: any = await response.json();
       const blocks: any[] = data.content || [];
-      const toolUseBlocks = blocks.filter((b) => b.type === 'tool_use');
+      // web_search runs server-side on Anthropic's infrastructure -- its
+      // tool_use/web_search_tool_result blocks arrive already resolved as
+      // part of this same response, not as a pending call for us to
+      // dispatch. Only tool_use blocks for OUR tools (VENTS DB read/proposal
+      // tools) need manual execution here, so explicitly exclude
+      // WEB_SEARCH_TOOL_NAME before deciding whether there's anything left
+      // to do this round.
+      const toolUseBlocks = blocks.filter((b) => b.type === 'tool_use' && b.name !== WEB_SEARCH_TOOL_NAME);
+
+      // web_search_tool_result blocks carry the server-executed search
+      // results in-band -- surface them as their own cards, tagged
+      // source: 'external' so the (future) UI can render them distinctly
+      // from live VENTS data and never as bookable VENTS listings.
+      const webSearchResultBlocks = blocks.filter((b) => b.type === 'web_search_tool_result');
+      for (const b of webSearchResultBlocks) {
+        // On error, `.content` is a single error object (e.g.
+        // {error_code: 'max_uses_exceeded'}), not a list -- the API returns
+        // HTTP 200 either way, so this must be branched on before treating
+        // the content as a results array.
+        const isError = !Array.isArray(b.content);
+        if (isError) {
+          cards.push({
+            type: 'web_search_error',
+            data: b.content,
+            source: 'external' as const,
+          });
+          continue;
+        }
+        cards.push({ type: 'web_search', data: b.content, source: 'external' as const });
+      }
 
       if (toolUseBlocks.length === 0) {
         const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
@@ -200,7 +236,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           }
           try {
             const result = await executeReadOnlyTool(block.name, client, block.input);
-            cards.push({ type: block.name, data: result });
+            cards.push({ type: block.name, data: result, source: 'vents' as const });
             return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) };
           } catch (toolError: any) {
             return {

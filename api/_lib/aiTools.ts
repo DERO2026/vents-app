@@ -215,6 +215,26 @@ export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...PROPOSAL_TOOLS];
 export const READ_ONLY_TOOL_NAMES = new Set(READ_ONLY_TOOLS.map((t) => t.name));
 export const PROPOSAL_TOOL_NAMES = new Set(PROPOSAL_TOOLS.map((t) => t.name));
 
+// Anthropic's native server-side web search tool. Bounded max_uses per turn
+// so a single conversation round can't run up unbounded search cost -- see
+// api/ai-assistant.ts for how it's wired into the tools array and how its
+// tool_use/web_search_tool_result blocks are excluded from the manual
+// READ_ONLY/PROPOSAL dispatch below (it runs on Anthropic's infrastructure,
+// never through executeReadOnlyTool).
+export const WEB_SEARCH_TOOL_NAME = 'web_search';
+export const WEB_SEARCH_MAX_USES = 3;
+export const WEB_SEARCH_TOOL = {
+  type: 'web_search_20260209',
+  name: WEB_SEARCH_TOOL_NAME,
+  max_uses: WEB_SEARCH_MAX_USES,
+} as const;
+
+// The `source` a structured result card came from, for the (future) UI to
+// distinguish live VENTS data from externally-sourced or general-knowledge
+// content. Defaults to 'vents' for every existing card producer below since
+// all of them wrap a VENTS-database read.
+export type CardSource = 'vents' | 'external' | 'general';
+
 function clampLimit(limit: unknown, fallback = 10, max = 50): number {
   const n = typeof limit === 'number' && isFinite(limit) ? Math.floor(limit) : fallback;
   return Math.min(Math.max(n, 1), max);
