@@ -190,6 +190,27 @@ async function writeAuditLog(actor: { id: string; role?: string }, action: strin
     .insert([{ admin_id: actor.id, action, target_user_id: targetUserId, details, actor_role: actorRole }]);
 }
 
+// Every app_config write goes through admin_update_app_config (0083).
+// Direct `.update()` on app_config is no longer possible from a client —
+// INSERT/UPDATE/DELETE were revoked from `authenticated` in that migration —
+// and the previous direct-write path was actively misleading: under RLS a
+// non-Root admin's UPDATE matched zero rows and PostgREST returned SUCCESS,
+// so the UI reported a change that never happened and wrote a client-side
+// audit entry claiming it did.
+//
+// The RPC is Root-gated, validates the field against a server-side
+// whitelist, and writes its own admin_logs entry carrying field/old/new —
+// so there is deliberately no writeAuditLog() call alongside these anymore.
+// Throwing here lets each caller's existing catch block surface the real
+// authorization error instead of silently succeeding.
+async function updateAppConfig(field: string, value: boolean | string | number) {
+  const { error } = await supabase.rpc('admin_update_app_config' as any, {
+    p_field: field,
+    p_value: String(value),
+  });
+  if (error) throw error;
+}
+
 // Fires the confirmation/rejection email after an admin action succeeds.
 // Module-scope (not tied to a specific component) since both PayoutsTab and
 // the main AdminDashboardScreen component call it.
@@ -1226,25 +1247,44 @@ export function AdminDashboardScreen({
   }, [tab, currentUser?.id, isRoot]);
 
 
+  // Was a raw two-step client operation: a PostgREST `.update()` on
+  // organizer_requests followed by a SEPARATE admin_set_user_role RPC. That
+  // was non-atomic (a dropped connection between the two left the request
+  // "approved" with the role never granted), unaudited, outside dual
+  // control, and silently half-broken for Sub-Admins — the table's RLS
+  // admits is_admin() so step 1 succeeded, while admin_set_user_role
+  // requires is_super_admin() so step 2 threw unguarded.
+  //
+  // Now one atomic RPC (admin_decide_organizer_request, 0085) routed through
+  // submitOrExecute like every other privileged action: Admin/Root execute
+  // directly, a Sub-Admin's click queues a 'decide_organizer_request'
+  // request for approval (executor wired into approve_admin_action in 0086).
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
-    const { error } = await supabase
-      .from('organizer_requests')
-      .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) {
-      setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      const req = orgRequests.find((r) => r.id === id);
-      // If approved, update user role to organizer
-      if (status === 'approved') {
-        if (req?.user_id) {
-          await supabase.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
-        }
-      }
-      // Decision SMS is now sent server-side by notifyByEmail's endpoint
-      // (api/notify/status-email.ts) — it looks up the phone number itself and
-      // sends with the same text, no client-held Sendchamp key required.
-      notifyByEmail('organizer', id, status, adminNote);
-    }
+    const req = orgRequests.find((r) => r.id === id);
+    const approve = status === 'approved';
+    await submitOrExecute('decide_organizer_request',
+      {
+        target_type: 'user',
+        target_id: req?.user_id ?? null,
+        target_label: req?.users?.username || req?.users?.full_name || req?.users?.email || id,
+        payload: { request_id: id, approve, reason: adminNote || null },
+        previous: { status: req?.status ?? 'pending' },
+        changes: { status },
+      },
+      async () => {
+        const { error } = await supabase.rpc('admin_decide_organizer_request' as any, {
+          p_request_id: id,
+          p_approve: approve,
+          p_reason: adminNote || null,
+        });
+        if (error) throw error;
+        setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+        // Decision SMS is now sent server-side by notifyByEmail's endpoint
+        // (api/notify/status-email.ts) — it looks up the phone number itself and
+        // sends with the same text, no client-held Sendchamp key required.
+        notifyByEmail('organizer', id, status, adminNote);
+        flash(true, approve ? 'Organizer request approved.' : 'Organizer request rejected.');
+      });
   };
 
   // Service Provider requests -- own fetch effect and review function,
@@ -1287,18 +1327,33 @@ export function AdminDashboardScreen({
     // Single atomic RPC: updates the request, grants/leaves the capability,
     // AND inserts the applicant's notification together -- see
     // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    // Routed through submitOrExecute (P0-7) so KYC approval is under the same
+    // maker-checker control as every other privileged action: Admin/Root
+    // execute directly, a Sub-Admin's click queues a
+    // 'decide_service_provider_request' for approval (wired into
+    // approve_admin_action in 0086). The RPC itself is unchanged in gate and
+    // signature; 0085 only made its status transition atomic.
     const req = spRequests.find((r) => r.id === id);
-    const { error } = await supabase.rpc('admin_decide_service_provider_request', {
-      p_request_id: id,
-      p_status: status,
-      p_admin_note: adminNote || null,
-    });
-    if (!error) {
-      setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      triggerPushDelivery(req?.user_id);
-    } else {
-      flash(false, error.message || 'Failed to review request.');
-    }
+    await submitOrExecute('decide_service_provider_request',
+      {
+        target_type: 'user',
+        target_id: req?.user_id ?? null,
+        target_label: req?.business_name || req?.users?.username || id,
+        payload: { request_id: id, status, admin_note: adminNote || null },
+        previous: { status: req?.status ?? 'pending' },
+        changes: { status },
+      },
+      async () => {
+        const { error } = await supabase.rpc('admin_decide_service_provider_request', {
+          p_request_id: id,
+          p_status: status,
+          p_admin_note: adminNote || null,
+        });
+        if (error) throw error;
+        setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+        triggerPushDelivery(req?.user_id);
+        flash(true, status === 'approved' ? 'Provider application approved.' : 'Provider application rejected.');
+      });
   };
 
   // ── Services (Admin/Sub-Admin management surface) ──────────────────────
@@ -1495,7 +1550,14 @@ export function AdminDashboardScreen({
 
   const handleRestoreEvent = async (eventId: string) => {
     const label = events.find(e => e.id === eventId)?.title || eventId;
-    await submitOrExecute('restore_event',
+    // 'restore_deleted_event' is the action_type approve_admin_action
+    // actually maps to an executor. This previously submitted
+    // 'restore_event', which had no CASE branch — so a Sub-Admin's request
+    // queued successfully and then threw 'No executor mapped' on every
+    // approval attempt, permanently. (0086 also keeps a 'restore_event'
+    // alias branch so requests already stranded in the queue can be
+    // approved rather than orphaned.)
+    await submitOrExecute('restore_deleted_event',
       { target_type: 'event', target_id: eventId, target_label: label, previous: { deleted: true }, changes: { deleted: false } },
       async () => {
         const { error } = await supabase.rpc('admin_restore_deleted_event', { p_event_id: eventId });
@@ -1584,8 +1646,15 @@ export function AdminDashboardScreen({
   const handleToggleFeatured = async (eventId: string, currentlyFeatured: boolean) => {
     const label = events.find(e => e.id === eventId)?.title || eventId;
     const nextFeatured = !currentlyFeatured;
+    // payload (not just `changes`) carries what the executor needs:
+    // approve_admin_action's 'toggle_event_featured' branch reads
+    // payload.featured / payload.duration_days, matching how every other
+    // branch sources its arguments. Without these the approved action could
+    // not reconstruct the intended direction or duration.
     await submitOrExecute('toggle_event_featured',
-      { target_type: 'event', target_id: eventId, target_label: label, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
+      { target_type: 'event', target_id: eventId, target_label: label,
+        payload: { featured: nextFeatured, duration_days: nextFeatured ? 14 : null },
+        previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
       async () => {
         const { error } = await supabase.rpc('admin_set_event_featured', {
           p_event_id: eventId,
@@ -1768,8 +1837,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await supabase.from('app_config').update({ maintenance_mode: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser,next ? 'ROOT_maintenance_on' : 'ROOT_maintenance_off', null, {});
+          await updateAppConfig('maintenance_mode', next);
           setMaintenanceMode(next);
           flash(true, `Maintenance mode ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update maintenance mode.'); }
@@ -1789,8 +1857,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await supabase.from('app_config').update({ voice_notes_enabled: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser,next ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off', null, {});
+          await updateAppConfig('voice_notes_enabled', next);
           setVoiceNotesEnabled(next);
           flash(true, `Voice notes ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update voice notes toggle.'); }
@@ -1810,8 +1877,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await supabase.from('app_config').update({ image_sharing_enabled: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser,next ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off', null, {});
+          await updateAppConfig('image_sharing_enabled', next);
           setImageSharingEnabled(next);
           flash(true, `Image sharing ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || 'Failed to update image sharing toggle.'); }
@@ -1842,8 +1908,7 @@ export function AdminDashboardScreen({
       onConfirm: async () => {
         setConfirmModal(null);
         try {
-          await supabase.from('app_config').update({ [column]: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser, next ? `ROOT_${column}_on` : `ROOT_${column}_off`, null, {});
+          await updateAppConfig(column, next);
           meta.setter(next);
           flash(true, `${meta.label} ${next ? 'disabled' : 're-enabled'}.`);
         } catch (err: any) { flash(false, err?.message || `Failed to update ${meta.label} kill switch.`); }
