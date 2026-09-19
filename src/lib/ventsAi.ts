@@ -14,7 +14,7 @@ export type VentsAiConfirmedAction = {
 };
 
 export type VentsAiResponse =
-  | { type: 'message'; text: string; cards?: Array<{ type: string; data: unknown }> }
+  | { type: 'message'; text: string; cards?: Array<{ type: string; data: unknown; source?: 'vents' | 'external' | 'general' }> }
   | {
       type: 'confirmation_required';
       action: string;

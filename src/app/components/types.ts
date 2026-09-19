@@ -337,7 +337,8 @@ export type Screen =
   | 'manage-provider-services'
   | 'service-bookings'
   | 'provider-service-bookings'
-  | 'ticket-refund';
+  | 'ticket-refund'
+  | 'vents-ai';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

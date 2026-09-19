@@ -31,6 +31,9 @@ import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScree
 import { SavedScreen } from './components/SavedScreen';
 import { ProfileScreen } from './components/ProfileScreen';
 import { BottomNav } from './components/BottomNav';
+import { VentsAiOrb } from './components/VentsAiOrb';
+import { VentsAiScreen } from './components/VentsAiScreen';
+import { shouldShowVentsAiOrb } from './lib/ventsAiOrbScreens';
 import { OrgTab } from './components/OrganizerBottomNav';
 import { NotificationsScreen } from './components/NotificationsScreen';
 import { MyTicketsScreen } from './components/MyTicketsScreen';
@@ -194,6 +197,20 @@ export default function App() {
   useEffect(() => {
     if (screen === 'my-tickets') setMyTicketsEverMounted(true);
   }, [screen]);
+  // Same pattern for VENTS AI -- keeps its in-memory "recent conversations"
+  // (see VentsAiScreen.tsx's own comment on why that's in-memory, not a new
+  // backend table) alive across leaving and re-opening the screen within
+  // the same session, instead of resetting on every open.
+  const [ventsAiEverMounted, setVentsAiEverMounted] = useState(false);
+  useEffect(() => {
+    if (screen === 'vents-ai') setVentsAiEverMounted(true);
+  }, [screen]);
+  const [isDesktopWidth, setIsDesktopWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1200 : false));
+  useEffect(() => {
+    const onResize = () => setIsDesktopWidth(window.innerWidth >= 1200);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
@@ -3016,6 +3033,36 @@ export default function App() {
             />
           )}
 
+          {/* ── VENTS AI ── */}
+          {ventsAiEverMounted && (
+            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <VentsAiScreen
+                isDesktop={isDesktopWidth}
+                onClose={goBack}
+                onOpenEvent={(eventId) => {
+                  supabase
+                    .from('events')
+                    .select('*')
+                    .eq('id', eventId)
+                    .maybeSingle()
+                    .then(({ data: evtData, error: evtError }) => {
+                      if (evtError || !evtData || evtData.deleted_at) return;
+                      setSelectedEvent(mapDbEventToFrontend(evtData));
+                      navigateTo('event-details');
+                    });
+                }}
+                onOpenProvider={(providerId) => {
+                  // ServiceProviderProfileScreen re-fetches by providerId
+                  // itself whenever initialProvider is absent/mismatched
+                  // (see its own effect), so no separate fetch is needed
+                  // here -- same as ServicesHomeScreen's onProviderPress.
+                  setSelectedServiceProvider({ id: providerId } as any);
+                  navigateTo('service-provider-profile');
+                }}
+              />
+            </div>
+          )}
+
           {/* ── UTILITY SCREENS ── */}
           {screen === 'notifications' && (
             <NotificationsScreen
@@ -3491,6 +3538,15 @@ export default function App() {
             activeTab={activeTab}
             onTabChange={handleTabChange}
           />
+        )}
+
+        {/* VENTS AI floating orb -- persistent entry point over Home,
+            Discover (explore) and Bookings (my-tickets) only, per
+            src/app/lib/ventsAiOrbScreens.ts. Never rendered signed-out, and
+            never on payment/checkout/wallet/refund/transfer or any other
+            screen, since it isn't in VENTS_AI_ORB_SCREENS. */}
+        {shouldShowVentsAiOrb(screen, !!currentUser) && (
+          <VentsAiOrb userId={currentUser?.id} onOpen={() => navigateTo('vents-ai')} />
         )}
 
         </ErrorBoundary>
