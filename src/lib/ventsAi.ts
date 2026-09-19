@@ -1,9 +1,14 @@
 import { getAuthToken } from './supabase';
+import { apiUrl } from './apiBase';
 
-// Thin client for VENTS AI's server-orchestrated assistant (api/ai-assistant.ts).
-// No business logic lives here -- this only attaches the user's own auth
-// token and posts the conversation (and, on a confirm step, the signed
-// confirmedAction) to the endpoint.
+// Thin client for VENTS AI's server-orchestrated assistant. This used to
+// post to its own /api/ai-assistant serverless function; that function was
+// folded into api/extract-events.ts (its handler logic now lives in
+// api/_lib/aiAssistantHandler.ts) to stay within Vercel Hobby's
+// 12-serverless-function-per-deployment cap. This client now posts to
+// /api/extract-events with the explicit `mode: 'ai_assistant'` discriminator
+// that endpoint routes on -- everything else about this helper (its
+// signature, what it sends, what it returns) is unchanged.
 
 export type VentsAiMessage = { role: 'user' | 'assistant'; content: string };
 
@@ -30,13 +35,13 @@ export async function sendVentsAiMessage(
 ): Promise<VentsAiResponse> {
   const token = await getAuthToken();
 
-  const res = await fetch('/api/ai-assistant', {
+  const res = await fetch(apiUrl('/api/extract-events'), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ messages, confirmedAction }),
+    body: JSON.stringify({ mode: 'ai_assistant', messages, confirmedAction }),
   });
 
   const body = await res.json().catch(() => null);

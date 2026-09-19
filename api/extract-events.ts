@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession } from './_lib/verifyAuth.js';
 import { applyCors } from './_lib/cors.js';
+import { handleAiAssistant } from './_lib/aiAssistantHandler.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res, 'GET, POST, OPTIONS');
@@ -17,6 +18,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ configured: !!process.env.ANTHROPIC_API_KEY });
   }
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+
+  // VENTS AI routing: an explicit, unambiguous discriminator on the request
+  // body -- { mode: 'ai_assistant', ... } -- checked first, before any
+  // extraction-specific field (imageBase64/text) or this file's own session
+  // check is even reached. This mirrors this file's existing branching style
+  // (it already keys the vision branch off the literal presence/type of
+  // imageBase64): a legitimate extract-events request never sets `mode`, and
+  // the AI-assistant client (src/lib/ventsAi.ts) always sets it, so neither
+  // request shape can ever fall through into the other's branch by accident.
+  //
+  // api/ai-assistant.ts used to be its own Vercel serverless function; it
+  // was folded in here (its actual handler logic lives untouched in
+  // api/_lib/aiAssistantHandler.ts, which owns its own auth/rate-limit/CORS,
+  // exactly as api/ai-assistant.ts did standalone) purely to stay within
+  // Vercel Hobby's 12-serverless-function cap. This routing is a pure
+  // dispatch -- no extraction logic runs on this path, and no AI-assistant
+  // logic runs on the extraction path below.
+  if (req.body && req.body.mode === 'ai_assistant') {
+    return handleAiAssistant(req, res);
+  }
 
   // This endpoint spends a paid Anthropic API call per request — must be a
   // live, validated VENTS session, not just any non-empty header.

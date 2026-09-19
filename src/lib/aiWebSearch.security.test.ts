@@ -4,14 +4,19 @@ import { join } from 'node:path';
 
 // Static-analysis tests (same approach as every other *.security.test.ts in
 // this repo, e.g. aiServiceSearch.security.test.ts) for the web_search
-// server-side tool wired into api/ai-assistant.ts + api/_lib/aiTools.ts.
+// server-side tool wired into api/_lib/aiAssistantHandler.ts + api/_lib/aiTools.ts.
+//
+// api/ai-assistant.ts was folded into api/extract-events.ts (routed via a
+// `mode: 'ai_assistant'` discriminator) to stay within Vercel Hobby's
+// 12-serverless-function cap; its actual handler logic, read here, now lives
+// unchanged in api/_lib/aiAssistantHandler.ts.
 
 let assistantSrc: string;
 let toolsSrc: string;
 
 beforeAll(() => {
   const apiDir = join(__dirname, '..', '..', 'api');
-  assistantSrc = readFileSync(join(apiDir, 'ai-assistant.ts'), 'utf8');
+  assistantSrc = readFileSync(join(apiDir, '_lib', 'aiAssistantHandler.ts'), 'utf8');
   toolsSrc = readFileSync(join(apiDir, '_lib', 'aiTools.ts'), 'utf8');
 });
 

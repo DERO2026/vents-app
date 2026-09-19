@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession, enforceRateLimit } from './_lib/verifyAuth.js';
-import { applyCors } from './_lib/cors.js';
-import { createConfirmationToken, verifyConfirmationToken } from './_lib/aiConfirmation.js';
+import { verifyInsforgeSession, enforceRateLimit } from './verifyAuth.js';
+import { applyCors } from './cors.js';
+import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
 import {
   ALL_TOOLS,
   READ_ONLY_TOOL_NAMES,
@@ -15,13 +15,13 @@ import {
   executeRequestTicketRefund,
   executeStartServiceBooking,
   executeCreateReport,
-} from './_lib/aiTools.js';
+} from './aiTools.js';
 
 // VENTS AI -- server-orchestrated conversational assistant. Modeled directly
 // on api/extract-events.ts's structure (raw fetch to the Anthropic Messages
 // API, server-only ANTHROPIC_API_KEY, verifyInsforgeSession gating, an
 // AbortController timeout). The key difference from extract-events.ts: this
-// endpoint calls EXISTING secure backend functionality as tools rather than
+// handler calls EXISTING secure backend functionality as tools rather than
 // asking the model to produce data from nothing -- it never uses a
 // service-role Supabase client, and every tool executor runs as the calling
 // user via their own forwarded access token, so it can never see or do more
@@ -34,6 +34,14 @@ import {
 // request carrying that verified token (`confirmedAction`) executes the
 // real thing, and that path runs BEFORE any new model call -- confirming an
 // action reports what actually happened, it never re-asks the model.
+//
+// This used to be its own Vercel serverless function (api/ai-assistant.ts).
+// It was moved here and is now invoked as an internal branch of
+// api/extract-events.ts (routed via an explicit `{ mode: 'ai_assistant' }`
+// request-body discriminator) purely to stay within Vercel Hobby's
+// 12-serverless-function-per-deployment cap -- see api/extract-events.ts for
+// the routing. Nothing about this handler's own logic, auth, rate limiting,
+// tool execution, or confirmation flow changed in that move.
 
 const MAX_TOOL_ROUNDTRIPS = 5;
 const TIMEOUT_MS = 25000;
@@ -53,7 +61,7 @@ Ground rules:
 
 Keep answers conversational and concise. When you have structured results (events, providers, tickets, bookings, payment status, wallet/VC balances), summarize them in your text -- the app will also render them as structured cards from the tool results, so you don't need to reformat them as lists or tables yourself.`;
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export async function handleAiAssistant(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res, 'POST, OPTIONS');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
@@ -83,12 +91,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // call happens on this path at all.
     if (confirmedAction && typeof confirmedAction === 'object') {
       const { action, params, token } = confirmedAction;
-      if (typeof action !== 'string' || !PROPOSAL_TOOL_NAMES.has(action) || typeof token !== 'string') {
+      if (typeof action !== 'string' || !(PROPOSAL_TOOL_NAMES as Set<string>).has(action) || typeof token !== 'string') {
         return res.status(400).json({ error: 'Invalid confirmedAction' });
       }
       const verified = verifyConfirmationToken(token, action, params, session.userId);
       if (!verified.ok) {
-        return res.status(403).json({ error: `Confirmation rejected: ${verified.reason}` });
+        return res.status(403).json({ error: `Confirmation rejected: ${(verified as { ok: false; reason: string }).reason}` });
       }
 
       const client = buildUserSupabaseClient(accessToken);
