@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { ventsColors } from '../../lib/ventsDesignTokens';
@@ -47,27 +47,38 @@ export interface VcConfig {
 export function useVcConfig() {
   const [config, setConfig] = useState<VcConfig | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  // Tracks whether a load is currently in-flight, checked synchronously so
+  // a retry pressed while a request is still pending is a guaranteed no-op
+  // (state updates from setLoading are not synchronous, so this ref is the
+  // actual guard against firing a second, concurrent request).
+  const inFlightRef = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase.rpc('get_vc_config' as any);
-        if (error) throw error;
-        if (!cancelled) setConfig((data as any) ?? null);
-      } catch (err) {
-        console.error('Failed to load VC config:', err);
-        Sentry.captureException(err);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const load = useCallback(async () => {
+    if (inFlightRef.current) return; // guard against duplicate/concurrent requests
+    inFlightRef.current = true;
+    setLoading(true);
+    setError(null);
+    try {
+      const { data, error: rpcError } = await supabase.rpc('get_vc_config' as any);
+      if (rpcError) throw rpcError;
+      setConfig((data as any) ?? null);
+    } catch (err) {
+      console.error('Failed to load VC config:', err);
+      Sentry.captureException(err);
+      setConfig(null);
+      setError('Couldn\'t load VENTS Cents info right now.');
+    } finally {
+      setLoading(false);
+      inFlightRef.current = false;
     }
-    load();
-    return () => { cancelled = true; };
   }, []);
 
-  return { config, loading };
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  return { config, loading, error, retry: load };
 }
 
 function fmtNaira(n: number): string {
@@ -88,7 +99,7 @@ interface VcHelpModalProps {
 }
 
 export function VcHelpModal({ onClose }: VcHelpModalProps) {
-  const { config, loading } = useVcConfig();
+  const { config, loading, error, retry } = useVcConfig();
   const [tab, setTab] = useState<Tab>('overview');
 
   return (
@@ -126,7 +137,33 @@ export function VcHelpModal({ onClose }: VcHelpModalProps) {
         </div>
 
         <div className="vc-help-scroll" style={{ flex: 1, overflowY: 'auto', padding: '4px 18px 28px' }}>
-          {loading || !config ? (
+          {error ? (
+            <div style={{ textAlign: 'center', padding: '30px 0' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '4px', fontWeight: 700 }}>
+                Couldn&apos;t load VENTS Cents info right now
+              </p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '16px' }}>
+                Please check your connection and try again.
+              </p>
+              <button
+                onClick={retry}
+                disabled={loading}
+                style={{
+                  padding: '10px 22px',
+                  borderRadius: '10px',
+                  border: `1px solid ${ventsColors.accentSoft}`,
+                  background: 'rgba(142,92,247,0.18)',
+                  color: ventsColors.accentSoft,
+                  fontSize: '12.5px',
+                  fontWeight: 700,
+                  cursor: loading ? 'default' : 'pointer',
+                  opacity: loading ? 0.6 : 1,
+                }}
+              >
+                {loading ? 'Retrying…' : 'Retry'}
+              </button>
+            </div>
+          ) : loading || !config ? (
             <p style={{ color: ventsColors.ink3, fontSize: '13px', textAlign: 'center', padding: '30px 0' }}>Loading VENTS Cents info…</p>
           ) : (
             <>
