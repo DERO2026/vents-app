@@ -133,34 +133,50 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     reminderResult = { error: `sweep failed: ${err?.message || err}` };
   }
 
+  // ── 1.5) Referral VC pending sweep (VC Batch B, Fix 5) ─────────────────
+  // Deterministic replacement for the old "only runs if the referrer opens
+  // ReferralScreen.tsx" path: activates any referrer's 14-day-elapsed,
+  // qualified pending VC, and cancels any referral VC (pending or active)
+  // whose qualifying ticket was refunded. See
+  // migrations/20260807120000_referral-economy-integrity.sql for the full
+  // logic (run_referral_pending_sweep -> _sweep_referral_vc). Runs before
+  // the FCM-config early return below so it always executes even when push
+  // isn't configured.
+  let referralSweepResult: any = null;
+  try {
+    referralSweepResult = await callProjectAdminRpc<any>('run_referral_pending_sweep', []);
+  } catch (err: any) {
+    referralSweepResult = { error: `referral sweep failed: ${err?.message || err}` };
+  }
+
   // ── 2) Push delivery ────────────────────────────────────────────────────
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!saJson) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, referralSweep: referralSweepResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
   }
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
     sa = JSON.parse(saJson);
   } catch {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, referralSweep: referralSweepResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
   let rows: PendingRow[];
   try {
     rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, referralSweep: referralSweepResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
   if (!rows.length) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, referralSweep: referralSweepResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
 
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sa);
   } catch (err: any) {
-    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, referralSweep: referralSweepResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
   }
 
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
@@ -239,6 +255,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   return res.status(200).json({
     archived: archiveResult,
     reminders: reminderResult,
+    referralSweep: referralSweepResult,
     push: { sent, pruned: pruned.size, marked: toMark.size, total: rows.length },
   });
 }
