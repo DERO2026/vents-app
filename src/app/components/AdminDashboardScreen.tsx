@@ -624,9 +624,13 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
 export function AdminDashboardScreen({
   onBack,
   currentUser,
+  onOpenAdminConsole,
 }: {
   onBack: () => void;
   currentUser: any;
+  // Optional — lets a caller offer a link to the new Admin Console (Batch 1:
+  // shell + responsive nav + dashboard) without this screen depending on it.
+  onOpenAdminConsole?: () => void;
 }) {
   // Authorization tiers come from the shared single-source-of-truth helpers
   // (src/lib/permissions.ts), which mirror the backend is_root/is_super_admin/
@@ -2038,7 +2042,15 @@ export function AdminDashboardScreen({
           </h1>
           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>Secure user management &amp; audit trail</p>
         </div>
-        <Shield size={20} color={isRoot ? '#A855F7' : '#6B7280'} style={{ filter: isRoot ? 'drop-shadow(0 0 8px rgba(168,85,247,0.6))' : 'none', flexShrink: 0, position: 'relative', zIndex: 1, marginLeft: 'auto' }} />
+        {onOpenAdminConsole && (
+          <button
+            onClick={onOpenAdminConsole}
+            style={{ marginLeft: 'auto', marginRight: '8px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '8px', padding: '6px 10px', color: '#A78BFA', fontSize: '11px', fontWeight: 700, cursor: 'pointer', position: 'relative', zIndex: 1 }}
+          >
+            New console (beta)
+          </button>
+        )}
+        <Shield size={20} color={isRoot ? '#A855F7' : '#6B7280'} style={{ filter: isRoot ? 'drop-shadow(0 0 8px rgba(168,85,247,0.6))' : 'none', flexShrink: 0, position: 'relative', zIndex: 1, marginLeft: onOpenAdminConsole ? 0 : 'auto' }} />
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
