@@ -5,6 +5,10 @@ import { AdminTopbar } from './AdminTopbar';
 import { AdminMobileNav } from './AdminMobileNav';
 import { AdminMoreSheet } from './AdminMoreSheet';
 import { AdminDashboard } from './AdminDashboard';
+import { AdminUsersList } from './AdminUsersList';
+import { AdminUserDetail } from './AdminUserDetail';
+import { AdminEventsList } from './AdminEventsList';
+import { AdminEventDetail } from './AdminEventDetail';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, isAdminTier as permIsAdminTier, type PermissionUser } from '../../../lib/permissions';
 
 export interface AdminConsoleShellProps {
@@ -62,10 +66,16 @@ export function AdminConsoleShell({ currentUser, onBack, onOpenLegacyTab }: Admi
 
   const [view, setView] = useState<AdminConsoleViewKey>('overview');
   const [moreOpen, setMoreOpen] = useState(false);
+  // Batch 2: Users/Events list-to-detail drill-in state, local to this shell
+  // (mirrors the export's own back-to-list navigation for these two areas).
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
 
   const navigate = useCallback((key: AdminConsoleViewKey) => {
     setView(key);
     setMoreOpen(false);
+    setSelectedUserId(null);
+    setSelectedEventId(null);
   }, []);
 
   const roleLabel = isRoot ? 'ROOT · FULL ACCESS' : isSuperAdmin ? 'ADMIN · OPERATIONS' : 'SUB-ADMIN · OPERATIONS';
@@ -92,6 +102,18 @@ export function AdminConsoleShell({ currentUser, onBack, onOpenLegacyTab }: Admi
         isTablet={isTablet}
         onNavigate={(key) => navigate(key)}
       />
+    ) : view === 'users' ? (
+      selectedUserId ? (
+        <AdminUserDetail userId={selectedUserId} currentUser={currentUser} isMobile={isMobile} onBack={() => setSelectedUserId(null)} />
+      ) : (
+        <AdminUsersList isMobile={isMobile} onSelectUser={setSelectedUserId} />
+      )
+    ) : view === 'events' ? (
+      selectedEventId ? (
+        <AdminEventDetail eventId={selectedEventId} currentUser={currentUser} isMobile={isMobile} onBack={() => setSelectedEventId(null)} />
+      ) : (
+        <AdminEventsList isMobile={isMobile} currentUser={currentUser} onSelectEvent={setSelectedEventId} />
+      )
     ) : (
       <LegacyLinkPanel viewKey={view} onOpenLegacyTab={onOpenLegacyTab} />
     );
