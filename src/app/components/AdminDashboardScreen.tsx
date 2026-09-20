@@ -712,6 +712,16 @@ export function AdminDashboardScreen({
   // only), so these can't silently undercount once activity exceeds 100 rows.
   const [vcAggregates, setVcAggregates] = useState({ circulation: 0, totalTxns: 0, credits: 0, debits: 0 });
 
+  // VC Cash-out (withdrawal) requests -- BATCH A. Separate ledger from
+  // organizer_withdrawal_requests (PayoutsTab above), read via
+  // admin_list_pending_vc_payouts. Approve/reject/cancel reuse the SAME
+  // /api/v1/wallet/admin-payout-action endpoint the organizer PayoutsTab
+  // uses, with scope: 'vc' selecting the VC-ledger RPCs server-side.
+  const [vcPayouts, setVcPayouts] = useState<any[]>([]);
+  const [vcPayoutsLoading, setVcPayoutsLoading] = useState(false);
+  const [vcPayoutBusyId, setVcPayoutBusyId] = useState<string | null>(null);
+  const [vcPayoutMsg, setVcPayoutMsg] = useState<string | null>(null);
+
   // Stats tab state
   const [stats, setStats] = useState<any | null>(null);
   const [statsLoading, setStatsLoading] = useState(false);
@@ -807,7 +817,46 @@ export function AdminDashboardScreen({
         ({ data }) => { setVcTxns(data || []); setVcLoading(false); },
         (err) => { console.error('VC transactions fetch error:', err); Sentry.captureException(err); setVcLoading(false); }
       );
+    loadVcPayouts();
   }, [tab]);
+
+  const loadVcPayouts = useCallback(() => {
+    setVcPayoutsLoading(true);
+    supabase.rpc('admin_list_pending_vc_payouts' as any).then(
+      ({ data, error }: any) => {
+        if (error) { console.error('VC payouts fetch error:', error); Sentry.captureException(error); setVcPayouts([]); }
+        else setVcPayouts(Array.isArray(data) ? data : data ? [data] : []);
+        setVcPayoutsLoading(false);
+      },
+      (err: any) => { console.error('VC payouts fetch error:', err); Sentry.captureException(err); setVcPayoutsLoading(false); }
+    );
+  }, []);
+
+  async function handleVcPayoutAction(requestId: string, action: 'approve' | 'reject' | 'cancel') {
+    let reason: string | null = null;
+    if (action !== 'approve') {
+      reason = window.prompt(`Reason for ${action === 'reject' ? 'rejecting' : 'cancelling'} this cash-out request:`);
+      if (!reason || !reason.trim()) return;
+    }
+    setVcPayoutBusyId(requestId); setVcPayoutMsg(null);
+    try {
+      const token = await getAuthToken();
+      const res = await fetch(apiUrl('/api/v1/wallet/admin-payout-action'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ scope: 'vc', action, request_id: requestId, reason: reason || undefined }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Action failed');
+      setVcPayoutMsg(`✓ ${action === 'approve' ? 'Transfer initiated' : action === 'reject' ? 'Rejected — VC returned' : 'Cancelled — VC returned'}`);
+      loadVcPayouts();
+    } catch (err: any) {
+      setVcPayoutMsg(err?.message || 'Action failed');
+      Sentry.captureException(err);
+    } finally {
+      setVcPayoutBusyId(null);
+    }
+  }
 
   const loadStats = useCallback(() => {
     setStatsLoading(true);
@@ -2732,6 +2781,52 @@ export function AdminDashboardScreen({
             >
               {vcDebitBusy ? 'Debiting…' : 'Debit VC from User'}
             </button>
+          </div>
+
+          {/* VC Cash-out Requests — BATCH A. Separate ledger from the
+              organizer Payouts tab (PayoutsTab / organizer_withdrawal_
+              requests) — this reads vc_withdrawal_requests via
+              admin_list_pending_vc_payouts and drives the SAME Paystack
+              transfer machinery through admin-payout-action.ts's
+              scope: 'vc'. NOTE: this sub-section exists only on the
+              claude/vents-ai branch's own AdminDashboardScreen.tsx — the
+              separate claude/admin-console branch's Batch 3-era admin UI
+              has not been touched and will need this ported to it in a
+              later batch. */}
+          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', overflow: 'hidden', boxSizing: 'border-box' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,0.07)', color: '#F0F0FF', fontSize: '13px', fontWeight: 700 }}>VC Cash-out Requests (pending / processing)</div>
+            {vcPayoutMsg && <div style={{ padding: '8px 16px', color: vcPayoutMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '12px' }}>{vcPayoutMsg}</div>}
+            {vcPayoutsLoading ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>Loading…</div>
+            ) : vcPayouts.length === 0 ? (
+              <div style={{ padding: '24px', textAlign: 'center', color: '#8B8FA8', fontSize: '13px' }}>No pending VC cash-out requests.</div>
+            ) : (
+              <div style={{ maxHeight: '360px', overflowY: 'auto' }}>
+                {vcPayouts.map((r: any) => (
+                  <div key={r.request_id} style={{ padding: '12px 16px', borderBottom: '1px solid rgba(255,255,255,0.04)', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <div style={{ color: '#F0F0FF', fontSize: '12.5px', fontWeight: 700 }}>{r.user_name || r.user_email || r.user_id?.slice(0, 12)}</div>
+                      <div style={{ color: r.status === 'processing' ? '#60A5FA' : '#F59E0B', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>{r.status}</div>
+                    </div>
+                    <div style={{ color: '#8B8FA8', fontSize: '11.5px' }}>
+                      {Number(r.vc_amount).toLocaleString()} VC → ₦{(Number(r.ngn_amount_kobo) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                      {' · '}{r.bank_name} {r.account_number}
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+                      {r.status === 'pending' && (
+                        <>
+                          <button onClick={() => handleVcPayoutAction(r.request_id, 'approve')} disabled={vcPayoutBusyId === r.request_id} style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '8px', padding: '5px 10px', color: '#10B981', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Approve</button>
+                          <button onClick={() => handleVcPayoutAction(r.request_id, 'reject')} disabled={vcPayoutBusyId === r.request_id} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', padding: '5px 10px', color: '#EF4444', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Reject</button>
+                        </>
+                      )}
+                      {r.status === 'processing' && (
+                        <button onClick={() => handleVcPayoutAction(r.request_id, 'cancel')} disabled={vcPayoutBusyId === r.request_id} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '8px', padding: '5px 10px', color: '#EF4444', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>Cancel (stuck)</button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
         </div>

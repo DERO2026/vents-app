@@ -504,27 +504,43 @@ async function handleWebhook(req, res) {
     }
 
     try {
-      // complete_organizer_payout/fail_organizer_payout have no internal
-      // auth check of their own (they trust this webhook's HMAC verification
-      // above, not RLS) and are project_admin-only (no anon/authenticated/
-      // service_role EXECUTE grant) -- called via the direct project_admin
-      // Postgres connection, same as the ticket-confirmation block above
-      // (see api/_lib/projectAdminDb.ts).
+      // complete_organizer_payout/fail_organizer_payout (and their VC
+      // counterparts below) have no internal auth check of their own (they
+      // trust this webhook's HMAC verification above, not RLS) and are
+      // project_admin-only (no anon/authenticated/service_role EXECUTE
+      // grant) -- called via the direct project_admin Postgres connection,
+      // same as the ticket-confirmation block above (see
+      // api/_lib/projectAdminDb.ts).
       const rpcName = event.event === 'transfer.success' ? 'complete_organizer_payout' : 'fail_organizer_payout';
       const rows = event.event === 'transfer.success'
         ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [lookupKey])
         : await callProjectAdminTableRpc<any>('fail_organizer_payout', [lookupKey, event.data?.reason || event.event]);
-      const row = rows[0];
+      let row = rows[0];
       console.log(`[Paystack webhook] ${event.event} -> ${rpcName} result:`, row?.status, 'for', lookupKey);
+
+      // 'not_found' here just means lookupKey isn't an organizer payout --
+      // try the separate VC cash-out ledger (vc_withdrawal_requests) before
+      // giving up on it. Additive dispatch only; nothing above this changed.
+      let isVc = false;
+      if (row?.status === 'not_found') {
+        const vcRpcName = event.event === 'transfer.success' ? 'complete_vc_payout' : 'fail_vc_payout';
+        const vcRows = event.event === 'transfer.success'
+          ? await callProjectAdminTableRpc<any>('complete_vc_payout', [lookupKey])
+          : await callProjectAdminTableRpc<any>('fail_vc_payout', [lookupKey, event.data?.reason || event.event]);
+        row = vcRows[0];
+        isVc = true;
+        console.log(`[Paystack webhook] ${event.event} -> ${vcRpcName} result:`, row?.status, 'for', lookupKey);
+      }
 
       // Fire the payout email only on a genuine, first-time state change --
       // never on 'not_found'/'already_completed'/'already_finalized', which
       // would otherwise re-send on Paystack's webhook retries.
-      if (row?.organizer_email && (row.status === 'completed' || row.status === 'failed')) {
+      const decisionEmail = isVc ? row?.user_email : row?.organizer_email;
+      if (decisionEmail && (row.status === 'completed' || row.status === 'failed')) {
         sendPayoutDecisionEmail({
-          to: row.organizer_email,
-          name: row.organizer_name || 'there',
-          amountNaira: fmtNaira(Number(row.amount_kobo) || 0),
+          to: decisionEmail,
+          name: (isVc ? row?.user_name : row?.organizer_name) || 'there',
+          amountNaira: fmtNaira(Number(isVc ? row?.ngn_amount_kobo : row?.amount_kobo) || 0),
           decision: row.status,
           reason: row.status === 'failed' ? (event.data?.reason || 'Transfer could not be completed') : undefined,
         }).catch((e) => console.error('[Paystack webhook] payout email failed:', e?.message || e));

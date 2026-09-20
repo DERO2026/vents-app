@@ -2,12 +2,19 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession, confirmPassword, enforceWalletRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 
-// Organizer bank-account mutations — add/edit (default action), set_default,
-// and remove. EVERY action is guarded by a mandatory password (or
-// biometric-unlocked password) re-confirmation and strict rate limiting:
-// changing where money is paid out is the most sensitive mutation in the app,
-// so a valid session alone is deliberately NOT sufficient. All three actions
-// live in this single function to stay within the serverless function budget.
+// Bank-account mutations — add/edit (default action), set_default, and
+// remove — for BOTH the organizer payout flow and the VC cash-out flow,
+// selected via `scope` ('organizer', the default, or 'vc'). EVERY action is
+// guarded by a mandatory password (or biometric-unlocked password)
+// re-confirmation and strict rate limiting: changing where money is paid
+// out is the most sensitive mutation in the app, so a valid session alone
+// is deliberately NOT sufficient. Both scopes' RPCs are called generically
+// through the SAME Paystack /bank/resolve + /transferrecipient calls below
+// — no separate Paystack integration for VC, just a different SECURITY
+// DEFINER RPC name to write into (vc_bank_accounts vs organizer_bank_
+// accounts). Folded into this single function (rather than a new
+// api/vc/save-bank.ts) to stay within the Vercel Hobby-plan 12-serverless-
+// function budget, which this repo is already exactly at.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
@@ -23,6 +30,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!['add', 'set_default', 'remove'].includes(action)) {
     return res.status(400).json({ error: 'Invalid action' });
   }
+  const scope: 'organizer' | 'vc' = body.scope === 'vc' ? 'vc' : 'organizer';
+  const rpcNames = scope === 'vc'
+    ? { setDefault: 'set_default_vc_bank_account_confirmed', remove: 'remove_vc_bank_account_confirmed', add: 'add_vc_bank_account_confirmed' }
+    : { setDefault: 'set_default_bank_account_confirmed', remove: 'remove_bank_account_confirmed', add: 'add_bank_account_confirmed' };
 
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
@@ -58,7 +69,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!body.account_id || typeof body.account_id !== 'string') {
         return res.status(400).json({ error: 'account_id is required' });
       }
-      const fn = action === 'set_default' ? 'set_default_bank_account_confirmed' : 'remove_bank_account_confirmed';
+      const fn = action === 'set_default' ? rpcNames.setDefault : rpcNames.remove;
       await callRpc(fn, { p_account_id: body.account_id });
       return res.status(200).json({ ok: true });
     }
@@ -97,7 +108,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
     const recipientCode = recipientJson.data.recipient_code;
 
-    await callRpc('add_bank_account_confirmed', {
+    await callRpc(rpcNames.add, {
       p_bank_name: bank_name,
       p_bank_code: bank_code,
       p_account_number: account_number,

@@ -48,17 +48,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // service API key/JWT isn't an option on this project).
   const adminHeaders = { 'Content-Type': 'application/json', Authorization: authHeader, apikey: anonKey };
 
-  try {
-    // is_admin() is enforced inside this RPC — a non-admin caller gets a
-    // clean rejection here, before we ever touch Paystack.
-    const listRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_list_processing_payouts`, {
+  // Reconciles BOTH ledgers in one pass — organizer_withdrawal_requests
+  // (unchanged logic) and vc_withdrawal_requests (additive) — since both
+  // resolve against the exact same Paystack /transfer/:code lookup and the
+  // exact same complete_*/fail_* status-guard pattern. Kept as one loop
+  // rather than a separate api/vc/reconcile-payouts.ts to stay within the
+  // Vercel Hobby-plan 12-serverless-function budget.
+  async function reconcileLedger(listRpc: string, completeRpc: string, failRpc: string, emailField: 'organizer_email' | 'user_email', nameField: 'organizer_name' | 'user_name', amountField: 'amount_kobo' | 'ngn_amount_kobo') {
+    const listRes = await fetch(`${baseUrl}/rest/v1/rpc/${listRpc}`, {
       method: 'POST',
       headers: adminHeaders,
       body: JSON.stringify({}),
     });
     if (!listRes.ok) {
       const errJson = await listRes.json().catch(() => null);
-      return res.status(listRes.status).json({ error: errJson?.message || 'Admin access required' });
+      throw Object.assign(new Error(errJson?.message || 'Admin access required'), { status: listRes.status });
     }
     // PostgREST returns a bare object instead of a single-element array for
     // a TABLE-returning RPC under some conditions — same defensive
@@ -90,15 +94,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
 
         const rpcRows = pstStatus === 'success'
-          ? await callProjectAdminTableRpc<any>('complete_organizer_payout', [row.transfer_code])
-          : await callProjectAdminTableRpc<any>('fail_organizer_payout', [row.transfer_code, `Reconciled from Paystack status: ${pstStatus}`]);
+          ? await callProjectAdminTableRpc<any>(completeRpc, [row.transfer_code])
+          : await callProjectAdminTableRpc<any>(failRpc, [row.transfer_code, `Reconciled from Paystack status: ${pstStatus}`]);
         const rpcRow = rpcRows[0];
 
-        if (rpcRow?.organizer_email && (rpcRow.status === 'completed' || rpcRow.status === 'failed')) {
+        if (rpcRow?.[emailField] && (rpcRow.status === 'completed' || rpcRow.status === 'failed')) {
           sendPayoutDecisionEmail({
-            to: rpcRow.organizer_email,
-            name: rpcRow.organizer_name || 'there',
-            amountNaira: fmtNaira(Number(rpcRow.amount_kobo) || 0),
+            to: rpcRow[emailField],
+            name: rpcRow[nameField] || 'there',
+            amountNaira: fmtNaira(Number(rpcRow[amountField]) || 0),
             decision: rpcRow.status,
             reason: rpcRow.status === 'failed' ? `Reconciled from Paystack status: ${pstStatus}` : undefined,
           }).catch(() => {});
@@ -109,9 +113,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         results.push({ request_id: row.request_id, outcome: 'error', detail: err?.message });
       }
     }
+    return results;
+  }
 
-    return res.status(200).json({ checked: rows.length, results });
+  try {
+    // is_admin() is enforced inside admin_list_processing_payouts /
+    // admin_list_processing_vc_payouts — a non-admin caller gets a clean
+    // rejection here, before we ever touch Paystack.
+    const organizerResults = await reconcileLedger('admin_list_processing_payouts', 'complete_organizer_payout', 'fail_organizer_payout', 'organizer_email', 'organizer_name', 'amount_kobo');
+    const vcResults = await reconcileLedger('admin_list_processing_vc_payouts', 'complete_vc_payout', 'fail_vc_payout', 'user_email', 'user_name', 'ngn_amount_kobo');
+
+    return res.status(200).json({
+      checked: organizerResults.length + vcResults.length,
+      results: organizerResults,
+      vc_results: vcResults,
+    });
   } catch (err: any) {
-    return res.status(500).json({ error: err?.message || 'Reconciliation failed' });
+    return res.status(err?.status || 500).json({ error: err?.message || 'Reconciliation failed' });
   }
 }

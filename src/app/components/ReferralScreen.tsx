@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
+import { VcCashoutScreen } from './VcCashoutScreen';
 
 const MAX_REFERRALS = 5;
 const CENTS_PER_REFERRAL = 300;
@@ -82,6 +83,11 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   // DB default (500) until the real row loads, so the estimate is never
   // wildly off even before the fetch below resolves.
   const [ngnPer1000Vc, setNgnPer1000Vc] = useState(500);
+  // Real cash-out screen (VcCashoutScreen.tsx, request_vc_cashout RPC,
+  // app_config.vc_cashout_naira_per_1000 -- a DIFFERENT, separately
+  // configured rate from vc_naira_per_1000 above, which is the ticket-
+  // credit rate, not the cash-out rate).
+  const [showCashout, setShowCashout] = useState(false);
   const badgesRef = useRef<HTMLDivElement | null>(null);
   const referralSectionRef = useRef<HTMLDivElement | null>(null);
 
@@ -215,6 +221,17 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
   const ngnEstimate = Math.round((balance * ngnPer1000Vc) / 1000);
 
+  if (showCashout) {
+    return (
+      <VcCashoutScreen
+        onBack={() => { setShowCashout(false); invalidateVcBalanceCache(); getVcBalance(currentUser!.id).then(r => setBalance(r?.spendable ?? 0)).catch(() => {}); }}
+        currentUser={currentUser}
+        balance={balance}
+        onBalanceChange={setBalance}
+      />
+    );
+  }
+
   return (
     <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <style>{`input::placeholder{color:#555C7A;} .vc-scroll::-webkit-scrollbar{display:none;}`}</style>
@@ -264,8 +281,17 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
               Earn More
             </button>
           </div>
+          {/* Real cash-out entry point -- request_vc_cashout via
+              VcCashoutScreen, a separate rate/ledger from ticket-credit
+              redemption above. */}
+          <button
+            onClick={() => setShowCashout(true)}
+            style={{ width: '100%', marginTop: '10px', textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', fontWeight: 700, fontSize: '13.5px', color: '#10B981', cursor: 'pointer' }}
+          >
+            Cash Out to Bank
+          </button>
           <div style={{ background: 'rgba(255,184,48,0.07)', border: '1px solid rgba(255,184,48,0.15)', borderRadius: '8px', padding: '8px 10px', marginTop: '14px' }}>
-            <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600, margin: 0 }}>⚠ Vents Cents are not withdrawable or convertible to cash.</p>
+            <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600, margin: 0 }}>⚠ Cash-out requests are reviewed before payout — submitting a request does not mean money has been sent yet.</p>
           </div>
         </div>
 

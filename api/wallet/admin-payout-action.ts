@@ -23,7 +23,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ error: 'Not authenticated' });
 
-  const { action, request_id, reason } = req.body || {};
+  const { action, request_id, reason, scope: rawScope } = req.body || {};
   if (action !== 'reject' && action !== 'cancel' && action !== 'approve') {
     return res.status(400).json({ error: 'action must be "approve", "reject" or "cancel"' });
   }
@@ -33,6 +33,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (action !== 'approve' && (!reason || typeof reason !== 'string' || !reason.trim())) {
     return res.status(400).json({ error: `A ${action === 'reject' ? 'rejection' : 'cancellation'} reason is required` });
   }
+  // scope selects which withdrawal ledger this action targets --
+  // 'organizer' (default, unchanged) or 'vc' (VENTS Cents cash-out,
+  // vc_withdrawal_requests — a completely separate table/ledger). Added
+  // additively; every 'organizer' code path below is byte-for-byte
+  // unchanged from before this scope existed.
+  const scope: 'organizer' | 'vc' = rawScope === 'vc' ? 'vc' : 'organizer';
+  const rpc = scope === 'vc'
+    ? {
+        claim: 'admin_claim_vc_payout_for_processing',
+        release: 'admin_release_vc_payout_claim',
+        markProcessing: 'admin_mark_vc_payout_processing',
+        reject: 'admin_reject_vc_payout',
+        cancel: 'admin_cancel_processing_vc_payout',
+        transferReason: 'Vents Cents cash-out',
+      }
+    : {
+        claim: 'admin_claim_payout_for_processing',
+        release: 'admin_release_payout_claim',
+        markProcessing: 'admin_mark_payout_processing',
+        reject: 'admin_reject_organizer_payout',
+        cancel: 'admin_cancel_processing_payout',
+        transferReason: 'Vents organizer payout',
+      };
 
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
@@ -64,7 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // (claimed === true) proceeds to fire a real transfer. A second,
       // concurrent/duplicate call for the same request_id gets
       // claimed === false and stops here.
-      const fetchRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_claim_payout_for_processing`, {
+      const fetchRes = await fetch(`${baseUrl}/rest/v1/rpc/${rpc.claim}`, {
         method: 'POST',
         headers: supabaseHeaders,
         body: JSON.stringify({ p_request_id: request_id }),
@@ -83,17 +106,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // We already claimed (flipped to 'processing') above — release it
         // back to 'pending' rather than leaving it stuck with no transfer
         // in flight.
-        await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
+        await fetch(`${baseUrl}/rest/v1/rpc/${rpc.release}`, {
           method: 'POST',
           headers: supabaseHeaders,
           body: JSON.stringify({ p_request_id: request_id, p_reason: 'No verified bank account on file' }),
         }).catch(() => {});
-        return res.status(422).json({ error: 'Organizer has no verified bank account on file' });
+        return res.status(422).json({ error: 'No verified bank account on file' });
       }
 
-      const reference = `payout_${request_id}_${Date.now()}`;
+      const reference = `${scope === 'vc' ? 'vcpayout' : 'payout'}_${request_id}_${Date.now()}`;
+      const amountKobo = scope === 'vc' ? claimRow.ngn_amount_kobo : claimRow.amount_kobo;
 
-      // amount_kobo is already in kobo — do NOT multiply by 100 again, that
+      // amount is already in kobo — do NOT multiply by 100 again, that
       // would send 100x the intended amount.
       const transferRes = await fetch('https://api.paystack.co/transfer', {
         method: 'POST',
@@ -103,9 +127,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         },
         body: JSON.stringify({
           source: 'balance',
-          amount: claimRow.amount_kobo,
+          amount: amountKobo,
           recipient: claimRow.recipient_code,
-          reason: 'Vents organizer payout',
+          reason: rpc.transferReason,
           reference,
         }),
       });
@@ -115,7 +139,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Paystack rejected the transfer outright — release the claim back
         // to 'pending' (guarded server-side to only work when no
         // transfer_code was ever attached) so the admin can safely retry.
-        await fetch(`${baseUrl}/rest/v1/rpc/admin_release_payout_claim`, {
+        await fetch(`${baseUrl}/rest/v1/rpc/${rpc.release}`, {
           method: 'POST',
           headers: supabaseHeaders,
           body: JSON.stringify({ p_request_id: request_id, p_reason: 'Paystack transfer initiation failed: ' + (transferJson.message || `HTTP ${transferRes.status}`) }),
@@ -129,7 +153,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // finalization on Paystack's side — transfer.success / transfer.failed
       // webhooks are the authoritative completion signal (see
       // api/webhook/paystack.ts), not this response.
-      await fetch(`${baseUrl}/rest/v1/rpc/admin_mark_payout_processing`, {
+      await fetch(`${baseUrl}/rest/v1/rpc/${rpc.markProcessing}`, {
         method: 'POST',
         headers: supabaseHeaders,
         body: JSON.stringify({
@@ -146,7 +170,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // is_admin() + funds rollback (pending_kobo -> balance_kobo) both
       // happen atomically inside this RPC. Reject is for a still-pending
       // request; the client fires its own decision email separately.
-      const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_reject_organizer_payout`, {
+      const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/${rpc.reject}`, {
         method: 'POST',
         headers: supabaseHeaders,
         body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
@@ -167,7 +191,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // is_admin() check, the 'processing'-only guard, the status flip, the
     // wallet refund, and the organizer_transactions audit row all happen
     // atomically inside this single RPC call.
-    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/admin_cancel_processing_payout`, {
+    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/${rpc.cancel}`, {
       method: 'POST',
       headers: supabaseHeaders,
       body: JSON.stringify({ p_request_id: request_id, p_reason: reason.trim() }),
@@ -179,11 +203,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const rows = await rpcRes.json().catch(() => null);
     const row = Array.isArray(rows) ? rows[0] : rows;
-    if (row?.organizer_email) {
+    const decisionEmail = scope === 'vc' ? row?.user_email : row?.organizer_email;
+    if (decisionEmail) {
       sendPayoutDecisionEmail({
-        to: row.organizer_email,
-        name: row.organizer_name || 'there',
-        amountNaira: fmtNaira(Number(row.amount_kobo) || 0),
+        to: decisionEmail,
+        name: (scope === 'vc' ? row?.user_name : row?.organizer_name) || 'there',
+        amountNaira: fmtNaira(Number(scope === 'vc' ? row?.ngn_amount_kobo : row?.amount_kobo) || 0),
         decision: 'failed',
         reason: reason.trim(),
       }).catch(() => {});
