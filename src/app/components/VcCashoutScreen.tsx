@@ -32,7 +32,11 @@ interface VcWithdrawalRow {
   failure_reason: string | null;
 }
 
-const MIN_VC = 1000;
+const DEFAULT_MIN_VC = 250000; // app_config.vc_cashout_min_vc default (₦25,000 @ the default rate) -- the server (request_vc_cashout) is the authoritative gate; this is only the initial display value before load() fetches the real config.
+// Nigeria-scoped: NUBAN account numbers are always exactly 10 digits. Named
+// explicitly for this rail so a future non-Nigerian rail doesn't inherit an
+// unlabeled "10" assumption elsewhere in this file.
+const NUBAN_ACCOUNT_NUMBER_LENGTH = 10;
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -63,6 +67,7 @@ async function authedFetch(path: string, body: any) {
 // this screen) says that.
 export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange }: VcCashoutScreenProps) {
   const [rate, setRate] = useState(100); // app_config.vc_cashout_naira_per_1000 default
+  const [minVc, setMinVc] = useState(DEFAULT_MIN_VC); // app_config.vc_cashout_min_vc
   const [accounts, setAccounts] = useState<VcBankAccount[]>([]);
   const [history, setHistory] = useState<VcWithdrawalRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -79,6 +84,7 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
   const [banksLoading, setBanksLoading] = useState(false);
   const [showBankPicker, setShowBankPicker] = useState(false);
   const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
+  const [bankSearch, setBankSearch] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [resolvedName, setResolvedName] = useState('');
   const [resolving, setResolving] = useState(false);
@@ -93,11 +99,12 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
     setLoading(true);
     try {
       const [configRes, acctRes, histRes] = await Promise.all([
-        supabase.from('app_config' as any).select('vc_cashout_naira_per_1000').maybeSingle(),
+        supabase.from('app_config' as any).select('vc_cashout_naira_per_1000, vc_cashout_min_vc').maybeSingle(),
         supabase.from('vc_bank_accounts' as any).select('id, bank_name, account_number, account_name, recipient_code, is_default, is_active').eq('user_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }),
         supabase.from('vc_withdrawal_requests' as any).select('id, vc_amount, ngn_amount_kobo, status, created_at, failure_reason').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(20),
       ]);
       if ((configRes.data as any)?.vc_cashout_naira_per_1000 != null) setRate((configRes.data as any).vc_cashout_naira_per_1000);
+      if ((configRes.data as any)?.vc_cashout_min_vc != null) setMinVc((configRes.data as any).vc_cashout_min_vc);
       const accts = (acctRes.data as any) || [];
       setAccounts(accts);
       if (!selectedAccountId && accts.length > 0) setSelectedAccountId(accts.find((a: VcBankAccount) => a.is_default)?.id || accts[0].id);
@@ -115,7 +122,7 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
   useEffect(() => {
     setResolvedName(''); setResolveError('');
     if (resolveTimer.current) clearTimeout(resolveTimer.current);
-    if (!selectedBank || !/^\d{10}$/.test(accountNumber)) return;
+    if (!selectedBank || accountNumber.length !== NUBAN_ACCOUNT_NUMBER_LENGTH || !/^\d+$/.test(accountNumber)) return;
     resolveTimer.current = setTimeout(async () => {
       setResolving(true);
       try {
@@ -128,8 +135,12 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
     return () => { if (resolveTimer.current) clearTimeout(resolveTimer.current); };
   }, [selectedBank, accountNumber]);
 
+  const filteredBanks = bankSearch.trim()
+    ? banks.filter(b => b.name.toLowerCase().includes(bankSearch.trim().toLowerCase()))
+    : banks;
+
   async function openAddBank() {
-    setError(''); setSelectedBank(null); setAccountNumber(''); setResolvedName(''); setResolveError('');
+    setError(''); setSelectedBank(null); setBankSearch(''); setAccountNumber(''); setResolvedName(''); setResolveError('');
     setStep('add_bank');
     if (banks.length === 0) {
       setBanksLoading(true);
@@ -176,7 +187,7 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
 
   const vcAmount = Math.max(0, Math.floor(Number(amount.replace(/[^0-9]/g, '')) || 0));
   const ngnEstimateKobo = Math.floor((vcAmount * rate * 100) / 1000);
-  const canSubmit = vcAmount >= MIN_VC && vcAmount <= balance && !!selectedAccountId;
+  const canSubmit = vcAmount >= minVc && vcAmount <= balance && !!selectedAccountId;
 
   async function submitCashout() {
     setError('');
@@ -237,7 +248,7 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
             <input
               value={amount}
               onChange={(e) => setAmount(e.target.value.replace(/[^0-9]/g, ''))}
-              placeholder={`Minimum ${MIN_VC.toLocaleString()} VC`}
+              placeholder={`Minimum ${minVc.toLocaleString()} VC`}
               style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '14px', color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '10px' }}
             />
             <div style={{ display: 'flex', justifyContent: 'space-between', color: '#8B8FA8', fontSize: '12.5px', marginBottom: '18px' }}>
@@ -267,7 +278,7 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
             )}
 
             {error && <p style={{ color: '#EF4444', fontSize: '12.5px', marginBottom: '10px' }}>{error}</p>}
-            {vcAmount > 0 && vcAmount < MIN_VC && <p style={{ color: '#F59E0B', fontSize: '12px', marginBottom: '10px' }}>Minimum cash-out is {MIN_VC.toLocaleString()} VC.</p>}
+            {vcAmount > 0 && vcAmount < minVc && <p style={{ color: '#F59E0B', fontSize: '12px', marginBottom: '10px' }}>Minimum cash-out is {minVc.toLocaleString()} VC.</p>}
             {vcAmount > balance && <p style={{ color: '#EF4444', fontSize: '12px', marginBottom: '10px' }}>You don't have enough Vents Cents for this amount.</p>}
 
             <button
@@ -329,14 +340,27 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
               {banksLoading ? 'Loading banks…' : (selectedBank?.name || 'Select bank')} <ChevronDown size={16} />
             </button>
             {showBankPicker && (
-              <div style={{ maxHeight: '220px', overflowY: 'auto', background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', marginBottom: '10px' }}>
-                {banks.map(b => (
-                  <button key={b.code} onClick={() => { setSelectedBank(b); setShowBankPicker(false); }} style={{ width: '100%', textAlign: 'left', padding: '12px 14px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#F0F0FF', fontSize: '13px', cursor: 'pointer' }}>{b.name}</button>
-                ))}
+              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', marginBottom: '10px', overflow: 'hidden' }}>
+                <input
+                  value={bankSearch}
+                  onChange={(e) => setBankSearch(e.target.value)}
+                  placeholder="Search banks…"
+                  autoFocus
+                  style={{ width: '100%', boxSizing: 'border-box', background: 'rgba(255,255,255,0.04)', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.08)', padding: '12px 14px', color: '#F0F0FF', fontSize: '13.5px', outline: 'none' }}
+                />
+                <div style={{ maxHeight: '220px', overflowY: 'auto' }}>
+                  {filteredBanks.length === 0 ? (
+                    <div style={{ padding: '16px 14px', color: '#8B8FA8', fontSize: '13px', textAlign: 'center' }}>No banks found</div>
+                  ) : (
+                    filteredBanks.map(b => (
+                      <button key={b.code} onClick={() => { setSelectedBank(b); setShowBankPicker(false); setBankSearch(''); }} style={{ width: '100%', textAlign: 'left', padding: '14px', minHeight: '44px', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', color: '#F0F0FF', fontSize: '13px', cursor: 'pointer' }}>{b.name}</button>
+                    ))
+                  )}
+                </div>
               </div>
             )}
             <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '8px' }}>ACCOUNT NUMBER</p>
-            <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, 10))} placeholder="10-digit account number" style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '14px', color: '#F0F0FF', fontSize: '14px', marginBottom: '10px' }} />
+            <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value.replace(/[^0-9]/g, '').slice(0, NUBAN_ACCOUNT_NUMBER_LENGTH))} placeholder={`${NUBAN_ACCOUNT_NUMBER_LENGTH}-digit account number`} style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '14px', color: '#F0F0FF', fontSize: '14px', marginBottom: '10px' }} />
             {resolving && <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Verifying…</p>}
             {resolvedName && <p style={{ color: '#10B981', fontSize: '13px', fontWeight: 700 }}>✓ {resolvedName}</p>}
             {resolveError && <p style={{ color: '#EF4444', fontSize: '12px' }}>{resolveError}</p>}
