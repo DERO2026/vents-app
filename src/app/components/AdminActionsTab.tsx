@@ -50,6 +50,8 @@ function describe(r: ActionRequest): string {
     reject_payout: `${who} requested to reject a payout`,
     toggle_user_verified: `${who} requested to change verification of ${label}`,
     credit_vents_cents: `${who} requested to credit ${r.payload?.amount ?? '?'} VC to ${label}`,
+    service_provider_kyc_approve: `${who} requested to APPROVE service provider application “${label}”`,
+    service_provider_kyc_reject: `${who} requested to REJECT service provider application “${label}”`,
   };
   return map[r.action_type] || `${who} requested: ${r.action_type} ${label}`;
 }

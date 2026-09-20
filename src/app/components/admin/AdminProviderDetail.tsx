@@ -26,18 +26,17 @@
 //    (service_provider_request_decision writes admin_logs with
 //    target_user_id, per admin_decide_service_provider_request).
 //
-// Permission/maker-checker note (per the Batch 3 brief, "use the EXACT
-// existing approval RPC/maker-checker path — do not invent a new one"):
+// Permission/maker-checker note (security-hardening follow-up,
+// 0082_service_provider_kyc_maker_checker.sql):
 // admin_decide_service_provider_request is SECURITY DEFINER, gated by
-// is_admin_or_root() (Root + Admin + Sub-Admin, mirroring isAdminTier), and
-// is called DIRECTLY by the existing services-admin/sp-requests tab in
-// AdminDashboardScreen.tsx today — there is NO request_admin_action /
-// maker-checker layer in front of it anywhere in the codebase, unlike
-// organizer verification. This component reproduces that exact existing
-// direct-call behavior rather than fabricating a maker-checker gate that
-// does not exist server-side (a client-side-only gate here would be
-// security theater — the RPC itself would still let a Sub-Admin call it
-// directly). Flagged explicitly in the batch report.
+// is_super_admin() (Root + Admin ONLY — Sub-Admin excluded). A Sub-Admin's
+// decision now routes through the SAME generic maker-checker machinery as
+// organizer verification (request_admin_action / approve_admin_action /
+// reject_admin_action) via the shared submitOrExecute() helper, using the
+// new service_provider_kyc_approve / service_provider_kyc_reject action
+// types — approve_admin_action re-derives and executes the decision
+// server-side from the stored request payload, never from anything the
+// approving admin's client sends beyond the request id.
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
@@ -45,6 +44,7 @@ import { withProviderRatings } from '../../../lib/serviceProviders';
 import { fetchOwnServicesForProvider } from '../../../lib/providerServices';
 import type { ServiceProvider, ProviderService } from '../types';
 import { providerStatusColors } from './AdminProvidersList';
+import { submitOrExecute } from './adminUserEventActions';
 
 interface OwnerRow { id: string; username: string | null; full_name: string | null; email: string; }
 interface ProviderRequestRow {
@@ -168,18 +168,23 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
     if (!request) return;
     if (status === 'rejected' && !rejectReason.trim()) { flash(false, 'A rejection reason is required.'); return; }
     setBusy(true);
-    try {
-      const { error: err } = await supabase.rpc('admin_decide_service_provider_request' as any, {
-        p_request_id: request.id, p_status: status, p_admin_note: status === 'rejected' ? rejectReason.trim() : null,
+    const actionType = status === 'approved' ? 'service_provider_kyc_approve' : 'service_provider_kyc_reject';
+    const adminNote = status === 'rejected' ? rejectReason.trim() : null;
+    const res = await submitOrExecute(isSuperAdmin, actionType,
+      { target_type: 'service_provider_request', target_id: request.id, target_label: provider?.businessName || request.business_name || 'Service provider application', payload: { request_id: request.id, reason: adminNote } },
+      async () => {
+        const { error: err } = await supabase.rpc('admin_decide_service_provider_request' as any, {
+          p_request_id: request.id, p_status: status, p_admin_note: adminNote,
+        });
+        if (err) throw new Error(err.message);
       });
-      if (err) throw new Error(err.message);
-      flash(true, status === 'approved' ? 'Provider application approved.' : 'Provider application rejected.');
-      setRequest({ ...request, status, admin_note: status === 'rejected' ? rejectReason.trim() : request.admin_note });
-      setShowRejectBox(false);
-      setRejectReason('');
-    } catch (e: any) {
-      flash(false, e?.message || 'Action failed.');
-    } finally { setBusy(false); }
+    flash(res.ok, res.message);
+    if (res.ok && isSuperAdmin) {
+      setRequest({ ...request, status, admin_note: adminNote ?? request.admin_note });
+    }
+    setShowRejectBox(false);
+    setRejectReason('');
+    setBusy(false);
   };
 
   if (loading) return <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 32, textAlign: 'center' }}>Loading service provider…</div>;
@@ -275,7 +280,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
               )}
               {!isSuperAdmin && (
                 <div style={{ fontSize: 11, color: adminTheme.textFaint, marginTop: 8 }}>
-                  Note: this decision is executed immediately for any admin tier — admin_decide_service_provider_request has no maker-checker layer in the existing backend (unlike organizer verification).
+                  Sub-Admin: this sends a request for Super Admin approval via request_admin_action — it does not execute directly.
                 </div>
               )}
             </div>

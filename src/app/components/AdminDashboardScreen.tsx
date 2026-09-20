@@ -1290,19 +1290,26 @@ export function AdminDashboardScreen({
   const reviewSpRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
     // Single atomic RPC: updates the request, grants/leaves the capability,
     // AND inserts the applicant's notification together -- see
-    // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    // admin_decide_service_provider_request (0044_service_provider_kyc.sql,
+    // tightened to Root+Admin-only by 0082_service_provider_kyc_maker_checker.sql).
+    // Root/Admin execute it directly; a Sub-Admin's decision is queued via the
+    // same maker-checker path (request_admin_action / approve_admin_action)
+    // as every other admin action here, using the service_provider_kyc_approve
+    // / service_provider_kyc_reject action types.
     const req = spRequests.find((r) => r.id === id);
-    const { error } = await supabase.rpc('admin_decide_service_provider_request', {
-      p_request_id: id,
-      p_status: status,
-      p_admin_note: adminNote || null,
-    });
-    if (!error) {
-      setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      triggerPushDelivery(req?.user_id);
-    } else {
-      flash(false, error.message || 'Failed to review request.');
-    }
+    const actionType = status === 'approved' ? 'service_provider_kyc_approve' : 'service_provider_kyc_reject';
+    await submitOrExecute(actionType,
+      { target_type: 'service_provider_request', target_id: id, target_label: req?.business_name || id, payload: { request_id: id, reason: adminNote || null } },
+      async () => {
+        const { error } = await supabase.rpc('admin_decide_service_provider_request', {
+          p_request_id: id,
+          p_status: status,
+          p_admin_note: adminNote || null,
+        });
+        if (error) throw error;
+        setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+        triggerPushDelivery(req?.user_id);
+      });
   };
 
   // ── Services (Admin/Sub-Admin management surface) ──────────────────────
