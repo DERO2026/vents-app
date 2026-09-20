@@ -136,6 +136,12 @@ export const READ_ONLY_TOOLS = [
     description: "Get the current user's live VENTS Cents (VC) spendable balance.",
     input_schema: { type: 'object', properties: {} },
   },
+  {
+    name: 'get_vents_cents_rules',
+    description:
+      "Get the authoritative, live VENTS Cents (VC) general rules: how much VC is earned for each activity, badge/feature/boost prices, and the real cash-out rate and limits. This has NO user-specific data (not a balance, not eligibility, not transaction/cash-out history) -- use get_vents_cents_balance for the user's own live balance instead. ALWAYS call this before answering any question about VC amounts, rates, prices, or general eligibility rules -- never guess or recall a number from memory, since these values can change server-side.",
+    input_schema: { type: 'object', properties: {} },
+  },
 ] as const;
 
 export const PROPOSAL_TOOLS = [
@@ -382,6 +388,18 @@ export async function executeGetVentsCentsBalance(client: SupabaseClient) {
   return data ?? { spendable: 0 };
 }
 
+// Read-only, general-rules VC tool (Batch F2). Calls the SAME authoritative
+// get_vc_config() RPC ReferralScreen.tsx / VcCashoutScreen.tsx / VcHelpModal.tsx
+// call (supabase/migrations/0085 + 0086) -- no user-specific data, no
+// mutation, nothing beyond what that RPC itself already returns. This is
+// deliberately separate from executeGetVentsCentsBalance above, which stays
+// the tool for the user's own live balance.
+export async function executeGetVentsCentsRules(client: SupabaseClient) {
+  const { data, error } = await client.rpc('get_vc_config' as any);
+  if (error) throw new Error(error.message);
+  return data ?? {};
+}
+
 const READ_EXECUTORS: Record<string, (client: SupabaseClient, input: any) => Promise<unknown>> = {
   search_events: executeSearchEvents,
   get_event: executeGetEvent,
@@ -392,6 +410,7 @@ const READ_EXECUTORS: Record<string, (client: SupabaseClient, input: any) => Pro
   get_payment_status: executeGetPaymentStatus,
   get_wallet_balance: executeGetWalletBalance,
   get_vents_cents_balance: executeGetVentsCentsBalance,
+  get_vents_cents_rules: executeGetVentsCentsRules,
 };
 
 export async function executeReadOnlyTool(name: string, client: SupabaseClient, input: any): Promise<unknown> {

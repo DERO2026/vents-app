@@ -363,8 +363,15 @@ describe('Nigeria-scoped NUBAN validation preserved, without a blocking unlabele
 });
 
 describe('Minimum displayed/enforced in the UI now reflects server config, not a hardcoded 1,000', () => {
-  it('fetches vc_cashout_min_vc from app_config and uses it (not a hardcoded MIN_VC=1000) for the submit gate', () => {
-    expect(screenSrc).toMatch(/vc_cashout_naira_per_1000, vc_cashout_min_vc/);
+  // Batch F2 migrated this screen's fetch from a direct `app_config` select
+  // to the authoritative get_vc_config() RPC (supabase/migrations/0085 +
+  // 0086) -- the underlying config values (cashout_rate_naira_per_1000,
+  // cashout_min_vc) and the submit-gate logic are unchanged, only the fetch
+  // call itself moved. See vcF2UserExperience.security.test.ts for the
+  // Batch F2-specific assertions on this same file.
+  it('fetches cashout_min_vc from get_vc_config() and uses it (not a hardcoded MIN_VC=1000) for the submit gate', () => {
+    expect(screenSrc).toMatch(/supabase\.rpc\('get_vc_config'/);
+    expect(screenSrc).toMatch(/cfg\?\.cashout_min_vc/);
     expect(screenSrc).toMatch(/const canSubmit = vcAmount >= minVc && vcAmount <= balance && !!selectedAccountId;/);
     expect(screenSrc).not.toMatch(/const MIN_VC = 1000;/);
   });

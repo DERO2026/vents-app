@@ -66,8 +66,17 @@ async function authedFetch(path: string, body: any) {
 // (set exclusively by the Paystack webhook / reconciliation poller, never
 // this screen) says that.
 export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange }: VcCashoutScreenProps) {
-  const [rate, setRate] = useState(100); // app_config.vc_cashout_naira_per_1000 default
-  const [minVc, setMinVc] = useState(DEFAULT_MIN_VC); // app_config.vc_cashout_min_vc
+  const [rate, setRate] = useState(100); // vc_cashout_naira_per_1000 via get_vc_config() default
+  const [minVc, setMinVc] = useState(DEFAULT_MIN_VC); // vc_cashout_min_vc via get_vc_config()
+  // Additional server-enforced cash-out limits (Batch A/D, request_vc_cashout)
+  // -- previously enforced but invisible in this UI. Sourced from the SAME
+  // get_vc_config() call as rate/minVc above; displayed only, no validation
+  // logic here changes.
+  const [maxVc, setMaxVc] = useState<number | null>(null);
+  const [dailyMaxVc, setDailyMaxVc] = useState<number | null>(null);
+  const [dailyMaxRequests, setDailyMaxRequests] = useState<number | null>(null);
+  const [cooldownMinutes, setCooldownMinutes] = useState<number | null>(null);
+  const [maturationHours, setMaturationHours] = useState<number | null>(null);
   const [accounts, setAccounts] = useState<VcBankAccount[]>([]);
   const [history, setHistory] = useState<VcWithdrawalRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,12 +108,18 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
     setLoading(true);
     try {
       const [configRes, acctRes, histRes] = await Promise.all([
-        supabase.from('app_config' as any).select('vc_cashout_naira_per_1000, vc_cashout_min_vc').maybeSingle(),
+        supabase.rpc('get_vc_config' as any),
         supabase.from('vc_bank_accounts' as any).select('id, bank_name, account_number, account_name, recipient_code, is_default, is_active').eq('user_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }),
         supabase.from('vc_withdrawal_requests' as any).select('id, vc_amount, ngn_amount_kobo, status, created_at, failure_reason').eq('user_id', currentUser.id).order('created_at', { ascending: false }).limit(20),
       ]);
-      if ((configRes.data as any)?.vc_cashout_naira_per_1000 != null) setRate((configRes.data as any).vc_cashout_naira_per_1000);
-      if ((configRes.data as any)?.vc_cashout_min_vc != null) setMinVc((configRes.data as any).vc_cashout_min_vc);
+      const cfg = configRes.data as any;
+      if (cfg?.cashout_rate_naira_per_1000 != null) setRate(cfg.cashout_rate_naira_per_1000);
+      if (cfg?.cashout_min_vc != null) setMinVc(cfg.cashout_min_vc);
+      if (cfg?.cashout_max_vc != null) setMaxVc(cfg.cashout_max_vc);
+      if (cfg?.cashout_daily_max_vc != null) setDailyMaxVc(cfg.cashout_daily_max_vc);
+      if (cfg?.cashout_daily_max_requests != null) setDailyMaxRequests(cfg.cashout_daily_max_requests);
+      if (cfg?.cashout_cooldown_minutes != null) setCooldownMinutes(cfg.cashout_cooldown_minutes);
+      if (cfg?.cashout_maturation_hold_hours != null) setMaturationHours(cfg.cashout_maturation_hold_hours);
       const accts = (acctRes.data as any) || [];
       setAccounts(accts);
       if (!selectedAccountId && accts.length > 0) setSelectedAccountId(accts.find((a: VcBankAccount) => a.is_default)?.id || accts[0].id);
@@ -238,6 +253,20 @@ export function VcCashoutScreen({ onBack, currentUser, balance, onBalanceChange 
               <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em' }}>AVAILABLE BALANCE</div>
               <div style={{ color: '#F0F0FF', fontSize: '28px', fontWeight: 900, marginTop: '4px' }}>◎ {balance.toLocaleString()} VC</div>
               <div style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '4px' }}>Rate: 1,000 VC = {fmtNaira(rate * 100)}</div>
+            </div>
+
+            {/* Server-enforced cash-out limits (request_vc_cashout, Batch A/D)
+                -- display only, sourced from get_vc_config(). Shown before
+                submission so these limits are no longer invisible in the UI. */}
+            <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '14px', padding: '14px', marginBottom: '16px' }}>
+              <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '8px' }}>CASH-OUT LIMITS</p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8B8FA8', fontSize: '12px' }}>Max per request</span><span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{maxVc != null ? `${maxVc.toLocaleString()} VC` : '…'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8B8FA8', fontSize: '12px' }}>Daily max amount</span><span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{dailyMaxVc != null ? `${dailyMaxVc.toLocaleString()} VC` : '…'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8B8FA8', fontSize: '12px' }}>Daily max requests</span><span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{dailyMaxRequests != null ? dailyMaxRequests : '…'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8B8FA8', fontSize: '12px' }}>Cooldown between requests</span><span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{cooldownMinutes != null ? `${cooldownMinutes} min` : '…'}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8B8FA8', fontSize: '12px' }}>Hold on newly-earned VC</span><span style={{ color: '#F0F0FF', fontSize: '12px', fontWeight: 700 }}>{maturationHours != null ? `${maturationHours}h` : '…'}</span></div>
+              </div>
             </div>
 
             {successMsg && (
