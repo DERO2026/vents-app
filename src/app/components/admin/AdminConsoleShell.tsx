@@ -9,6 +9,10 @@ import { AdminUsersList } from './AdminUsersList';
 import { AdminUserDetail } from './AdminUserDetail';
 import { AdminEventsList } from './AdminEventsList';
 import { AdminEventDetail } from './AdminEventDetail';
+import { AdminProvidersList } from './AdminProvidersList';
+import { AdminProviderDetail } from './AdminProviderDetail';
+import { AdminOrganizersList } from './AdminOrganizersList';
+import { AdminOrganizerDetail } from './AdminOrganizerDetail';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, isAdminTier as permIsAdminTier, type PermissionUser } from '../../../lib/permissions';
 
 export interface AdminConsoleShellProps {
@@ -70,12 +74,18 @@ export function AdminConsoleShell({ currentUser, onBack, onOpenLegacyTab }: Admi
   // (mirrors the export's own back-to-list navigation for these two areas).
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  // Batch 3: Service Providers/Organizers list-to-detail drill-in state,
+  // same convention as Batch 2's selectedUserId/selectedEventId above.
+  const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
+  const [selectedOrganizerId, setSelectedOrganizerId] = useState<string | null>(null);
 
   const navigate = useCallback((key: AdminConsoleViewKey) => {
     setView(key);
     setMoreOpen(false);
     setSelectedUserId(null);
     setSelectedEventId(null);
+    setSelectedProviderId(null);
+    setSelectedOrganizerId(null);
   }, []);
 
   const roleLabel = isRoot ? 'ROOT · FULL ACCESS' : isSuperAdmin ? 'ADMIN · OPERATIONS' : 'SUB-ADMIN · OPERATIONS';
@@ -113,6 +123,18 @@ export function AdminConsoleShell({ currentUser, onBack, onOpenLegacyTab }: Admi
         <AdminEventDetail eventId={selectedEventId} currentUser={currentUser} isMobile={isMobile} onBack={() => setSelectedEventId(null)} />
       ) : (
         <AdminEventsList isMobile={isMobile} currentUser={currentUser} onSelectEvent={setSelectedEventId} />
+      )
+    ) : view === 'providers' ? (
+      selectedProviderId ? (
+        <AdminProviderDetail providerId={selectedProviderId} isSuperAdmin={isSuperAdmin} isMobile={isMobile} onBack={() => setSelectedProviderId(null)} />
+      ) : (
+        <AdminProvidersList isMobile={isMobile} onSelectProvider={setSelectedProviderId} />
+      )
+    ) : view === 'organizers' ? (
+      selectedOrganizerId ? (
+        <AdminOrganizerDetail organizerId={selectedOrganizerId} isSuperAdmin={isSuperAdmin} isMobile={isMobile} onBack={() => setSelectedOrganizerId(null)} />
+      ) : (
+        <AdminOrganizersList isMobile={isMobile} onSelectOrganizer={setSelectedOrganizerId} />
       )
     ) : (
       <LegacyLinkPanel viewKey={view} onOpenLegacyTab={onOpenLegacyTab} />
