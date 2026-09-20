@@ -126,7 +126,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
               // keeps the whole word in the clear, unobstructed area.
               <span
                 style={{
-                  position: 'absolute', left: '14px', right: '14px', bottom: '14px',
+                  position: 'absolute', left: '14px', right: '14px', top: '16px',
                   fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 500,
                   letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.7)',
                   textShadow: '0 1px 6px rgba(0,0,0,0.6)',
