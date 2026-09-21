@@ -16,6 +16,7 @@ import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, countryByIso, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
+import { isConfirmedDuplicateEmailError, isUnconfirmedDuplicateSignupError } from '../../lib/duplicateSignupEmail';
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { DobPicker } from './DobPicker';
@@ -313,6 +314,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  // Set only for the "Email already exists" case thrown by our own
+  // check_user_exists pre-check (line ~917 below), which -- unlike
+  // Supabase's own signUp() duplicate-email error -- only ever fires for an
+  // already-CONFIRMED account (check_user_exists only flags verified
+  // accounts). Drives the "Log in instead" prompt on the signup form
+  // instead of the plain dead-end error text it used to show.
+  const [duplicateConfirmedEmail, setDuplicateConfirmedEmail] = useState(false);
 
   // Close the state dropdown (the small anchored panel, not a full-screen
   // sheet) when tapping anywhere outside it -- same behavior as PhoneInput's
@@ -772,6 +780,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   const handleSubmit = async () => {
     setEmailTouched(true);
     setErrorMessage(null);
+    setDuplicateConfirmedEmail(false);
     // reset mode doesn't use the email field — skip the email validation gate
     if (mode !== 'reset' && !isEmailOrUsernameValid(email)) return;
 
@@ -962,7 +971,55 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             },
           },
         });
-        if (error) throw error;
+        if (error) {
+          // check_user_exists above already ruled out a CONFIRMED account
+          // for this email (it throws its own 'Email already exists' first
+          // in that case -- see above). So if Supabase's signUp() *itself*
+          // now reports a duplicate ("User already registered" / "already
+          // exists" / "already in use" -- exact wording varies by Supabase
+          // project config), the only account this can be is an UNCONFIRMED
+          // one for this email that's too recent (<3 minutes old) for
+          // reclaim_unverified_signup() above to have deleted as stale --
+          // exactly the "signed up, never saw the OTP email, tried again"
+          // scenario from Sentry issue JAVASCRIPT-REACT-12. Route straight
+          // into the same OTP screen a fresh signup lands on (reusing
+          // handleResendCode's exact supabase.auth.resend() call) instead
+          // of surfacing this as a raw, unhandled dead-end error.
+          if (isUnconfirmedDuplicateSignupError(error)) {
+            analytics.signedUp(strictRole);
+            savePendingVerification(normalizedEmail, {
+              full_name: userMetaPayload.full_name,
+              username: userMetaPayload.username,
+              phone_number: userMetaPayload.phone_number,
+              state: userMetaPayload.state,
+              country: userMetaPayload.country,
+              date_of_birth: dob || undefined,
+              avatar_url: userMetaPayload.avatar_url || undefined,
+            });
+            setEmail(normalizedEmail);
+            setIsVerifying(true);
+            setVerificationCode('');
+            setErrorMessage(null);
+            // Reuses the exact same supabase.auth.resend() call
+            // handleResendCode uses below -- same OTP length, same 30s
+            // cooldown, same email-redirect option -- no new resend/rate
+            // limit logic introduced.
+            const { error: resendError } = await supabase.auth.resend({
+              type: 'signup',
+              email: normalizedEmail,
+              options: { emailRedirectTo: `${window.location.origin}/` },
+            });
+            if (resendError) {
+              setResendCooldown(0);
+              setErrorMessage('If an account exists for this email, check your inbox for a code or sign in.');
+            } else {
+              setResendCooldown(30);
+              setSuccessMessage('If an account exists for this email, check your inbox for a code or sign in.');
+            }
+            return;
+          }
+          throw error;
+        }
 
         // No manual token rehydration needed here (unlike the old InsForge
         // path) — supabase.auth.signUp() sets the client's session
@@ -1208,9 +1265,20 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       if (!isExpectedAuthOutcome) Sentry.captureException(err);
 
       if (mode === 'signup') {
+        // Distinguishes this from the "unconfirmed existing account"
+        // duplicate-email case, which is handled separately right where
+        // signUp() is called above (and never reaches this catch block at
+        // all -- it returns early). This exact string is the one WE throw,
+        // right above, from check_user_exists's email_taken result --
+        // which only ever flags an already-CONFIRMED account. So reaching
+        // this branch means the email genuinely belongs to a verified
+        // account already; routing that case to the OTP/resend flow would
+        // be wrong (it would re-send a signup code to a verified account),
+        // so it gets a "log in instead" prompt rather than resend.
+        setDuplicateConfirmedEmail(isConfirmedDuplicateEmailError(err));
         // Signup-specific error messages — never show login-focused text during signup
         const safe = (msgL.includes('email already') || msgL.includes('email exists') || msgL.includes('already registered') || msgL.includes('already in use') || (msgL.includes('duplicate') && msgL.includes('email')))
-          ? 'Email already in use. Try logging in instead.'
+          ? 'If an account exists for this email, check your inbox for a code or sign in.'
           : (msgL.includes('username already') || msgL.includes('username exists') || msgL.includes('username taken') || (msgL.includes('duplicate') && msgL.includes('username')))
           ? 'Username already taken. Please choose another.'
           : (msgL.includes('phone') && (msgL.includes('already') || msgL.includes('exists') || msgL.includes('taken')))
@@ -2178,6 +2246,23 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
                 <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
               </div>
+            )}
+
+            {mode === 'signup' && duplicateConfirmedEmail && (
+              <button
+                onClick={() => {
+                  setMode('login');
+                  setErrorMessage(null);
+                  setSuccessMessage(null);
+                  setDuplicateConfirmedEmail(false);
+                }}
+                style={{
+                  ...BTN_PRIMARY,
+                  marginBottom: '20px',
+                }}
+              >
+                Log in instead
+              </button>
             )}
 
             {successMessage && (
