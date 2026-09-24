@@ -1699,6 +1699,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
                 We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
               </p>
+              <p style={{ margin: '8px 0 0', fontSize: '13px', lineHeight: 1.5, color: 'rgba(237,234,245,0.45)', maxWidth: '300px' }}>
+                Don't see it? Check your spam or junk folder — first emails from us sometimes land there.
+              </p>
             </div>
 
             {errorMessage && (
@@ -2006,6 +2009,9 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               </h1>
               <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
                 We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
+              </p>
+              <p style={{ margin: '8px 0 0', fontSize: '13px', lineHeight: 1.5, color: 'rgba(237,234,245,0.45)', maxWidth: '300px' }}>
+                Don't see it? Check your spam or junk folder — first emails from us sometimes land there.
               </p>
             </div>
 
