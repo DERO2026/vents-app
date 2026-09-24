@@ -20,6 +20,20 @@ interface ReferralRow {
   created_at: string;
 }
 
+interface VcTransactionRow {
+  id: string;
+  amount: number;
+  type: 'earn' | 'referral' | 'spend' | string;
+  status: 'active' | 'pending' | 'spent' | string;
+  earned_at: string;
+}
+
+const VC_TYPE_LABEL: Record<string, { icon: string; title: string }> = {
+  earn: { icon: '✓', title: 'Ticket earn' },
+  referral: { icon: '⇄', title: 'Referral bonus' },
+  spend: { icon: '◎', title: 'Redeemed' },
+};
+
 const BADGE_TIERS = ['bronze', 'silver', 'gold', 'platinum', 'elite', 'legend'] as const;
 type BadgeTier = typeof BADGE_TIERS[number];
 
@@ -55,6 +69,13 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [profileBonusBusy, setProfileBonusBusy] = useState(false);
   const [profileBonusMsg, setProfileBonusMsg] = useState<string | null>(null);
 
+  // Real VC transaction ledger (vc_transactions, 0002_tables.sql) -- the
+  // exported "Activity" / "Empty" states never had a real data source
+  // wired to them before; this is the actual per-user history the earn/
+  // referral/spend RPCs above already write to.
+  const [vcActivity, setVcActivity] = useState<VcTransactionRow[]>([]);
+  const [activityLoading, setActivityLoading] = useState(true);
+
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
   const referralLink = `https://getvents.com/?ref=${referralCode}`;
 
@@ -84,6 +105,28 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
       }
     }
     load();
+  }, [currentUser?.id]);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    async function loadActivity() {
+      setActivityLoading(true);
+      try {
+        const { data } = await supabase
+          .from('vc_transactions')
+          .select('id, amount, type, status, earned_at')
+          .eq('user_id', currentUser!.id)
+          .order('earned_at', { ascending: false })
+          .limit(20);
+        setVcActivity(data || []);
+      } catch (err) {
+        console.error('Failed to load VC activity:', err);
+        Sentry.captureException(err);
+      } finally {
+        setActivityLoading(false);
+      }
+    }
+    loadActivity();
   }, [currentUser?.id]);
 
   const joinedCount = referrals.filter((r) => r.status === 'joined').length;
@@ -370,6 +413,41 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Activity -- real vc_transactions rows (see fetch above). Shows
+            the export's "Activity" list when there's real history, or its
+            "Empty" state when there isn't -- both driven by actual data,
+            not a manual demo toggle. */}
+        <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '20px 0 8px' }}>ACTIVITY</p>
+        {!activityLoading && vcActivity.length === 0 && (
+          <div style={{ padding: '36px 20px', borderRadius: '16px', background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.12)', textAlign: 'center' }}>
+            <div style={{ fontSize: '30px' }}>◎</div>
+            <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, marginTop: '10px' }}>No activity yet</p>
+            <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px', lineHeight: 1.4 }}>Attend an event or invite a friend to start earning Vents Cents.</p>
+          </div>
+        )}
+        {vcActivity.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {vcActivity.map((a) => {
+              const meta = VC_TYPE_LABEL[a.type] || { icon: '◎', title: a.type };
+              const isDebit = a.type === 'spend';
+              const statusColor = a.status === 'active' ? '#34D399' : a.status === 'pending' ? '#FBBF24' : '#8B8FA8';
+              return (
+                <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '12px' }}>
+                  <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'rgba(168,85,247,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '15px', flexShrink: 0 }}>{meta.icon}</div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ color: '#F0F0FF', fontSize: '13.5px', fontWeight: 700 }}>{meta.title}</div>
+                    <div style={{ color: '#8B8FA8', fontSize: '11.5px', marginTop: '2px' }}>{new Date(a.earned_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ color: isDebit ? '#F0F0FF' : '#34D399', fontSize: '13.5px', fontWeight: 800 }}>{isDebit ? '-' : '+'}{a.amount}</div>
+                    <div style={{ color: statusColor, fontSize: '10.5px', fontWeight: 700, letterSpacing: '0.5px', marginTop: '2px', textTransform: 'uppercase' }}>{a.status}</div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

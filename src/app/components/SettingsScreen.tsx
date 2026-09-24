@@ -8,11 +8,10 @@ import { REGION } from '../../lib/regionConfig';
 import {
   ArrowLeft, Bell, Shield, HelpCircle, LogOut, MessageCircle,
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
-  Smartphone, X, ExternalLink, ShieldCheck, Copy, ThumbsUp,
-  Eye, EyeOff, Check, Clock, MessageSquare,
+  Smartphone, X, ExternalLink, Copy, ThumbsUp,
+  Eye, EyeOff, Check, Clock, MessageSquare, User, Link2,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
-import BadgeChip from './BadgeChip';
 import { compressImage } from '../../lib/compressImage';
 import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { Sentry } from '../../lib/sentry';
@@ -1565,10 +1564,6 @@ export function SettingsScreen({
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
   if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onContactSupport={() => setSubScreen('help')} />;
 
-  const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
-  const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
-  const displayEmail = currentUser?.email || '';
-
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
@@ -1585,29 +1580,9 @@ export function SettingsScreen({
 
       {/* Content */}
       <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
-        {/* Profile card — shows avatar if available */}
-        <div style={{ background: '#090514', border: '1px solid rgba(168,85,247,0.1)', borderRadius: '20px', padding: '16px', display: 'flex', alignItems: 'center', gap: '14px', marginBottom: '20px' }}>
-          <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden', boxShadow: '0 0 16px rgba(168,85,247,0.3)' }}>
-            {(currentUser as any)?.avatar_url ? (
-              <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ color: '#fff', fontSize: '22px', fontWeight: 700 }}>{initial}</span>
-            )}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: 0, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayName}</p>
-              <BadgeChip tier={(currentUser as any)?.vc_badge} />
-            </div>
-            <p style={{ color: '#8B8FA8', fontSize: '13px', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{displayEmail}</p>
-          </div>
-          <button
-            onClick={() => setSubScreen('profile')}
-            style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '7px 12px', color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
-          >
-            Edit
-          </button>
-        </div>
+        {/* PD3 export has no profile card at the top of Settings -- removed.
+            Name/avatar/handle editing still lives one tap away via
+            "Edit Profile" below, which opens the same ProfileDetailsScreen. */}
 
         {currentUser?.role === 'organizer' && (
           currentUser?.is_verified ? (
@@ -1633,14 +1608,33 @@ export function SettingsScreen({
         )}
 
         <Section title="ACCOUNT">
-          {/* "Profile Details" row removed — it duplicated the Edit button on the
-              Profile Card above (both open the same editor). */}
+          <SettingRow icon={User} label="Edit Profile" onPress={() => setSubScreen('profile')} />
+          <Divider />
+          <SettingRow icon={Link2} label="Connected Accounts" onPress={() => setSubScreen('connected-accounts')} />
+          <Divider />
           <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
         </Section>
 
-        <Section title="NOTIFICATIONS">
+        <Section title="PREFERENCES">
           <SettingRow icon={Bell} label="Push Notifications" toggle={pushNotifs} onToggle={setPushNotifs} />
           <Divider />
+          {/* No real localization system exists yet (single hardcoded
+              English UI) -- shown as an honest static value rather than a
+              working picker, instead of fabricating language options. */}
+          <SettingRow icon={Globe} label="Language" value="English" />
+        </Section>
+
+        <Section title="SUPPORT">
+          <SettingRow icon={HelpCircle} label="Help & Support" onPress={() => onNavigate?.('help-support')} />
+          <Divider />
+          <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
+        </Section>
+
+        {/* Additional real, working settings that PD3 doesn't depict but
+            that would otherwise be deleted functionality if dropped --
+            kept below the PD3-matching primary structure rather than
+            removed. */}
+        <Section title="MORE NOTIFICATIONS">
           <SettingRow icon={Bell} label="Email Updates" toggle={emailNotifs} onToggle={setEmailNotifs} />
           <Divider />
           <SettingRow icon={Star} label="Promotions & Deals" toggle={promoNotifs} onToggle={handlePromoToggle} />
@@ -1660,14 +1654,12 @@ export function SettingsScreen({
 
         {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
 
-        <Section title="SUPPORT & LEGAL">
+        <Section title="LEGAL">
           <SettingRow icon={Shield} label="Privacy Policy" onPress={() => openExternalUrl('https://getvents.com/privacy')} />
           <Divider />
           <SettingRow icon={Shield} label="Terms of Use" onPress={() => openExternalUrl('https://getvents.com/terms')} />
           <Divider />
           <SettingRow icon={Shield} label="Refund Policy" onPress={() => openExternalUrl('https://getvents.com/refunds')} />
-          <Divider />
-          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
         </Section>
 
         <Section title="RESOURCES">
@@ -1680,9 +1672,12 @@ export function SettingsScreen({
           <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@theventsapp')} />
         </Section>
 
+        {/* Pinned Delete Account danger row, matching PD3's layout -- the
+            real handler already exists (DeleteAccountScreen), previously
+            only reachable via Edit Profile's Danger Zone. */}
         <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '0 14px' }}>
-            <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
+            <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
           </div>
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />

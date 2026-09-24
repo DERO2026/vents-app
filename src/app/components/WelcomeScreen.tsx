@@ -9,11 +9,36 @@ interface WelcomeScreenProps {
   onBrowseGuest?: () => void;
 }
 
-const SLIDES = [
-  'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1429962714451-bb934ecdc4ec?w=800&fit=crop&crop=center',
-  'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=800&fit=crop&crop=center',
+// Handoff A1 (LandingScreen): side cards carry only a single JetBrains Mono
+// uppercase caption (no subtitle line); the center card gets a dark-glass
+// "EVENTS" pill instead of a title. Sizes/rotation/position match the
+// design's 172x224 side / 196x262 center stack.
+const STACK_CARDS = [
+  {
+    src: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=600&fit=crop&crop=center',
+    caption: 'Services',
+    rotate: -10,
+    // Was 20px lower than the center card, which pushed its caption
+    // further into the bottom fade and made it read less clearly than the
+    // center card's "EVENTS" pill -- moved flush with center's top so
+    // Services/Experiences read as clearly as Events.
+    top: 0,
+    side: 'left' as const,
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=600&fit=crop&crop=center',
+    caption: 'Experiences',
+    rotate: 10,
+    top: 0,
+    side: 'right' as const,
+  },
+  {
+    src: 'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=700&fit=crop&crop=center',
+    caption: null,
+    rotate: 0,
+    top: 0,
+    side: 'center' as const,
+  },
 ];
 
 export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGuest }: WelcomeScreenProps) {

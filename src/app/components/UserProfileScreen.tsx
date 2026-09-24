@@ -51,6 +51,14 @@ export function UserProfileScreen({
   const [blockLoading, setBlockLoading] = useState(false);
   const [copiedToast, setCopiedToast] = useState(false);
   const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
+  // Real event list -- the "Public User/Organizer Profile" exports both
+  // show an actual event list (Upcoming/Past tabs for a regular user,
+  // "Upcoming events" for an organizer), which this screen never fetched
+  // before (only aggregate counts). Organizer: events they host
+  // (events.organizer_id). Attendee: events they hold an active ticket
+  // for, split by date the same way MyTicketsScreen already does.
+  const [profileEvents, setProfileEvents] = useState<{ id: string; title: string; date: string; venue: string; eventDate: string }[]>([]);
+  const [eventsTab, setEventsTab] = useState<'upcoming' | 'past'>('upcoming');
 
   useEffect(() => {
     if (!currentUserId || isOwnProfile || !user?.id) return;
@@ -141,6 +149,59 @@ export function UserProfileScreen({
     }
     fetchStats();
   }, [user.id]);
+
+  useEffect(() => {
+    async function fetchEvents() {
+      if (!user?.id) return;
+      try {
+        if (isOrganizerProfile) {
+          const { data } = await supabase
+            .from('events')
+            .select('id, title, event_date, venue, location')
+            .eq('organizer_id', user.id)
+            .is('deleted_at', null)
+            .gte('event_date', new Date().toISOString())
+            .order('event_date', { ascending: true })
+            .limit(10);
+          setProfileEvents((data || []).map((e: any) => ({
+            id: e.id, title: e.title, eventDate: e.event_date,
+            date: e.event_date ? new Date(e.event_date).toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric' }) : '',
+            venue: e.venue || e.location || '',
+          })));
+        } else {
+          const { data } = await supabase
+            .from('tickets')
+            .select('event_id, events(id, title, event_date, venue, location)')
+            .eq('user_id', user.id)
+            .eq('status', 'active')
+            .order('created_at', { ascending: false })
+            .limit(20);
+          const seen = new Set<string>();
+          const rows: { id: string; title: string; date: string; venue: string; eventDate: string }[] = [];
+          (data || []).forEach((t: any) => {
+            const ev = t.events;
+            if (!ev || seen.has(ev.id)) return;
+            seen.add(ev.id);
+            rows.push({
+              id: ev.id, title: ev.title, eventDate: ev.event_date,
+              date: ev.event_date ? new Date(ev.event_date).toLocaleDateString('en-NG', { weekday: 'short', month: 'short', day: 'numeric' }) : '',
+              venue: ev.venue || ev.location || '',
+            });
+          });
+          setProfileEvents(rows);
+        }
+      } catch (err) {
+        console.error('Failed to fetch profile events:', err);
+        Sentry.captureException(err);
+      }
+    }
+    fetchEvents();
+  }, [user.id, isOrganizerProfile]);
+
+  const now = Date.now();
+  const upcomingProfileEvents = profileEvents.filter((e) => !e.eventDate || new Date(e.eventDate).getTime() > now);
+  const pastProfileEvents = profileEvents.filter((e) => e.eventDate && new Date(e.eventDate).getTime() <= now);
+  const displayedProfileEvents = isOrganizerProfile ? upcomingProfileEvents : (eventsTab === 'upcoming' ? upcomingProfileEvents : pastProfileEvents);
 
   return (
     <div
@@ -467,6 +528,53 @@ export function UserProfileScreen({
           })}
         </div>
       </div>
+      )}
+
+      {/* Events list -- real data (see profileEvents fetch above), matching
+          the export's "Upcoming / Past Events" tabs (attendee profile) or
+          "Upcoming events" list (organizer profile). Hidden entirely when
+          there's nothing real to show, rather than a fabricated placeholder
+          row. */}
+      {!isOrganizerProfile && (
+        <div style={{ display: 'flex', margin: '0 16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          {(['upcoming', 'past'] as const).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setEventsTab(tab)}
+              style={{
+                flex: 1, textAlign: 'center', padding: '0 0 12px', background: 'none', border: 'none', cursor: 'pointer',
+                fontSize: '13.5px', fontWeight: eventsTab === tab ? 700 : 600,
+                color: eventsTab === tab ? '#F0F0FF' : '#8B8FA8',
+                borderBottom: eventsTab === tab ? '2px solid #A855F7' : '2px solid transparent',
+                marginBottom: '-1px',
+              }}
+            >
+              {tab === 'upcoming' ? 'Upcoming' : 'Past Events'}
+            </button>
+          ))}
+        </div>
+      )}
+      {isOrganizerProfile && profileEvents.length > 0 && (
+        <p style={{ color: '#8B8FA8', fontSize: '13px', letterSpacing: '1.5px', fontWeight: 700, padding: '0 16px', margin: '20px 0 0' }}>
+          UPCOMING EVENTS
+        </p>
+      )}
+      {displayedProfileEvents.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 16px 24px' }}>
+          {displayedProfileEvents.map((ev) => (
+            <button
+              key={ev.id}
+              onClick={() => onEventPress && onEventPress({ id: ev.id } as any)}
+              style={{ display: 'flex', gap: '12px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '12px', textAlign: 'left', cursor: onEventPress ? 'pointer' : 'default' }}
+            >
+              <div style={{ width: '52px', height: '52px', borderRadius: '10px', background: 'rgba(168,85,247,0.14)', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</div>
+                <div style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '3px' }}>{ev.date}{ev.venue ? ` · ${ev.venue}` : ''}</div>
+              </div>
+            </button>
+          ))}
+        </div>
       )}
 
       {showReport && currentUserId && (

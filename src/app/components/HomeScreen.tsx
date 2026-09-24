@@ -1315,48 +1315,55 @@ export function HomeScreen({
         </div>
       )}
 
-      {/* Header */}
-      <div
-        style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px',
-          flexShrink: 0,
-        }}
-      >
-        {/* Logo + tagline */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1px' }}>
-          <VentsLogo size={28} />
-          <div style={{ fontSize: '9px', fontWeight: 400, paddingLeft: '2px', color: '#888888' }}>
-            Discover Nigeria's Best Events through VENTS
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Filters button */}
+      {/* Hero header -- premium gradient band (same radial-glow language as
+          WelcomeScreen, so Home reads as a continuation of the landing
+          screen, not a different app) carrying brand, location, account
+          actions, and a clear Events/Services quick-switch -- the two
+          verticals surfaced as equals right under the logo, not one hidden
+          behind a small icon button. */}
+      <div style={{ position: 'relative', flexShrink: 0, overflow: 'hidden', background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)' }}>
+        <div style={{ position: 'absolute', width: '220px', height: '220px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.09) 0%, transparent 70%)', top: '-100px', right: '-60px', pointerEvents: 'none' }} />
+        {/* Row 1: logo | compact search pill | notifications (+ create).
+            One location control total lives in Row 2 below -- the old
+            duplicate country pill that sat under the logo, and the second
+            one in the discovery row further down, are both gone. */}
+        <div
+          style={{
+            position: 'relative', display: 'flex', alignItems: 'center', gap: '10px',
+            padding: 'calc(14px + env(safe-area-inset-top)) 16px 0',
+          }}
+        >
+          <VentsLogo size={26} />
+          {/* Compact "Search" pill per the export (was a full-width input
+              showing its own placeholder text -- this still opens the same
+              real search overlay via setSearchOpen). */}
           <button
             onClick={openFilterSheet}
             style={{
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              width: '36px', height: '36px',
-              background: 'rgba(123,47,247,0.1)',
-              border: '1px solid rgba(123,47,247,0.3)',
-              borderRadius: '50%', cursor: 'pointer', position: 'relative', flexShrink: 0,
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
             }}
           >
-            <SlidersHorizontal size={15} color="#7B2FBE" />
-            {hasActiveFilters && (
-              <span style={{
-                position: 'absolute', top: '-2px', right: '-2px',
-                width: '8px', height: '8px', borderRadius: '50%',
-                background: '#7B2FBE', border: '2px solid #020005',
-              }} />
-            )}
+            <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
+            <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>Search</span>
           </button>
-          <button
-            onClick={() => setSearchOpen(true)}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(123,47,247,0.15)', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-          >
-            <Search size={17} color="#A78BFA" />
-          </button>
+          {/* Services entry point -- the export's Home has no Services
+              affordance at all, but removing this would make the entire
+              Services vertical (ServicesHomeScreen and everything under
+              it) unreachable from anywhere in the app; this is the only
+              call site for onServicesPress. Kept as a single header icon
+              instead of the old two-card Events/Services row below. */}
+          {onServicesPress && (
+            <button
+              onClick={onServicesPress}
+              aria-label="Services"
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+            >
+              <Store size={16} color={ventsColors.ink2} />
+            </button>
+          )}
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
@@ -1433,6 +1440,41 @@ export function HomeScreen({
           })}
         </div>
 
+      </div>
+
+      {/* Scrollable content -- Events/Services quick-switch now lives here,
+          as the first thing in the normal scroll flow, so it moves with the
+          rest of Home instead of staying pinned in the fixed hero above. */}
+      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
+
+        {/* Combined active-filter summary -- one place to see (and clear)
+            category/state/price filters narrowing the feed. Country is
+            deliberately not shown here: it's always a specific selection
+            (shown permanently via the country pill above, changed only
+            through that picker), not a togglable filter with its own clear
+            control -- and there's exactly one "clear everything" action in
+            this screen now, in the Filters sheet below, rather than a
+            second one duplicated here. */}
+        {/* priceFilter deliberately has no chip here when it was set via the
+            Free Events quick chip above -- that chip already shows its own
+            active state (tap it again to clear), so a second "Free ×" chip
+            immediately below it read as redundant filter UI reappearing
+            rather than the feed just... showing free events. A price
+            filter set via the Filters sheet itself still needs no separate
+            chip either, for the same reason -- the sheet's own Apply/Clear
+            already covers it, and the section heading above now names
+            "Free Events" directly. */}
+        {(activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') || stateFilter !== 'all' ? (
+          <div className="px-4 mb-3" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+            {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
+              <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
+            )}
+            {stateFilter !== 'all' && (
+              <FilterChip label={stateFilter} onClear={() => setStateFilter('all')} />
+            )}
+          </div>
+        ) : null}
+
         {/* Results / Feed sections */}
         {/* Stale-while-revalidate: only show skeletons on the very first load
             (no cached events yet). Background revalidations keep showing the
@@ -1508,6 +1550,36 @@ export function HomeScreen({
                           onPress={onEventPress}
                           isSaved={savedEventsSet.has(event.id)}
                           onToggleSave={onToggleSave}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Providers Near You -- Services surfaced directly on
+                    Home (redesign requirement: Events + Services clearly
+                    integrated, not siloed behind a header icon). Reuses
+                    the exact same compact card component Services' own
+                    home screen uses, so a provider looks identical
+                    wherever it's shown. */}
+                {nearbyProviders && nearbyProviders.length > 0 && (
+                  <div className="mb-6" ref={nearbyProvidersRef}>
+                    <div className="flex items-center justify-between px-4 mb-3">
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                        {homeGeo.status === 'granted' ? 'Providers Near You' : 'Book a Service'}
+                      </h3>
+                      {onServicesPress && (
+                        <button onClick={onServicesPress} style={{ background: 'none', border: 'none', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                          See all
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-3 overflow-x-auto" style={{ scrollbarWidth: 'none', paddingBottom: '4px', paddingLeft: '16px', paddingRight: '0' }}>
+                      {nearbyProviders.map((provider) => (
+                        <ServiceProviderCompactCard
+                          key={provider.id}
+                          provider={provider}
+                          onPress={onProviderPress || (() => onServicesPress?.())}
                         />
                       ))}
                     </div>
