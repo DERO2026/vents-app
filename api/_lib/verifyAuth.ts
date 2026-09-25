@@ -63,6 +63,19 @@ export async function confirmPassword(email: string | null, password: string | u
 // caller's own (forwarded) token — the RPC is authenticated-callable and keys
 // off the string we pass. Returns false when the window is exceeded (the RPC
 // raises), which callers turn into HTTP 429.
+//
+// Inspects the actual error instead of assuming any non-2xx means the limit
+// was hit -- same reasoning and pattern as enforceWalletRateLimit below.
+// migration 0026 revoked `authenticated`'s EXECUTE on check_rate_limit()
+// directly (a real fix for an anon/authenticated Data API exposure on the
+// rate_limits table); every other caller in this codebase invokes
+// check_rate_limit() from inside another SECURITY DEFINER function, but this
+// one calls it directly via the client-authenticated REST RPC path -- exactly
+// the path that lost its grant. Without this check, every call got a
+// permission-denied response that was misread as "rate limited" purely
+// because it wasn't a 2xx, regardless of actual usage. A genuine
+// rate_limited response (ERRCODE P0429) still blocks the request; any other
+// failure (permissions, network, etc.) fails open and gets logged.
 export async function enforceRateLimit(authHeader: string, key: string, maxAttempts: number, windowSeconds: number): Promise<boolean> {
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
@@ -73,7 +86,13 @@ export async function enforceRateLimit(authHeader: string, key: string, maxAttem
       headers: { Authorization: authHeader, apikey: anonKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({ p_key: key, p_max_attempts: maxAttempts, p_window_seconds: windowSeconds }),
     });
-    return res.ok; // false → limit exceeded (RPC raises)
+    if (res.ok) return true;
+    const body = await res.json().catch(() => null);
+    const isRateLimited = body?.code === 'P0429' || /rate_limited/i.test(body?.message || '');
+    if (!isRateLimited) {
+      console.error('check_rate_limit failed for a non-rate-limit reason:', body);
+    }
+    return !isRateLimited;
   } catch {
     return true;
   }
