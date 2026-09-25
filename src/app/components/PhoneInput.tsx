@@ -74,6 +74,35 @@ export function CountryMark({ country, size = 16 }: { country: CountryOption; si
   );
 }
 
+// Strips a redundant leading country-code prefix from raw national-number
+// digits before they're capped to the country's max digit length. Without
+// this, pasting/typing a number in full international form (e.g. "+234 801
+// 234 5678" or "234801234567" — exactly how many contacts apps store/
+// display a saved number) into this field, right beside a selector chip
+// that ALREADY shows "+234", lets that redundant "234" eat into the fixed
+// digit budget below, truncating real subscriber digits before buildE164
+// (src/lib/countries.ts) ever runs -- producing a doubly-prefixed,
+// corrupted E.164 value ("+23423480123456") that fails validation even
+// though the user entered a perfectly valid number.
+//
+// Deliberately gated on maxLocalDigits, not just a startsWith match: a
+// short dial code (e.g. +1) is a plausible LEADING DIGIT of a genuine local
+// number in some countries, so "starts with the dial code" alone would
+// wrongly truncate a real, correctly-sized local number (e.g. a local
+// digits string that happens to start with "1" for +1). Only digit strings
+// LONGER than the country's own local-number length are actually
+// consistent with "the user pasted the country code redundantly" --  a
+// same-length string starting with those digits is just a valid local
+// number that happens to start that way, and must be left alone. Exported
+// for direct unit testing.
+export function stripRedundantCountryCode(rawDigits: string, countryCode: string, maxLocalDigits: number): string {
+  const codeDigits = countryCode.replace(/\D/g, '');
+  if (codeDigits && rawDigits.length > maxLocalDigits && rawDigits.startsWith(codeDigits)) {
+    return rawDigits.slice(codeDigits.length);
+  }
+  return rawDigits;
+}
+
 interface PhoneInputProps {
   /** Dial code with leading '+', e.g. '+234'. Defaults to Nigeria if not a known code. */
   countryCode: string;
@@ -241,7 +270,10 @@ export function PhoneInput({
           spellCheck={false}
           placeholder={placeholder || selected.format}
           value={displayValue}
-          onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, maxDigits))}
+          onChange={(e) => {
+            const raw = e.target.value.replace(/\D/g, '');
+            onChange(stripRedundantCountryCode(raw, countryCode, maxDigits).slice(0, maxDigits));
+          }}
           style={{
             flex: 1,
             background,
