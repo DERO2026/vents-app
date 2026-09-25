@@ -1,4 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
   ArrowLeft,
   DollarSign,
@@ -6,6 +8,7 @@ import {
   Inbox,
   Sparkles,
   ScanLine,
+  Clock,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import {
@@ -13,6 +16,9 @@ import {
 } from 'recharts';
 import { supabase } from '../../lib/supabase';
 import { formatPrice } from './data';
+import { REGION } from '../../lib/regionConfig';
+import { COUNTRY_CODES } from '../../lib/countries';
+import { hasEventEnded } from '../../lib/eventLifecycle';
 
 interface OrganizerDashboardProps {
   currentUser?: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -33,6 +39,7 @@ export function OrganizerDashboard({
   onEventPress,
   onManageEvents,
 }: OrganizerDashboardProps) {
+  useDesktopWideShell();
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -126,11 +133,20 @@ export function OrganizerDashboard({
     loadDashboardData();
   }, [currentUser]);
 
+  // Real "Live events" count -- the exported CS1 desktop grid shows a third
+  // stat card the mobile Overview never had. Same live-event definition the
+  // Live/Drafts/Past tabs below already use (published, not yet ended),
+  // just computed once here instead of duplicating it inline in the JSX.
+  const liveEventsCount = useMemo(
+    () => orgEvents.filter((e: any) => (e.status ?? 'live') !== 'draft' && !hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null })).length,
+    [orgEvents]
+  );
+
   if (loading) {
     return (
       <div
         style={{
-          background: '#020005',
+          background: ventsColors.bg,
           width: '100%',
           height: '100%',
           minHeight: '100dvh',
@@ -138,8 +154,8 @@ export function OrganizerDashboard({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'Inter, sans-serif',
-          color: '#8B8FA8',
+          fontFamily: 'Manrope, sans-serif',
+          color: ventsColors.ink2,
         }}
       >
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
@@ -159,7 +175,7 @@ export function OrganizerDashboard({
               100% { transform: rotate(360deg); }
             }
           `}</style>
-          <span style={{ fontSize: '14px', letterSpacing: '0.05em', color: '#C4C9E0' }}>
+          <span style={{ fontSize: '14px', letterSpacing: '0.05em', color: ventsColors.ink2 }}>
             Loading Creator Hub...
           </span>
         </div>
@@ -171,7 +187,7 @@ export function OrganizerDashboard({
     return (
       <div
         style={{
-          background: '#020005',
+          background: ventsColors.bg,
           width: '100%',
           height: '100%',
           minHeight: '100dvh',
@@ -179,15 +195,15 @@ export function OrganizerDashboard({
           flexDirection: 'column',
           alignItems: 'center',
           justifyContent: 'center',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Manrope, sans-serif',
           padding: '24px',
           textAlign: 'center',
         }}
       >
-        <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>
+        <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, marginBottom: '8px' }}>
           Couldn't load your dashboard
         </p>
-        <p style={{ color: '#8B8FA8', fontSize: '13px', marginBottom: '20px', maxWidth: '280px' }}>{loadError}</p>
+        <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '20px', maxWidth: '280px' }}>{loadError}</p>
         <button
           onClick={onBack}
           style={{
@@ -195,7 +211,7 @@ export function OrganizerDashboard({
             border: '1px solid rgba(123,47,190,0.4)',
             borderRadius: '12px',
             padding: '10px 20px',
-            color: '#C4B5FD',
+            color: ventsColors.accentSoft,
             fontSize: '13px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -210,14 +226,14 @@ export function OrganizerDashboard({
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         minHeight: '100dvh',
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Inter, sans-serif',
-        color: '#F0F0FF',
+        fontFamily: 'Manrope, sans-serif',
+        color: ventsColors.ink1,
         overflowY: 'auto',
       }}
     >
@@ -263,7 +279,7 @@ export function OrganizerDashboard({
               e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
             }}
           >
-            <ArrowLeft size={18} color="#C4C9E0" />
+            <ArrowLeft size={18} color={ventsColors.ink2} />
           </button>
         ) : <div style={{ width: '40px', flexShrink: 0 }} />}
 
@@ -281,15 +297,15 @@ export function OrganizerDashboard({
             pointerEvents: 'none',
           }}
         >
-          <p style={{ color: '#94A3B8', fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
+          <p style={{ color: ventsColors.ink3, fontSize: '11px', margin: '0 0 2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '1px' }}>
             {currentUser?.full_name || currentUser?.email?.split('@')[0] || 'Organizer'}
           </p>
           <h1
             style={{
-              color: '#FFFFFF',
+              color: ventsColors.white,
               fontSize: '20px',
               fontWeight: 700,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               margin: 0,
               letterSpacing: '-0.02em',
             }}
@@ -300,6 +316,97 @@ export function OrganizerDashboard({
 
         <div style={{ width: '40px', flexShrink: 0 }} />
       </header>
+
+      {/* Style block for responsive grid and the desktop Creator Studio shell (CS1) */}
+      <style>{`
+        .metrics-grid {
+          display: grid;
+          grid-template-columns: repeat(2, 1fr);
+          gap: 12px;
+          margin-bottom: 28px;
+        }
+        @media (max-width: 600px) {
+          .metrics-grid {
+            grid-template-columns: 1fr;
+            gap: 16px;
+          }
+        }
+        /* Exported CS1 desktop grid shows 3 stat cards (Total Revenue,
+           Tickets Sold, Live events), not 2 -- matches at the same
+           min-width the sidebar/shell itself switches on below. */
+        @media (min-width: 900px) {
+          .metrics-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+        .cs-sidebar { display: none; }
+        @media (min-width: 900px) {
+          .cs-shell {
+            display: flex;
+            align-items: flex-start;
+            max-width: 1200px;
+            width: 100%;
+            margin: 0 auto;
+          }
+          .cs-sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            width: 220px;
+            flex: none;
+            padding: 20px 14px;
+            border-right: 1px solid rgba(255,255,255,0.07);
+            position: sticky;
+            top: 81px;
+          }
+          .cs-sidebar-item {
+            display: flex;
+            align-items: center;
+            height: 42px;
+            border-radius: 12px;
+            padding: 0 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid transparent;
+            background: none;
+            text-align: left;
+            width: 100%;
+          }
+          .cs-shell > main {
+            max-width: none;
+            margin: 0;
+          }
+          .metrics-grid {
+            grid-template-columns: repeat(3, 1fr);
+          }
+        }
+      `}</style>
+
+      <div className="cs-shell">
+        <nav className="cs-sidebar" aria-label="Creator Studio navigation">
+          {[
+            { key: 'overview', label: 'Overview', action: undefined },
+            { key: 'events', label: 'Events', action: onManageEvents },
+            { key: 'sales', label: 'Sales & Analytics', action: () => onNavigate('sales-analytics') },
+            { key: 'promotions', label: 'Promotions', action: () => onNavigate('promote-event') },
+            { key: 'earnings', label: 'Earnings', action: () => onNavigate('wallet') },
+          ].map((item) => (
+            <button
+              key={item.key}
+              className="cs-sidebar-item"
+              onClick={item.action}
+              disabled={!item.action}
+              style={
+                item.key === 'overview'
+                  ? { background: 'rgba(142,92,247,0.14)', border: '1px solid rgba(142,92,247,0.4)', color: ventsColors.white }
+                  : { color: ventsColors.ink2, cursor: item.action ? 'pointer' : 'default' }
+              }
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
       {/* Main Content Area */}
       <main
@@ -312,28 +419,13 @@ export function OrganizerDashboard({
           margin: '0 auto',
         }}
       >
-        {/* Style block for responsive grid and other dynamic adjustments */}
-        <style>{`
-          .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 12px;
-            margin-bottom: 28px;
-          }
-          @media (max-width: 600px) {
-            .metrics-grid {
-              grid-template-columns: 1fr;
-              gap: 16px;
-            }
-          }
-        `}</style>
 
         {/* Metrics Hero Section */}
         <div className="metrics-grid">
           {/* Card 1: Total Revenue */}
           <div
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: '20px',
               padding: '20px 16px',
@@ -364,20 +456,24 @@ export function OrganizerDashboard({
                 marginBottom: '14px',
               }}
             >
-              <DollarSign size={18} color="#10B981" />
+              <DollarSign size={18} color={ventsColors.success} />
             </div>
-            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Total Revenue
             </span>
-            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
-              {formatPrice(revenue)}
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {/* formatPrice(0) intentionally reads "Free" for a ticket
+                  PRICE (0 = free ticket) -- wrong here, where 0 means "no
+                  revenue collected yet", not "this organizer's events are
+                  free". */}
+              {revenue ? formatPrice(revenue) : `${REGION.currencySymbol}0`}
             </span>
           </div>
 
           {/* Card 2: Tickets Sold */}
           <div
             style={{
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255, 255, 255, 0.05)',
               borderRadius: '20px',
               padding: '20px 16px',
@@ -408,35 +504,81 @@ export function OrganizerDashboard({
                 marginBottom: '14px',
               }}
             >
-              <Ticket size={18} color="#4F46E5" />
+              <Ticket size={18} color={ventsColors.accent} />
             </div>
-            <span style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
               Tickets Sold
             </span>
-            <span style={{ color: '#FFFFFF', fontSize: '22px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
               {ticketsSold}
+            </span>
+          </div>
+
+          {/* Card 3: Live events -- real count (see liveEventsCount above),
+              not shown at all on the old mobile 2-card layout; the exported
+              CS1 desktop grid adds it as a third card. */}
+          <div
+            style={{
+              background: ventsColors.surface,
+              border: '1px solid rgba(255, 255, 255, 0.05)',
+              borderRadius: '20px',
+              padding: '20px 16px',
+              position: 'relative',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+              transition: 'transform 0.2s ease, border-color 0.2s ease',
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.transform = 'translateY(-2px)';
+              e.currentTarget.style.borderColor = 'rgba(96, 165, 250, 0.2)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.transform = 'translateY(0)';
+              e.currentTarget.style.borderColor = 'rgba(255, 255, 255, 0.06)';
+            }}
+          >
+            <div
+              style={{
+                width: '38px',
+                height: '38px',
+                borderRadius: '10px',
+                background: 'rgba(96, 165, 250, 0.14)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '14px',
+              }}
+            >
+              <Clock size={18} color="#93C5FD" />
+            </div>
+            <span style={{ color: ventsColors.ink3, fontSize: '11px', fontWeight: 500, marginBottom: '6px', textTransform: 'uppercase' }}>
+              Live events
+            </span>
+            <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
+              {liveEventsCount}
             </span>
           </div>
         </div>
 
         {/* ── Tickets Sold vs Goal Chart ──────────────────────────────────── */}
         {chartData.length > 0 && (
-          <div style={{ background: '#090514', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
-                <h3 style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Tickets Sold vs Goal</h3>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>
+                <h3 style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Tickets Sold vs Goal</h3>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '2px 0 0' }}>
                   {ticketsSold} sold across {orgEvents.length} event{orgEvents.length !== 1 ? 's' : ''}
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: '#A78BFA' }} />
-                  <span style={{ color: '#8B8FA8', fontSize: '10px' }}>Sold</span>
+                  <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: ventsColors.accentSoft }} />
+                  <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>Sold</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <div style={{ width: '10px', height: '10px', borderRadius: '2px', background: 'rgba(167,139,250,0.2)', border: '1px solid rgba(167,139,250,0.3)' }} />
-                  <span style={{ color: '#8B8FA8', fontSize: '10px' }}>Goal</span>
+                  <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>Goal</span>
                 </div>
               </div>
             </div>
@@ -444,16 +586,16 @@ export function OrganizerDashboard({
               <BarChart data={chartData} barGap={4} margin={{ top: 8, right: 0, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="orgDashBarGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#7B2FBE" />
-                    <stop offset="100%" stopColor="#4F46E5" />
+                    <stop offset="0%" stopColor={ventsColors.accent} />
+                    <stop offset="100%" stopColor={ventsColors.accent} />
                   </linearGradient>
                 </defs>
-                <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <XAxis dataKey="name" tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: ventsColors.ink3, fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip
-                  contentStyle={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
-                  labelStyle={{ color: '#F0F0FF', fontWeight: 700, marginBottom: '4px' }}
-                  itemStyle={{ color: '#A78BFA' }}
+                  contentStyle={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', fontSize: '12px' }}
+                  labelStyle={{ color: ventsColors.ink1, fontWeight: 700, marginBottom: '4px' }}
+                  itemStyle={{ color: ventsColors.accentSoft }}
                 />
                 <Bar dataKey="goal" fill="rgba(167,139,250,0.15)" radius={[4, 4, 0, 0]} name="Goal" />
                 <Bar dataKey="sold" radius={[4, 4, 0, 0]} name="Sold">
@@ -461,12 +603,12 @@ export function OrganizerDashboard({
                     <Cell
                       key={idx}
                       fill={entry.sold >= entry.goal
-                        ? '#10B981'  // green = hit goal
+                        ? ventsColors.success  // green = hit goal
                         : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty
                       }
                     />
                   ))}
-                  <LabelList dataKey="sold" position="top" style={{ fill: '#A78BFA', fontSize: 10, fontWeight: 700 }} />
+                  <LabelList dataKey="sold" position="top" style={{ fill: ventsColors.accentSoft, fontSize: 10, fontWeight: 700 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -484,7 +626,7 @@ export function OrganizerDashboard({
               borderRadius: '16px',
               padding: '10px 20px',
               color: '#C084FC',
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               fontSize: '14px',
               fontWeight: 700,
               cursor: 'pointer',
@@ -503,8 +645,8 @@ export function OrganizerDashboard({
             border: 'none',
             borderRadius: '16px',
             padding: '16px 24px',
-            color: '#FFFFFF',
-            fontFamily: 'Space Grotesk, sans-serif',
+            color: ventsColors.white,
+            fontFamily: 'Manrope, sans-serif',
             fontSize: '16px',
             fontWeight: 700,
             cursor: 'pointer',
@@ -546,8 +688,8 @@ export function OrganizerDashboard({
                   background: 'none',
                   border: 'none',
                   padding: '12px 4px 16px',
-                  color: isActive ? '#FFFFFF' : '#8B8FA8',
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  color: isActive ? ventsColors.white : ventsColors.ink2,
+                  fontFamily: 'Manrope, sans-serif',
                   fontSize: '15px',
                   fontWeight: 600,
                   cursor: 'pointer',
@@ -578,15 +720,24 @@ export function OrganizerDashboard({
           // Resolve event status — treat null/undefined as 'live' for backward compat
           const getStatus = (e: any): string => e.status ?? 'live';
 
-          // Compare against start-of-today so same-day events still show as live/upcoming
-          const todayStart = new Date();
-          todayStart.setHours(0, 0, 0, 0);
+          // "Ended" now uses the SAME canonical rule as everywhere else
+          // (server-side purchase guards, Home/Explore discovery, the
+          // EventDetailsScreen CTA — see supabase/migrations/0051 and
+          // src/lib/eventLifecycle.ts): COALESCE(end_date, event_date + 24h)
+          // vs now(), not a bare "event_date before local midnight today"
+          // comparison. The old check only looked at the START date against
+          // a LOCAL-timezone midnight boundary, ignored end_date entirely,
+          // and never accounted for the actual end time — so a multi-day
+          // event that started days ago but hasn't ended yet could get
+          // dropped into Past, while an event that started and ended
+          // earlier TODAY stayed in Live until local midnight.
+          const ended = (e: any) => hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null });
 
           const displayEvents = activeTab === 'live'
-            ? orgEvents.filter(e => getStatus(e) === 'live' && new Date(e.event_date) >= todayStart)
+            ? orgEvents.filter(e => getStatus(e) !== 'draft' && !ended(e))
             : activeTab === 'drafts'
             ? orgEvents.filter(e => getStatus(e) === 'draft')
-            : orgEvents.filter(e => getStatus(e) !== 'draft' && new Date(e.event_date) < todayStart);
+            : orgEvents.filter(e => getStatus(e) !== 'draft' && ended(e));
 
 
           if (displayEvents.length > 0) {
@@ -594,12 +745,18 @@ export function OrganizerDashboard({
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {displayEvents.map((event) => {
                   const dateStr = event.event_date ? new Date(event.event_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+                  // The row's own DB `status` column means "published vs
+                  // draft", not "has it ended" -- badging a Past-tab row
+                  // with the raw status read as "LIVE" even though it's
+                  // sorted into Past, which is what was reported. Show
+                  // "Ended" for anything in the Past tab instead.
+                  const badgeLabel = ended(event) ? 'ended' : getStatus(event);
                   return (
                     <div
                       key={event.id}
                       onClick={() => onEventPress?.(event)}
                       style={{
-                        background: '#090514',
+                        background: ventsColors.surface,
                         border: '1px solid rgba(255,255,255,0.05)',
                         borderRadius: '16px',
                         padding: '16px',
@@ -618,26 +775,28 @@ export function OrganizerDashboard({
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                           <span style={{
                             fontSize: '9px',
-                            background: getStatus(event) === 'live' ? 'rgba(16, 185, 129, 0.12)' : getStatus(event) === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                            color: getStatus(event) === 'live' ? '#10B981' : getStatus(event) === 'draft' ? '#F59E0B' : '#EF4444',
+                            background: badgeLabel === 'live' ? 'rgba(16, 185, 129, 0.12)' : badgeLabel === 'draft' ? 'rgba(245, 158, 11, 0.12)' : 'rgba(239, 68, 68, 0.12)',
+                            color: badgeLabel === 'live' ? ventsColors.success : badgeLabel === 'draft' ? ventsColors.pending : ventsColors.error,
                             padding: '2px 6px',
                             borderRadius: '4px',
                             fontWeight: 700,
                             textTransform: 'uppercase' as const
                           }}>
-                            {getStatus(event)}
+                            {badgeLabel}
                           </span>
-                          <span style={{ color: '#8B8FA8', fontSize: '10px' }}>{event.category}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '10px' }}>{event.category}</span>
                         </div>
-                        <h4 style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
+                        <h4 style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, margin: '0 0 4px 0' }} className="truncate">
                           {event.title}
                         </h4>
-                        <p style={{ color: '#94A3B8', fontSize: '12px', margin: 0 }} className="truncate">
-                          {dateStr} • {event.location || 'Lagos, Nigeria'}
+                        <p style={{ color: ventsColors.ink3, fontSize: '12px', margin: 0 }} className="truncate">
+                          {dateStr}
+                          {(event.location || (event.country && COUNTRY_CODES.find((c) => c.iso === event.country)?.name)) &&
+                            ` • ${event.location || COUNTRY_CODES.find((c) => c.iso === event.country)?.name}`}
                         </p>
                       </div>
                       <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                        <span style={{ color: '#FFB830', fontSize: '13px', fontWeight: 700, display: 'block' }}>
+                        <span style={{ color: ventsColors.pending, fontSize: '13px', fontWeight: 700, display: 'block', fontVariantNumeric: 'tabular-nums lining-nums' }}>
                           {formatPrice(Number(event.price || 0))}
                         </span>
                         {activeTab === 'live' && (
@@ -676,7 +835,7 @@ export function OrganizerDashboard({
                               border: '1px solid rgba(16,185,129,0.3)',
                               borderRadius: '8px',
                               padding: '5px 10px',
-                              color: '#10B981',
+                              color: ventsColors.success,
                               fontSize: '10px',
                               fontWeight: 700,
                               cursor: 'pointer',
@@ -706,7 +865,7 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#090514',
+                  background: ventsColors.surface,
                   border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
@@ -725,12 +884,12 @@ export function OrganizerDashboard({
                     border: '1px solid rgba(123, 47, 190, 0.15)',
                   }}
                 >
-                  <Inbox size={28} color="#A855F7" />
+                  <Inbox size={28} color={ventsColors.accent} />
                 </div>
                 <h3
                   style={{
-                    color: '#F0F0FF',
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    color: ventsColors.ink1,
+                    fontFamily: 'Manrope, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
                     margin: '0 0 8px 0',
@@ -741,7 +900,7 @@ export function OrganizerDashboard({
                 </h3>
                 <p
                   style={{
-                    color: '#8B8FA8',
+                    color: ventsColors.ink2,
                     fontSize: '13px',
                     margin: 0,
                     lineHeight: '1.5',
@@ -763,7 +922,7 @@ export function OrganizerDashboard({
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '64px 20px',
-                  background: '#090514',
+                  background: ventsColors.surface,
                   border: '1px solid rgba(255, 255, 255, 0.05)',
                   borderRadius: '20px',
                   textAlign: 'center',
@@ -782,12 +941,12 @@ export function OrganizerDashboard({
                     border: '1px solid rgba(255, 255, 255, 0.06)',
                   }}
                 >
-                  <Inbox size={28} color="#8B8FA8" />
+                  <Inbox size={28} color={ventsColors.ink2} />
                 </div>
                 <h3
                   style={{
-                    color: '#F0F0FF',
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    color: ventsColors.ink1,
+                    fontFamily: 'Manrope, sans-serif',
                     fontSize: '16px',
                     fontWeight: 700,
                     margin: '0 0 8px 0',
@@ -798,7 +957,7 @@ export function OrganizerDashboard({
                 </h3>
                 <p
                   style={{
-                    color: '#8B8FA8',
+                    color: ventsColors.ink2,
                     fontSize: '13px',
                     margin: 0,
                     lineHeight: '1.5',
@@ -819,7 +978,7 @@ export function OrganizerDashboard({
                 alignItems: 'center',
                 justifyContent: 'center',
                 padding: '64px 20px',
-                background: '#090514',
+                background: ventsColors.surface,
                 border: '1px solid rgba(255, 255, 255, 0.05)',
                 borderRadius: '20px',
                 textAlign: 'center',
@@ -838,12 +997,12 @@ export function OrganizerDashboard({
                   border: '1px solid rgba(255, 255, 255, 0.06)',
                 }}
               >
-                <Inbox size={28} color="#8B8FA8" />
+                <Inbox size={28} color={ventsColors.ink2} />
               </div>
               <h3
                 style={{
-                  color: '#F0F0FF',
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  color: ventsColors.ink1,
+                  fontFamily: 'Manrope, sans-serif',
                   fontSize: '16px',
                   fontWeight: 700,
                   margin: '0 0 8px 0',
@@ -854,7 +1013,7 @@ export function OrganizerDashboard({
               </h3>
               <p
                 style={{
-                  color: '#8B8FA8',
+                  color: ventsColors.ink2,
                   fontSize: '13px',
                   margin: 0,
                   lineHeight: '1.5',
@@ -867,6 +1026,7 @@ export function OrganizerDashboard({
           );
         })()}
       </main>
+      </div>
     </div>
   );
 }

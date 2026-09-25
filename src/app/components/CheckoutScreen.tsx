@@ -1,15 +1,18 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import { ArrowLeft, Lock, Tag, AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import { Event, TicketType, PurchasedTicket, TicketAttendee } from './types';
 import { formatPrice } from './data';
 import { openPaystackPopup } from '../../lib/paystack';
 import { analytics } from '../../lib/analyticsEvents';
 import { supabase } from '../../lib/supabase';
+import { fetchMyWalletBalanceKobo, payTicketWithWallet } from '../../lib/userWallet';
 import { openExternalUrl } from '../../lib/externalLink';
 import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { computeTicketWalletChargeKobo, hasSufficientBalance } from '../../lib/walletMath';
+import { UserAutocomplete } from './shared/UserAutocomplete';
 
 function fmtNgn(kobo: number) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -21,15 +24,17 @@ interface CheckoutScreenProps {
   quantity: number;
   currentUser: { id: string; email: string; full_name: string | null; username?: string } | null;
   onBack: () => void;
+  // onSuccess handles both Paystack and wallet completions -- a wallet-paid
+  // ticket sets skipPaymentVerification: true so App.handleCheckoutSuccess
+  // reads the already-confirmed ticket back directly instead of calling
+  // api/webhook/paystack?action=verify (which would fail: a wallet payment
+  // has no matching Paystack transaction to verify against).
   onSuccess: (ticket: PurchasedTicket) => void;
-  // Distinct completion path for a wallet-paid ticket -- MUST NOT be routed
-  // through the same handler as onSuccess. A wallet payment is confirmed
-  // server-side by confirm_ticket_payment_via_wallet before this ever fires,
-  // and has no Paystack transaction to verify; App.handleCheckoutSuccess's
-  // generic path always calls api/webhook/paystack?action=verify, which
-  // would be a stale/incorrect verification attempt for a purchase that was
-  // never sent to Paystack at all.
-  onWalletSuccess: (ticket: PurchasedTicket) => void;
+  // "Someone else is paying": called instead of onSuccess once
+  // create_pending_purchase has resolved a real payer_id — the recipient
+  // never sees Paystack in this case, only a "request sent" confirmation.
+  // The actual payment happens later, on the payer's own device/session.
+  onPaymentRequestSent?: (info: { paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType }) => void;
 }
 
 const INPUT_STYLE: React.CSSProperties = {
@@ -37,9 +42,9 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#FFFFFF',
+  color: ventsColors.white,
   fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  fontFamily: 'Manrope, sans-serif',
 };
 
 function isValidEmail(email: string) {
@@ -67,12 +72,12 @@ function Field({
 }) {
   return (
     <div style={{ width: '100%', minWidth: 0 }}>
-      <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
+      <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>{label}</p>
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          background: '#090514',
+          background: ventsColors.surface,
           border: `1px solid ${error ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}`,
           borderRadius: '16px',
           height: '52px',
@@ -94,17 +99,15 @@ function Field({
       </div>
       {error && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-          <AlertCircle size={11} color="#EF4444" />
-          <span style={{ color: '#EF4444', fontSize: '11px' }}>{error}</span>
+          <AlertCircle size={11} color={ventsColors.error} />
+          <span style={{ color: ventsColors.error, fontSize: '11px' }}>{error}</span>
         </div>
       )}
     </div>
   );
 }
 
-export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess, onWalletSuccess }: CheckoutScreenProps) {
-  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
-  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBack, onSuccess, onPaymentRequestSent }: CheckoutScreenProps) {
   const [name, setName] = useState(currentUser?.full_name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [emailTouched, setEmailTouched] = useState(false);
@@ -126,6 +129,51 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // drives the visual disabled state; this ref is the actual re-entrancy lock.
   const payingRef = useRef(false);
   const [payError, setPayError] = useState<string | null>(null);
+  // Handoff S2: a genuine payment-attempt failure (Paystack's own onError,
+  // or the popup failing to open at all) gets the dedicated full-screen
+  // treatment -- distinct from payError, which stays inline for pre-payment
+  // validation (missing fields, insufficient wallet balance, etc.) that
+  // never actually reached a payment attempt. Only the real amount and the
+  // real message Paystack/openPaystackPopup returned are ever shown here --
+  // no fabricated seat-hold countdown or masked card digits, since neither
+  // exists anywhere in this codebase (Paystack's onError only ever supplies
+  // a plain string; there's no reservation/hold-timer system for tickets).
+  const [paymentFailed, setPaymentFailed] = useState<string | null>(null);
+  // "Someone else is paying" -- 'self' preserves today's checkout exactly.
+  const [payMode, setPayMode] = useState<'self' | 'someone-else'>('self');
+  const [payerIdentifier, setPayerIdentifier] = useState('');
+  const [payerNotFound, setPayerNotFound] = useState(false);
+
+  // Wallet payment option -- self-pay only (see 0066_wallet_payments.sql's
+  // header comment on why Someone Else Pays isn't wired to Wallet in this
+  // pass). Defaults to Paystack; the balance is fetched once per screen
+  // visit (not polled) purely to inform the choice/insufficient-balance
+  // state below, never trusted as anything authoritative -- the actual
+  // balance check happens server-side, under a row lock, at confirm time.
+  const [paymentMethod, setPaymentMethod] = useState<'paystack' | 'wallet'>('paystack');
+  // Handoff S1 ("Insufficient wallet balance -- shows the shortfall, not
+  // just the failure"): previously just disabled the Pay button with a
+  // static "Insufficient Wallet Balance" label and no way forward except
+  // manually re-picking Card above. This sheet shows the real shortfall
+  // and offers the one recovery action that's actually wired to something
+  // real (switching to the already-fully-supported Paystack path). It
+  // deliberately does NOT offer the design's "Add ₦X and pay" -- that
+  // would need a real inline top-up-then-resume-payment flow, which
+  // doesn't exist anywhere in this codebase, and building one here would
+  // be inventing new payment logic rather than fixing this screen.
+  const [showInsufficientSheet, setShowInsufficientSheet] = useState(false);
+  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const [walletBalanceLoading, setWalletBalanceLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setWalletBalanceLoading(true);
+    fetchMyWalletBalanceKobo()
+      .then((kobo) => { if (!cancelled) setWalletBalanceKobo(kobo); })
+      .catch(() => { if (!cancelled) setWalletBalanceKobo(null); })
+      .finally(() => { if (!cancelled) setWalletBalanceLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
 
   // Group purchases (quantity > 1) need one distinct name+email per ticket
   // -- each row gets its own QR code, and the door scanner needs to know
@@ -265,8 +313,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
     haptics.medium();
     setPayError(null);
+    setPayerNotFound(false);
     setAttendeesTouched(true);
     setPhoneTouched(true);
+
+    const payerIdentifierTrimmed = payerIdentifier.trim();
+    if (payMode === 'someone-else' && !payerIdentifierTrimmed) {
+      setPayError("Enter the payer's VENTS email or username.");
+      return;
+    }
     analytics.checkoutStarted({ eventId: event?.id, ticketType: ticketType?.name, quantity, amount: total, free: false });
 
     const payerEmail = email.trim() || currentUser?.email || '';
@@ -305,67 +360,12 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    if (paymentMethod === 'wallet') {
-      const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
-      const attendees = buildAttendees(purchaserName, payerEmail);
-      payingRef.current = true;
-      setPaymentLoading(true);
-      try {
-        // Same server-authoritative pending-purchase row the Paystack path
-        // uses -- amount and reference are computed server-side here too,
-        // never trusted from this client's `total`.
-        const { data, error } = await supabase.rpc('create_pending_purchase', {
-          p_event_id: event.id,
-          p_ticket_type: ticketType.name,
-          p_attendees: attendees,
-          p_promo_code: promoApplied ? promoCode.trim() : null,
-        });
-        if (error) throw error;
-        const reference: string = (data as any)?.payment_ref;
-        if (!reference) throw new Error('Could not prepare this purchase.');
-
-        // Atomic, idempotent debit + ticket issuance + organizer credit, all
-        // inside confirm_ticket_payment_via_wallet -- see 0074_universal-
-        // customer-wallet audit. This purchase never touches Paystack at
-        // all, so it must complete via onWalletSuccess, never onSuccess
-        // (which routes through the Paystack ?action=verify path).
-        const { data: result, error: walletErr } = await supabase.rpc('confirm_ticket_payment_via_wallet', {
-          p_payment_ref: reference,
-        });
-        if (walletErr) throw walletErr;
-
-        if (typeof result === 'string' && result.startsWith('insufficient_balance')) {
-          throw new Error('Insufficient wallet balance for this purchase.');
-        }
-        if (result !== 'confirmed' && result !== 'already_paid') {
-          throw new Error('Could not complete this purchase with your wallet. Please try again.');
-        }
-
-        const ticket: PurchasedTicket = {
-          event, ticketType, quantity,
-          ticketId: reference,
-          purchasedAt: new Date().toISOString(),
-          totalAmount: total,
-          holderName: purchaserName,
-          holderEmail: payerEmail,
-          attendees,
-          promoCode: promoApplied ? promoCode.trim() : undefined,
-          paymentMethod: 'wallet',
-        };
-        onWalletSuccess(ticket);
-      } catch (err: any) {
-        payingRef.current = false;
-        setPaymentLoading(false);
-        setPayError(err?.message || 'Wallet payment failed. Please try again.');
-      }
-      return;
-    }
-
     // Checked here (before create_pending_purchase) rather than left solely
     // to openPaystackPopup's own guard, so a missing/unloaded Paystack
     // script fails fast without first creating a server-side pending
-    // purchase row for a payment that was never going to open.
-    if (!window.PaystackPop) {
+    // purchase row for a payment that was never going to open. Wallet
+    // payments never touch Paystack at all, so they're exempt.
+    if (paymentMethod !== 'wallet' && !window.PaystackPop) {
       setPayError('Payment system not loaded. Please refresh the page and try again.');
       return;
     }
@@ -392,8 +392,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         p_ticket_type: ticketType.name,
         p_attendees: attendees,
         p_promo_code: promoApplied ? promoCode.trim() : null,
+        ...(payMode === 'someone-else' ? { p_payer_identifier: payerIdentifierTrimmed } : {}),
       });
       if (error) throw error;
+      if ((data as any)?.payer_not_found) {
+        payingRef.current = false;
+        setPaymentLoading(false);
+        setPayerNotFound(true);
+        return;
+      }
       reference = (data as any)?.payment_ref;
       amountKobo = Number((data as any)?.amount_kobo);
       if (!reference || !amountKobo || amountKobo <= 0) throw new Error('Could not prepare this purchase.');
@@ -404,11 +411,92 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
+    // Someone else is paying: the request is now persisted server-side with
+    // a resolved payer_id. This screen (the recipient's) never opens
+    // Paystack -- the payer pays later, on their own device/session, via
+    // the payment-request link. Nothing here creates a ticket or charges
+    // anyone; it only confirms the request was created.
+    if (payMode === 'someone-else') {
+      payingRef.current = false;
+      setPaymentLoading(false);
+      onPaymentRequestSent?.({ paymentRef: reference, payerIdentifier: payerIdentifierTrimmed, event, ticketType });
+      return;
+    }
+
+    // Wallet payment -- confirm_ticket_payment_via_wallet (0066) does the
+    // Paystack-equivalent job (verify server-authoritative total, debit
+    // the wallet, grant the ticket) as one atomic server call; no popup,
+    // no separate verify round-trip.
+    if (paymentMethod === 'wallet') {
+      try {
+        const result = await payTicketWithWallet(reference);
+        if (result.status === 'success') {
+          const ticket: PurchasedTicket = {
+            event,
+            ticketType,
+            quantity,
+            ticketId: reference,
+            purchasedAt: new Date().toISOString(),
+            totalAmount: total,
+            holderName: purchaserName,
+            holderEmail: payerEmail,
+            attendees,
+            promoCode: promoApplied ? promoCode.trim() : undefined,
+            // Already verified + issued atomically by confirm_ticket_payment_
+            // via_wallet (0066) -- never a real Paystack reference, so the
+            // caller must not re-verify this via Paystack.
+            skipPaymentVerification: true,
+          };
+          onSuccess(ticket);
+          return;
+        }
+        payingRef.current = false;
+        setPaymentLoading(false);
+        if (result.status === 'insufficient_balance') {
+          setPayError('Insufficient Wallet balance. Choose Paystack or top up your Wallet first.');
+        } else {
+          setPayError(result.error || 'Wallet payment could not be completed.');
+        }
+      } catch (err: any) {
+        payingRef.current = false;
+        setPaymentLoading(false);
+        setPayError(err?.message || 'Wallet payment could not be completed.');
+      }
+      return;
+    }
+
+    // Mint a fresh, disposable Paystack reference for THIS attempt --
+    // reference stays the stable VENTS order identity forever (used by
+    // finalize/confirm/tickets), but Paystack must never see the same
+    // reference twice (it initializes a real transaction the moment the
+    // popup opens, so reusing one -- e.g. on a retry after a closed/failed
+    // popup -- is rejected as a duplicate). Mirrors initiate_transfer_fee_
+    // payment's exact pattern (0043_ticket_transfer_fee.sql): called fresh
+    // on every attempt, returns a brand-new unrelated UUID each time. Also
+    // returns the row's own amount_kobo again so the popup always charges
+    // a server-fresh number, not whatever this component cached earlier.
+    let paystackRef: string;
+    let chargeAmountKobo: number;
+    try {
+      const { data: attemptData, error: attemptError } = await supabase.rpc('initiate_ticket_payment_attempt', {
+        p_payment_ref: reference,
+      });
+      if (attemptError) throw attemptError;
+      paystackRef = (attemptData as any)?.reference;
+      chargeAmountKobo = Number((attemptData as any)?.amount_kobo);
+      if (!paystackRef || !chargeAmountKobo || chargeAmountKobo <= 0) throw new Error('Could not start this payment attempt.');
+    } catch (err: any) {
+      payingRef.current = false;
+      setPaymentLoading(false);
+      setPayError(err?.message || 'Could not start payment. Please try again.');
+      return;
+    }
+
     try {
       openPaystackPopup({
         email: payerEmail,
-        amountKobo,
-        ref: reference,
+        amountKobo: chargeAmountKobo,
+        ref: paystackRef,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
         channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
         // NOT setting callback_url here — confirmed against Paystack's own
@@ -475,36 +563,116 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         onError: (message) => {
           payingRef.current = false;
           setPaymentLoading(false);
-          setPayError(message);
+          setPaymentFailed(message);
         },
       });
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
-      setPayError('Payment failed to start: ' + (err?.message || 'Please try again.'));
+      setPaymentFailed(err?.message || 'Could not start payment. Please try again.');
     }
   };
 
+  if (paymentFailed) {
+    return (
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: 'calc(86px + env(safe-area-inset-top)) 20px calc(26px + env(safe-area-inset-bottom))', boxSizing: 'border-box' }}>
+        <span style={{ width: '84px', height: '84px', borderRadius: '50%', background: 'rgba(248,113,113,0.12)', border: '1px solid rgba(248,113,113,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '34px', fontWeight: 800, color: '#F87171', flexShrink: 0 }}>!</span>
+        <h1 style={{ margin: '26px 0 0', fontSize: '27px', lineHeight: 1.15, letterSpacing: '-0.03em', fontWeight: 800, color: '#fff', textAlign: 'center' }}>Payment didn't go through</h1>
+        <p style={{ margin: '10px 0 0', fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', textAlign: 'center', maxWidth: '310px' }}>{paymentFailed}</p>
+        <div style={{ width: '100%', marginTop: '30px', borderRadius: '20px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', padding: '6px 18px' }}>
+          <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Attempted</span>
+            <span style={{ fontSize: '15px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums', color: '#fff' }}>{formatPrice(total)}</span>
+          </div>
+          <div style={{ padding: '14px 0', display: 'flex', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.66)' }}>Method</span>
+            <span style={{ fontSize: '15px', fontWeight: 700, color: '#EDEAF5' }}>Card / Bank / USSD</span>
+          </div>
+        </div>
+        <div style={{ width: '100%', marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+          <button
+            onClick={() => { setPaymentFailed(null); handlePay(); }}
+            style={{ height: '56px', borderRadius: '16px', background: '#8E5CF7', border: 'none', fontSize: '17px', fontWeight: 700, color: '#fff', cursor: 'pointer', boxShadow: '0 14px 40px -14px rgba(142,92,247,1)' }}
+          >
+            Try again
+          </button>
+          {paymentMethod === 'paystack' && walletBalanceKobo !== null && (
+            <button
+              onClick={() => { setPaymentFailed(null); setPaymentMethod('wallet'); }}
+              style={{ height: '54px', borderRadius: '16px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', fontSize: '16px', fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+            >
+              Use a different method
+            </button>
+          )}
+          <button
+            onClick={() => openExternalUrl('mailto:support@getvents.com')}
+            style={{ height: '46px', background: 'none', border: 'none', fontSize: '16px', fontWeight: 700, color: 'rgba(237,234,245,0.66)', cursor: 'pointer' }}
+          >
+            Contact support
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
+      className="checkout-content"
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
         overflowY: 'auto',
         scrollbarWidth: 'none',
       }}
     >
-      <style>{`input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      <style>{`
+        .checkout-content { display: flex; flex-direction: column; }
+        input::placeholder { color: #8B8FA8; } @keyframes spin { to { transform: rotate(360deg); } }
+        .checkout-summary-panel {
+          position: absolute; bottom: 0; left: 0; right: 0;
+          background: rgba(6,10,18,0.95); backdrop-filter: blur(20px);
+          border-top: 1px solid rgba(255,255,255,0.08); padding: 14px 16px 28px;
+        }
+        @media (min-width: 900px) and (max-width: 1199px) {
+          .checkout-content > * { max-width: 640px; margin-left: auto; margin-right: auto; width: 100%; box-sizing: border-box; }
+        }
+        /* Real desktop layout (handoff DT2/TB2): form column left, pinned
+           order-summary + Pay CTA in a real sticky right column, instead of
+           a screen-bottom-fixed bar over a centered single column. */
+        @media (min-width: 1200px) {
+          .checkout-content {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            column-gap: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            align-items: start;
+            padding: 0 16px;
+          }
+          .checkout-header { grid-column: 1 / -1; padding-left: 0; padding-right: 0; }
+          .checkout-main { grid-column: 1; padding-left: 0; padding-right: 0; padding-bottom: 40px; }
+          .checkout-summary-panel {
+            grid-column: 2;
+            grid-row: 2;
+            position: sticky;
+            top: 24px;
+            bottom: auto;
+            left: auto;
+            right: auto;
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+          }
+        }
+      `}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
+      <div className="checkout-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button
           onClick={onBack}
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '50%',
             width: '36px',
@@ -515,16 +683,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
             cursor: 'pointer',
           }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
+        <h1 style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Checkout</h1>
       </div>
 
-      <div style={{ flex: 1, padding: '4px 16px 140px' }}>
+      <div className="checkout-main" style={{ flex: 1, padding: '4px 16px 140px' }}>
         {/* Order mini summary */}
         <div
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             border: '1px solid rgba(255,255,255,0.05)',
             borderRadius: '24px',
             padding: '14px',
@@ -536,15 +704,15 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         >
           <img src={event.image} alt="" style={{ width: '56px', height: '56px', borderRadius: '10px', objectFit: 'cover', flexShrink: 0 }} />
           <div style={{ flex: 1, minWidth: 0 }}>
-            <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
-            <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
+            <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 700 }}>{event.title}</p>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>{ticketType.name} × {quantity}</p>
           </div>
-          <p style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
+          <p style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600 }}>{formatPrice(subtotal)}</p>
         </div>
 
         {/* Attendee info */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
-          <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Attendee Details</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* Pre-filled from the account when logged in, but never
                 locked — every logged-in user has an email (required at
@@ -568,37 +736,138 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 (AuthScreen.tsx), so an international visitor buying a
                 Nigerian event ticket isn't forced into a +234 number. */}
             <div>
-              <p style={{ color: '#94A3B8', fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
+              <p style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '6px', fontWeight: 500, textTransform: 'uppercase' }}>Phone Number *</p>
               <PhoneInput
                 countryCode={phoneCountryCode}
                 onCountryCodeChange={(code) => { setPhoneCountryCode(code); setPhone(''); }}
                 value={phone}
                 onChange={(digits) => { setPhone(digits); setPhoneTouched(true); }}
                 height={52}
-                background="#090514"
+                background={ventsColors.surface}
                 borderColor={phoneError ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.1)'}
                 radius="16px"
               />
               {phoneError && (
-                <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
+                <p style={{ color: ventsColors.error, fontSize: '12px', marginTop: '6px' }}>{phoneError}</p>
               )}
             </div>
           </div>
         </div>
+
+        {/* Who's paying — only meaningful for a real payment; free tickets
+            (total === 0) always self-checkout, no toggle shown. */}
+        {total > 0 && (
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Who's Paying?</p>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: payMode === 'someone-else' ? '14px' : 0 }}>
+              {(['self', 'someone-else'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => { setPayMode(mode); setPayerNotFound(false); setPayError(null); if (mode === 'someone-else') setPaymentMethod('paystack'); }}
+                  style={{
+                    flex: 1,
+                    height: '44px',
+                    borderRadius: '12px',
+                    border: `1px solid ${payMode === mode ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
+                    background: payMode === mode ? 'rgba(124,58,237,0.18)' : 'transparent',
+                    color: payMode === mode ? ventsColors.accentSoft : ventsColors.ink2,
+                    fontSize: '13px',
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                  }}
+                >
+                  {mode === 'self' ? "I'm paying" : 'Someone else is paying'}
+                </button>
+              ))}
+            </div>
+            {payMode === 'someone-else' && (
+              <>
+                <UserAutocomplete
+                  label="Payer's VENTS email or username"
+                  placeholder="name@gmail.com or @username"
+                  value={payerIdentifier}
+                  onChange={(v) => { setPayerIdentifier(v); setPayerNotFound(false); }}
+                  onSelect={() => setPayerNotFound(false)}
+                  helperText="You stay the ticket holder — you'll get the ticket and QR code once they pay. They'll get a payment link and a receipt, never the ticket itself."
+                />
+                {payerNotFound && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
+                    <AlertCircle size={14} color={ventsColors.error} />
+                    <span style={{ color: ventsColors.error, fontSize: '13px' }}>
+                      No VENTS account found for "{payerIdentifier.trim()}". They need to create a VENTS account before you can send them a payment request.
+                    </span>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Payment method -- Wallet is only offered for self-pay (Someone
+            Else Pays always uses Paystack, see 0066_wallet_payments.sql's
+            header comment). Balance shown is informational only; the real
+            sufficiency check happens server-side at confirm time. */}
+        {total > 0 && payMode === 'self' && (
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+            <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700, marginBottom: '14px' }}>Payment Method</p>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              {(['paystack', 'wallet'] as const).map((method) => {
+                const insufficientForWallet = method === 'wallet' && walletBalanceKobo !== null && walletBalanceKobo < total * 100;
+                return (
+                  <button
+                    key={method}
+                    onClick={() => setPaymentMethod(method)}
+                    disabled={method === 'wallet' && walletBalanceLoading}
+                    style={{
+                      flex: 1,
+                      minHeight: '52px',
+                      borderRadius: '12px',
+                      border: `1px solid ${paymentMethod === method ? 'rgba(167,139,250,0.6)' : 'rgba(255,255,255,0.1)'}`,
+                      background: paymentMethod === method ? 'rgba(124,58,237,0.18)' : 'transparent',
+                      color: paymentMethod === method ? ventsColors.accentSoft : ventsColors.ink2,
+                      fontSize: '13px',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: '8px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '2px',
+                    }}
+                  >
+                    <span>{method === 'paystack' ? 'Card / Bank / USSD' : 'VENTS Wallet'}</span>
+                    {method === 'wallet' && (
+                      <span style={{ fontSize: '11px', color: insufficientForWallet ? ventsColors.error : ventsColors.ink2 }}>
+                        {walletBalanceLoading
+                          ? 'Loading balance…'
+                          : walletBalanceKobo === null
+                          ? 'Balance unavailable'
+                          : insufficientForWallet
+                          ? `Insufficient (${formatPrice(walletBalanceKobo / 100)} available)`
+                          : `${formatPrice(walletBalanceKobo / 100)} available`}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Additional attendees — one card per extra ticket in the group.
             Attendee 1 is the purchaser above; each of these gets its own
             distinct QR code, so the door scanner can check each person in
             individually with the right name. */}
         {quantity > 1 && (
-          <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+          <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-              <Users size={16} color="#A78BFA" />
-              <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 700 }}>
+              <Users size={16} color={ventsColors.accentSoft} />
+              <p style={{ color: ventsColors.white, fontSize: '15px', fontWeight: 700 }}>
                 Attendee Details ({quantity} tickets)
               </p>
             </div>
-            <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
+            <p style={{ color: ventsColors.ink2, fontSize: '12px', marginBottom: '16px', lineHeight: 1.5 }}>
               You're buying {quantity} tickets. Each ticket needs its own name and email so everyone gets a valid entry pass.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -612,7 +881,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                   : undefined;
                 return (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '10px', paddingTop: i === 0 ? 0 : '14px', borderTop: i === 0 ? 'none' : '1px dashed rgba(255,255,255,0.08)' }}>
-                    <p style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <p style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                       Attendee {attendeeNumber} Details
                     </p>
                     <Field
@@ -647,8 +916,8 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {/* Promo code */}
         <div style={{ marginBottom: '16px' }}>
-          <div style={{ background: '#090514', border: `1px solid ${promoError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            {promoApplied ? <CheckCircle2 size={16} color="#10B981" /> : <Tag size={16} color="#8B8FA8" />}
+          <div style={{ background: ventsColors.surface, border: `1px solid ${promoError ? 'rgba(239,68,68,0.4)' : 'rgba(255,255,255,0.06)'}`, borderRadius: '16px', padding: '14px', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            {promoApplied ? <CheckCircle2 size={16} color={ventsColors.success} /> : <Tag size={16} color={ventsColors.ink2} />}
             <input
               placeholder="Promo code"
               value={promoCode}
@@ -668,7 +937,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
                 border: 'none',
                 borderRadius: '8px',
                 padding: '7px 14px',
-                color: promoApplied ? '#10B981' : '#A78BFA',
+                color: promoApplied ? ventsColors.success : ventsColors.accentSoft,
                 fontSize: '12px',
                 fontWeight: 600,
                 cursor: (!promoCode.trim() || promoChecking) ? 'not-allowed' : 'pointer',
@@ -680,50 +949,53 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
           </div>
           {promoError && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', paddingLeft: '2px' }}>
-              <AlertCircle size={11} color="#EF4444" />
-              <span style={{ color: '#EF4444', fontSize: '11px' }}>{promoError}</span>
+              <AlertCircle size={11} color={ventsColors.error} />
+              <span style={{ color: ventsColors.error, fontSize: '11px' }}>{promoError}</span>
             </div>
           )}
         </div>
 
         {/* Order breakdown */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
+          <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 600, letterSpacing: '0.06em', marginBottom: '10px' }}>ORDER BREAKDOWN</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(subtotal)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{ticketType.name} × {quantity}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(subtotal)}</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>Service fee (5%)</span>
-              <span style={{ color: '#94A3B8', fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>Service fee (5%)</span>
+              <span style={{ color: ventsColors.ink3, fontSize: '14px' }}>{formatPrice(serviceFee)}</span>
             </div>
             {promoApplied && (
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: '#10B981', fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
-                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px' }}>Promo ({promoDiscountPct}% off)</span>
+                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>-{formatPrice(discount)}</span>
               </div>
             )}
             <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)', margin: '4px 0' }} />
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>Total</span>
-              <span style={{ color: '#FFFFFF', fontSize: '18px', fontWeight: 700 }}>{formatPrice(total)}</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700 }}>Total</span>
+              <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
             </div>
           </div>
         </div>
 
-        <p style={{ color: '#8B8FA8', fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '11px', textAlign: 'center', marginTop: '10px' }}>
           Paystack processing fees may apply and will be shown before you complete payment.
         </p>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginTop: '14px' }}>
-          <Lock size={12} color="#8B8FA8" />
-          <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Secured by 256-bit SSL encryption</span>
+          <Lock size={12} color={ventsColors.ink2} />
+          <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>Secured by 256-bit SSL encryption</span>
         </div>
       </div>
 
-      {/* Pay CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(6,10,18,0.95)', backdropFilter: 'blur(20px)', borderTop: '1px solid rgba(255,255,255,0.08)', padding: '14px 16px 28px' }}>
+      {/* Pay CTA -- .checkout-summary-panel base styles (mobile: fixed bottom
+          bar) and desktop override (sticky right-column panel) live in the
+          <style> block above; keeping this element's own positioning out of
+          inline style means the desktop media query can actually win. */}
+      <div className="checkout-summary-panel">
 
         {total > 0 && currentUser && (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
@@ -761,54 +1033,114 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
 
         {payError && (
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '10px', padding: '10px 12px' }}>
-            <AlertCircle size={14} color="#EF4444" />
-            <span style={{ color: '#EF4444', fontSize: '13px' }}>{payError}</span>
+            <AlertCircle size={14} color={ventsColors.error} />
+            <span style={{ color: ventsColors.error, fontSize: '13px' }}>{payError}</span>
           </div>
         )}
 
-        <button
-          onClick={handlePay}
-          disabled={paymentLoading || (total > 0 && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance)}
-          style={{
-            width: '100%',
-            height: '52px',
-            background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
-            border: 'none',
-            borderRadius: '100px',
-            padding: '0 24px',
-            color: '#fff',
-            fontSize: '16px',
-            fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
-            cursor: paymentLoading ? 'not-allowed' : 'pointer',
-            opacity: paymentLoading ? 0.6 : 1,
-            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          {paymentLoading ? (
-            <>
-              <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-              Processing...
-            </>
-          ) : (
-            <>
-              <Lock size={16} color="#fff" />
-              {total === 0 ? 'Get Free Ticket' : `Pay ${formatPrice(total)}`}
-            </>
-          )}
-        </button>
-        <p style={{ fontSize: '11px', color: '#94A3B8', textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
+        {(() => {
+          const walletInsufficient = payMode === 'self' && paymentMethod === 'wallet' && walletBalanceKobo != null && !hasSufficientWalletBalance;
+          const disabled = paymentLoading;
+          return (
+            <button
+              onClick={() => { if (walletInsufficient) { setShowInsufficientSheet(true); return; } handlePay(); }}
+              disabled={disabled}
+              style={{
+                width: '100%',
+                height: '52px',
+                background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+                border: 'none',
+                borderRadius: '100px',
+                padding: '0 24px',
+                color: '#fff',
+                fontSize: '16px',
+                fontWeight: 700,
+                fontFamily: 'Manrope, sans-serif',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.6 : 1,
+                boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              {paymentLoading ? (
+                <>
+                  <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  <Lock size={16} color="#fff" />
+                  {total === 0
+                    ? 'Get Free Ticket'
+                    : payMode === 'someone-else'
+                    ? `Send Payment Request (${formatPrice(total)})`
+                    : walletInsufficient
+                    ? 'Insufficient Balance — See Options'
+                    : `Pay ${formatPrice(total)}`}
+                </>
+              )}
+            </button>
+          );
+        })()}
+        <p style={{ fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', marginTop: '8px', marginBottom: '0' }}>
           By purchasing you agree to our{' '}
-          <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: '#C084FC', cursor: 'pointer' }}>Refund Policy</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/refunds')} style={{ color: ventsColors.accentSoft, cursor: 'pointer' }}>Refund Policy</span>
           {' '}and{' '}
-          <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: '#C084FC', cursor: 'pointer' }}>Terms of Service</span>
+          <span onClick={() => openExternalUrl('https://getvents.com/terms')} style={{ color: ventsColors.accentSoft, cursor: 'pointer' }}>Terms of Service</span>
         </p>
       </div>
 
+      {showInsufficientSheet && (
+        <div
+          onClick={() => setShowInsufficientSheet(false)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end', zIndex: 400 }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', background: ventsColors.bg, borderRadius: '22px 22px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '20px 20px calc(20px + env(safe-area-inset-bottom))' }}
+          >
+            <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', margin: '0 auto 20px' }} />
+            <h2 style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, letterSpacing: '-0.02em', margin: '0 0 8px' }}>
+              You're {formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))} short
+            </h2>
+            <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.55, margin: '0 0 20px' }}>
+              Your wallet has {formatPrice(Math.round((walletBalanceKobo || 0) / 100))} and this order is {formatPrice(total)}. Pay the whole thing by card instead, or add funds to your wallet first from the Wallet tab.
+            </p>
+            <div style={{ padding: '16px', borderRadius: '16px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '18px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                <span style={{ color: ventsColors.ink2 }}>Order total</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(total)}</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                <span style={{ color: ventsColors.ink2 }}>Wallet balance</span>
+                <span style={{ color: ventsColors.ink1, fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.round((walletBalanceKobo || 0) / 100))}</span>
+              </div>
+              <div style={{ height: '1px', background: 'rgba(255,255,255,0.09)' }} />
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <span style={{ color: ventsColors.pending, fontSize: '15px', fontWeight: 700 }}>Top up needed</span>
+                <span style={{ color: ventsColors.pending, fontSize: '18px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{formatPrice(Math.max(0, total - Math.round((walletBalanceKobo || 0) / 100)))}</span>
+              </div>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => { setPaymentMethod('paystack'); setShowInsufficientSheet(false); }}
+                style={{ width: '100%', height: '54px', borderRadius: '16px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', color: '#fff', fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+              >
+                Pay {formatPrice(total)} by card instead
+              </button>
+              <button
+                onClick={() => setShowInsufficientSheet(false)}
+                style={{ width: '100%', height: '46px', background: 'transparent', border: 'none', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

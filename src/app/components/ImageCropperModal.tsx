@@ -146,11 +146,16 @@ export function ImageCropperModal({
 
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   // Start deliberately far BELOW any real fit value (never 1 = react-easy-
-  // crop's cover/cropped scale). Worst case this shows one frame more
-  // zoomed-out than the final fit — never a cropped one — until the exact
-  // fit is computed below from react-easy-crop's own measurements.
-  const [zoom, setZoom] = useState(0.05);
-  const [minZoom, setMinZoom] = useState(0.05);
+  // crop's cover/cropped scale) for the FLYER variant only — worst case
+  // this shows one frame more zoomed-out than the final fit until the
+  // exact fit is computed below from react-easy-crop's own measurements.
+  // The avatar variant has no such correction effect (it's gated to
+  // isFlyer further down), so starting it at the same 0.05 left the
+  // image permanently stuck at 5% scale -- a tiny postage-stamp image in
+  // the middle of the crop frame. Avatar's minZoom is a fixed 1 (see the
+  // Cropper prop below), so 1 is its correct starting value too.
+  const [zoom, setZoom] = useState(variant === 'flyer' ? 0.05 : 1);
+  const [minZoom, setMinZoom] = useState(variant === 'flyer' ? 0.05 : 1);
   const [croppedAreaPixels, setCroppedAreaPixels] = useState<PixelCrop | null>(null);
   const [cropSize, setCropSize] = useState<{ width: number; height: number } | null>(null);
   const [containerSize, setContainerSize] = useState<{ width: number; height: number } | null>(null);
@@ -375,7 +380,7 @@ export function ImageCropperModal({
         {/* No title for the flyer variant — matches Apple Photos' minimal crop
             header (Cancel/Done only); the spacer keeps Done pinned right. */}
         {isFlyer ? <span style={{ flex: 1 }} /> : (
-          <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
+          <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flex: 1, textAlign: 'center' }}>{title}</span>
         )}
         {isFlyer && (
           <button onClick={() => setShowHelp(true)} aria-label="Framing guide" style={{ ...floatBtn, marginRight: '8px' }}>
@@ -397,7 +402,7 @@ export function ImageCropperModal({
           crop={crop}
           zoom={zoom}
           minZoom={isFlyer ? minZoom : 1}
-          maxZoom={5}
+          maxZoom={3}
           // Lower than react-easy-crop's default (1) so both pinch and
           // wheel/trackpad zoom feel controlled rather than twitchy —
           // a small gesture should nudge the zoom, not jump several steps.
@@ -451,7 +456,7 @@ export function ImageCropperModal({
 
           {/* Slim zoom fallback — pinch is the primary gesture; this covers
               one-handed and non-touch use without adding a label row. */}
-          <input type="range" value={zoom} min={minZoom} max={5} step={0.01} aria-label="Zoom"
+          <input type="range" value={zoom} min={minZoom} max={3} step={0.01} aria-label="Zoom"
             onChange={(e) => { setZoom(Number(e.target.value)); setDirty(true); }} onPointerUp={() => haptic(4)}
             style={{ width: '100%', height: '3px', borderRadius: '3px', outline: 'none', accentColor: '#A78BFA', cursor: 'pointer' }} />
 
@@ -505,7 +510,7 @@ export function ImageCropperModal({
             style={{ width: '100%', maxHeight: '78%', overflowY: 'auto', background: '#0B0618', borderRadius: '22px 22px 0 0', border: '1px solid rgba(255,255,255,0.08)', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 8px))', display: 'flex', flexDirection: 'column', gap: '16px' }}
           >
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>Framing Guide</p>
+              <p style={{ margin: 0, color: '#F0F0FF', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>Framing Guide</p>
               <button onClick={() => setShowHelp(false)} aria-label="Close" style={floatBtn}><X size={18} /></button>
             </div>
 
@@ -568,7 +573,7 @@ const floatBtn: React.CSSProperties = {
 const doneBtn: React.CSSProperties = {
   background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '999px',
   height: '36px', padding: '0 16px', color: '#fff', fontSize: '13px', fontWeight: 700,
-  fontFamily: 'Space Grotesk, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
+  fontFamily: 'Manrope, sans-serif', display: 'flex', alignItems: 'center', gap: '6px', boxShadow: '0 6px 16px rgba(123,47,190,0.4)',
 };
 // Essential toolbar icon button — generous hit target (44px+) for one-handed
 // mobile use, with a tiny label so the icon's meaning is never ambiguous.

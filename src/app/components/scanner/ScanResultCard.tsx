@@ -6,14 +6,17 @@
 import { CheckCircle2, XCircle, AlertTriangle, WifiOff } from 'lucide-react';
 import type { ScanOutcome } from './ticketValidation';
 
+// Door Manager export's exact per-state colors: valid #34d399 (green),
+// already_scanned/offline #fbbf24 (amber), denied #f87171 (red) -- were
+// #10B981/#F59E0B/#EF4444, close but not the export's hexes.
 const THEME = {
-  valid: { color: '#10B981', glow: 'rgba(16,185,129,0.45)', ring: 'rgba(16,185,129,0.16)' },
-  already_scanned: { color: '#F59E0B', glow: 'rgba(245,158,11,0.45)', ring: 'rgba(245,158,11,0.16)' },
-  denied: { color: '#EF4444', glow: 'rgba(239,68,68,0.45)', ring: 'rgba(239,68,68,0.16)' },
+  valid: { color: '#34d399', glow: 'rgba(52,211,153,0.45)', ring: 'rgba(52,211,153,0.16)' },
+  already_scanned: { color: '#fbbf24', glow: 'rgba(251,191,36,0.45)', ring: 'rgba(251,191,36,0.16)' },
+  denied: { color: '#f87171', glow: 'rgba(248,113,113,0.45)', ring: 'rgba(248,113,113,0.16)' },
   // Deliberately amber, not the "denied" red — a network failure says
   // nothing about whether the ticket is real, so it must never look
   // identical to an actual denial at a glance.
-  offline: { color: '#F59E0B', glow: 'rgba(245,158,11,0.45)', ring: 'rgba(245,158,11,0.16)' },
+  offline: { color: '#fbbf24', glow: 'rgba(251,191,36,0.45)', ring: 'rgba(251,191,36,0.16)' },
 } as const;
 
 export function ScanResultCard({ outcome }: { outcome: ScanOutcome }) {
@@ -47,7 +50,7 @@ export function ScanResultCard({ outcome }: { outcome: ScanOutcome }) {
         </div>
       </div>
 
-      <h2 style={{ color: t.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '0 0 6px', fontFamily: 'Space Grotesk, sans-serif' }}>
+      <h2 style={{ color: t.color, fontSize: '24px', fontWeight: 900, letterSpacing: '0.02em', margin: '0 0 6px', fontFamily: 'Manrope, sans-serif' }}>
         {outcome.headline}
       </h2>
 

@@ -1,9 +1,14 @@
-import { useRef, useState } from 'react';
+import { ReactNode, useState } from 'react';
 import { Search, X, Check, ChevronDown } from 'lucide-react';
 
 export interface PickerOption {
   value: string;
   label: string;
+  /** Optional leading visual (e.g. a country flag) — rendered before the
+   *  label in the default row layout. Ignored when `renderOption` is set. */
+  icon?: ReactNode;
+  /** Optional secondary line under the label (e.g. a dial-code format hint). */
+  sublabel?: string;
 }
 
 // The trigger field — matches the app's INPUT_STYLE surfaces (dark field,
@@ -42,7 +47,7 @@ export function PickerField({
         style={{
           color: value ? '#F0F0FF' : '#8B8FA8',
           fontSize: '14px',
-          fontFamily: 'Inter, sans-serif',
+          fontFamily: 'Manrope, sans-serif',
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
@@ -74,6 +79,14 @@ export function PickerSheet({
   // anyone whose city isn't already in it.
   allowCustom = false,
   customLabel = (q: string) => `Use "${q}"`,
+  // Lets a host that renders its own modal above this sheet's default 1000
+  // (e.g. a bottom-sheet form already at a higher z-index) push this above
+  // it, so the picker isn't stuck rendering behind its own host.
+  zIndex = 1000,
+  // Escape hatch for a row that needs more than icon+label+sublabel (e.g.
+  // PhoneInput's dial-code trailing chip) — receives the option and whether
+  // it's the current value, returns the row's full inner content.
+  renderOption,
 }: {
   title: string;
   options: PickerOption[];
@@ -84,32 +97,10 @@ export function PickerSheet({
   searchable?: boolean;
   allowCustom?: boolean;
   customLabel?: (query: string) => string;
+  zIndex?: number;
+  renderOption?: (option: PickerOption, isSelected: boolean) => ReactNode;
 }) {
   const [query, setQuery] = useState('');
-  // Drag-to-dismiss — only the grab handle + header area is a drag surface
-  // (not the scrollable option list, so a downward scroll there never gets
-  // mistaken for a dismiss gesture).
-  const [dragY, setDragY] = useState(0);
-  const [dragging, setDragging] = useState(false);
-  const dragStartY = useRef<number | null>(null);
-  const handleDragStart = (e: React.TouchEvent) => {
-    dragStartY.current = e.touches[0].clientY;
-    setDragging(true);
-  };
-  const handleDragMove = (e: React.TouchEvent) => {
-    if (dragStartY.current === null) return;
-    const dy = e.touches[0].clientY - dragStartY.current;
-    if (dy > 0) setDragY(dy);
-  };
-  const handleDragEnd = () => {
-    dragStartY.current = null;
-    setDragging(false);
-    if (dragY > 100) {
-      onClose();
-    } else {
-      setDragY(0);
-    }
-  };
   const filtered = searchable
     ? options.filter((o) => o.label.toLowerCase().includes(query.toLowerCase()))
     : options;
@@ -117,74 +108,59 @@ export function PickerSheet({
   const exactMatchExists = filtered.some((o) => o.label.toLowerCase() === trimmedQuery.toLowerCase());
   const showCustomOption = allowCustom && trimmedQuery.length > 0 && !exactMatchExists;
 
+  // Handoff PK1/PK3: a bottom sheet anchored to the screen edge, not a
+  // centered floating card. Long/searchable lists (country, state) open
+  // tall (top: 14%, ~86% of the viewport, per PK1); short fixed lists that
+  // skip search (category, a handful of options, per P23) size to content
+  // up to 60% of the viewport (PK3). Rows are a plain divided list --
+  // underline dividers, no per-row card background/border -- with a single
+  // purple checkmark marking the selection, not a highlighted card.
   return (
     <div
       onClick={onClose}
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(2,0,5,0.55)',
-        backdropFilter: 'blur(6px)',
-        WebkitBackdropFilter: 'blur(6px)',
-        zIndex: 1000,
-        display: 'flex',
-        alignItems: 'flex-end',
+        background: 'rgba(4,3,8,0.6)',
+        zIndex,
         animation: 'pickerBackdropIn 0.2s ease',
       }}
     >
       <style>{`
         @keyframes pickerBackdropIn { from { opacity: 0; } to { opacity: 1; } }
-        @keyframes pickerSheetIn { from { transform: translateY(24px); opacity: 0.6; } to { transform: translateY(0); opacity: 1; } }
+        @keyframes pickerSheetIn { from { transform: translateY(24px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
       `}</style>
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          width: '100%',
-          maxHeight: '75vh',
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          bottom: 0,
+          ...(searchable ? { top: '14%' } : { maxHeight: '60%' }),
+          borderRadius: '28px 28px 0 0',
+          background: 'rgba(18,16,25,0.96)',
+          backdropFilter: 'blur(34px)',
+          WebkitBackdropFilter: 'blur(34px)',
+          borderTop: '1px solid rgba(255,255,255,0.12)',
           display: 'flex',
           flexDirection: 'column',
-          background: '#0D0A1A',
-          borderTopLeftRadius: '24px',
-          borderTopRightRadius: '24px',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderBottom: 'none',
-          boxShadow: '0 -20px 50px rgba(0,0,0,0.45)',
           padding: '12px 20px calc(20px + env(safe-area-inset-bottom))',
-          animation: 'pickerSheetIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-          transform: dragY ? `translateY(${dragY}px)` : undefined,
-          transition: dragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+          animation: 'pickerSheetIn 0.22s cubic-bezier(0.16, 1, 0.3, 1)',
         }}
       >
-        {/* Grab handle + header — the drag surface for swipe-to-dismiss;
-            deliberately excludes the scrollable option list below so a
-            downward scroll there is never mistaken for a dismiss gesture. */}
-        <div onTouchStart={handleDragStart} onTouchMove={handleDragMove} onTouchEnd={handleDragEnd}>
-          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '12px' }}>
-            <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
-          </div>
+        <div style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', alignSelf: 'center', marginBottom: '14px', flexShrink: 0 }} />
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px', flexShrink: 0 }}>
+          <h3 style={{ color: '#fff', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             {title}
           </h3>
           <button
             onClick={onClose}
-            style={{
-              background: 'rgba(255,255,255,0.06)',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '50%',
-              width: '30px',
-              height: '30px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              cursor: 'pointer',
-              flexShrink: 0,
-            }}
+            style={{ background: 'none', border: 'none', padding: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}
           >
-            <X size={15} color="#C4C9E0" />
+            <X size={18} color="rgba(237,234,245,0.5)" />
           </button>
-          </div>
         </div>
 
         {searchable && (
@@ -192,16 +168,17 @@ export function PickerSheet({
             style={{
               display: 'flex',
               alignItems: 'center',
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '14px',
-              padding: '12px 16px',
-              gap: '12px',
+              background: '#1A1724',
+              border: '1px solid rgba(142,92,247,0.4)',
+              borderRadius: '12px',
+              height: '44px',
+              padding: '0 14px',
+              gap: '10px',
               marginBottom: '14px',
               flexShrink: 0,
             }}
           >
-            <Search size={18} color="#8B8FA8" />
+            <Search size={16} color="rgba(237,234,245,0.5)" />
             <input
               type="text"
               placeholder={searchPlaceholder}
@@ -212,9 +189,9 @@ export function PickerSheet({
                 background: 'none',
                 border: 'none',
                 outline: 'none',
-                color: '#F0F0FF',
+                color: '#fff',
                 fontSize: '14px',
-                fontFamily: 'Inter, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
               }}
               autoFocus
             />
@@ -226,14 +203,14 @@ export function PickerSheet({
             overflowY: 'auto',
             display: 'flex',
             flexDirection: 'column',
-            gap: '8px',
             scrollbarWidth: 'none',
             WebkitOverflowScrolling: 'touch',
             overscrollBehavior: 'contain',
+            minHeight: 0,
           }}
         >
           {filtered.length === 0 && !showCustomOption && (
-            <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
+            <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '13px', textAlign: 'center', margin: '24px 0' }}>
               No results found.
             </p>
           )}
@@ -250,34 +227,46 @@ export function PickerSheet({
                 fontSize: '14px',
                 fontWeight: 600,
                 flexShrink: 0,
+                marginBottom: '4px',
               }}
             >
               {customLabel(trimmedQuery)}
             </div>
           )}
-          {filtered.map((o) => {
+          {filtered.map((o, i) => {
             const isSelected = value === o.value;
             return (
               <div
                 key={o.value}
                 onClick={() => onSelect(o.value)}
                 style={{
-                  background: isSelected ? 'rgba(168,85,247,0.12)' : '#131629',
-                  border: isSelected ? '1.5px solid rgba(168,85,247,0.45)' : '1px solid rgba(255,255,255,0.06)',
-                  borderRadius: '12px',
-                  padding: '14px 16px',
+                  padding: '13px 0',
+                  borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
                   cursor: 'pointer',
-                  color: '#F0F0FF',
+                  color: isSelected ? '#fff' : '#EDEAF5',
                   fontSize: '14px',
                   fontWeight: isSelected ? 700 : 500,
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'space-between',
                   flexShrink: 0,
+                  gap: '12px',
                 }}
               >
-                {o.label}
-                {isSelected && <Check size={16} color="#A78BFA" />}
+                {renderOption ? (
+                  renderOption(o, isSelected)
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', minWidth: 0 }}>
+                      {o.icon}
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.label}</div>
+                        {o.sublabel && <div style={{ color: 'rgba(237,234,245,0.55)', fontSize: '12px', fontWeight: 500 }}>{o.sublabel}</div>}
+                      </div>
+                    </div>
+                    {isSelected && <Check size={16} color="#8E5CF7" style={{ flexShrink: 0 }} />}
+                  </>
+                )}
               </div>
             );
           })}

@@ -5,19 +5,19 @@ import { AuthMode } from './types';
 import { VentsLogo } from './VentsLogo';
 import { supabase } from '../../lib/supabase';
 import { openExternalUrl } from '../../lib/externalLink';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
-import { PickerSheet } from './shared/PickerSheet';
 import { verifyTOTP } from '../../lib/totp';
 import { analytics } from '../../lib/analyticsEvents';
 import { validateUsername, validatePassword } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
-import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
+import { COUNTRY_CODES, DEFAULT_COUNTRY, countryByIso, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { savePendingVerification, getPendingVerification, clearPendingVerification, PendingSignupProfile } from '../../lib/pendingVerification';
 import { Sentry } from '../../lib/sentry';
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -47,8 +47,13 @@ interface AuthScreenProps {
   initialMode: AuthMode;
   userRole?: string;
   selectedState?: string;
+  // Account/home country, ISO 3166-1 alpha-2, chosen via CountrySelectScreen
+  // before this screen -- persisted on the profile (users.country) and used
+  // here only to pre-fill the phone-country picker below. Never restricts
+  // which events the account can see or buy tickets for.
+  selectedCountryIso?: string;
   onBack: () => void;
-  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => void;
+  onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string; profileWarning?: string }) => void;
   resetToken?: string;
   // Set when the user arrived via the "Verify Account" link in the
   // verification email (?verify_email=) or is resuming a signup that was
@@ -86,20 +91,19 @@ const INPUT_STYLE: React.CSSProperties = {
   background: 'none',
   border: 'none',
   outline: 'none',
-  color: '#FFFFFF',
-  fontSize: '14px',
-  fontFamily: 'Inter, sans-serif',
+  color: ventsColors.white,
+  fontSize: '16px',
+  fontFamily: ventsTypography.fontBody,
 };
 
-// Fields sit on a near-black radial background (#050010 → #020005). The old
-// #090514 fill was within a few percent of it, so inputs visually dissolved
-// into the page. These two constants keep every field — text rows, the date
-// input, the state picker — on one raised surface with a readable edge.
-const FIELD_BG = '#150B26';
-const FIELD_BORDER = 'rgba(255,255,255,0.16)';
-// Fields use a 16px radius; the submit button matches so the form reads as
-// one set of controls rather than a pill dropped under a stack of boxes.
-const FIELD_RADIUS = '16px';
+// Fields sit on the redesign's canvas (#08070C). Per the design artifact's
+// §02 input spec: raised "elevated" surface, glass border, 14px radius --
+// these constants keep every field (text rows, date input, state picker) on
+// one consistent raised surface with a readable edge, matching every other
+// input across the redesigned screens.
+const FIELD_BG = ventsColors.elevated;
+const FIELD_BORDER = ventsColors.glassBorder;
+const FIELD_RADIUS = '14px';
 
 const BTN_PRIMARY: React.CSSProperties = {
   width: '100%',
@@ -107,16 +111,16 @@ const BTN_PRIMARY: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   justifyContent: 'center',
-  background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)',
+  background: ventsColors.accent,
   border: 'none',
   borderRadius: FIELD_RADIUS,
   padding: '0 24px',
-  color: '#fff',
+  color: ventsColors.white,
   fontSize: '16px',
   fontWeight: 700,
-  fontFamily: 'Space Grotesk, sans-serif',
+  fontFamily: ventsTypography.fontBody,
   cursor: 'pointer',
-  boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
+  boxShadow: '0 10px 30px -12px rgba(142,92,247,0.9)',
 };
 
 // Profile photo limits. The file is cropped and re-encoded to JPEG before
@@ -193,7 +197,67 @@ function InputRow({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
+// Handoff A3/LG1 anatomy: a mono uppercase label ABOVE a plain field, no
+// leading icon -- distinct from InputRow's icon+placeholder-only style,
+// which stays as-is for the flows this pass didn't touch (forgot/reset).
+function LabeledField({
+  label,
+  placeholder,
+  value,
+  onChange,
+  type = 'text',
+  error,
+  onEnter,
+  right,
+}: {
+  label: string;
+  placeholder: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  error?: string;
+  onEnter?: () => void;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      <span style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 600, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)' }}>
+        {label}
+      </span>
+      <div
+        className="auth-input-row"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          background: FIELD_BG,
+          border: `1px solid ${error ? 'rgba(239,68,68,0.6)' : FIELD_BORDER}`,
+          borderRadius: FIELD_RADIUS,
+          height: '52px',
+          padding: '0 16px',
+          gap: '12px',
+        }}
+      >
+        <input
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onEnter ? (e) => { if (e.key === 'Enter') { e.preventDefault(); onEnter(); } } : undefined}
+          style={INPUT_STYLE}
+        />
+        {right}
+      </div>
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', paddingLeft: '4px' }}>
+          <AlertCircle size={12} color="#EF4444" />
+          <span style={{ color: '#EF4444', fontSize: '11px' }}>{error}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function AuthScreen({ initialMode, userRole, selectedState, selectedCountryIso, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -207,17 +271,31 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     : null
   );
   const [showStateDropdown, setShowStateDropdown] = useState(false);
+  const [stateDropdownQuery, setStateDropdownQuery] = useState('');
+  const stateDropdownRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   // Raw national-number digits only — the country dial code is tracked
   // separately so the selector can change without re-parsing the input.
   const [phone, setPhone] = useState<string>('');
-  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
-  // NIGERIA_STATES only makes sense for a Nigerian phone/account — every
-  // other country falls back to a free-text region field rather than a
-  // fabricated or incorrect subdivision list (no per-country states/
-  // provinces data exists yet for the other ~189 countries).
-  const isNigeriaSelected = (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso === 'NG';
+  const [phoneCountryCode, setPhoneCountryCode] = useState<string>(
+    (selectedCountryIso && countryByIso(selectedCountryIso)?.code) || REGION.phoneCountryCode
+  );
+  // A curated state/province/region picker only exists for a handful of
+  // countries (see countrySubdivisions.ts) -- every other country falls
+  // back to a free-text region field rather than a fabricated or
+  // incorrect subdivision list. Driven by selectedCountryIso (the
+  // account/home country chosen in CountrySelectScreen), NOT
+  // phoneCountryCode -- a phone number's dial code is not the same signal
+  // as the account's country (e.g. a Rwandan account previously got the
+  // Nigerian state picker if phoneCountryCode still happened to read
+  // Nigeria's +234, which is exactly the bug this fixes), and falls back
+  // to the phone country only when no account country is available yet
+  // (e.g. very early in the form, or a mode where selectedCountryIso
+  // isn't meaningful).
+  const signupCountryIso = selectedCountryIso
+    || (COUNTRY_CODES.find((c) => c.code === phoneCountryCode) || DEFAULT_COUNTRY).iso;
+  const signupSubdivisions = subdivisionsForCountry(signupCountryIso);
   const handlePhoneCountryChange = (code: string) => {
     // Switching country must not leave a stale Nigerian state (or a
     // free-text value typed for a different country) behind.
@@ -234,6 +312,18 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Close the state dropdown (the small anchored panel, not a full-screen
+  // sheet) when tapping anywhere outside it -- same behavior as PhoneInput's
+  // country dropdown.
+  useEffect(() => {
+    if (!showStateDropdown) { setStateDropdownQuery(''); return; }
+    const handleClick = (e: MouseEvent) => {
+      if (stateDropdownRef.current && !stateDropdownRef.current.contains(e.target as Node)) setShowStateDropdown(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showStateDropdown]);
 
   // Resume a signup left mid-verification: either the caller told us
   // exactly which email (arrived via the "Verify Account" email link), or
@@ -560,6 +650,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           username: (username.trim() || pendingProfile?.username || '').toLowerCase(),
           phone_number: phone ? buildE164(phone, phoneCountryCode) : (pendingProfile?.phone_number || ''),
           state: (signupState || selectedState || pendingProfile?.state || '').trim(),
+          country: selectedCountryIso || pendingProfile?.country || undefined,
           avatar_url: avatarUrl || signupAvatarUrl || pendingProfile?.avatar_url,
         };
         const effectiveDob = dob || pendingProfile?.date_of_birth;
@@ -573,7 +664,24 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           Object.entries(payload).filter(([, v]) => v !== '' && v != null)
         );
         if (Object.keys(writablePayload).length > 0) {
-          const { error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId);
+          // Scoped to this exact user's own row (.eq('id', userId), plus
+          // RLS's own auth.uid() = id check underneath) -- this can only
+          // ever touch the account that just signed up, never another
+          // user's data.
+          let { error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId);
+          // One bounded retry, transient failures only. A 23505 (unique
+          // constraint violation on username/phone_number) is a genuine,
+          // permanent collision -- retrying can't change that outcome, so
+          // it's never retried; only a real network/connection hiccup gets
+          // a second, brief attempt before this gives up and lets the
+          // usernameSaveFailed/phoneSaveFailed check below report it
+          // honestly. Never throws either way -- a still-failing optional
+          // profile-field write must never turn an otherwise-successful
+          // signup into a failure.
+          if (updateError && updateError.code !== '23505') {
+            await new Promise((resolve) => setTimeout(resolve, 800));
+            ({ error: updateError } = await supabase.from('users').update(writablePayload).eq('id', userId));
+          }
           if (updateError) { console.error('Signup Failure Trace — profile completion update:', updateError); Sentry.captureException(updateError); }
         }
 
@@ -588,6 +696,32 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // pre-write guess — if set_signup_role failed above, this correctly
         // shows the trigger-assigned 'attendee' rather than masking it.
         const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'attendee';
+
+        // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): the
+        // onSuccess payload below used to fall back to the client's own
+        // typed value (`payload.username`/`payload.phone_number`) whenever
+        // the verified DB row came back without one -- e.g. because the
+        // corrective update above hit a genuine unique-constraint collision
+        // (someone else has that exact username/phone). That made the
+        // user's own session display a username/phone that was NEVER
+        // actually saved, with zero indication anything went wrong --
+        // exactly the same silent-mismatch shape as the admin-console bug,
+        // just surfacing in the user's own client instead of the DB. Only
+        // username/phone need this treatment (they're the only two
+        // unique-constrained, collision-prone fields here); full_name/
+        // state/country have no such constraint and can't silently fail to
+        // persist, so their existing `|| payload.x` fallback (a defensive
+        // read-after-write safety net, not a masking risk) is unchanged.
+        const usernameSaveFailed = !!payload.username && !finalProfile.username;
+        const phoneSaveFailed = !!payload.phone_number && !finalProfile.phone_number;
+        let profileWarning: string | undefined;
+        if (usernameSaveFailed && phoneSaveFailed) {
+          profileWarning = "Your username and phone number couldn't be saved — both were already taken by another account. Please set new ones in Settings.";
+        } else if (usernameSaveFailed) {
+          profileWarning = "Your username couldn't be saved — it was already taken by another account. Please set one in Settings.";
+        } else if (phoneSaveFailed) {
+          profileWarning = "Your phone number couldn't be saved — it was already registered to another account. Please set one in Settings.";
+        }
 
         // Apply referral code if user signed up via ?ref= link. Awaited and
         // only cleared from sessionStorage once we get a definitive
@@ -610,14 +744,19 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           email: userEmail,
           full_name: finalProfile.full_name || payload.full_name,
           role: verifiedRole,
-          username: finalProfile.username || payload.username,
-          phone_number: finalProfile.phone_number || payload.phone_number,
+          // Trust the verified DB row alone for these two — no fallback to
+          // the unsaved local value (see profileWarning above).
+          username: finalProfile.username || undefined,
+          phone_number: finalProfile.phone_number || undefined,
           state: finalProfile.state || payload.state,
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
           cover_url: finalProfile.cover_url,
           isOrganizer: verifiedRole === 'organizer',
           is_verified: finalProfile.is_verified === true,
           vc_badge: finalProfile.vc_badge,
+          is_service_provider: finalProfile.is_service_provider === true,
+          country: finalProfile.country || payload.country || undefined,
+          profileWarning,
         });
         return;
       }
@@ -668,6 +807,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         analytics.passwordResetRequested();
         setForgotSent(true);
         setForgotOtpStep(true);
+        // Same reasoning as the signup OTP screen: resetPasswordForEmail
+        // just sent the code, so start the cooldown immediately rather
+        // than leaving "Resend Code" tappable the instant this screen
+        // appears.
+        setForgotResendCooldown(30);
 
       } else if (mode === 'reset') {
         // Legacy InsForge deep-link recovery — superseded by the in-app OTP
@@ -754,7 +898,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           phone_number: normalizedPhone,
           state: (signupState || selectedState || '').trim(),
           role: strictRole,
-          avatar_url: signupAvatarUrl
+          avatar_url: signupAvatarUrl,
+          // Account/home country from CountrySelectScreen -- metadata only,
+          // never an access restriction (see select_events RLS policy).
+          country: selectedCountryIso || undefined,
         };
 
         const normalizedEmail = email.trim().toLowerCase();
@@ -809,6 +956,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               username: userMetaPayload.username,
               phone_number: userMetaPayload.phone_number,
               state: userMetaPayload.state,
+              country: userMetaPayload.country,
               date_of_birth: dob || undefined,
             },
           },
@@ -853,6 +1001,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         if (data?.user && !data.session) {
           analytics.signedUp(strictRole);
           setIsVerifying(true);
+          // A code was just emailed by signUp() itself -- start the same
+          // 30s resend cooldown a manual resend uses, so "Resend code" isn't
+          // immediately tappable on arrival (matches the export's A4, which
+          // shows the cooldown already counting down the moment this screen
+          // is reached, not a bare "Resend code" link).
+          setResendCooldown(30);
           // Persist the full form, not just the email — the immediate
           // upsert above has no session yet (email confirmation pending)
           // and is RLS-rejected, so this is the only place this data
@@ -864,6 +1018,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             username: userMetaPayload.username,
             phone_number: userMetaPayload.phone_number,
             state: userMetaPayload.state,
+            country: userMetaPayload.country,
             date_of_birth: dob || undefined,
             avatar_url: userMetaPayload.avatar_url || undefined,
           });
@@ -894,8 +1049,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           // Supabase client is already unauthenticated (anon) at this point;
           // it only carries a session once one has actually been
           // established.
+          //
+          // ROOT-CAUSE FIX: a network/RPC failure here (timeout, connection
+          // reset, a cold Postgres connection) used to fall through to the
+          // exact same generic "Incorrect email or password" message as an
+          // actual wrong password below -- a transient lookup failure and a
+          // genuinely wrong password were indistinguishable to the user.
+          // That's what made retrying "fix" it: attempt 1 hit a transient
+          // RPC hiccup and got told the password was wrong; attempt 2/3
+          // succeeded once the connection was warm, with the SAME
+          // credentials the whole time. Tagged with a distinct marker
+          // (LOGIN_LOOKUP_FAILED, checked in the catch block below) so this
+          // now surfaces an honest "couldn't verify your login" message
+          // instead of accusing the user of a wrong password.
           const { data: resolvedEmail, error: resolveError } = await supabase.rpc('resolve_username_to_email', { p_username: loginEmail.toLowerCase() });
-          if (resolveError) throw resolveError;
+          if (resolveError) throw new Error(`LOGIN_LOOKUP_FAILED: ${resolveError.message || 'username lookup failed'}`);
           if (!resolvedEmail) throw new Error('No account found with this username.');
           loginEmail = resolvedEmail;
         }
@@ -930,6 +1098,22 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
           // network call in this file -- previously the only one that
           // could hang the "Signing in..." button forever on a stalled
           // connection, with no timeout to recover from it.
+          // ROOT-CAUSE FIX: this profile read runs AFTER signInWithPassword
+          // has already succeeded -- Supabase Auth has verified the password
+          // and a real session now exists. A timeout here used to throw
+          // (via withTimeoutFallback's default no-fallback behavior), which
+          // propagated to the outer catch and showed "Incorrect email or
+          // password" for a login that had already been proven correct --
+          // the user was left silently signed-in-but-stuck-on-the-login-
+          // screen, and a retry "worked" only because the profile query
+          // happened to be faster/cached the second time, not because the
+          // password was ever wrong. Now degrades to `profile = null`
+          // instead of throwing; every field below already has a
+          // user_metadata fallback for exactly this case, so login still
+          // completes with a (possibly incomplete) profile rather than
+          // falsely rejecting valid credentials. App.tsx's own role-sync
+          // poll (see syncRole) corrects role/capability fields moments
+          // later if this fallback path ever under-reports them.
           const { data: profile } = await withTimeoutFallback(
             Promise.resolve(
               supabase
@@ -938,7 +1122,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 .eq('id', data.user.id)
                 .maybeSingle()
             ),
-            { timeoutMs: 10000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+            {
+              timeoutMs: 10000,
+              timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.',
+              fallback: () => ({ data: null, error: null, count: null, status: 0, statusText: 'timeout' } as any),
+            }
           );
 
           // 3.5: Block banned / deleted accounts immediately after auth
@@ -1058,6 +1246,46 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         // problem) instead of just waiting.
         if (msgL.includes('too many attempts')) {
           setErrorMessage(msg.trim());
+          return;
+        }
+        // ROOT-CAUSE FIX: a username-lookup failure (network/RPC error, not
+        // "this username doesn't exist") is NOT the same thing as a wrong
+        // password -- Supabase's own password check never even ran. Tagged
+        // above (LOGIN_LOOKUP_FAILED) so it gets an honest, distinct
+        // message instead of falling through to "Incorrect email or
+        // password" below, which previously made a transient lookup
+        // failure indistinguishable from a genuinely wrong password.
+        if (msg.includes('LOGIN_LOOKUP_FAILED')) {
+          setErrorMessage("We couldn't verify your login right now. Please check your connection and try again.");
+          return;
+        }
+        // ROOT-CAUSE FIX (found on retest after the lookup/profile-read
+        // fixes above still didn't fully resolve the intermittent report):
+        // signInWithPassword() ITSELF can fail with a transient, non-
+        // credential error -- a dropped connection, a Supabase Auth 5xx, a
+        // DNS blip -- and supabase-js surfaces that as a thrown error same
+        // as it does for a genuinely wrong password (both just reach this
+        // catch block as `err`). Every other check above only handles a
+        // failure from OUR OWN code around the call (the username lookup,
+        // the rate-limit check); this is the first check that looks at
+        // what signInWithPassword's OWN error actually says before
+        // defaulting to "Incorrect email or password" -- previously ANY
+        // unrecognized error, including a plain network failure, fell
+        // through to that same wrong-password message. Supabase's genuine
+        // wrong-credentials error is a stable, specific string ("Invalid
+        // login credentials"); a network/infra failure looks nothing like
+        // that, so this only ever intercepts errors that could NOT have
+        // been a real password rejection -- it never masks an actual wrong
+        // password as a network issue.
+        const isNetworkOrInfraError =
+          err?.name === 'AuthRetryableFetchError' ||
+          msgL.includes('failed to fetch') || msgL.includes('load failed') ||
+          msgL.includes('network') || msgL.includes('timeout') || msgL.includes('timed out') ||
+          msgL.includes('econnreset') || msgL.includes('econnrefused') ||
+          msgL.includes('internal server error') || msgL.includes('unexpected_failure') ||
+          msgL.includes('502') || msgL.includes('503') || msgL.includes('504') || msgL.includes('gateway');
+        if (isNetworkOrInfraError && !msgL.includes('invalid login credentials')) {
+          setErrorMessage("We couldn't reach the server. Please check your connection and try again.");
           return;
         }
         try {
@@ -1204,11 +1432,11 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
     const isSuspended = banInfo.status === 'suspended';
     const untilStr = banInfo.until ? new Date(banInfo.until).toLocaleDateString('en-NG', { dateStyle: 'long' }) : null;
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px', textAlign: 'center' }}>
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <AlertCircle size={32} color="#EF4444" />
         </div>
-        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '12px', fontFamily: 'Manrope, sans-serif' }}>
           {isSuspended ? 'Account Suspended' : 'Account Deleted'}
         </h2>
         <p style={{ color: '#C4C9E0', fontSize: '14px', lineHeight: 1.6, marginBottom: '8px' }}>
@@ -1267,12 +1495,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       }
     };
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 24px' }}>
         {/* Themed to the app's purple, not the stock indigo it shipped with. */}
         <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(167,139,250,0.12)', border: '1px solid rgba(167,139,250,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px' }}>
           <ShieldCheck size={32} color="#A78BFA" />
         </div>
-        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Space Grotesk, sans-serif', textAlign: 'center' }}>
+        <h2 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 800, marginBottom: '8px', fontFamily: 'Manrope, sans-serif', textAlign: 'center' }}>
           Two-Factor Authentication
         </h2>
         <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginBottom: '28px', lineHeight: 1.5 }}>
@@ -1322,7 +1550,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
+        background: `radial-gradient(ellipse at 50% 0%, rgba(142,92,247,0.16) 0%, ${ventsColors.elevated} 40%, ${ventsColors.bg} 100%)`,
         position: 'fixed',
         top: 0,
         left: 0,
@@ -1373,36 +1601,51 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
       </div>
 
       <div style={{ flex: 1, padding: '20px 24px 48px' }}>
-        <div style={{ marginBottom: '22px' }}>
-          <VentsLogo size={34} />
-        </div>
+        {/* Handoff A3/LG1: Sign Up has no logo at all (just the step
+            indicator + headline); Login centers a larger logo above its
+            headline instead of this small top-left mark. Every other mode
+            (forgot/reset/OTP) keeps the original placement unchanged. */}
+        {mode !== 'signup' && mode !== 'login' && (
+          <div style={{ marginBottom: '22px' }}>
+            <VentsLogo size={34} />
+          </div>
+        )}
+        {mode === 'login' && (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', marginTop: '36px', marginBottom: '8px' }}>
+            <VentsLogo size={86} />
+          </div>
+        )}
 
         {mode === 'forgot' && forgotSent && forgotOtpStep && !forgotPasswordStep ? (
-          /* ── Step 1: Verification Code ── */
-          <div style={{ paddingTop: '20px' }}>
-            <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-              <div style={{ fontSize: '52px', marginBottom: '16px' }}>🔐</div>
-              <h2
-                style={{
-                  color: '#F0F0FF',
-                  fontSize: '22px',
-                  fontWeight: 700,
-                  fontFamily: 'Space Grotesk, sans-serif',
-                  marginBottom: '10px',
-                }}
-              >
-                Enter Verification Code
-              </h2>
-              <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65 }}>
-                We've sent a verification code to{' '}
-                <span style={{ color: '#A78BFA' }}>{email}</span>.
+          /* ── Step 1: Verification Code -- same anatomy as the signup OTP
+              screen below (A4/A5-derived): big headline, equal-width boxes
+              where only the next one glows purple, all-red on a wrong code,
+              "Didn't get it?/Resend code" row. No "Step X of 3" eyebrow --
+              password reset isn't part of the numbered onboarding flow. ── */
+          <div>
+            <div style={{ marginBottom: '32px' }}>
+              <h1 style={{ margin: '0 0 8px', color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                Enter verification code
+              </h1>
+              <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
+                We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
               </p>
             </div>
 
             {errorMessage && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
-                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px', background: 'rgba(248,113,113,0.09)', border: '1px solid rgba(248,113,113,0.3)', borderRadius: '14px', padding: '16px', marginBottom: '20px' }}>
+                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#F87171', color: '#1a0808', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#FCA5A5' }}>That code isn't right</span>
+                  <span style={{ fontSize: '14px', lineHeight: 1.5, color: 'rgba(237,234,245,0.66)' }}>{errorMessage}</span>
+                </div>
+              </div>
+            )}
+
+            {successMessage && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
+                <Check size={18} color="#22C55E" style={{ flexShrink: 0 }} />
+                <span style={{ color: '#22C55E', fontSize: '13px', lineHeight: 1.4 }}>{successMessage}</span>
               </div>
             )}
 
@@ -1411,20 +1654,29 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 field relying solely on the wrapper's onClick -- makes every box,
                 including the first, directly tappable/focusable, and lets native
                 typing/paste/backspace work without any manual per-box logic. */}
-            <div style={{ position: 'relative', marginBottom: '20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}>
-                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
-                  <div
-                    key={i}
-                    style={{
-                      width: '32px', height: '52px', background: FIELD_BG,
-                      border: `1.5px solid ${forgotOtpCode.length > i ? '#A78BFA' : 'rgba(255,255,255,0.08)'}`,
-                      borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>{forgotOtpCode[i] ?? ''}</span>
-                  </div>
-                ))}
+            <div style={{ position: 'relative', marginBottom: '24px' }}>
+              <div style={{ display: 'flex', gap: '8px', cursor: 'text' }}>
+                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
+                  const isActive = i === forgotOtpCode.length;
+                  const border = errorMessage
+                    ? '1px solid rgba(248,113,113,0.6)'
+                    : isActive
+                    ? '1px solid rgba(142,92,247,0.7)'
+                    : '1px solid rgba(255,255,255,0.12)';
+                  const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
+                  return (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1, height: '64px', background: bg, border,
+                        boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
+                        borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}
+                    >
+                      <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{forgotOtpCode[i] ?? ''}</span>
+                    </div>
+                  );
+                })}
               </div>
               <input
                 ref={forgotOtpRef}
@@ -1561,7 +1813,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   color: '#F0F0FF',
                   fontSize: '22px',
                   fontWeight: 700,
-                  fontFamily: 'Space Grotesk, sans-serif',
+                  fontFamily: 'Manrope, sans-serif',
                   marginBottom: '10px',
                 }}
               >
@@ -1673,40 +1925,40 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             </button>
           </div>
         ) : isVerifying ? (
-          <div style={{ textAlign: 'center', paddingTop: '20px' }}>
-            <div style={{ fontSize: '52px', marginBottom: '16px' }}>✉️</div>
-            <h2
-              style={{
-                color: '#F0F0FF',
-                fontSize: '22px',
-                fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
-                marginBottom: '10px',
-              }}
-            >
-              Verify your email
-            </h2>
-            <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.65, marginBottom: '24px' }}>
-              We've sent a {EMAIL_OTP_LENGTH}-digit verification code to<br />
-              <span style={{ color: '#A78BFA', fontWeight: 600 }}>{email}</span>
-            </p>
+          <div>
+            {/* Handoff A4/A5: step eyebrow + big headline (matches the
+                Sign Up step pattern), not a centered envelope-emoji intro. */}
+            <div style={{ marginBottom: '32px' }}>
+              <p style={{ margin: '0 0 8px', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#B79BFF' }}>
+                Step 3 of 3
+              </p>
+              <h1 style={{ margin: '0 0 8px', color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                Confirm your email
+              </h1>
+              <p style={{ margin: 0, fontSize: '15px', lineHeight: 1.55, color: 'rgba(237,234,245,0.66)', maxWidth: '300px' }}>
+                We sent a {EMAIL_OTP_LENGTH}-digit code to <span style={{ color: '#EDEAF5', fontWeight: 700 }}>{email}</span>.
+              </p>
+            </div>
 
             {errorMessage && (
               <div
                 style={{
                   display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  background: 'rgba(239, 68, 68, 0.1)',
-                  border: '1px solid rgba(239, 68, 68, 0.3)',
-                  borderRadius: '12px',
-                  padding: '12px 16px',
+                  alignItems: 'flex-start',
+                  gap: '12px',
+                  background: 'rgba(248,113,113,0.09)',
+                  border: '1px solid rgba(248,113,113,0.3)',
+                  borderRadius: '14px',
+                  padding: '16px',
                   marginBottom: '20px',
                   textAlign: 'left',
                 }}
               >
-                <AlertCircle size={18} color="#EF4444" style={{ flexShrink: 0 }} />
-                <span style={{ color: '#EF4444', fontSize: '13px', lineHeight: 1.4 }}>{errorMessage}</span>
+                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: '#F87171', color: '#1a0808', fontSize: '13px', fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>!</span>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '15px', fontWeight: 700, color: '#FCA5A5' }}>That code isn't right</span>
+                  <span style={{ fontSize: '14px', lineHeight: 1.5, color: 'rgba(237,234,245,0.66)' }}>{errorMessage}</span>
+                </div>
               </div>
             )}
 
@@ -1738,33 +1990,41 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               style={{ position: 'relative', marginBottom: '24px' }}
             >
             <div
-              style={{ display: 'flex', justifyContent: 'center', gap: '6px', cursor: 'text' }}
+              style={{ display: 'flex', gap: '8px', cursor: 'text' }}
             >
-              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => (
-                <div
-                  key={i}
-                  style={{
-                    width: '32px',
-                    height: '52px',
-                    background: FIELD_BG,
-                    border: `1.5px solid ${
-                      verificationCode.length > i
-                        ? '#A78BFA'
-                        : errorMessage
-                        ? 'rgba(239,68,68,0.4)'
-                        : 'rgba(255,255,255,0.08)'
-                    }`,
-                    borderRadius: '12px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700 }}>
-                    {verificationCode[i] ?? ''}
-                  </span>
-                </div>
-              ))}
+              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
+                // Handoff A4/A5: filled/empty boxes are plain neutral --
+                // only the box about to receive the next digit gets the
+                // purple focus glow. An error (wrong code just submitted)
+                // tints every box red instead, per A5.
+                const isActive = i === verificationCode.length;
+                const border = errorMessage
+                  ? '1px solid rgba(248,113,113,0.6)'
+                  : isActive
+                  ? '1px solid rgba(142,92,247,0.7)'
+                  : '1px solid rgba(255,255,255,0.12)';
+                const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
+                return (
+                  <div
+                    key={i}
+                    style={{
+                      flex: 1,
+                      height: '64px',
+                      background: bg,
+                      border,
+                      boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
+                      borderRadius: '14px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+                      {verificationCode[i] ?? ''}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
             <input
@@ -1801,6 +2061,27 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
             />
             </div>
 
+            {/* Handoff A4/A5: "Didn't get it? / Resend code" as one row,
+                not a separate centered button below Verify. */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '20px', marginBottom: '28px' }}>
+              <span style={{ fontSize: '15px', fontWeight: 600, color: 'rgba(237,234,245,0.66)' }}>Didn't get it?</span>
+              <button
+                onClick={handleResendCode}
+                disabled={resending || resendCooldown > 0}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: (resending || resendCooldown > 0) ? 'rgba(237,234,245,0.55)' : '#B79BFF',
+                  fontSize: '15px',
+                  cursor: (resending || resendCooldown > 0) ? 'not-allowed' : 'pointer',
+                  fontWeight: 700,
+                  padding: 0,
+                }}
+              >
+                {resending ? 'Sending…' : resendCooldown > 0 ? `Resend in 0:${resendCooldown.toString().padStart(2, '0')}` : 'Resend code'}
+              </button>
+            </div>
+
             <button
               onClick={handleVerifyOtp}
               disabled={loading || verificationCode.length !== EMAIL_OTP_LENGTH}
@@ -1808,27 +2089,10 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                 ...BTN_PRIMARY,
                 opacity: (loading || verificationCode.length !== EMAIL_OTP_LENGTH) ? 0.6 : 1,
                 cursor: loading || verificationCode.length !== EMAIL_OTP_LENGTH ? 'not-allowed' : 'pointer',
-                marginBottom: '20px',
+                marginBottom: '10px',
               }}
             >
-              {loading ? 'Verifying...' : 'Verify Code'}
-            </button>
-
-            <button
-              onClick={handleResendCode}
-              disabled={resending || resendCooldown > 0}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: (resending || resendCooldown > 0) ? '#555C7A' : '#A78BFA',
-                fontSize: '14px',
-                cursor: (resending || resendCooldown > 0) ? 'not-allowed' : 'pointer',
-                fontWeight: 600,
-                display: 'block',
-                margin: '0 auto 14px',
-              }}
-            >
-              {resending ? 'Sending…' : resendCooldown > 0 ? `Resend Code (${resendCooldown}s)` : 'Resend Code'}
+              {loading ? 'Verifying...' : 'Verify'}
             </button>
 
             <button
@@ -1836,81 +2100,60 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               style={{
                 background: 'none',
                 border: 'none',
-                color: '#8B8FA8',
-                fontSize: '14px',
+                color: '#B79BFF',
+                fontSize: '16px',
+                fontWeight: 700,
                 cursor: 'pointer',
-                fontWeight: 500,
+                display: 'block',
+                margin: '0 auto',
+                height: '52px',
               }}
             >
-              Change Email
+              Change email address
             </button>
           </div>
         ) : (
           <>
-            {(mode === 'login' || mode === 'signup') && (
+            {/* Handoff A3/LG1: no segmented Sign Up/Log In tab -- each is
+                its own screen, switched via the plain text links at the
+                bottom of the form ("New to VENTS? Create an account" /
+                "Already have an account? Log in"), not a tab control. */}
+            {mode === 'signup' ? (
+              <div style={{ marginBottom: '28px' }}>
+                <p style={{ margin: '0 0 8px', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#B79BFF' }}>
+                  Step 2 of 3
+                </p>
+                <h1 style={{ margin: 0, color: '#fff', fontSize: '30px', lineHeight: 1.12, letterSpacing: '-0.03em', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
+                  Create your account
+                </h1>
+              </div>
+            ) : mode === 'login' ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', marginBottom: '40px', textAlign: 'center' }}>
+                <h1 style={{ margin: 0, color: '#fff', fontSize: '26px', fontWeight: 800, letterSpacing: '-0.02em', fontFamily: 'Manrope, sans-serif' }}>
+                  Welcome back
+                </h1>
+                <span style={{ fontSize: '14px', color: 'rgba(237,234,245,0.6)' }}>Log in to your VENTS account</span>
+              </div>
+            ) : (
               <>
-                {/* Segmented Sign Up / Log In tab */}
-                <div
+                <h2
                   style={{
-                    display: 'flex',
-                    background: '#090514',
-                    border: '1px solid rgba(255,255,255,0.07)',
-                    borderRadius: '100px',
-                    padding: '4px',
-                    marginBottom: '24px',
-                    position: 'relative',
+                    color: '#FFFFFF',
+                    fontSize: '24px',
+                    fontWeight: 700,
+                    fontFamily: 'Manrope, sans-serif',
+                    marginBottom: '6px',
                   }}
                 >
-                  {(['signup', 'login'] as const).map((tab) => {
-                    const active = mode === tab;
-                    return (
-                      <button
-                        key={tab}
-                        onClick={() => { setMode(tab); setErrorMessage(null); setSuccessMessage(null); }}
-                        style={{
-                          flex: 1,
-                          padding: '10px',
-                          borderRadius: '100px',
-                          border: 'none',
-                          cursor: 'pointer',
-                          background: active ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : 'transparent',
-                          color: active ? '#FFFFFF' : '#94A3B8',
-                          fontSize: '14px',
-                          fontWeight: 700,
-                          fontFamily: 'Space Grotesk, sans-serif',
-                          boxShadow: active ? '0 0 20px rgba(123,47,190,0.5)' : 'none',
-                          transition: 'background 0.3s ease, box-shadow 0.3s ease, color 0.3s ease',
-                        }}
-                      >
-                        {tab === 'signup' ? 'Sign Up' : 'Log In'}
-                      </button>
-                    );
-                  })}
-                </div>
-
+                  {mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
+                </h2>
+                <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '28px' }}>
+                  {mode === 'forgot'
+                    ? 'Enter your email to receive a verification code'
+                    : 'Enter your new password below'}
+                </p>
               </>
             )}
-
-            <h2
-              style={{
-                color: '#FFFFFF',
-                fontSize: '24px',
-                fontWeight: 700,
-                fontFamily: 'Space Grotesk, sans-serif',
-                marginBottom: '6px',
-              }}
-            >
-              {mode === 'login' ? 'Welcome Back' : mode === 'signup' ? 'Create Account' : mode === 'forgot' ? 'Forgot Password' : 'Reset Password'}
-            </h2>
-            <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '28px' }}>
-              {mode === 'login'
-                ? 'Sign in to continue your Vents experience'
-                : mode === 'signup'
-                ? 'Join thousands of event lovers on Vents'
-                : mode === 'forgot'
-                ? 'Enter your email to receive a verification code'
-                : 'Enter your new password below'}
-            </p>
 
             {mode === 'signup' && signupsDisabled && (
               <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '16px' }}>
@@ -1998,15 +2241,15 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     )}
                   </div>
 
-                  <InputRow icon={User} placeholder="Full name" value={name} onChange={setName} onEnter={submitOnEnter} />
-                  <InputRow icon={User} placeholder="Username" value={username} onChange={setUsername} onEnter={submitOnEnter} />
+                  <LabeledField label="Full name" placeholder="Your full name" value={name} onChange={setName} onEnter={submitOnEnter} />
+                  <LabeledField label="Username" placeholder="Pick a username" value={username} onChange={setUsername} onEnter={submitOnEnter} />
                 </>
               )}
               {mode !== 'reset' && (
                 <div onBlur={handleEmailBlur}>
-                  <InputRow
-                    icon={Mail}
-                    placeholder={mode === 'login' ? "Email address or username" : "Email address (e.g. name@gmail.com)"}
+                  <LabeledField
+                    label={mode === 'login' ? 'Email or username' : 'Email'}
+                    placeholder={mode === 'login' ? "ada@example.com or @username" : "ada@example.com"}
                     value={email}
                     onChange={(v) => { setEmail(v); if (emailTouched) setEmailTouched(true); setSuccessMessage(null); }}
                     type={mode === 'login' ? 'text' : 'email'}
@@ -2035,13 +2278,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   <input
                     type="date"
                     value={dob}
+                    // type="date" is already the right choice for both iOS
+                    // (native wheel picker) and desktop (native calendar) --
+                    // no custom JS date picker needed. max already blocks
+                    // "under 13"/future dates; min bounds the other end so
+                    // the native year field (freely typable on desktop
+                    // browsers) can't be walked back to an absurd date like
+                    // year 1000 -- 120 years covers any real signup.
+                    min={new Date(Date.now() - 120 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     max={new Date(Date.now() - 13 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
                     onChange={(e) => {
                       const v = e.target.value;
                       setDob(v);
                       if (v) {
                         const age = Math.floor((Date.now() - new Date(v).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-                        setDobError(age < 13 ? 'You must be at least 13 years old.' : null);
+                        setDobError(age < 13 ? 'You must be at least 13 years old.' : age > 120 ? 'Please enter a valid date of birth.' : null);
                       } else {
                         setDobError(null);
                       }
@@ -2059,10 +2310,25 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   {dobError && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>{dobError}</p>}
                 </div>
               )}
-              {mode !== 'forgot' && (
+              {mode === 'login' ? (
+                <LabeledField
+                  label="Password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={setPassword}
+                  type={showPassword ? 'text' : 'password'}
+                  error={passwordError}
+                  onEnter={submitOnEnter}
+                  right={
+                    <button onClick={() => setShowPassword(!showPassword)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#B79BFF', fontSize: '13px', fontWeight: 700 }}>
+                      {showPassword ? 'Hide' : 'Show'}
+                    </button>
+                  }
+                />
+              ) : mode !== 'forgot' && (
                 <InputRow
                   icon={Lock}
-                  placeholder={mode === 'signup' ? "Create password" : mode === 'reset' ? "New password" : "Password"}
+                  placeholder={mode === 'signup' ? "Create password" : "New password"}
                   value={password}
                   onChange={setPassword}
                   type={showPassword ? 'text' : 'password'}
@@ -2078,8 +2344,21 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                   }
                 />
               )}
+              {/* Handoff A3: a segmented strength bar (one segment per met
+                  rule) above the existing rule-by-rule checklist -- kept
+                  the checklist itself since it's more useful than the
+                  mockup's single summary line and reflects the real,
+                  already-enforced password rules rather than an invented
+                  generic label. */}
               {(mode === 'signup' || mode === 'reset') && password.length > 0 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '-4px', padding: '2px 4px' }}>
+                <div style={{ display: 'flex', gap: '5px', marginTop: '-6px' }}>
+                  {passwordRules.map(({ met }, i) => (
+                    <span key={i} style={{ flex: 1, height: '3px', borderRadius: '2px', background: met ? '#34D399' : 'rgba(255,255,255,0.12)' }} />
+                  ))}
+                </div>
+              )}
+              {(mode === 'signup' || mode === 'reset') && password.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '2px 4px' }}>
                   {passwordRules.map(({ met, label }) => (
                     <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                       {met ? <Check size={12} color="#10B981" /> : <X size={12} color="#EF4444" />}
@@ -2104,46 +2383,119 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {mode === 'signup' && (
                 <>
                   
-                  {/* State selector — Nigerian users get the existing
-                      NIGERIA_STATES picker; every other country falls back
-                      to a free-text State/Region field (see
-                      isNigeriaSelected above). */}
-                  {isNigeriaSelected ? (
-                    <div
-                      onClick={() => setShowStateDropdown(true)}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        background: FIELD_BG,
-                        border: `1px solid ${FIELD_BORDER}`,
-                        borderRadius: FIELD_RADIUS,
-                        padding: '14px 16px',
-                        gap: '12px',
-                        position: 'relative',
-                        cursor: 'pointer',
-                      }}
-                    >
-                      <MapPin size={18} color="#8B8FA8" />
+                  {/* State selector — a country with a curated subdivision
+                      list (countrySubdivisions.ts) gets a picker over that
+                      list; every other country falls back to a free-text
+                      State/Region/Province field. */}
+                  {signupSubdivisions ? (
+                    <div ref={stateDropdownRef} style={{ position: 'relative' }}>
                       <div
+                        onClick={() => setShowStateDropdown((v) => !v)}
                         style={{
-                          flex: 1,
-                          color: signupState ? '#F0F0FF' : '#8B8FA8',
-                          fontSize: '14px',
-                          fontFamily: 'Inter, sans-serif',
-                          textAlign: 'left',
+                          display: 'flex',
+                          alignItems: 'center',
+                          background: FIELD_BG,
+                          border: `1px solid ${FIELD_BORDER}`,
+                          borderRadius: FIELD_RADIUS,
+                          padding: '14px 16px',
+                          gap: '12px',
+                          position: 'relative',
+                          cursor: 'pointer',
                         }}
                       >
-                        {signupState || 'Select State'}
+                        <MapPin size={18} color="#8B8FA8" />
+                        <div
+                          style={{
+                            flex: 1,
+                            color: signupState ? '#F0F0FF' : '#8B8FA8',
+                            fontSize: '14px',
+                            fontFamily: 'Manrope, sans-serif',
+                            textAlign: 'left',
+                          }}
+                        >
+                          {signupState || `Select ${signupSubdivisions.label}`}
+                        </div>
+                        <ChevronDown
+                          size={16}
+                          color="#8B8FA8"
+                          style={{
+                            pointerEvents: 'none',
+                            position: 'absolute',
+                            right: '16px',
+                          }}
+                        />
                       </div>
-                      <ChevronDown
-                        size={16}
-                        color="#8B8FA8"
-                        style={{
-                          pointerEvents: 'none',
-                          position: 'absolute',
-                          right: '16px',
-                        }}
-                      />
+
+                      {/* Small anchored dropdown, same pattern as PhoneInput's
+                          country picker -- not the full-screen PickerSheet. */}
+                      {showStateDropdown && (
+                        <div
+                          style={{
+                            position: 'absolute',
+                            top: 'calc(100% + 8px)',
+                            left: 0,
+                            right: 0,
+                            maxHeight: '280px',
+                            zIndex: 1000,
+                            background: 'rgba(18,16,25,0.98)',
+                            backdropFilter: 'blur(24px)',
+                            WebkitBackdropFilter: 'blur(24px)',
+                            border: '1px solid rgba(255,255,255,0.12)',
+                            borderRadius: '16px',
+                            boxShadow: '0 20px 50px rgba(0,0,0,0.45)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            padding: '10px',
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              background: '#1A1724', border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '10px', height: '38px', padding: '0 10px', marginBottom: '8px', flexShrink: 0,
+                            }}
+                          >
+                            <span style={{ width: '13px', height: '13px', borderRadius: '99px', border: '2px solid rgba(237,234,245,0.5)', flexShrink: 0 }} />
+                            <input
+                              autoFocus
+                              value={stateDropdownQuery}
+                              onChange={(e) => setStateDropdownQuery(e.target.value)}
+                              placeholder={`Search ${signupSubdivisions.label.toLowerCase()}...`}
+                              style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '13px' }}
+                            />
+                          </div>
+                          <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+                            {(() => {
+                              const filteredStates = stateDropdownQuery.trim()
+                                ? signupSubdivisions.options.filter((n) => n.toLowerCase().includes(stateDropdownQuery.trim().toLowerCase()))
+                                : signupSubdivisions.options;
+                              if (filteredStates.length === 0) {
+                                return <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '12px', textAlign: 'center', margin: '16px 0' }}>No results found.</p>;
+                              }
+                              return filteredStates.map((name, i) => (
+                                <div
+                                  key={name}
+                                  onClick={() => {
+                                    setSignupState(name);
+                                    setShowStateDropdown(false);
+                                    setStateDropdownQuery('');
+                                  }}
+                                  style={{
+                                    padding: '11px 4px',
+                                    borderBottom: i < filteredStates.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '14px',
+                                    color: name === signupState ? '#fff' : '#EDEAF5',
+                                    fontWeight: name === signupState ? 700 : 500,
+                                  }}
+                                >
+                                  {name}
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <InputRow
@@ -2155,56 +2507,27 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     />
                   )}
 
-                  {/* Role picker — hidden if role was pre-selected from RoleSelectScreen */}
-                  {!userRole && <div style={{ marginTop: '4px' }}>
-                    <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600, display: 'block', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      Select Role
-                    </label>
-                    <div style={{ display: 'flex', gap: '10px' }}>
-                      {(['attendee', 'organizer'] as const).map((r) => (
-                        <button
-                          key={r}
-                          type="button"
-                          onClick={() => setRole(r)}
-                          style={{
-                            flex: 1,
-                            background: role === r ? 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)' : '#131629',
-                            border: role === r ? 'none' : '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: '12px',
-                            padding: '12px',
-                            color: '#fff',
-                            fontSize: '14px',
-                            fontWeight: 700,
-                            cursor: 'pointer',
-                            boxShadow: role === r ? '0 4px 12px rgba(123,47,190,0.3)' : 'none',
-                            transition: 'all 0.2s ease',
-                          }}
-                        >
-                          {r === 'attendee' ? 'Attendee' : 'Organiser'}
-                        </button>
-                      ))}
-                    </div>
-                  </div>}
                 </>
               )}
             </div>
 
             {mode === 'login' && (
-              <button
-                onClick={() => setMode('forgot')}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#C084FC',
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  marginBottom: '24px',
-                  padding: 0,
-                  display: 'block',
-                }}
-              >
-                Forgot password?
-              </button>
+              <div style={{ textAlign: 'right', marginBottom: '24px' }}>
+                <button
+                  onClick={() => setMode('forgot')}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#B79BFF',
+                    fontSize: '13px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    padding: 0,
+                  }}
+                >
+                  Forgot password?
+                </button>
+              </div>
             )}
 
             <button
@@ -2220,13 +2543,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
               {loading
                 ? 'Please wait...'
                 : mode === 'login'
-                ? 'Sign In'
+                ? 'Log in'
                 : mode === 'signup'
-                ? 'Create Account'
+                ? 'Create account'
                 : mode === 'forgot'
                 ? 'Send Verification Code'
                 : 'Reset Password'}
             </button>
+
+            {/* Handoff A3/LG1: the mode switch lives here as a plain text
+                link (matching each mockup's own footer line), replacing
+                the segmented tab control removed above. */}
+            {(mode === 'login' || mode === 'signup') && (
+              <p style={{ textAlign: 'center', fontSize: '15px', fontWeight: 600, color: 'rgba(237,234,245,0.66)', marginBottom: '20px' }}>
+                {mode === 'login' ? "New to VENTS? " : 'Already have an account? '}
+                <span
+                  onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setErrorMessage(null); setSuccessMessage(null); }}
+                  style={{ color: '#B79BFF', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  {mode === 'login' ? 'Create an account' : 'Log in'}
+                </span>
+              </p>
+            )}
 
             {mode === 'signup' && (
               <div style={{ marginTop: '-8px', marginBottom: '14px' }}>
@@ -2265,7 +2603,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
                     fontWeight: 600,
                     cursor: 'pointer',
                     fontSize: '14px',
-                    fontFamily: 'Inter, sans-serif',
+                    fontFamily: 'Manrope, sans-serif',
                   }}
                 >
                   Back to Sign In
@@ -2277,20 +2615,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, onBack, onSuc
         )}
       </div>
       
-      {showStateDropdown && isNigeriaSelected && (
-        <PickerSheet
-          title="Select State"
-          searchPlaceholder="Search state..."
-          value={signupState}
-          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
-          onSelect={(v) => {
-            setSignupState(v);
-            setShowStateDropdown(false);
-          }}
-          onClose={() => setShowStateDropdown(false)}
-        />
-      )}
-
       {cropImageSrc && (
         <ImageCropperModal
           imageSrc={cropImageSrc}

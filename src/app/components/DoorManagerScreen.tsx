@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
   ArrowLeft, ScanLine, Shield, CalendarX, Search, X, CheckCircle2,
   Clock, Wand2, RefreshCw, Ticket as TicketIcon, Mail, Phone, Hash, Wifi, WifiOff,
@@ -6,16 +7,22 @@ import {
 } from 'lucide-react';
 import { Event } from './types';
 import { useDoorManager, Attendee, DoorFilter, FeedItem, ScanLogItem, ScanResult } from '../../lib/useDoorManager';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 // ─── Midnight Neon palette (low-light door environments) ──────────────────────
+// Handoff finding (§18): this screen named its own "Midnight Neon" palette
+// and hardcoded it independently of Home/Services/Chats/ManageEventsScreen
+// -- four near-identical dark-purple palettes instead of one shared token
+// file. Routed through the same ventsColors tokens ManageEventsScreen
+// already uses (same C key names, so nothing below this needs to change).
 const C = {
-  bg: '#020005', card: '#090514', line: 'rgba(255,255,255,0.06)',
-  text: '#F0F0FF', sub: '#8B8FA8', faint: '#555C7A',
-  purple: '#A78BFA', purpleDeep: '#7B2FBE',
-  green: '#10B981', greenGlow: 'rgba(16,185,129,0.16)',
-  red: '#EF4444', gold: '#FFB830',
+  bg: ventsColors.bg, card: ventsColors.surface, line: 'rgba(255,255,255,0.06)',
+  text: ventsColors.ink1, sub: ventsColors.ink2, faint: ventsColors.ink3,
+  purple: ventsColors.accentSoft, purpleDeep: ventsColors.accent,
+  green: ventsColors.success, greenGlow: 'rgba(16,185,129,0.16)',
+  red: ventsColors.error, gold: ventsColors.pending,
 };
 
 const FILTERS: { id: DoorFilter; label: string }[] = [
@@ -86,6 +93,7 @@ function Avatar({ url, name, size = 40 }: { url?: string | null; name?: string |
 interface LocalFeed { id: string; kind: 'manual' | 'rejected'; name: string; detail: string; at: number; }
 
 export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, scanningDisabled = false }: DoorManagerScreenProps) {
+  useDesktopWideShell();
   const isAuthorized =
     currentUser?.role === 'organizer' || currentUser?.role === 'organiser' ||
     currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' ||
@@ -113,6 +121,26 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
     const remote: (FeedItem & { _local?: false })[] = dm.feed;
     return { remote, local: localFeed };
   }, [dm.feed, localFeed]);
+
+  // Desktop console's "Scanners connected" panel — derived from real feed
+  // data (each check-in already carries who scanned it and from which
+  // gate), not a fabricated/static list. "Active" means it produced a
+  // check-in within the last 15 minutes; this is a real signal from
+  // actual scan activity, not a live presence/heartbeat system (no such
+  // backend capability exists to build that honestly).
+  const activeScanners = useMemo(() => {
+    const cutoff = Date.now() - 15 * 60 * 1000;
+    const byKey = new Map<string, { label: string; lastAt: number }>();
+    for (const f of dm.feed) {
+      const at = new Date(f.checked_in_at).getTime();
+      if (Number.isNaN(at) || at < cutoff) continue;
+      const label = [f.gate_name, f.scanner_name].filter(Boolean).join(' · ') || 'Unnamed gate';
+      const key = label;
+      const existing = byKey.get(key);
+      if (!existing || at > existing.lastAt) byKey.set(key, { label, lastAt: at });
+    }
+    return Array.from(byKey.values()).sort((a, b) => b.lastAt - a.lastAt);
+  }, [dm.feed]);
 
   if (!isAuthorized) {
     return <Guard icon={<Shield size={46} color={C.red} />} title="Organizers Only"
@@ -142,7 +170,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
   };
 
   return (
-    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(18px + env(safe-area-inset-top)) 18px 12px', flexShrink: 0, borderBottom: `1px solid ${C.line}` }}>
         <button onClick={onBack} aria-label="Back" style={iconBtn}>
@@ -150,7 +178,7 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
-            <h1 style={{ color: C.text, fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Door Manager</h1>
+            <h1 style={{ color: C.text, fontSize: '17px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Door Manager</h1>
             <span title={dm.live ? 'Live' : 'Reconnecting'} style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', fontSize: '10px', fontWeight: 700, color: dm.live ? C.green : C.faint }}>
               {dm.live ? <Wifi size={11} /> : <WifiOff size={11} />}{dm.live ? 'LIVE' : '···'}
             </span>
@@ -162,49 +190,110 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}>
-        {/* Stats */}
-        <div style={{ padding: '14px 18px 4px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
-            <Stat label="Checked In" value={dm.stats.checked_in} color={C.green} glow />
-            <Stat label="Remaining" value={dm.stats.remaining} color={C.text} />
-            <Stat label="Sold" value={dm.stats.total} color={C.purple} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '10px' }}>
-            <Stat label="Duplicate Scans" value={dm.stats.duplicate_attempts} color={C.gold} small />
-            <Stat label="Invalid / Fake" value={dm.stats.invalid_attempts} color={C.red} small />
-          </div>
-          <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '16px', padding: '13px 15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
-              <span style={{ color: C.sub, fontSize: '12px', fontWeight: 600 }}>Attendance</span>
-              <span style={{ color: C.text, fontSize: '15px', fontWeight: 800 }}>{pct}%</span>
+      <div className="dm-content" style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', scrollbarWidth: 'none' }}>
+        {/* Desktop organizer console: event/stats/scanners | live feed | quick
+            actions, per the approved design's 3-column layout. Mobile keeps
+            the original single stacked column (this only changes layout,
+            not data or behavior). */}
+        <style>{`
+          .dm-desktop-row { display: flex; flex-direction: column; }
+          @media (min-width: 1100px) {
+            .dm-content { max-width: 1180px; width: 100%; margin: 0 auto; }
+            .dm-desktop-row {
+              display: grid;
+              grid-template-columns: 340px 1fr 300px;
+              gap: 0;
+              align-items: stretch;
+              border-bottom: 1px solid ${C.line};
+              margin-bottom: 4px;
+            }
+            .dm-col-left { border-right: 1px solid ${C.line}; }
+            .dm-col-right { border-left: 1px solid ${C.line}; }
+          }
+        `}</style>
+        <div className="dm-desktop-row">
+          <div className="dm-col-left">
+            {/* Stats */}
+            <div style={{ padding: '14px 18px 4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '8px' }}>
+                <Stat label="Checked In" value={dm.stats.checked_in} color={C.green} glow />
+                <Stat label="Remaining" value={dm.stats.remaining} color={C.text} />
+                <Stat label="Sold" value={dm.stats.total} color={C.purple} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '8px', marginBottom: '10px' }}>
+                <Stat label="Duplicate Scans" value={dm.stats.duplicate_attempts} color={C.gold} small />
+                <Stat label="Invalid / Fake" value={dm.stats.invalid_attempts} color={C.red} small />
+              </div>
+              <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '16px', padding: '13px 15px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                  <span style={{ color: C.sub, fontSize: '12px', fontWeight: 600 }}>Attendance</span>
+                  <span style={{ color: C.text, fontSize: '15px', fontWeight: 800 }}>{pct}%</span>
+                </div>
+                <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '100px', height: '9px', overflow: 'hidden' }}>
+                  <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: '100px',
+                    background: `linear-gradient(90deg, ${C.purpleDeep}, ${C.green})`, boxShadow: `0 0 14px ${C.greenGlow}`, transition: 'width 0.5s ease' }} />
+                </div>
+              </div>
             </div>
-            <div style={{ background: 'rgba(255,255,255,0.06)', borderRadius: '100px', height: '9px', overflow: 'hidden' }}>
-              <div style={{ height: '100%', width: `${Math.min(100, pct)}%`, borderRadius: '100px',
-                background: `linear-gradient(90deg, ${C.purpleDeep}, ${C.green})`, boxShadow: `0 0 14px ${C.greenGlow}`, transition: 'width 0.5s ease' }} />
-            </div>
+            {/* Scanners connected — derived from real scan activity in the
+                last 15 minutes (gate_name/scanner_name on each check-in),
+                not a fabricated presence list. */}
+            <Section title="Scanners Connected">
+              {activeScanners.length === 0 ? (
+                <Empty text="No scanner activity in the last 15 minutes." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {activeScanners.map((s) => (
+                    <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12.5px', color: C.text }}>
+                      <span style={{ width: 7, height: 7, borderRadius: '50%', background: C.green, boxShadow: `0 0 6px ${C.green}`, flexShrink: 0 }} />
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.label}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Section>
+          </div>
+
+          <div className="dm-col-mid">
+            {/* Live activity feed */}
+            <Section title="Live Activity">
+              {mergedFeed.remote.length === 0 && mergedFeed.local.length === 0 ? (
+                <Empty text="No check-ins yet. Scanned guests appear here in real time." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
+                  {mergedFeed.local.map((l) => (
+                    <FeedRow key={l.id} time={fmtTime(new Date(l.at).toISOString())} name={l.name} detail={l.detail}
+                      tone={l.kind === 'rejected' ? 'red' : 'purple'} icon={l.kind === 'rejected' ? '⚠️' : '⚙️'} />
+                  ))}
+                  {mergedFeed.remote.slice(0, 25).map((f) => (
+                    <FeedRow key={f.checkin_id} time={fmtTime(f.checked_in_at)}
+                      name={f.holder_name || 'Verified Attendee'}
+                      detail={`${f.ticket_type || 'Ticket'}${f.is_manual_override ? ' · Manual' : ''}${f.gate_name ? ` · ${f.gate_name}` : ''}`}
+                      tone={f.is_manual_override ? 'purple' : 'green'} icon={f.is_manual_override ? '⚙️' : '✅'} vip={isVip(f.ticket_type)} />
+                  ))}
+                </div>
+              )}
+            </Section>
+          </div>
+
+          <div className="dm-col-right">
+            {/* Quick actions — a real, functional panel (jump into the
+                scanner, or search the guest list directly) rather than the
+                design mock's decorative "pair a webcam" QR, which has no
+                backing capability (no pairing/signaling system exists to
+                build that honestly). */}
+            <Section title="Quick Actions">
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button onClick={onOpenScanner} disabled={scanningDisabled} style={{ ...scanBtn, width: '100%', justifyContent: 'center', padding: '13px', opacity: scanningDisabled ? 0.5 : 1 }}>
+                  <ScanLine size={16} color="#fff" /><span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>Open Scanner</span>
+                </button>
+                <p style={{ color: C.faint, fontSize: '11.5px', margin: 0, lineHeight: 1.6 }}>
+                  Search the guest list below to manually check in a guest whose phone is dead or QR won't scan.
+                </p>
+              </div>
+            </Section>
           </div>
         </div>
-
-        {/* Live activity feed */}
-        <Section title="Live Activity">
-          {mergedFeed.remote.length === 0 && mergedFeed.local.length === 0 ? (
-            <Empty text="No check-ins yet. Scanned guests appear here in real time." />
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-              {mergedFeed.local.map((l) => (
-                <FeedRow key={l.id} time={fmtTime(new Date(l.at).toISOString())} name={l.name} detail={l.detail}
-                  tone={l.kind === 'rejected' ? 'red' : 'purple'} icon={l.kind === 'rejected' ? '⚠️' : '⚙️'} />
-              ))}
-              {mergedFeed.remote.slice(0, 25).map((f) => (
-                <FeedRow key={f.checkin_id} time={fmtTime(f.checked_in_at)}
-                  name={f.holder_name || 'Verified Attendee'}
-                  detail={`${f.ticket_type || 'Ticket'}${f.is_manual_override ? ' · Manual' : ''}${f.gate_name ? ` · ${f.gate_name}` : ''}`}
-                  tone={f.is_manual_override ? 'purple' : 'green'} icon={f.is_manual_override ? '⚙️' : '✅'} vip={isVip(f.ticket_type)} />
-              ))}
-            </div>
-          )}
-        </Section>
 
         {/* Guest list */}
         <Section title="Guest List" right={<button onClick={dm.refresh} aria-label="Refresh" style={{ ...iconBtn, width: 30, height: 30 }}><RefreshCw size={14} color={C.sub} /></button>}>
@@ -308,7 +397,7 @@ const scanBtn: React.CSSProperties = { display: 'flex', alignItems: 'center', ga
 function Stat({ label, value, color, glow, small }: { label: string; value: number; color: string; glow?: boolean; small?: boolean }) {
   return (
     <div style={{ background: C.card, border: `1px solid ${glow ? 'rgba(16,185,129,0.3)' : C.line}`, borderRadius: '16px', padding: small ? '10px' : '13px 10px', textAlign: 'center', boxShadow: glow ? `0 0 22px ${C.greenGlow}` : 'none' }}>
-      <div style={{ color, fontSize: small ? '20px' : '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Space Grotesk, sans-serif' }}>{value}</div>
+      <div style={{ color, fontSize: small ? '20px' : '26px', fontWeight: 800, lineHeight: 1.05, fontFamily: 'Manrope, sans-serif' }}>{value}</div>
       <div style={{ color: C.sub, fontSize: '10.5px', fontWeight: 600, marginTop: '3px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
     </div>
   );

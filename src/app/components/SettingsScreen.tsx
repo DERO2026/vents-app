@@ -10,6 +10,7 @@ import {
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, Copy, ThumbsUp,
   Eye, EyeOff, Check, Clock, MessageSquare, User, Link2,
+  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info, ShieldCheck,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import { compressImage } from '../../lib/compressImage';
@@ -17,22 +18,32 @@ import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
 import { Sentry } from '../../lib/sentry';
 import { ImageCropperModal } from './ImageCropperModal';
 import { ConfirmDialog } from './ConfirmDialog';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
 import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { appVersionLabel } from '../../lib/appVersion';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
   onBack: () => void;
   onSignOut: () => void;
+  // Signs out and lands directly on the login screen with "Forgot
+  // Password" pre-selected -- used by Change Password's "don't remember
+  // your current password" link. Optional/falls back to onSignOut so this
+  // screen degrades gracefully if a caller doesn't wire it.
+  onForgotPassword?: () => void;
   onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
+  // QA-harness-only deep link into a sub-screen (see qa-harness/main.tsx) --
+  // real app callers never pass this, so subScreen still always starts at
+  // the main list for every real navigation into Settings.
+  initialSubScreen?: SubScreen;
 }
 
-type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'cac-verify';
+type SubScreen = null | 'profile' | 'help' | 'change-password' | 'delete-account' | 'connected-accounts';
 
 
 function Toggle({ on, onChange }: { on: boolean; onChange: (v: boolean) => void }) {
@@ -88,7 +99,17 @@ function SettingRow({
 }) {
   return (
     <div
-      onClick={onPress}
+      // Root cause of the Sign Out -> Forgot Password bug: this was
+      // `onClick={onPress}`, which forwards React's click SyntheticEvent as
+      // onPress's first argument. Every other row's onPress ignores that
+      // extra argument, but Sign Out is wired straight through to
+      // handleSignOut(toForgotPassword?: boolean) in App.tsx -- the leaked
+      // event object landed in that boolean parameter and, being truthy,
+      // made `if (toForgotPassword)` true, routing a plain Sign Out tap into
+      // the Forgot Password flow. Explicitly calling onPress with no
+      // arguments closes off this whole class of accidental-argument bugs
+      // for every row, not just Sign Out.
+      onClick={() => onPress?.()}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -231,17 +252,21 @@ function uploadVerificationCertificate(file: File, token: string, onProgress: (p
 const VERIFICATION_SUBMIT_ERROR = "We couldn't submit your verification request. Please try again or contact support if the issue continues.";
 const KNOWN_VERIFICATION_RPC_ERRORS = new Set([
   'Business name is required', 'CAC number is required', 'Business address is required',
-  'Owner name is required', 'A valid registration date is required', 'A valid business email is required',
-  'Business phone is required', 'A certificate document is required',
+  'Your name is required', 'A valid registration date is required', 'A valid business email is required',
+  'Business phone is required', 'A verification document is required',
   'Only organizers can request brand verification', 'You already have a pending verification request',
-  'Not authenticated',
+  'Not authenticated', "organizer_type must be 'individual' or 'business'", 'A valid country is required',
+  'A valid NIN is required', 'NIN must be 11 digits', 'Unsupported identity document type for Nigeria',
 ]);
 
 interface VerificationRow {
   request_id: string; status: 'pending' | 'approved' | 'rejected'; admin_note: string | null;
   created_at: string; reviewed_at: string | null;
-  company_name: string; cac_number: string; owner_name: string; registration_date: string;
-  business_email: string; business_phone: string; business_address: string; document_url: string;
+  organizer_type: 'individual' | 'business'; country: string;
+  company_name: string | null; cac_number: string | null; owner_name: string; registration_date: string | null;
+  business_email: string | null; business_phone: string | null; business_address: string | null;
+  identity_id_type: string | null; identity_id_number: string | null;
+  document_url: string;
 }
 
 // Professional "Verification Pending" status page (Task 4) — business name,
@@ -251,7 +276,9 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
   const refId = `VER-${v.request_id.slice(0, 8).toUpperCase()}`;
   const submittedDate = new Date(v.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' });
   const rows: { label: string; value: string; color?: string; mono?: boolean }[] = [
-    { label: 'Business Name', value: v.company_name },
+    v.organizer_type === 'individual'
+      ? { label: 'Name', value: v.owner_name }
+      : { label: 'Business Name', value: v.company_name || v.owner_name },
     { label: 'Submission Date', value: submittedDate },
     { label: 'Status', value: 'Pending Review', color: '#F59E0B' },
     { label: 'Estimated Review Time', value: '1–3 business days' },
@@ -263,7 +290,7 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
         <div style={{ width: '56px', height: '56px', borderRadius: '50%', background: 'rgba(245,158,11,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <Clock size={28} color="#F59E0B" />
         </div>
-        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Verification Pending</p>
+        <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Verification Pending</p>
         <p style={{ color: '#8B8FA8', fontSize: '13px', margin: 0, lineHeight: 1.5, maxWidth: '280px' }}>
           Your brand verification request is under review. We'll email you once a decision is made.
         </p>
@@ -290,11 +317,20 @@ function VerificationPendingCard({ v, onContactSupport }: { v: VerificationRow; 
   );
 }
 
-function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { currentUser: any; onBack: () => void; onContactSupport?: () => void }) {
+export function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { currentUser: any; onBack: () => void; onContactSupport?: () => void }) {
   const [status, setStatus] = useState<'loading' | 'form' | 'pending' | 'rejected'>('loading');
   const [verification, setVerification] = useState<VerificationRow | null>(null);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  // Individual vs. registered business -- previously this screen only
+  // ever submitted a CAC/business request. Defaults to 'individual' since
+  // most organizers hosting events on VENTS aren't registered companies;
+  // business is an explicit, deliberate choice.
+  const [organizerType, setOrganizerType] = useState<'individual' | 'business'>('individual');
+  // Defaults from the account's country (set at signup) but stays fully
+  // editable -- a verification's country need not match users.country,
+  // and this write never touches users.country itself.
+  const [country, setCountry] = useState<string>(currentUser?.country || DEFAULT_COUNTRY.iso);
   const [companyName, setCompanyName] = useState('');
   const [cacNumber, setCacNumber] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -302,7 +338,9 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const [businessEmail, setBusinessEmail] = useState('');
   const [businessPhone, setBusinessPhone] = useState('');
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
-  const [businessAddress, setBusinessAddress] = useState(currentUser?.state ? `${currentUser.state}, Nigeria` : '');
+  const [businessAddress, setBusinessAddress] = useState('');
+  const [nin, setNin] = useState('');
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -335,7 +373,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
     color: '#F0F0FF',
     fontSize: '14px',
     outline: 'none',
-    fontFamily: 'Inter, sans-serif',
+    fontFamily: 'Manrope, sans-serif',
     boxSizing: 'border-box',
   };
 
@@ -357,18 +395,30 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
   useEffect(() => { loadLatest(); }, [loadLatest]);
 
+  // What's actually required is country/type-conditional -- mirrors the
+  // exact branches submit_organizer_verification() enforces server-side
+  // (see 0037_organizer_verification_country_aware.sql), so a rejected
+  // submission never reaches the network with a confusing generic error.
+  const isNigeriaIndividual = organizerType === 'individual' && country === 'NG';
+  const requiresCac = organizerType === 'business' && country === 'NG';
+
   const handleSubmit = async () => {
     setError('');
     // 1. Validate every field before touching the network.
-    if (!companyName.trim()) { setError('Business name is required.'); return; }
-    if (!cacNumber.trim()) { setError('CAC registration number is required.'); return; }
-    if (!businessAddress.trim()) { setError('Business address is required.'); return; }
-    if (!ownerName.trim()) { setError('Owner name is required.'); return; }
-    if (!registrationDate) { setError('Registration date is required.'); return; }
-    if (registrationDate > todayStr) { setError('Registration date cannot be in the future.'); return; }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail.trim())) { setError('A valid business email is required.'); return; }
-    if (businessPhone.replace(/\D/g, '').length < 6) { setError('A valid business phone number is required.'); return; }
-    if (!file) { setError('Please upload your Certificate of Incorporation.'); return; }
+    if (!ownerName.trim()) { setError('Your name is required.'); return; }
+    if (!file) { setError('Please upload your verification document.'); return; }
+
+    if (organizerType === 'business') {
+      if (!companyName.trim()) { setError('Business name is required.'); return; }
+      if (requiresCac && !cacNumber.trim()) { setError('CAC registration number is required.'); return; }
+      if (!businessAddress.trim()) { setError('Business address is required.'); return; }
+      if (!registrationDate) { setError('Registration date is required.'); return; }
+      if (registrationDate > todayStr) { setError('Registration date cannot be in the future.'); return; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(businessEmail.trim())) { setError('A valid business email is required.'); return; }
+      if (businessPhone.replace(/\D/g, '').length < 6) { setError('A valid business phone number is required.'); return; }
+    } else if (isNigeriaIndividual) {
+      if (!/^\d{11}$/.test(nin.trim())) { setError('A valid 11-digit NIN is required.'); return; }
+    }
 
     setSubmitting(true);
     try {
@@ -396,16 +446,23 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
       // 3. Save that URL directly into the organizer's verification record
       // (status defaults to 'pending'; the RPC also blocks duplicate
-      // pending submissions server-side).
+      // pending submissions server-side). Business-only fields are sent
+      // as undefined (-> SQL NULL) for an individual submission, and vice
+      // versa -- the RPC itself enforces which are actually required for
+      // this organizer_type/country combination.
       const { error: rpcError } = await supabase.rpc('submit_organizer_verification' as any, {
-        p_company_name: companyName.trim(),
-        p_cac_number: cacNumber.trim(),
-        p_business_address: businessAddress.trim(),
-        p_document_url: documentUrl,
+        p_organizer_type: organizerType,
+        p_country: country,
         p_owner_name: ownerName.trim(),
-        p_registration_date: registrationDate,
-        p_business_email: businessEmail.trim(),
-        p_business_phone: `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}`,
+        p_document_url: documentUrl,
+        p_company_name: organizerType === 'business' ? companyName.trim() : undefined,
+        p_cac_number: organizerType === 'business' ? cacNumber.trim() : undefined,
+        p_business_address: organizerType === 'business' ? businessAddress.trim() : undefined,
+        p_registration_date: organizerType === 'business' ? registrationDate : undefined,
+        p_business_email: organizerType === 'business' ? businessEmail.trim() : undefined,
+        p_business_phone: organizerType === 'business' ? `${phoneCountryCode}${businessPhone.replace(/\D/g, '')}` : undefined,
+        p_identity_id_type: isNigeriaIndividual ? 'NIN' : undefined,
+        p_identity_id_number: isNigeriaIndividual ? nin.trim() : undefined,
       });
       if (rpcError) throw rpcError;
       analytics.organizerVerificationSubmitted();
@@ -439,50 +496,115 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
   const form = (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginTop: status === 'form' ? '8px' : 0 }}>
       <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
-        Verify your organization with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
+        Verify yourself or your business with Vents to unlock a verified badge on your organizer profile — helping attendees trust your events.
       </p>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Legal Registered Name</label>
-        <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Verifying as</label>
+        {/* ROOT CAUSE of the horizontal-overflow bug on this screen: `flex: 1`
+            alone does not let a flex child shrink below its own content's
+            intrinsic (min-content) width -- the browser default is
+            `min-width: auto`, not 0. Two buttons each needing enough width
+            to fit "Individual Organizer"/"Registered Business" on one line
+            forced this row (and the whole scroll container, since nothing
+            above constrained it either) wider than a narrow iPhone's
+            viewport. `minWidth: 0` on each flex child is the actual fix --
+            letting them shrink and their text wrap onto two lines instead of
+            pushing the layout sideways. */}
+        <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
+          {(['individual', 'business'] as const).map(t => (
+            <button
+              key={t} type="button" onClick={() => setOrganizerType(t)}
+              style={{
+                flex: 1, minWidth: 0, padding: '12px 8px', borderRadius: '12px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+                background: organizerType === t ? 'linear-gradient(135deg,#7B2FBE,#4F46E5)' : '#090514',
+                border: organizerType === t ? 'none' : '1px solid rgba(255,255,255,0.08)',
+                color: '#fff',
+                lineHeight: 1.3,
+              }}
+            >
+              {t === 'individual' ? 'Individual Organizer' : 'Registered Business'}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
-        <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Owner / Director Full Name</label>
-        <input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="e.g. Jane Doe" style={inputStyle} />
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Date</label>
-        <input
-          type="date" value={registrationDate} max={todayStr}
-          onChange={e => setRegistrationDate(e.target.value)}
-          style={{ ...inputStyle, colorScheme: 'dark' }}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', minWidth: 0 }}>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Country</label>
+        <PickerField
+          value={COUNTRY_CODES.find(c => c.iso === country)?.name || ''}
+          placeholder="Select country"
+          onOpen={() => setShowCountryPicker(true)}
         />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Email</label>
-        <input type="email" value={businessEmail} onChange={e => setBusinessEmail(e.target.value)} placeholder="business@yourcompany.com" style={inputStyle} />
-      </div>
+      {organizerType === 'business' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Legal Registered Name</label>
+          <input value={companyName} onChange={e => setCompanyName(e.target.value)} placeholder="e.g. Vents Events Ltd" style={inputStyle} />
+        </div>
+      )}
+
+      {requiresCac && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>CAC Registration Number</label>
+          <input value={cacNumber} onChange={e => setCacNumber(e.target.value)} placeholder="e.g. RC1234567" style={inputStyle} />
+        </div>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Phone</label>
-        <PhoneInput countryCode={phoneCountryCode} onCountryCodeChange={setPhoneCountryCode} value={businessPhone} onChange={setBusinessPhone} placeholder="801 234 5678" height={45} />
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>{organizerType === 'business' ? 'Owner / Director Full Name' : 'Full Name'}</label>
+        <input value={ownerName} onChange={e => setOwnerName(e.target.value)} placeholder="e.g. Jane Doe" style={inputStyle} />
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
-        <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
-      </div>
+      {isNigeriaIndividual && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+          <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>NIN (National Identification Number)</label>
+          <input
+            value={nin} onChange={e => setNin(e.target.value.replace(/\D/g, '').slice(0, 11))}
+            placeholder="11-digit NIN" inputMode="numeric" style={inputStyle}
+          />
+        </div>
+      )}
+
+      {organizerType === 'individual' && !isNigeriaIndividual && (
+        <p style={{ color: '#8B8FA8', fontSize: '12px', lineHeight: 1.5, margin: 0 }}>
+          We don't have a specific ID requirement for {COUNTRY_CODES.find(c => c.iso === country)?.name || 'your country'} yet — upload a government-issued ID or other proof of identity below.
+        </p>
+      )}
+
+      {organizerType === 'business' && (
+        <>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Registration Date</label>
+            <input
+              type="date" value={registrationDate} max={todayStr}
+              onChange={e => setRegistrationDate(e.target.value)}
+              style={{ ...inputStyle, colorScheme: 'dark' }}
+            />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Email</label>
+            <input type="email" value={businessEmail} onChange={e => setBusinessEmail(e.target.value)} placeholder="business@yourcompany.com" style={inputStyle} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Business Phone</label>
+            <PhoneInput countryCode={phoneCountryCode} onCountryCodeChange={setPhoneCountryCode} value={businessPhone} onChange={setBusinessPhone} placeholder="801 234 5678" height={45} />
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Official Business Address</label>
+            <textarea value={businessAddress} onChange={e => setBusinessAddress(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'none', fontFamily: 'inherit' }} />
+          </div>
+        </>
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>Certificate of Incorporation</label>
+        <label style={{ color: '#8B8FA8', fontSize: '12px', fontWeight: 600 }}>
+          {organizerType === 'business' ? 'Certificate of Incorporation' : 'Government-issued ID'}
+        </label>
         <input
           ref={fileInputRef}
           type="file"
@@ -547,7 +669,7 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
         </div>
       )}
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px 40px' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(40px + env(safe-area-inset-bottom))', minWidth: 0, WebkitOverflowScrolling: 'touch' }}>
         {status === 'loading' && (
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', marginTop: '40px' }}>Loading…</p>
         )}
@@ -569,11 +691,21 @@ function CACVerificationScreen({ currentUser, onBack, onContactSupport }: { curr
 
         {status === 'form' && form}
       </div>
+
+      {showCountryPicker && (
+        <PickerSheet
+          title="Select Country"
+          options={COUNTRY_CODES.map(c => ({ value: c.iso, label: c.name }))}
+          value={country}
+          onSelect={(v) => { setCountry(v); setShowCountryPicker(false); }}
+          onClose={() => setShowCountryPicker(false)}
+        />
+      )}
     </div>
   );
 }
 
-function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
+function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteAccount, onOpenConnectedAccounts }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void; onDeleteAccount?: () => void; onOpenConnectedAccounts?: () => void }) {
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [bio, setBio] = useState('');
@@ -582,6 +714,12 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
   const [phoneCountryCode, setPhoneCountryCode] = useState<string>(REGION.phoneCountryCode);
   const [stateValue, setStateValue] = useState('');
   const [showStateModal, setShowStateModal] = useState(false);
+  // Unset (legacy pre-country-column accounts) defaults to Nigeria, since
+  // every account that predates users.country was signed up Nigeria-only --
+  // an accurate historical fallback, not an invented one. A curated
+  // subdivision list only exists for a few countries (countrySubdivisions.ts);
+  // any other account falls back to a free-text field.
+  const accountSubdivisions = subdivisionsForCountry(currentUser?.country || 'NG');
   const [avatarUrl, setAvatarUrl] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
   const [loading, setLoading] = useState(true);
@@ -757,6 +895,33 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     }
   };
 
+  // Reuses the same DB write handleCropComplete ends with (users.avatar_url
+  // + onProfileUpdated), just skipping the whole upload/crop pipeline --
+  // there's nothing to upload, so no storage/compress/crop step is needed.
+  const [removingAvatar, setRemovingAvatar] = useState(false);
+  const handleRemoveAvatar = async () => {
+    if (!currentUser?.id || removingAvatar) return;
+    setRemovingAvatar(true);
+    setErrorMessage(null);
+    try {
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ avatar_url: null })
+        .eq('id', currentUser.id);
+      if (updateError) throw updateError;
+      setAvatarUrl('');
+      if (onProfileUpdated) {
+        onProfileUpdated({ avatar_url: undefined });
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to remove photo');
+    } finally {
+      setRemovingAvatar(false);
+    }
+  };
+
   const processCoverFile = (file: File) => {
     if (file.size > 15 * 1024 * 1024) { setErrorMessage('Cover photo must be under 15MB.'); return; }
     setCoverCropSrc(URL.createObjectURL(file));
@@ -901,13 +1066,13 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
     color: '#F0F0FF',
     fontSize: '14px',
     outline: 'none',
-    fontFamily: 'Inter, sans-serif',
+    fontFamily: 'Manrope, sans-serif',
     boxSizing: 'border-box',
   };
 
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Manrope, sans-serif' }}>
         Loading profile details...
       </div>
     );
@@ -960,13 +1125,24 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 style={{ display: 'none' }}
                 accept="image/*"
               />
-              <button
-                onClick={openAvatarPicker}
-                disabled={saving}
-                style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-              >
-                {saving ? 'Uploading...' : 'Change Photo'}
-              </button>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={openAvatarPicker}
+                  disabled={saving || removingAvatar}
+                  style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#A78BFA', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  {saving ? 'Uploading...' : avatarUrl ? 'Change Photo' : 'Add Photo'}
+                </button>
+                {avatarUrl && (
+                  <button
+                    onClick={handleRemoveAvatar}
+                    disabled={saving || removingAvatar}
+                    style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '8px 16px', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: removingAvatar ? 'wait' : 'pointer', opacity: removingAvatar ? 0.7 : 1 }}
+                  >
+                    {removingAvatar ? 'Removing...' : 'Remove Photo'}
+                  </button>
+                )}
+              </div>
             </div>
 
             {errorMessage && (
@@ -1046,12 +1222,29 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 )}
               </div>
               <div>
-                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Location</p>
-                <PickerField
-                  value={stateValue}
-                  placeholder="Select your state"
-                  onOpen={() => setShowStateModal(true)}
-                />
+                <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>State / Region / Province</p>
+                {/* A country with a curated subdivision list (see
+                    countrySubdivisions.ts -- Nigeria, including legacy
+                    accounts predating users.country which were exclusively
+                    Nigerian at the time) gets that picker; every other
+                    account gets a free-text field -- same fallback
+                    AuthScreen's signup form already uses. Previously this
+                    always showed the Nigeria picker regardless of
+                    currentUser.country. */}
+                {accountSubdivisions ? (
+                  <PickerField
+                    value={stateValue}
+                    placeholder={`Select your ${accountSubdivisions.label.toLowerCase()}`}
+                    onOpen={() => setShowStateModal(true)}
+                  />
+                ) : (
+                  <input
+                    value={stateValue}
+                    onChange={(e) => setStateValue(e.target.value)}
+                    placeholder="State / Region / Province"
+                    style={inputStyle}
+                  />
+                )}
               </div>
               <div>
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Bio</p>
@@ -1066,12 +1259,41 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
                 <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '6px', fontWeight: 500 }}>Email Address</p>
                 <input value={currentUser?.email || ''} readOnly style={{ ...inputStyle, opacity: 0.5 }} />
               </div>
+              {onOpenConnectedAccounts && (
+                <button
+                  onClick={onOpenConnectedAccounts}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '13px 14px', color: '#F0F0FF', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                >
+                  Connected Accounts
+                  <ChevronRight size={16} color="#94A3B8" />
+                </button>
+              )}
             </div>
 
             {saved && (
               <div style={{ background: '#10B981', borderRadius: '12px', padding: '12px', marginTop: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <CheckCircle size={16} color="#fff" />
                 <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Profile saved successfully!</span>
+              </div>
+            )}
+
+            {/* Delete Account -- moved here from Settings' main list (it
+                previously sat directly under Sign Out). This is the
+                account-details screen, so a destructive account-level
+                action belongs here, clearly separated from the save flow
+                above rather than mixed into it. The underlying delete
+                confirmation flow/RPC (DeleteAccountScreen) is unchanged --
+                only its entry point moved. */}
+            {onDeleteAccount && (
+              <div style={{ marginTop: '28px', paddingTop: '20px', borderTop: '1px solid rgba(239,68,68,0.15)' }}>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '10px' }}>Danger Zone</p>
+                <button
+                  onClick={onDeleteAccount}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '14px', padding: '14px', color: '#EF4444', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  <Trash2 size={16} />
+                  Delete Account
+                </button>
               </div>
             )}
           </>
@@ -1081,7 +1303,7 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         <button
           onClick={handleSaveProfile}
           disabled={loading || saving}
-          style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
+          style={{ width: '100%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '14px', padding: '14px', color: '#fff', fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: (loading || saving) ? 'not-allowed' : 'pointer' }}
         >
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
@@ -1106,12 +1328,12 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated }: { curre
         />
       )}
 
-      {showStateModal && (
+      {showStateModal && accountSubdivisions && (
         <PickerSheet
-          title="Select State"
-          searchPlaceholder="Search state..."
+          title={`Select ${accountSubdivisions.label}`}
+          searchPlaceholder={`Search ${accountSubdivisions.label.toLowerCase()}...`}
           value={stateValue}
-          options={NIGERIA_STATES.map((st) => ({ value: st.name, label: st.name }))}
+          options={accountSubdivisions.options.map((name) => ({ value: name, label: name }))}
           onSelect={(v) => { setStateValue(v); setShowStateModal(false); }}
           onClose={() => setShowStateModal(false)}
         />
@@ -1279,7 +1501,7 @@ function PasswordField({
   );
 }
 
-function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: string } | null; onBack: () => void }) {
+function ChangePasswordScreen({ currentUser, onBack, onForgotPassword }: { currentUser: { email: string } | null; onBack: () => void; onForgotPassword?: () => void }) {
   const [step, setStep] = useState<'verify' | 'otp'>('verify');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1406,6 +1628,20 @@ function ChangePasswordScreen({ currentUser, onBack }: { currentUser: { email: s
             placeholder="Enter current password" show={showOld} onToggleShow={() => setShowOld(v => !v)}
             autoComplete="current-password" enterKeyHint="next"
           />
+          <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '-8px 0 0', lineHeight: 1.5 }}>
+            Don't remember your current password?{' '}
+            {onForgotPassword ? (
+              <button
+                type="button"
+                onClick={onForgotPassword}
+                style={{ background: 'none', border: 'none', padding: 0, color: '#A78BFA', fontSize: '12px', fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+              >
+                Sign out and use Forgot Password
+              </button>
+            ) : (
+              <>Use <strong style={{ color: '#C4C9E0' }}>Forgot Password</strong> on the login screen instead.</>
+            )}
+          </p>
 
           <PasswordField
             label="NEW PASSWORD" value={newPassword} onChange={setNewPassword}
@@ -1492,14 +1728,16 @@ export function SettingsScreen({
   currentUser,
   onBack,
   onSignOut,
+  onForgotPassword,
   onNavigate,
   isDark,
   onToggleDark,
   onProfileUpdated,
+  initialSubScreen,
 }: SettingsScreenProps) {
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontFamily: 'Manrope, sans-serif' }}>
         Loading settings...
       </div>
     );
@@ -1509,7 +1747,7 @@ export function SettingsScreen({
   const [emailNotifs, setEmailNotifs] = useState(true);
   const [promoNotifs, setPromoNotifs] = useState(true);
   const [locationServices, setLocationServices] = useState(true);
-  const [subScreen, setSubScreen] = useState<SubScreen>(null);
+  const [subScreen, setSubScreen] = useState<SubScreen>(initialSubScreen ?? null);
   const [clearingNotifs, setClearingNotifs] = useState(false);
   const [notifsCleared, setNotifsCleared] = useState(false);
   const [showClearNotifsConfirm, setShowClearNotifsConfirm] = useState(false);
@@ -1558,65 +1796,81 @@ export function SettingsScreen({
       .eq('id', currentUser.id);
   };
 
-  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
+  if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} onOpenConnectedAccounts={() => setSubScreen('connected-accounts')} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
-  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} />;
+  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
-  if (subScreen === 'cac-verify') return <CACVerificationScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onContactSupport={() => setSubScreen('help')} />;
+  if (subScreen === 'connected-accounts') return <ConnectedAccountsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
 
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', position: 'relative' }}>
+    <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.3), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
+      {/* Header -- matches PD3: left-aligned back + title, not centered. */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '14px', padding: 'calc(16px + env(safe-area-inset-top)) 20px 4px' }}>
         <button
           onClick={onBack}
-          style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', position: 'relative', zIndex: 1 }}
+          style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
         >
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color="#f6f4f9" />
         </button>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700, position: 'absolute', left: 0, right: 0, textAlign: 'center', pointerEvents: 'none' }}>Settings</h1>
-        <div style={{ width: '36px', flexShrink: 0 }} />
+        <h1 style={{ color: '#f6f4f9', fontSize: '20px', fontWeight: 800, margin: 0 }}>Settings</h1>
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 16px calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
-        {/* PD3 export has no profile card at the top of Settings -- removed.
-            Name/avatar/handle editing still lives one tap away via
-            "Edit Profile" below, which opens the same ProfileDetailsScreen. */}
+      <div style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '0 0 calc(120px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
+        {/* Profile card -- PD3 has this at the top after all (real avatar/
+            name/handle/email), opens the same ProfileDetailsScreen as
+            "Edit Profile" below. */}
+        <button
+          onClick={() => setSubScreen('profile')}
+          style={{ display: 'flex', alignItems: 'center', gap: '12px', width: 'calc(100% - 40px)', margin: '18px 20px 0', padding: '14px', borderRadius: '16px', background: 'rgba(255,255,255,0.045)', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', textAlign: 'left' }}
+        >
+          <div style={{ width: '48px', height: '48px', borderRadius: '50%', background: 'linear-gradient(145deg,#a855f7,#4c1d95)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '18px', fontWeight: 800, color: '#fff', flexShrink: 0, overflow: 'hidden' }}>
+            {(currentUser as any)?.avatar_url ? (
+              <img src={(currentUser as any).avatar_url} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase()
+            )}
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: '15px', fontWeight: 700, color: '#f6f4f9', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{currentUser?.full_name || currentUser?.email || 'Guest User'}</div>
+            <div style={{ fontSize: '12px', color: '#9a93a8', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {currentUser?.username ? `@${currentUser.username} • ` : ''}{currentUser?.email}
+            </div>
+          </div>
+          <span style={{ color: '#6b6478', fontSize: '16px' }}>›</span>
+        </button>
 
-        {currentUser?.role === 'organizer' && (
-          currentUser?.is_verified ? (
-            <div style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck size={20} color="#10B981" />
-              <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
-            </div>
-          ) : (
-            <div
-              onClick={() => setSubScreen('cac-verify')}
-              style={{ background: 'linear-gradient(135deg, rgba(123,47,190,0.18), rgba(79,70,229,0.18))', border: '1px solid rgba(168,85,247,0.35)', borderRadius: '16px', padding: '14px 16px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer' }}
-            >
-              <div style={{ width: '38px', height: '38px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <ShieldCheck size={19} color="#fff" />
-              </div>
-              <div style={{ flex: 1 }}>
-                <p style={{ margin: 0, color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</p>
-                <p style={{ margin: '2px 0 0', color: '#A78BFA', fontSize: '12px' }}>Submit your CAC details for a verified badge</p>
-              </div>
-              <ChevronRight size={16} color="#A78BFA" />
-            </div>
-          )
-        )}
+        {/* Become an Organizer / Get Verified as an Organizer moved to
+            ProfileScreen, directly below Become a Service Provider -- one
+            authoritative location for both capability entry points instead
+            of a duplicate here. */}
 
         <Section title="ACCOUNT">
           <SettingRow icon={User} label="Edit Profile" onPress={() => setSubScreen('profile')} />
           <Divider />
-          <SettingRow icon={Link2} label="Connected Accounts" onPress={() => setSubScreen('connected-accounts')} />
+          {/* Same real destination as Edit Profile -- ProfileDetailsScreen
+              already shows email (read-only) and phone (editable) fields,
+              this is just the export's second named entry point to them. */}
+          <SettingRow icon={Mail} label="Email & Phone" onPress={() => setSubScreen('profile')} />
           <Divider />
-          <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
+          <SettingRow icon={Link2} label="Connected Accounts" onPress={() => setSubScreen('connected-accounts')} />
+          {currentUser?.role !== 'organizer' && (
+            <>
+              <Divider />
+              {/* No standalone "switch role" toggle exists -- the real
+                  Become-an-Organizer flow lives on the Profile tab, so this
+                  honestly routes there rather than fabricating an instant
+                  role-switch action. */}
+              <SettingRow icon={ArrowLeftRight} label="Switch to Organizer" onPress={() => onNavigate?.('profile')} />
+            </>
+          )}
         </Section>
 
         <Section title="PREFERENCES">
           <SettingRow icon={Bell} label="Push Notifications" toggle={pushNotifs} onToggle={setPushNotifs} />
+          <Divider />
+          <SettingRow icon={Moon} label="Dark Mode" toggle={isDark} onToggle={onToggleDark} />
           <Divider />
           {/* No real localization system exists yet (single hardcoded
               English UI) -- shown as an honest static value rather than a
@@ -1624,10 +1878,39 @@ export function SettingsScreen({
           <SettingRow icon={Globe} label="Language" value="English" />
         </Section>
 
-        <Section title="SUPPORT">
-          <SettingRow icon={HelpCircle} label="Help & Support" onPress={() => onNavigate?.('help-support')} />
+        <Section title="SECURITY">
+          <SettingRow icon={Shield} label="Change Password" onPress={() => setSubScreen('change-password')} />
           <Divider />
-          <SettingRow icon={LogOut} label="Sign Out" onPress={onSignOut} danger />
+          <SettingRow icon={Shield} label="Location Services" toggle={locationServices} onToggle={setLocationServices} />
+          <Divider />
+          <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
+          {/* No "Face ID Login" or "Linked Devices" row -- there is no
+              login-time biometric toggle or active-session list anywhere in
+              the backend (the only real biometric check in the app is
+              WalletScreen's local transaction-confirmation gate, a
+              different feature), so PD3's third/fourth Security rows are
+              not reproduced rather than faked. */}
+        </Section>
+
+        <Section title="PAYMENTS">
+          <SettingRow icon={Wallet} label="Wallet & Cards" onPress={() => onNavigate?.('customer-wallet')} />
+          <Divider />
+          <SettingRow icon={Gift} label="Vents Cents" onPress={() => onNavigate?.('referral')} />
+          <Divider />
+          {/* No separate transaction-history screen exists -- the wallet
+              screen already lists real transactions, so this is a second
+              real entry point into that same data, not a new feature. */}
+          <SettingRow icon={Receipt} label="Transaction History" onPress={() => onNavigate?.('customer-wallet')} />
+        </Section>
+
+        <Section title="SUPPORT & LEGAL">
+          <SettingRow icon={HelpCircle} label="Help Center" onPress={() => onNavigate?.('help-support')} />
+          <Divider />
+          <SettingRow icon={Shield} label="Terms & Privacy" onPress={() => openExternalUrl('https://getvents.com/terms')} />
+          <Divider />
+          {/* No dedicated About screen exists -- shown as a real, static
+              version value rather than inventing new "about" content. */}
+          <SettingRow icon={Info} label="About VENTS" value={appVersionLabel()} />
         </Section>
 
         {/* Additional real, working settings that PD3 doesn't depict but
@@ -1646,18 +1929,11 @@ export function SettingsScreen({
           />
         </Section>
 
-        <Section title="PRIVACY & SECURITY">
-          <SettingRow icon={Shield} label="Location Services" toggle={locationServices} onToggle={setLocationServices} />
-          <Divider />
-          <SettingRow icon={Shield} label="Privacy & Security" onPress={() => onNavigate?.('privacy-security')} />
-        </Section>
-
-        {/* APPEARANCE section removed — Midnight Neon is enforced system-wide */}
-
-        <Section title="LEGAL">
+        {/* APPEARANCE section removed — Midnight Neon is enforced system-wide.
+            Location Services / Privacy & Security now live once, in the
+            SECURITY section above — not duplicated here. */}
+        <Section title="LEGAL LINKS">
           <SettingRow icon={Shield} label="Privacy Policy" onPress={() => openExternalUrl('https://getvents.com/privacy')} />
-          <Divider />
-          <SettingRow icon={Shield} label="Terms of Use" onPress={() => openExternalUrl('https://getvents.com/terms')} />
           <Divider />
           <SettingRow icon={Shield} label="Refund Policy" onPress={() => openExternalUrl('https://getvents.com/refunds')} />
         </Section>
@@ -1665,27 +1941,30 @@ export function SettingsScreen({
         <Section title="RESOURCES">
           <SettingRow icon={MessageCircle} label="Contact Support" onPress={() => openExternalUrl('mailto:support@getvents.com')} />
           <Divider />
-          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/TheVentsApp')} />
+          <SocialRow icon={SiInstagram} label="Follow on Instagram" background="linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888)" onPress={() => openExternalUrl('https://instagram.com/vents.app')} />
           <Divider />
-          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://twitter.com/TheVentsApp')} />
+          <SocialRow icon={SiX} label="Follow on X" background="#000" onPress={() => openExternalUrl('https://x.com/vents_app')} />
           <Divider />
-          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@theventsapp')} />
+          <SocialRow icon={SiTiktok} label="Follow on TikTok" background="#000" onPress={() => openExternalUrl('https://www.tiktok.com/@vents.app')} />
         </Section>
 
-        {/* Pinned Delete Account danger row, matching PD3's layout -- the
-            real handler already exists (DeleteAccountScreen), previously
-            only reachable via Edit Profile's Danger Zone. */}
-        <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {/* Log Out -- matches PD3's centered red pill (not the old left-
+            aligned row-with-icon treatment). Delete Account kept as its own
+            separate danger row underneath, same as before. */}
+        <div
+          onClick={onSignOut}
+          style={{ textAlign: 'center', margin: '26px 20px 6px', fontSize: '14px', fontWeight: 600, color: '#f87171', padding: '13px 0', borderRadius: '14px', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)', cursor: 'pointer' }}
+        >
+          Log Out
+        </div>
+        <div style={{ margin: '0 20px 8px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
           <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '16px', padding: '0 14px' }}>
-            <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
-          </div>
-          <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '16px', padding: '0 14px' }}>
             <SettingRow icon={Trash2} label="Delete Account" onPress={() => setSubScreen('delete-account')} danger />
           </div>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '20px' }}>
-          VENTS v1.1.0 | © VENTS LTD
+        <p style={{ textAlign: 'center', color: '#5c5566', fontSize: '12px', margin: '0 20px 30px' }}>
+          {appVersionLabel()}
         </p>
       </div>
 
@@ -1698,6 +1977,171 @@ export function SettingsScreen({
         onConfirm={handleClearNotifications}
         onCancel={() => setShowClearNotifsConfirm(false)}
       />
+    </div>
+  );
+}
+
+// Handoff PD2: real per-user Instagram/X/TikTok handles (users.
+// instagram_handle/x_handle/tiktok_handle, 0079_user_social_handles.sql),
+// editable here and shown on the public organizer profile
+// (UserProfileScreen) -- distinct from the "RESOURCES" section's static
+// links to VENTS' own corporate social accounts, which this screen does
+// not touch.
+const SOCIAL_HANDLE_FIELDS = [
+  { key: 'instagram_handle' as const, label: 'Instagram', icon: SiInstagram, background: 'linear-gradient(45deg, #F58529, #DD2A7B, #8134AF)', placeholder: 'username' },
+  { key: 'x_handle' as const, label: 'X (Twitter)', icon: SiX, background: '#000', placeholder: 'username' },
+  { key: 'tiktok_handle' as const, label: 'TikTok', icon: SiTiktok, background: '#000', placeholder: 'username' },
+];
+
+function ConnectedAccountsScreen({ currentUser, onBack, onProfileUpdated }: { currentUser: any; onBack: () => void; onProfileUpdated?: (fields: any) => void }) {
+  const [handles, setHandles] = useState<Record<string, string>>({ instagram_handle: '', x_handle: '', tiktok_handle: '' });
+  const [loading, setLoading] = useState(true);
+  const [editingField, setEditingField] = useState<typeof SOCIAL_HANDLE_FIELDS[number] | null>(null);
+  const [draftValue, setDraftValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function load() {
+      if (!currentUser?.id) return;
+      try {
+        const { data, error: err } = await supabase
+          .from('users')
+          .select('instagram_handle, x_handle, tiktok_handle')
+          .eq('id', currentUser.id)
+          .maybeSingle();
+        if (err) throw err;
+        if (data) {
+          setHandles({
+            instagram_handle: data.instagram_handle || '',
+            x_handle: data.x_handle || '',
+            tiktok_handle: data.tiktok_handle || '',
+          });
+        }
+      } catch (err) {
+        console.error('Failed to load connected accounts:', err);
+        Sentry.captureException(err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  }, [currentUser?.id]);
+
+  function openEditor(field: typeof SOCIAL_HANDLE_FIELDS[number]) {
+    setError(null);
+    setDraftValue(handles[field.key]);
+    setEditingField(field);
+  }
+
+  async function saveHandle() {
+    if (!editingField || !currentUser?.id) return;
+    const cleaned = draftValue.trim().replace(/^@/, '');
+    const format = editingField.key === 'x_handle' ? /^[A-Za-z0-9_]{1,15}$/ : editingField.key === 'tiktok_handle' ? /^[A-Za-z0-9._]{1,24}$/ : /^[A-Za-z0-9._]{1,30}$/;
+    if (cleaned && !format.test(cleaned)) {
+      setError(`Enter a valid ${editingField.label} handle, or leave blank to disconnect.`);
+      return;
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: err } = await supabase
+        .from('users')
+        .update({ [editingField.key]: cleaned || null })
+        .eq('id', currentUser.id);
+      if (err) throw err;
+      setHandles((prev) => ({ ...prev, [editingField.key]: cleaned }));
+      onProfileUpdated?.({ [editingField.key]: cleaned || null });
+      setEditingField(null);
+    } catch (err: any) {
+      setError(err?.message || 'Could not save. Please try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)',
+    borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '14px',
+    outline: 'none', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#C4C9E0" />
+        </button>
+        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700, margin: 0 }}>Connected Accounts</h1>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '8px 16px calc(24px + env(safe-area-inset-bottom))' }}>
+        {loading ? (
+          <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
+        ) : (
+          <>
+            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', margin: '8px 0 8px 4px' }}>Social</p>
+            <div style={{ borderRadius: '16px', background: '#121019', border: '1px solid rgba(255,255,255,0.06)', padding: '0 14px' }}>
+              {SOCIAL_HANDLE_FIELDS.map((field, i) => (
+                <button
+                  key={field.key}
+                  onClick={() => openEditor(field)}
+                  style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: '12px',
+                    padding: '14px 0', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left',
+                    borderBottom: i < SOCIAL_HANDLE_FIELDS.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                  }}
+                >
+                  <span style={{ width: '36px', height: '36px', borderRadius: '10px', background: field.background, border: field.key === 'x_handle' ? '1px solid rgba(255,255,255,0.12)' : 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <field.icon size={16} color="#fff" />
+                  </span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: '15px', fontWeight: 600, color: '#fff', display: 'block' }}>{field.label}</span>
+                    <span style={{ fontSize: '12px', color: 'rgba(237,234,245,0.55)' }}>{handles[field.key] ? `@${handles[field.key]}` : 'Not connected'}</span>
+                  </div>
+                  <ChevronRight size={16} color="rgba(237,234,245,0.4)" />
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: '12px', lineHeight: 1.5, color: 'rgba(237,234,245,0.45)', margin: '14px 4px 0' }}>
+              Connected accounts show on your public organizer profile so attendees can find you elsewhere.
+            </p>
+          </>
+        )}
+      </div>
+
+      {editingField && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', zIndex: 50 }} onClick={() => setEditingField(null)}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', background: '#121019', borderRadius: '20px 20px 0 0', border: '1px solid rgba(255,255,255,0.1)', padding: '20px 20px calc(20px + env(safe-area-inset-bottom))', display: 'flex', flexDirection: 'column', gap: '12px' }}
+          >
+            <span style={{ width: '38px', height: '4px', borderRadius: '99px', background: 'rgba(255,255,255,0.22)', alignSelf: 'center', marginBottom: '4px' }} />
+            <h2 style={{ margin: 0, fontSize: '17px', fontWeight: 700, color: '#fff' }}>{editingField.label} handle</h2>
+            {error && <p style={{ color: '#F87171', fontSize: '13px', margin: 0 }}>{error}</p>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '0 14px' }}>
+              <span style={{ color: 'rgba(237,234,245,0.5)', fontSize: '14px' }}>@</span>
+              <input
+                value={draftValue}
+                onChange={(e) => setDraftValue(e.target.value.replace(/^@/, ''))}
+                placeholder={editingField.placeholder}
+                autoFocus
+                style={{ ...inputStyle, border: 'none', padding: '12px 0', background: 'none' }}
+              />
+            </div>
+            <button
+              onClick={saveHandle}
+              disabled={saving}
+              style={{ height: '52px', borderRadius: '14px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: saving ? 'wait' : 'pointer', marginTop: '4px' }}
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+            <button onClick={() => setEditingField(null)} style={{ height: '44px', background: 'none', border: 'none', color: 'rgba(237,234,245,0.66)', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1741,7 +2185,7 @@ function DeleteAccountScreen({
 
   if (step === 'done') {
     return (
-      <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', textAlign: 'center', fontFamily: 'Manrope, sans-serif' }}>
         <span style={{ fontSize: '48px', marginBottom: '20px' }}>✓</span>
         <p style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, marginBottom: '12px' }}>Account Deleted</p>
         <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.6, marginBottom: '16px' }}>
@@ -1757,7 +2201,7 @@ function DeleteAccountScreen({
   }
 
   return (
-    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#8B8FA8', cursor: 'pointer', padding: '4px' }}>
           <ArrowLeft size={20} />

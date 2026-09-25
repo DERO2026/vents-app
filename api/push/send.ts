@@ -2,17 +2,48 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { applyCors } from '../_lib/cors.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 
 // ─── Native push send (Firebase Cloud Messaging HTTP v1) ─────────────────────
-// Sends a notification to every device token registered for a target user.
+// Three request shapes, sharing this file to stay under the Hobby plan's
+// 12-serverless-function cap:
 //
-// Auth: caller must present a valid InsForge session that resolves to a Super
-// Admin (checked via whoami_admin). Sends are an admin/broadcast capability.
+// 0. { userId, notificationId } + header `x-push-webhook-secret` -- the
+//    genuinely server-side trigger. Called by Postgres itself: a pg_net
+//    AFTER INSERT trigger on public.notifications
+//    (notify_push_on_notification_insert, see migration
+//    0047_push_delivery_db_webhook.sql) fires this for EVERY notification
+//    row, from ANY source (an RPC, the Paystack webhook's own INSERT, an
+//    admin action) -- so delivery no longer depends on the VENTS client
+//    being open at all, closing the gap mode 1 below had. Authenticated by
+//    a shared secret (PUSH_WEBHOOK_SECRET) instead of a user session,
+//    since a database trigger has no Supabase session to present -- the
+//    secret is stored only in this env var and in
+//    push_delivery_webhook_config (a table with zero anon/authenticated
+//    grants). notificationId is accepted for logging/future precision but
+//    delivery still goes through deliverPendingPushesForUser(userId), which
+//    is idempotent and claim-based (see api/_lib/pushDelivery.ts and
+//    migration 0047) so a near-simultaneous trigger + client call (mode 1)
+//    + cron sweep can never double-send the same row.
+//
+// 1. { deliverForUserId } -- the client-triggered accelerator kept from the
+//    previous stage, for the moment right after an action while the app is
+//    still open (feels instant; mode 0 above also covers it a beat later
+//    either way, so this is now redundant-but-harmless, not load-bearing).
+//    Any authenticated caller may use it (verifyInsforgeSession, no admin
+//    requirement) -- safe because the caller supplies only a user id, never
+//    message content.
+//
+// 2. { userId, title, body, data } -- the original admin/broadcast
+//    capability, unchanged: caller must resolve to a Super Admin (via
+//    admin_list_push_tokens, which itself enforces is_super_admin()), and
+//    composes arbitrary content, so it stays admin-gated.
 //
 // Delivery requires a Firebase service account, provided as the env var
 // FCM_SERVICE_ACCOUNT_JSON (the full service-account JSON, minified). Without
-// it the endpoint returns 503 — the client registration + token storage still
-// work; only the send leg is gated on that credential.
+// it the endpoint returns 503 (mode 2) / a soft no-op (modes 0-1) — the
+// client registration + token storage still work; only the send leg is
+// gated on that credential.
 //
 // FCM v1 needs a short-lived OAuth2 access token minted from the service
 // account (RS256-signed JWT → Google token endpoint). Implemented here with
@@ -56,10 +87,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
+  // Mode 0: the database trigger. Checked first and independently of any
+  // Supabase session, since a Postgres trigger has none to present --
+  // authenticated purely by the shared secret configured in both
+  // PUSH_WEBHOOK_SECRET (this env var) and push_delivery_webhook_config
+  // (read by notify_push_on_notification_insert). A timing-safe compare
+  // avoids leaking the secret's value one byte at a time via response
+  // timing (the same reasoning as the Paystack webhook's HMAC check).
+  const webhookSecret = process.env.PUSH_WEBHOOK_SECRET;
+  const providedSecret = req.headers['x-push-webhook-secret'];
+  if (webhookSecret && typeof providedSecret === 'string') {
+    const expected = Buffer.from(webhookSecret);
+    const got = Buffer.from(providedSecret);
+    if (expected.length === got.length && crypto.timingSafeEqual(expected, got)) {
+      const { userId: dbUserId } = (req.body || {}) as { userId?: string; notificationId?: string };
+      if (!dbUserId) return res.status(400).json({ error: 'userId is required' });
+      const result = await deliverPendingPushesForUser(dbUserId);
+      return res.status(200).json(result);
+    }
+    return res.status(401).json({ error: 'Invalid webhook secret' });
+  }
+
   const authHeader = req.headers.authorization;
   const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
+  // Mode 1: on-demand delivery trigger for one user's already-pending
+  // notifications. Any authenticated caller -- see the file header comment
+  // for why that's safe.
+  const { deliverForUserId } = (req.body || {}) as { deliverForUserId?: string };
+  if (deliverForUserId) {
+    const result = await deliverPendingPushesForUser(deliverForUserId);
+    return res.status(200).json(result);
+  }
+
+  // Mode 2: admin/broadcast -- unchanged below.
   const baseUrl = process.env.VITE_SUPABASE_URL;
   const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;

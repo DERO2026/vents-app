@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { ArrowLeft, Copy, Check, Gift, Users, Coins, Star, Zap, Crown } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ArrowLeft, Copy, Check, Users, Star, Zap } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 import { haptics } from '../../lib/haptics';
@@ -76,6 +76,15 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
   const [vcActivity, setVcActivity] = useState<VcTransactionRow[]>([]);
   const [activityLoading, setActivityLoading] = useState(true);
 
+  // Real, server-configured VC->NGN rate (app_config.vc_naira_per_1000,
+  // 0002_tables.sql) -- the export's "≈ ₦X in ticket credit" line needs an
+  // actual conversion rate, not a made-up 1:1 guess. Defaults to the same
+  // DB default (500) until the real row loads, so the estimate is never
+  // wildly off even before the fetch below resolves.
+  const [ngnPer1000Vc, setNgnPer1000Vc] = useState(500);
+  const badgesRef = useRef<HTMLDivElement | null>(null);
+  const referralSectionRef = useRef<HTMLDivElement | null>(null);
+
   const referralCode = currentUser?.id?.slice(0, 8).toUpperCase() ?? '';
   const referralLink = `https://getvents.com/?ref=${referralCode}`;
 
@@ -84,11 +93,12 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
     async function load() {
       setLoading(true);
       try {
-        const [refsRes, walletResult, userRes, bonusRes] = await Promise.all([
+        const [refsRes, walletResult, userRes, bonusRes, configRes] = await Promise.all([
           supabase.from('referrals').select('*').eq('referrer_id', currentUser!.id).order('created_at', { ascending: false }),
           getVcBalance(currentUser!.id),
           supabase.from('users').select('vc_badge, vc_featured_until').eq('id', currentUser!.id).maybeSingle(),
           supabase.from('vc_bonuses' as any).select('id').eq('user_id', currentUser!.id).eq('bonus_type', 'profile_complete').maybeSingle(),
+          supabase.from('app_config' as any).select('vc_naira_per_1000').maybeSingle(),
         ]);
         if (refsRes.data) setReferrals(refsRes.data);
         setBalance(walletResult?.spendable ?? 0);
@@ -97,6 +107,9 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
           setFeaturedUntil(userRes.data.vc_featured_until ?? null);
         }
         setProfileBonusClaimed(!!(bonusRes.data));
+        if ((configRes.data as any)?.vc_naira_per_1000 != null) {
+          setNgnPer1000Vc((configRes.data as any).vc_naira_per_1000);
+        }
       } catch (err) {
         console.error('Failed to load VC data:', err);
         Sentry.captureException(err);
@@ -200,46 +213,85 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
   const isFeaturedActive = featuredUntil ? new Date(featuredUntil) > new Date() : false;
 
+  const ngnEstimate = Math.round((balance * ngnPer1000Vc) / 1000);
+
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ background: '#08050f', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       <style>{`input::placeholder{color:#555C7A;} .vc-scroll::-webkit-scrollbar{display:none;}`}</style>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+      <div style={{ position: 'absolute', top: '-140px', left: '50%', transform: 'translateX(-50%)', width: '520px', height: '420px', background: 'radial-gradient(ellipse at center, rgba(168,85,247,0.35), transparent 65%)', filter: 'blur(10px)', pointerEvents: 'none' }} />
+      {/* Header -- matches the export: back + centered "VENTS CENTS" eyebrow
+          + a help icon (real: opens Help & Support, same destination the
+          rest of the app already uses for help). */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 'calc(16px + env(safe-area-inset-top)) 20px 4px', flexShrink: 0 }}>
+        <button onClick={onBack} style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color="#f6f4f9" />
         </button>
-        <h1 style={{ color: '#F0F0FF', fontSize: '20px', fontWeight: 700 }}>Vents Cents</h1>
+        <span style={{ fontSize: '12px', letterSpacing: '2px', color: '#9a93a8', fontWeight: 700 }}>VENTS CENTS</span>
+        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f6f4f9', fontSize: '15px', fontWeight: 700 }}>?</div>
       </div>
 
-      <div className="vc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '0 16px', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
+      <div className="vc-scroll" style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '0 16px', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))', scrollbarWidth: 'none' }}>
 
-        {/* Balance card */}
-        <div style={{ background: 'linear-gradient(135deg, #1A0D2E, #0D1429)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '20px', padding: '20px', marginBottom: '20px', position: 'relative', overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '140px', height: '140px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.25) 0%, transparent 70%)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-            <Coins size={22} color="#FFB830" />
-            <span style={{ color: '#C4C9E0', fontSize: '14px', fontWeight: 600 }}>Vents Cents Balance</span>
-            {currentBadge && (() => {
-              const bc = BADGE_CONFIG.find(b => b.type === currentBadge);
-              if (!bc) return null;
-              return (
-                <span style={{ marginLeft: 'auto', background: bc.chipGradient || bc.chipBg, color: bc.chipColor, fontSize: '11px', fontWeight: 700, borderRadius: '20px', padding: '6px 12px', letterSpacing: '0.08em', border: bc.chipBorder || 'none' }}>
-                  {bc.label.toUpperCase()}
-                </span>
-              );
-            })()}
+        {/* Balance hero card -- gradient card, ◎ icon, large balance, and a
+            real ≈₦ conversion using app_config.vc_naira_per_1000 (the
+            server's actual VC->NGN redemption rate), not a made-up ratio. */}
+        <div style={{ marginTop: '18px', padding: '24px 20px', borderRadius: '22px', background: 'linear-gradient(135deg, rgba(168,85,247,0.22), rgba(76,29,149,0.18))', border: '1px solid rgba(168,85,247,0.32)', textAlign: 'center', boxShadow: '0 10px 40px rgba(124,58,237,0.25)', marginBottom: '20px', position: 'relative' }}>
+          {currentBadge && (() => {
+            const bc = BADGE_CONFIG.find(b => b.type === currentBadge);
+            if (!bc) return null;
+            return (
+              <span style={{ position: 'absolute', top: '16px', right: '16px', background: bc.chipGradient || bc.chipBg, color: bc.chipColor, fontSize: '10px', fontWeight: 700, borderRadius: '20px', padding: '5px 10px', letterSpacing: '0.08em', border: bc.chipBorder || 'none' }}>
+                {bc.label.toUpperCase()}
+              </span>
+            );
+          })()}
+          <div style={{ fontSize: '12px', letterSpacing: '1.5px', color: '#c3bdd1', fontWeight: 700 }}>YOUR BALANCE</div>
+          <div style={{ fontSize: '40px', fontWeight: 900, marginTop: '8px', display: 'flex', alignItems: 'baseline', justifyContent: 'center', gap: '6px', color: '#f6f4f9', fontFamily: 'Manrope, sans-serif' }}>
+            <span style={{ color: '#c084fc', fontSize: '26px' }}>◎</span>{balance.toLocaleString()}
           </div>
-          <p style={{ color: '#FFB830', fontSize: '36px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
-            {balance.toLocaleString()}<span style={{ fontSize: '16px', color: '#8B8FA8', marginLeft: '6px' }}>VC</span>
-          </p>
-          <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '6px' }}>Earn by inviting friends, buying tickets, and completing your profile.</p>
-          <div style={{ background: 'rgba(255,184,48,0.07)', border: '1px solid rgba(255,184,48,0.15)', borderRadius: '8px', padding: '8px 10px', marginTop: '10px' }}>
-            <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600 }}>⚠ Vents Cents are not withdrawable or convertible to cash.</p>
+          <div style={{ fontSize: '12.5px', color: '#9a93a8', marginTop: '4px' }}>≈ ₦{ngnEstimate.toLocaleString()} in ticket credit</div>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '18px' }}>
+            <button
+              onClick={() => badgesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: 'linear-gradient(135deg,#a855f7,#7c3aed)', border: 'none', fontWeight: 700, fontSize: '13.5px', color: '#fff', cursor: 'pointer' }}
+            >
+              Redeem
+            </button>
+            <button
+              onClick={() => referralSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              style={{ flex: 1, textAlign: 'center', padding: '12px 0', borderRadius: '12px', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.14)', fontWeight: 700, fontSize: '13.5px', color: '#f6f4f9', cursor: 'pointer' }}
+            >
+              Earn More
+            </button>
+          </div>
+          <div style={{ background: 'rgba(255,184,48,0.07)', border: '1px solid rgba(255,184,48,0.15)', borderRadius: '8px', padding: '8px 10px', marginTop: '14px' }}>
+            <p style={{ color: '#FFB830', fontSize: '11px', fontWeight: 600, margin: 0 }}>⚠ Vents Cents are not withdrawable or convertible to cash.</p>
           </div>
         </div>
 
+        {/* HOW IT WORKS -- matches the export's 3-step numbered-circle
+            layout. Each step is a real capability (check-in earn, referral
+            bonus, ticket-purchase redemption), not new copy invented for
+            the screenshot. */}
+        <p style={{ color: '#9a93a8', fontSize: '13px', letterSpacing: '1.5px', fontWeight: 700, margin: '4px 0 12px' }}>HOW IT WORKS</p>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
+          {[
+            { n: 1, title: 'Attend events', desc: 'Earn cents automatically every time you check in with a ticket.' },
+            { n: 2, title: 'Refer friends', desc: 'Share your code — earn bonus cents when they attend their first event.' },
+            { n: 3, title: 'Redeem for tickets', desc: 'Use cents as credit toward any ticket purchase, no minimum.' },
+          ].map((st) => (
+            <div key={st.n} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '13px' }}>
+              <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'rgba(168,85,247,0.22)', color: '#c084fc', fontWeight: 800, fontSize: '13px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{st.n}</div>
+              <div>
+                <div style={{ fontSize: '13.5px', fontWeight: 700, color: '#f6f4f9' }}>{st.title}</div>
+                <div style={{ fontSize: '12px', color: '#9a93a8', marginTop: '3px', lineHeight: 1.4 }}>{st.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
         {/* ─── BADGES ─── */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
+        <div ref={badgesRef} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
             <Star size={18} color="#A78BFA" />
             <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>Profile Badges</span>
@@ -307,7 +359,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
 
         {/* ─── EARN VC GUIDE ─── */}
         <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
-          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>HOW TO EARN VENTS CENTS</p>
+          <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '12px' }}>EARNING BREAKDOWN</p>
           {[
             { label: 'Invite a friend (you)', amount: '+300 VC', icon: '👥' },
             { label: 'Friend joins (them)', amount: '+150 VC', icon: '🎉' },
@@ -349,7 +401,7 @@ export function ReferralScreen({ onBack, currentUser }: ReferralScreenProps) {
         </div>
 
         {/* ─── REFERRAL SECTION ─── */}
-        <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
+        <div ref={referralSectionRef} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '16px', marginBottom: '20px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Users size={16} color="#A855F7" />

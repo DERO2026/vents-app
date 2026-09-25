@@ -11,14 +11,14 @@
 // between scans, so it stays stable across thousands of check-ins.
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { ArrowLeft, Camera, Shield, ScanLine, CalendarX, Flashlight, FlashlightOff, SwitchCamera, FlaskConical } from 'lucide-react';
+import { ArrowLeft, Camera, Shield, ScanLine, CalendarX, Flashlight, FlashlightOff, SwitchCamera, FlaskConical, Keyboard, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { Event } from './types';
 import { useCamera } from './scanner/useCamera';
 import { useQrScanner } from './scanner/useQrScanner';
 import { ScannerFrame } from './scanner/ScannerFrame';
 import { ScanResultCard } from './scanner/ScanResultCard';
-import { validateTicket, type ScanOutcome } from './scanner/ticketValidation';
+import { validateTicket, validateManualCode, type ScanOutcome } from './scanner/ticketValidation';
 import { analytics } from '../../lib/analyticsEvents';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -72,6 +72,15 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const [stats, setStats] = useState({ checkedIn: 0, total: 0 });
   const [simInput, setSimInput] = useState('');
   const isDev = import.meta.env.DEV;
+
+  // Manual code fallback (design: "always reachable, even mid-permission-
+  // denial") — for when a guest's QR won't scan or their phone is dead.
+  // Reachable independent of camera status; only requires the same
+  // `active` gate (organizer + event selected + scanning not disabled)
+  // the camera itself requires.
+  const [manualOpen, setManualOpen] = useState(false);
+  const [manualCode, setManualCode] = useState('');
+  const [manualBusy, setManualBusy] = useState(false);
 
   const processingRef = useRef(false);
   const lastScanRef = useRef<{ value: string; at: number }>({ value: '', at: 0 });
@@ -134,10 +143,40 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
     });
   }, [currentUser?.id, selectedEvent?.title, later, loadStats]);
 
-  // Decode loop is paused whenever a result is showing / being processed.
+  const handleManualSubmit = useCallback(() => {
+    const code = manualCode.trim();
+    if (!code || manualBusy) return;
+    setManualBusy(true);
+    validateManualCode(code, currentUser.id, selectedEvent?.title).then((result) => {
+      if (!mountedRef.current) return;
+      triggerHaptic(result.status === 'valid' ? 'success' : 'error');
+      if (result.status === 'valid') {
+        setStats((s) => ({ checkedIn: s.checkedIn + 1, total: Math.max(s.total, s.checkedIn + 1) }));
+        loadStats(false);
+      }
+      analytics.ticketScanned(result.status, selectedEvent?.id ?? undefined);
+      setManualBusy(false);
+      setManualOpen(false);
+      setManualCode('');
+      // Reuses the exact same result overlay + auto-resume as a camera scan
+      // (processingRef guards the decode loop, not this path, so pause it
+      // too — a QR left in frame while the manual sheet was open must not
+      // fire the moment the sheet closes and the same result is still up).
+      processingRef.current = true;
+      setOutcome(result);
+      later(() => {
+        setOutcome(null);
+        processingRef.current = false;
+      }, RESUME_MS[result.status] ?? 1600);
+    });
+  }, [manualCode, manualBusy, currentUser?.id, selectedEvent?.title, later, loadStats]);
+
+  // Decode loop is paused whenever a result is showing / being processed /
+  // the manual-entry sheet is open (a QR still in frame must not fire
+  // underneath the sheet).
   useQrScanner({
     videoRef: cam.videoRef,
-    enabled: active && cam.status === 'ready' && outcome === null,
+    enabled: active && cam.status === 'ready' && outcome === null && !manualOpen,
     onDecode: handleDecode,
   });
 
@@ -156,7 +195,7 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
   const showFrame = cam.status === 'ready' && outcome === null;
 
   return (
-    <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ position: 'absolute', inset: 0, background: '#000', overflow: 'hidden', fontFamily: 'Manrope, sans-serif' }}>
       {/* Live camera preview — owned by us, fills the screen, cannot collapse. */}
       <video
         ref={cam.videoRef}
@@ -180,7 +219,14 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           <style>{`@keyframes ventsSpin { to { transform: rotate(360deg); } }`}</style>
         </div>
       )}
-      {cam.status === 'error' && (
+      {/* outcome === null guard: without it, a manual/simulated check-in
+          result (ScanResultCard) rendered ON TOP of this permanent camera-
+          error state instead of replacing it, since this block had no
+          reason to ever unmount once the camera failed -- a real, visible
+          collision on any device with a broken/denied camera that still
+          uses the manual-code fallback (which stays reachable exactly
+          because the camera doesn't work). */}
+      {cam.status === 'error' && outcome === null && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '0 28px', gap: '12px' }}>
           <div style={{ width: '72px', height: '72px', borderRadius: '50%', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <Camera size={32} color="#EF4444" />
@@ -189,6 +235,12 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           <p style={{ color: '#C4C9E0', fontSize: '13px', margin: 0, lineHeight: 1.6, maxWidth: '300px' }}>{cam.error}</p>
           <button onClick={cam.retry} style={{ marginTop: '6px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', borderRadius: '12px', padding: '12px 28px', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: '14px' }}>
             Try Again
+          </button>
+          {/* Manual fallback is reachable even while the camera is denied/
+              unavailable — a guest's ticket shouldn't be unscanneable just
+              because this device's camera permission was refused. */}
+          <button onClick={() => setManualOpen(true)} style={{ marginTop: '2px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: '12px', padding: '10px 22px', color: '#C4C9E0', fontWeight: 700, cursor: 'pointer', fontSize: '13px', display: 'flex', alignItems: 'center', gap: '7px' }}>
+            <Keyboard size={15} /> Enter Code Manually
           </button>
         </div>
       )}
@@ -199,11 +251,16 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           <ArrowLeft size={17} color="#F0F0FF" />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <h1 style={{ color: '#fff', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>Ticket Scanner</h1>
+          <h1 style={{ color: '#fff', fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>Ticket Scanner</h1>
           {selectedEvent && (
             <p style={{ color: '#C4C9E0', fontSize: '11px', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedEvent.title}</p>
           )}
         </div>
+        {/* Manual code fallback — always reachable while the scanner is
+            active, not just when the camera has failed. */}
+        <button onClick={() => setManualOpen(true)} aria-label="Enter code manually" style={{ background: 'rgba(9,5,20,0.7)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+          <Keyboard size={17} color="#F0F0FF" />
+        </button>
         {cam.status === 'ready' && cam.canSwitchCamera && (
           <button onClick={cam.switchCamera} aria-label="Switch camera" style={{ background: 'rgba(9,5,20,0.7)', backdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '50%', width: '38px', height: '38px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
             <SwitchCamera size={17} color="#F0F0FF" />
@@ -244,6 +301,51 @@ export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scann
           </div>
         )}
       </div>
+
+      {/* Manual code fallback sheet */}
+      {manualOpen && (
+        <div
+          style={{ position: 'absolute', inset: 0, zIndex: 40, background: 'rgba(2,0,5,0.82)', backdropFilter: 'blur(4px)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
+          onClick={() => { if (!manualBusy) { setManualOpen(false); setManualCode(''); } }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{ width: '100%', maxWidth: '480px', background: '#0B0A11', borderRadius: '24px 24px 0 0', border: '1px solid rgba(255,255,255,0.09)', borderBottom: 'none', padding: '22px 20px calc(22px + env(safe-area-inset-bottom))' }}
+          >
+            <div style={{ width: '36px', height: '4px', background: 'rgba(255,255,255,0.15)', borderRadius: '2px', margin: '0 auto 18px' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+              <h2 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Enter Ticket Code</h2>
+              <button onClick={() => { setManualOpen(false); setManualCode(''); }} aria-label="Close" style={{ background: 'rgba(255,255,255,0.06)', border: 'none', borderRadius: '50%', width: '30px', height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                <X size={15} color="#C4C9E0" />
+              </button>
+            </div>
+            <p style={{ color: '#8B8FA8', fontSize: '12.5px', margin: '0 0 16px', lineHeight: 1.6 }}>
+              For when a guest's QR won't scan or their phone is dead. Ask them to read out the reference code on their ticket (starts with "VT-"). This is logged as a manual override.
+            </p>
+            <input
+              autoFocus
+              value={manualCode}
+              onChange={(e) => setManualCode(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleManualSubmit(); }}
+              placeholder="VT-XXXXX-XXXXX-XXXXX-XXXXX-X"
+              disabled={manualBusy}
+              style={{ width: '100%', boxSizing: 'border-box', background: '#060A12', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#F0F0FF', fontSize: '15px', outline: 'none', fontFamily: 'monospace', letterSpacing: '0.03em', marginBottom: '14px' }}
+            />
+            <button
+              onClick={handleManualSubmit}
+              disabled={!manualCode.trim() || manualBusy}
+              style={{
+                width: '100%', height: '50px', border: 'none', borderRadius: '14px',
+                background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', color: '#fff', fontWeight: 700, fontSize: '15px',
+                cursor: (!manualCode.trim() || manualBusy) ? 'not-allowed' : 'pointer',
+                opacity: (!manualCode.trim() || manualBusy) ? 0.6 : 1,
+              }}
+            >
+              {manualBusy ? 'Checking…' : 'Check In'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

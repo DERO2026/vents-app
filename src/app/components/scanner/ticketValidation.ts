@@ -8,6 +8,7 @@
 // be unit-exercised and reused.
 
 import { supabase } from '../../../lib/supabase';
+import { parseTicketDisplayCode } from '../../../lib/ticketCode';
 
 export type ScanStatus = 'valid' | 'already_scanned' | 'denied' | 'offline';
 
@@ -140,5 +141,70 @@ export async function validateTicket(
       return { status: 'offline', headline: 'OFFLINE — RETRY', errorMsg: 'No connection. Check your network and scan again.' };
     }
     return { status: 'denied', headline: 'ENTRY DENIED', errorMsg: raw || 'Could not verify. Try again.' };
+  }
+}
+
+/**
+ * Manual-entry fallback for when a guest's QR won't scan / their phone is
+ * dead. `code` is the short "VT-XXXXX-…" reference a guest can read off
+ * their ticket (or paste in from memory) -- NOT a cryptographic credential;
+ * decoding it client-side (parseTicketDisplayCode) only recovers the ticket
+ * UUID, proving nothing about validity on its own. The server RPC
+ * (manual_check_in) re-derives ownership, ticket status, and duplicate
+ * check-in from the database itself, exactly like the QR path does — this
+ * fallback is never a locally-decided "looks valid" shortcut.
+ */
+export async function validateManualCode(
+  code: string,
+  actorId: string,
+  eventName?: string,
+): Promise<ScanOutcome> {
+  const ticketId = parseTicketDisplayCode(code);
+  if (!ticketId) {
+    return { status: 'denied', headline: 'INVALID CODE', errorMsg: "That code doesn't look right. Double-check it and try again." };
+  }
+  try {
+    const { data, error } = (await withTimeout(
+      supabase.rpc('manual_check_in' as any, { p_ticket_id: ticketId, p_actor_id: actorId }),
+      VERIFY_TIMEOUT_MS,
+    )) as any;
+
+    if (error) throw error;
+    const result = data as any;
+
+    if (result?.ok) {
+      return {
+        status: 'valid',
+        headline: 'CHECKED IN',
+        holderName: result.holder_name || 'Verified Attendee',
+        ticketType: result.ticket_type || undefined,
+        eventName: result.event_title || eventName,
+        checkinTime: fmtTime(result.checked_in_at),
+      };
+    }
+
+    if (result?.reason === 'already_scanned') {
+      const t = fmtTime(result.checked_in_at);
+      return {
+        status: 'already_scanned',
+        headline: 'ALREADY CHECKED IN',
+        errorMsg: t ? `First scanned at ${t}` : 'This ticket was already scanned.',
+        checkinTime: t,
+      };
+    }
+
+    const info = deniedInfo(result);
+    return { status: 'denied', headline: info.headline, errorMsg: info.detail };
+  } catch (err: any) {
+    const raw = String(err?.message || '');
+    if (/verify_timeout/.test(raw)) {
+      return { status: 'offline', headline: 'CONNECTION SLOW', errorMsg: 'Network is slow — try again.' };
+    }
+    const isNetworkError = /failed to fetch|networkerror|network request failed|load failed|internet|err_network/i.test(raw)
+      || err?.name === 'TypeError';
+    if (isNetworkError) {
+      return { status: 'offline', headline: 'OFFLINE — RETRY', errorMsg: 'No connection. Check your network and try again.' };
+    }
+    return { status: 'denied', headline: 'ENTRY DENIED', errorMsg: raw || 'Could not check in. Try again.' };
   }
 }

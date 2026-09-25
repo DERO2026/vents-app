@@ -1,10 +1,14 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors, ventsStatusColors } from '../../lib/ventsDesignTokens';
 import { Capacitor } from '@capacitor/core';
-import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Search, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint } from 'lucide-react';
+import { ArrowLeft, Wallet, TrendingUp, ArrowDownCircle, Plus, AlertCircle, Check, ChevronDown, Star, Trash2, Eye, EyeOff, ShieldCheck, Fingerprint, Receipt, Ticket, Landmark } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
+import { PickerSheet } from './shared/PickerSheet';
 import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
+import { AmbientGlow } from './shared/AmbientGlow';
+import { fetchMyWalletBalanceKobo, fetchMyWalletTransactions, depositToWallet, UserWalletTransaction } from '../../lib/userWallet';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -17,25 +21,110 @@ interface WalletData {
   pending_kobo: number;
 }
 
+// A ledger row's metadata is a free-form jsonb column -- older rows (or
+// rows written before 0039_wallet_transaction_metadata.sql) may have none,
+// or only the bank_name/account_number/account_name shape complete_organizer_payout
+// has always written. Every field here is therefore optional -- the detail
+// screen must show "Not available" rather than fabricate anything missing.
+interface TxnMetadata {
+  bank_name?: string;
+  account_number?: string;
+  account_name?: string;
+  event_title?: string;
+  ticket_type?: string;
+  quantity?: number;
+  gross_kobo?: number;
+  buyer_fee_kobo?: number;
+  paystack_reference?: string;
+  buyer_name?: string;
+  buyer_email?: string;
+  buyer_phone?: string;
+}
+
 interface Transaction {
   id: string;
   type: 'credit' | 'debit' | 'payout' | 'cancelled_payout_refund';
   amount_kobo: number;
   description: string | null;
   withdrawal_request_id: string | null;
-  metadata: { bank_name?: string; account_number?: string; account_name?: string } | null;
+  metadata: TxnMetadata | null;
   created_at: string;
 }
+
+// organizer_withdrawal_requests rows that never generate an organizer_transactions
+// ledger row (pending/processing -- no money has permanently moved yet; failed/
+// rejected -- the debit was reversed, net wallet effect is zero) are shown
+// directly from this table so a withdrawal's full lifecycle is visible even
+// when the ledger itself has nothing to say about it. Per product decision:
+// we do NOT fabricate ledger rows for these -- this table is the authoritative
+// record of a withdrawal that didn't (yet, or ever) complete.
+interface WithdrawalRequest {
+  id: string;
+  amount_kobo: number;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'rejected' | 'cancelled';
+  bank_name: string | null;
+  bank_code: string | null;
+  account_number: string | null;
+  account_name: string | null;
+  paystack_reference: string | null;
+  transfer_code: string | null;
+  admin_note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// A unified, sortable feed item -- either a ledger row (organizer_transactions)
+// or a still-pending/failed/rejected withdrawal request that has no ledger
+// counterpart yet. Completed and cancelled withdrawal requests are NOT
+// included as their own feed item -- they're already represented by the
+// 'payout' / 'cancelled_payout_refund' ledger rows those functions write,
+// and including both would show the same withdrawal twice.
+type FeedItem =
+  | { kind: 'ledger'; sortKey: string; row: Transaction }
+  | { kind: 'withdrawal_request'; sortKey: string; row: WithdrawalRequest }
+  // The customer-facing Spendable Balance's own ledger (user_wallet_
+  // transactions, via userWallet.ts) -- merged into the SAME feed as
+  // organizer earnings so "one Wallet screen" also means one statement,
+  // not two disconnected transaction lists under one roof.
+  | { kind: 'spendable'; sortKey: string; row: UserWalletTransaction };
+
+const SPENDABLE_CREDIT_TYPES = new Set<UserWalletTransaction['type']>(['deposit', 'refund']);
+const SPENDABLE_TYPE_LABELS: Record<UserWalletTransaction['type'], string> = {
+  deposit: 'Wallet Top-up',
+  spend: 'Wallet Payment',
+  refund: 'Refund to Wallet',
+};
 
 // Money actually leaving the wallet vs. coming into/back into it — used to
 // pick the icon, color, and +/- sign for each transaction row.
 const CREDIT_TYPES = new Set(['credit', 'cancelled_payout_refund']);
 const TYPE_LABELS: Record<string, string> = {
-  credit: 'Credit',
+  credit: 'Ticket Sale',
   debit: 'Withdrawal',
-  payout: 'Payout',
-  cancelled_payout_refund: 'Payout Cancelled — Refunded',
+  payout: 'Withdrawal',
+  cancelled_payout_refund: 'Withdrawal Cancelled — Refunded',
 };
+
+const WITHDRAWAL_REQUEST_LABELS: Record<WithdrawalRequest['status'], string> = {
+  pending: 'Withdrawal Requested',
+  processing: 'Withdrawal Processing',
+  failed: 'Withdrawal Failed — Refunded',
+  rejected: 'Withdrawal Rejected — Refunded',
+  completed: 'Withdrawal',
+  cancelled: 'Withdrawal Cancelled — Refunded',
+};
+
+// Masks a bank account number down to its last 4 digits (e.g. "0123456789"
+// -> "•••••• 6789"). Never render a full account number anywhere in this
+// screen -- the audit found no DB-layer masking, so it has to happen here.
+function maskAccountNumber(acct: string | null | undefined): string {
+  if (!acct) return 'Not available';
+  const digits = acct.replace(/\s/g, '');
+  if (digits.length <= 4) return digits;
+  return '•'.repeat(Math.max(0, digits.length - 4)) + digits.slice(-4);
+}
+
+const PAGE_SIZE = 30;
 
 interface BankAccount {
   id: string;
@@ -69,10 +158,30 @@ async function authedFetch(path: string, body: any) {
 }
 
 export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
+  // Earnings/withdrawal/bank-account sections only apply to accounts that
+  // can actually earn -- a plain attendee has no organizer_wallets row, so
+  // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
+  // can never use would be confusing, not just visually redundant.
+  const isEarner = currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin';
   const [wallet, setWallet] = useState<WalletData | null>(null);
+  // Spendable Balance (the customer-facing VENTS Wallet deposit balance --
+  // same source UserWalletScreen reads) shown as its own card above
+  // Earnings, per the handoff: one Wallet screen, not two disconnected
+  // ones for the same account.
+  const [spendableKobo, setSpendableKobo] = useState<number | null>(null);
+  const [spendableTxns, setSpendableTxns] = useState<UserWalletTransaction[]>([]);
+  const [showDeposit, setShowDeposit] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositing, setDepositing] = useState(false);
+  const [depositError, setDepositError] = useState('');
   const [txns, setTxns] = useState<Transaction[]>([]);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [txnsHasMore, setTxnsHasMore] = useState(true);
+  const [txnsError, setTxnsError] = useState('');
+  const [selectedItem, setSelectedItem] = useState<FeedItem | null>(null);
 
   // Which account a withdrawal pays out to (defaults to the org's default).
   const [withdrawAccountId, setWithdrawAccountId] = useState<string | null>(null);
@@ -106,7 +215,6 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(false);
   const [showBankPicker, setShowBankPicker] = useState(false);
-  const [bankSearch, setBankSearch] = useState('');
   const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
   const [accountNumber, setAccountNumber] = useState('');
   const [resolvedName, setResolvedName] = useState('');
@@ -117,18 +225,39 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [banksError, setBanksError] = useState('');
   const resolveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Race guard between load() (a full refresh, e.g. pull-to-retry) and
+  // loadMoreTxns() (append the next page). Without this, loadMoreTxns
+  // computes its .range() offset from a `txns.length` snapshot that a
+  // concurrent load() can invalidate before the response comes back --
+  // appending the fetched page onto load()'s freshly-reset array at the
+  // WRONG offset, producing gapped or duplicated rows. Every load() call
+  // bumps this; loadMoreTxns captures it before fetching and discards its
+  // own result if a newer load() completed in the meantime.
+  const txnsGenerationRef = useRef(0);
+
   const load = async () => {
     if (!currentUser?.id) return;
+    txnsGenerationRef.current += 1;
     setLoading(true);
+    setTxnsError('');
     try {
-      const [wRes, tRes, bRes, vRes] = await Promise.all([
+      const [wRes, tRes, wrRes, bRes, vRes] = await Promise.all([
         supabase.from('organizer_wallets').select('balance_kobo, total_earned_kobo, pending_kobo').eq('organizer_id', currentUser.id).maybeSingle(),
-        supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).limit(30),
+        supabase.from('organizer_transactions').select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at').eq('organizer_id', currentUser.id).order('created_at', { ascending: false }).range(0, PAGE_SIZE - 1),
+        // Only pending/processing/failed/rejected -- completed and cancelled
+        // requests are already represented by their 'payout' / 'cancelled_
+        // payout_refund' ledger rows above; including them here too would
+        // show the same withdrawal twice in the feed.
+        supabase.from('organizer_withdrawal_requests').select('id, amount_kobo, status, bank_name, bank_code, account_number, account_name, paystack_reference, transfer_code, admin_note, created_at, updated_at').eq('organizer_id', currentUser.id).in('status', ['pending', 'processing', 'failed', 'rejected']).order('created_at', { ascending: false }),
         supabase.from('organizer_bank_accounts').select('id, bank_name, bank_code, account_number, account_name, recipient_code, is_default').eq('organizer_id', currentUser.id).eq('is_active', true).order('is_default', { ascending: false }).order('created_at', { ascending: true }),
         supabase.rpc('is_email_verified'),
       ]);
       setWallet(wRes.data || { balance_kobo: 0, total_earned_kobo: 0, pending_kobo: 0 });
-      setTxns(tRes.data || []);
+      if (tRes.error) { setTxnsError(tRes.error.message); setTxns([]); } else {
+        setTxns(tRes.data || []);
+        setTxnsHasMore((tRes.data || []).length === PAGE_SIZE);
+      }
+      setWithdrawalRequests(wrRes.data || []);
       const accounts: BankAccount[] = (bRes.data as BankAccount[]) || [];
       setBankAccounts(accounts);
       // Preselect the default (or first) account for withdrawals.
@@ -137,12 +266,87 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     } catch (e) {
       console.error('Wallet load error:', e);
       Sentry.captureException(e);
+      setTxnsError('Failed to load wallet data. Pull to retry.');
     } finally {
       setLoading(false);
     }
   };
 
+  const loadMoreTxns = async () => {
+    // Also blocked while a full load() is in flight -- its own generation
+    // bump plus the check below make this belt-and-suspenders, but there's
+    // no reason to even start a fetch whose offset is about to be stale.
+    if (!currentUser?.id || loadingMore || loading || !txnsHasMore) return;
+    const generation = txnsGenerationRef.current;
+    const offset = txns.length;
+    setLoadingMore(true);
+    try {
+      const { data, error } = await supabase
+        .from('organizer_transactions')
+        .select('id, type, amount_kobo, description, withdrawal_request_id, metadata, created_at')
+        .eq('organizer_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + PAGE_SIZE - 1);
+      if (error) throw error;
+      // A concurrent load() reset the list while this was in flight -- the
+      // offset this fetch used no longer lines up with the current array.
+      // Discard rather than append at the wrong position.
+      if (generation !== txnsGenerationRef.current) return;
+      setTxns(prev => {
+        // Defense-in-depth de-dup: even with the generation guard above, a
+        // fast double-tap or a retried request could re-fetch a page whose
+        // rows are already present.
+        const seen = new Set(prev.map(t => t.id));
+        return [...prev, ...(data || []).filter(t => !seen.has(t.id))];
+      });
+      setTxnsHasMore((data || []).length === PAGE_SIZE);
+    } catch (e) {
+      console.error('Load more transactions error:', e);
+      Sentry.captureException(e);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
   useEffect(() => { load(); }, [currentUser?.id]);
+
+  const loadSpendable = () => {
+    if (!currentUser?.id) { setSpendableKobo(null); setSpendableTxns([]); return; }
+    fetchMyWalletBalanceKobo().then(setSpendableKobo).catch(() => setSpendableKobo(null));
+    fetchMyWalletTransactions().then(setSpendableTxns).catch(() => setSpendableTxns([]));
+  };
+  useEffect(loadSpendable, [currentUser?.id]);
+
+  const handleDeposit = async () => {
+    const naira = Number(depositAmount);
+    if (!naira || naira < 500) { setDepositError('Enter at least ₦500.'); return; }
+    if (depositing) return;
+    setDepositing(true);
+    setDepositError('');
+    try {
+      const result = await depositToWallet(currentUser?.email || '', Math.round(naira * 100));
+      if (result.status === 'success') {
+        setShowDeposit(false);
+        setDepositAmount('');
+        loadSpendable();
+      } else if (result.error !== 'cancelled') {
+        setDepositError(result.error || 'Deposit could not be completed.');
+      }
+    } catch (e: any) {
+      setDepositError(e?.message || 'Deposit could not be started.');
+    } finally {
+      setDepositing(false);
+    }
+  };
+
+  // Ledger rows + open/failed/rejected withdrawal requests, merged into one
+  // reverse-chronological feed. Loading more ledger pages naturally
+  // interleaves with the (unpaginated, typically small) request list.
+  const feed: FeedItem[] = [
+    ...txns.map((row): FeedItem => ({ kind: 'ledger', sortKey: row.created_at, row })),
+    ...withdrawalRequests.map((row): FeedItem => ({ kind: 'withdrawal_request', sortKey: row.updated_at || row.created_at, row })),
+    ...spendableTxns.map((row): FeedItem => ({ kind: 'spendable', sortKey: row.createdAt, row })),
+  ].sort((a, b) => new Date(b.sortKey).getTime() - new Date(a.sortKey).getTime());
 
   // Detect a real platform authenticator (Face ID / Touch ID / Android
   // biometric) so the "Use biometrics" button is only offered when it can
@@ -407,100 +611,132 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const balance = wallet?.balance_kobo ?? 0;
   const pending = wallet?.pending_kobo ?? 0;
   const totalEarned = wallet?.total_earned_kobo ?? 0;
-  const filteredBanks = bankSearch.trim()
-    ? banks.filter(b => b.name.toLowerCase().includes(bankSearch.toLowerCase()))
-    : banks;
 
   return (
-    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
+    <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden', position: 'relative' }}>
+      <AmbientGlow />
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
-        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+        <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 700 }}>My Wallet</span>
       </div>
 
       {loading ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#8B8FA8' }}>Loading…</span>
+          <span style={{ color: ventsColors.ink2 }}>Loading…</span>
         </div>
       ) : (
         <div style={{ flex: 1, minHeight: 0, overflowY: 'scroll', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain', padding: '20px' }}>
           {emailVerified === false && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '12px', padding: '12px 16px', marginBottom: '20px' }}>
-              <AlertCircle size={16} color="#F59E0B" style={{ flexShrink: 0 }} />
-              <span style={{ color: '#F59E0B', fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
+              <AlertCircle size={16} color={ventsColors.pending} style={{ flexShrink: 0 }} />
+              <span style={{ color: ventsColors.pending, fontSize: '13px' }}>Verify your email to withdraw funds or add a payout bank account.</span>
             </div>
           )}
-          {/* Balance card */}
-          <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-              <Wallet size={18} color="rgba(255,255,255,0.7)" />
-              <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: '13px' }}>Available Balance</span>
+          {/* Spendable Balance -- the customer-facing deposit/spend
+              balance (same source as the old, now-retired standalone
+              UserWalletScreen). Add money deposits inline right here, and
+              its transactions are merged into the ONE feed below instead
+              of living behind a separate "Statement" screen -- one Wallet
+              means one balance-to-history relationship per section, not a
+              second screen that duplicates this one. */}
+          <div style={{ background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', borderRadius: '20px', padding: '22px 22px', marginBottom: '14px' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '12px' }}>
+              <p style={{ margin: '0 0 8px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.75)' }}>
+                Spendable Balance
+              </p>
+              <img src="/brand/vents-logo-small.png" alt="" style={{ height: '15px', width: 'auto', display: 'block', opacity: 0.95, flexShrink: 0 }} />
             </div>
-            <p style={{ fontSize: `clamp(20px, ${Math.max(20, 36 - Math.max(0, fmt(balance).length - 10) * 2)}px, 36px)`, fontWeight: 800, margin: '0 0 16px', color: '#fff', wordBreak: 'break-all' }}>{fmt(balance)}</p>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <TrendingUp size={14} color="rgba(255,255,255,0.6)" />
-              <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
-            </div>
-            {pending > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '4px' }}>
-                <span style={{ color: 'rgba(255,255,255,0.6)', fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</span>
-              </div>
-            )}
+            <p style={{ margin: '0 0 16px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', color: '#fff', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {spendableKobo === null ? '—' : fmt(spendableKobo)}
+            </p>
+            <button
+              onClick={() => { setDepositError(''); setDepositAmount(''); setShowDeposit(true); }}
+              style={{ width: '100%', height: '44px', borderRadius: '13px', background: '#fff', border: 'none', color: '#2A1550', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Add money
+            </button>
           </div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
-            <button
-              onClick={() => setShowWithdraw(true)}
-              style={{ flex: 1, background: balance > 0 && emailVerified !== false ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.05)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '14px', padding: '14px', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-              disabled={balance === 0 || emailVerified === false}
-              title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
-            >
-              <ArrowDownCircle size={18} color={balance > 0 && emailVerified !== false ? '#A855F7' : '#555'} />
-              <span style={{ color: balance > 0 && emailVerified !== false ? '#A855F7' : '#555', fontWeight: 600, fontSize: '14px' }}>Withdraw</span>
-            </button>
-            <button
-              onClick={openAddBank}
-              style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', padding: '14px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
-              disabled={emailVerified === false || bankAccounts.length >= 3}
-              title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
-            >
-              <Plus size={18} color="#8B8FA8" />
-              <span style={{ color: '#8B8FA8', fontWeight: 600, fontSize: '14px' }}>Add Bank</span>
-            </button>
-          </div>
+          {isEarner && (
+            <>
+              {/* Earnings -- withdrawable, organizer-only, never spendable
+                  in-app. Mockup shows Withdraw as one inline button on the
+                  right of this card, not a separate full-width action row
+                  below it. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: ventsColors.surface, borderRadius: '20px', padding: '18px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.09)' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ margin: '0 0 6px', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, letterSpacing: '0.16em', textTransform: 'uppercase', color: ventsColors.ink3 }}>
+                    Earnings · Withdrawable
+                  </p>
+                  <p style={{ fontSize: `clamp(18px, ${Math.max(18, 24 - Math.max(0, fmt(balance).length - 10) * 2)}px, 24px)`, fontWeight: 800, margin: '0 0 4px', color: ventsColors.white, wordBreak: 'break-all', fontVariantNumeric: 'tabular-nums lining-nums', letterSpacing: '-0.02em' }}>{fmt(balance)}</p>
+                  <p style={{ margin: 0, fontSize: '13px', fontWeight: 600, color: ventsColors.ink2 }}>Payout every Friday · not spendable in-app</p>
+                  {pending > 0 && (
+                    <p style={{ margin: '4px 0 0', color: ventsColors.ink3, fontSize: '12px' }}>Pending withdrawal: {fmt(pending)}</p>
+                  )}
+                </div>
+                <button
+                  onClick={() => setShowWithdraw(true)}
+                  style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
+                  disabled={balance === 0 || emailVerified === false}
+                  title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
+                >
+                  <ArrowDownCircle size={16} color={ventsColors.white} />
+                  <span style={{ color: ventsColors.white, fontWeight: 700, fontSize: '14px' }}>Withdraw</span>
+                </button>
+              </div>
+
+              {/* Total earned + Add Bank Account -- real functionality that
+                  isn't part of the mockup's crop, kept reachable as a small
+                  secondary link instead of a competing full-width button. */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', padding: '0 2px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <TrendingUp size={14} color={ventsColors.ink3} />
+                  <span style={{ color: ventsColors.ink3, fontSize: '12px' }}>Total earned: {fmt(totalEarned)}</span>
+                </div>
+                <button
+                  onClick={openAddBank}
+                  disabled={emailVerified === false || bankAccounts.length >= 3}
+                  style={{ background: 'none', border: 'none', display: 'flex', alignItems: 'center', gap: '4px', cursor: (emailVerified === false || bankAccounts.length >= 3) ? 'not-allowed' : 'pointer', opacity: (emailVerified === false || bankAccounts.length >= 3) ? 0.5 : 1 }}
+                  title={emailVerified === false ? 'Verify your email to add a payout bank account' : bankAccounts.length >= 3 ? 'You can link at most 3 bank accounts — remove one to add another' : undefined}
+                >
+                  <Plus size={13} color={ventsColors.accentSoft} />
+                  <span style={{ color: ventsColors.accentSoft, fontWeight: 600, fontSize: '12px' }}>Add Bank</span>
+                </button>
+              </div>
+            </>
+          )}
 
           {/* Payout bank accounts (multiple; one Default) */}
-          {bankAccounts.length > 0 && (
+          {isEarner && bankAccounts.length > 0 && (
             <div style={{ marginBottom: '24px' }}>
-              <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
+              <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Payout Accounts</p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {bankAccounts.map(acct => (
                   <div key={acct.id} style={{ background: 'rgba(255,255,255,0.04)', border: acct.is_default ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}</p>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}</p>
                           {acct.is_default && (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.18)', color: '#C4B5FD', fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', flexShrink: 0 }}>
-                              <Star size={9} fill="#C4B5FD" color="#C4B5FD" /> DEFAULT
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', background: 'rgba(168,85,247,0.18)', color: ventsColors.accentSoft, fontSize: '10px', fontWeight: 700, padding: '2px 7px', borderRadius: '100px', flexShrink: 0 }}>
+                              <Star size={9} fill={ventsColors.accentSoft} color={ventsColors.accentSoft} /> DEFAULT
                             </span>
                           )}
-                          {acct.recipient_code && <Check size={13} color="#10B981" style={{ flexShrink: 0 }} />}
+                          {acct.recipient_code && <Check size={13} color={ventsColors.success} style={{ flexShrink: 0 }} />}
                         </div>
-                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.account_number} · {acct.account_name}</p>
+                        <p style={{ margin: '3px 0 0', fontSize: '12px', color: ventsColors.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.account_number} · {acct.account_name}</p>
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
                       {!acct.is_default && (
-                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: '#C4C9E0', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                        <button onClick={() => handleSetDefault(acct)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                           <Star size={13} /> Set default
                         </button>
                       )}
-                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: '#F87171', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+                      <button onClick={() => handleRemoveBank(acct)} style={{ flex: acct.is_default ? 1 : 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px 14px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
                         <Trash2 size={13} /> Remove
                       </button>
                     </div>
@@ -511,45 +747,115 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           )}
 
           {/* Transaction history */}
-          <p style={{ fontSize: '13px', fontWeight: 700, color: '#8B8FA8', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
-          {txns.length === 0 ? (
-            <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-              {txns.map(t => {
-                const isCredit = CREDIT_TYPES.has(t.type);
-                const bank = t.metadata;
-                return (
-                  <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)' }}>
-                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ margin: 0, fontSize: '13px', color: '#F0F0FF', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
-                      {t.type === 'payout' && bank?.bank_name && (
-                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          Paid to {bank.bank_name}{bank.account_number ? ` · ${bank.account_number}` : ''}{bank.account_name ? ` · ${bank.account_name}` : ''}
-                        </p>
-                      )}
-                      <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
-                    </div>
-                    <span style={{ color: isCredit ? '#10B981' : '#EF4444', fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
-                      {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
-                    </span>
-                  </div>
-                );
-              })}
+          <p style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink2, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '12px' }}>Transactions</p>
+          {txnsError ? (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '24px 0' }}>
+              <AlertCircle size={18} color={ventsColors.error} />
+              <p style={{ color: ventsColors.error, fontSize: '13px', textAlign: 'center', margin: 0 }}>{txnsError}</p>
+              <button onClick={load} style={{ background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '10px', padding: '8px 16px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>Retry</button>
             </div>
+          ) : feed.length === 0 ? (
+            <p style={{ color: ventsColors.ink2, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No transactions yet</p>
+          ) : (
+            <>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                {feed.map(item => {
+                  if (item.kind === 'ledger') {
+                    const t = item.row;
+                    const isCredit = CREDIT_TYPES.has(t.type);
+                    const bank = t.metadata;
+                    return (
+                      <button
+                        key={`t-${t.id}`}
+                        onClick={() => setSelectedItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.metadata?.event_title || t.description || TYPE_LABELS[t.type] || 'Transaction'}</p>
+                          {t.type === 'payout' && bank?.bank_name && (
+                            <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              Paid to {bank.bank_name}{bank.account_number ? ` · ${maskAccountNumber(bank.account_number)}` : ''}
+                            </p>
+                          )}
+                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(t.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        </div>
+                        <span style={{ color: isCredit ? ventsColors.success : ventsColors.error, fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                          {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
+                        </span>
+                      </button>
+                    );
+                  }
+                  if (item.kind === 'spendable') {
+                    const t = item.row;
+                    const isCredit = SPENDABLE_CREDIT_TYPES.has(t.type);
+                    return (
+                      <button
+                        key={`sp-${t.id}`}
+                        onClick={() => setSelectedItem(item)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isCredit ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: '16px' }}>{isCredit ? '↓' : '↑'}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ margin: 0, fontSize: '13px', color: ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.description || SPENDABLE_TYPE_LABELS[t.type]}</p>
+                          <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(t.createdAt).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                        </div>
+                        <span style={{ color: isCredit ? ventsColors.success : ventsColors.error, fontWeight: 700, fontSize: '14px', flexShrink: 0 }}>
+                          {isCredit ? '+' : '-'}{fmt(t.amountKobo)}
+                        </span>
+                      </button>
+                    );
+                  }
+                  const wr = item.row;
+                  const isReversed = wr.status === 'failed' || wr.status === 'rejected';
+                  return (
+                    <button
+                      key={`wr-${wr.id}`}
+                      onClick={() => setSelectedItem(item)}
+                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', borderRadius: '12px', background: 'rgba(255,255,255,0.03)', border: 'none', width: '100%', textAlign: 'left', cursor: 'pointer' }}
+                    >
+                      <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: isReversed ? 'rgba(255,255,255,0.06)' : 'rgba(245,158,11,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: '16px' }}>{isReversed ? '↺' : '⋯'}</span>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ margin: 0, fontSize: '13px', color: isReversed ? ventsColors.ink2 : ventsColors.ink1, fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{WITHDRAWAL_REQUEST_LABELS[wr.status]}</p>
+                        <p style={{ margin: '2px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{new Date(wr.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</p>
+                      </div>
+                      <span style={{ color: isReversed ? ventsColors.ink2 : ventsColors.pending, fontWeight: 700, fontSize: '14px', flexShrink: 0, textDecoration: isReversed ? 'line-through' : 'none' }}>
+                        -{fmt(wr.amount_kobo)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {txnsHasMore && (
+                <button
+                  onClick={loadMoreTxns}
+                  disabled={loadingMore}
+                  style={{ width: '100%', marginTop: '14px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '13px', fontWeight: 600, cursor: loadingMore ? 'not-allowed' : 'pointer', opacity: loadingMore ? 0.6 : 1 }}
+                >
+                  {loadingMore ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+            </>
           )}
         </div>
+      )}
+
+      {selectedItem && (
+        <TransactionDetail item={selectedItem} onClose={() => setSelectedItem(null)} />
       )}
 
       {/* Withdraw modal */}
       {showWithdraw && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Withdraw Funds</p>
-            <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Available: {fmt(balance)}</p>
             <input
               type="number"
               placeholder="Amount in ₦ (e.g. 5000)"
@@ -559,18 +865,18 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             />
             {bankAccounts.length > 0 && (
               <div style={{ marginBottom: '12px' }}>
-                <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 8px' }}>Pay out to</p>
+                <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: '0 0 8px' }}>Pay out to</p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
                   {bankAccounts.map(acct => {
                     const selected = (withdrawAccountId || bankAccounts.find(a => a.is_default)?.id) === acct.id;
                     return (
                       <button key={acct.id} onClick={() => setWithdrawAccountId(acct.id)} style={{ display: 'flex', alignItems: 'center', gap: '10px', textAlign: 'left', background: selected ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.05)', border: `1px solid ${selected ? 'rgba(168,85,247,0.5)' : 'rgba(255,255,255,0.08)'}`, borderRadius: '12px', padding: '11px 13px', cursor: 'pointer' }}>
-                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? '#A855F7' : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#A855F7' }} />}
+                        <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: `2px solid ${selected ? ventsColors.accent : '#555'}`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          {selected && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: ventsColors.accent }} />}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#F0F0FF', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
-                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: '#8B8FA8' }}>{acct.account_number}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: ventsColors.ink1, fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{acct.bank_name}{acct.is_default ? ' · Default' : ''}</p>
+                          <p style={{ margin: '1px 0 0', fontSize: '11px', color: ventsColors.ink2 }}>{acct.account_number}</p>
                         </div>
                       </button>
                     );
@@ -580,14 +886,45 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
             )}
             {withdrawError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{withdrawError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{withdrawError}</span>
               </div>
             )}
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setShowWithdraw(false); setWithdrawError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={handleWithdraw} disabled={withdrawing} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: withdrawing ? 'not-allowed' : 'pointer', opacity: withdrawing ? 0.6 : 1 }}>
                 {withdrawing ? 'Processing…' : 'Withdraw'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Deposit modal -- adds to the Spendable Balance, inline (no
+          navigation to a separate screen). Mirrors the Withdraw modal's
+          shape/pattern above. */}
+      {showDeposit && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 4px' }}>Add Money</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 20px' }}>Current balance: {spendableKobo === null ? '—' : fmt(spendableKobo)}</p>
+            <input
+              type="number"
+              placeholder="Amount in ₦ (min. 500)"
+              value={depositAmount}
+              onChange={e => setDepositAmount(e.target.value)}
+              style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+            />
+            {depositError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{depositError}</span>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button onClick={() => { setShowDeposit(false); setDepositError(''); }} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={handleDeposit} disabled={depositing} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: depositing ? 'not-allowed' : 'pointer', opacity: depositing ? 0.6 : 1 }}>
+                {depositing ? 'Processing…' : 'Add Money'}
               </button>
             </div>
           </div>
@@ -597,24 +934,24 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       {/* Add/Update bank modal */}
       {showAddBank && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <p style={{ fontSize: '18px', fontWeight: 700, margin: '0 0 6px' }}>Add Bank Account</p>
-            <p style={{ fontSize: '12px', color: '#8B8FA8', margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <ShieldCheck size={13} color="#A855F7" /> You'll confirm with your password before it's saved.
+            <p style={{ fontSize: '12px', color: ventsColors.ink2, margin: '0 0 18px', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <ShieldCheck size={13} color={ventsColors.accent} /> You'll confirm with your password before it's saved.
             </p>
 
             {/* Bank picker */}
             <button
               onClick={() => { if (banksError) loadBanks(); else setShowBankPicker(true); }}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : '#8B8FA8', fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: selectedBank ? '#fff' : ventsColors.ink2, fontSize: '15px', marginBottom: '10px', cursor: 'pointer' }}
             >
               <span>{selectedBank ? selectedBank.name : banksLoading ? 'Loading banks…' : banksError ? 'Couldn\'t load banks — tap to retry' : 'Select bank'}</span>
-              <ChevronDown size={16} color="#8B8FA8" />
+              <ChevronDown size={16} color={ventsColors.ink2} />
             </button>
             {banksError && !selectedBank && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', marginTop: '-4px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '12px' }}>{banksError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '12px' }}>{banksError}</span>
               </div>
             )}
 
@@ -626,29 +963,29 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '10px' }}
             />
 
-            {resolving && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
+            {resolving && <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 10px' }}>Verifying account…</p>}
             {resolveError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{resolveError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{resolveError}</span>
               </div>
             )}
             {resolvedName && !resolving && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '12px 14px', marginBottom: '10px' }}>
-                <Check size={16} color="#10B981" />
-                <span style={{ color: '#10B981', fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
+                <Check size={16} color={ventsColors.success} />
+                <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 600 }}>{resolvedName}</span>
               </div>
             )}
 
             {bankSaveError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{bankSaveError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{bankSaveError}</span>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setShowAddBank(false)} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button
                 onClick={handleSaveBank}
                 disabled={savingBank || !resolvedName || resolving}
@@ -663,52 +1000,30 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
 
       {/* Bank picker modal */}
       {showBankPicker && (
-        <div style={{ position: 'fixed', inset: 0, background: '#020005', zIndex: 9500, display: 'flex', flexDirection: 'column', padding: 'calc(20px + env(safe-area-inset-top)) 20px 20px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-            <p style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Select Bank</p>
-            <button onClick={() => { setShowBankPicker(false); setBankSearch(''); }} style={{ background: 'none', border: 'none', color: '#8B8FA8', fontSize: '14px', cursor: 'pointer' }}>Close</button>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '100px', padding: '10px 16px', marginBottom: '14px' }}>
-            <Search size={16} color="#8B8FA8" />
-            <input
-              placeholder="Search banks…"
-              value={bankSearch}
-              onChange={e => setBankSearch(e.target.value)}
-              style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '14px' }}
-              autoFocus
-            />
-          </div>
-          <div style={{ flex: 1, overflowY: 'auto' }}>
-            {banksLoading ? (
-              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>Loading banks…</p>
-            ) : filteredBanks.length === 0 ? (
-              <p style={{ color: '#8B8FA8', fontSize: '14px', textAlign: 'center', marginTop: '24px' }}>
-                {banks.length === 0 ? 'No banks loaded.' : 'No banks match your search.'}
-              </p>
-            ) : (
-              filteredBanks.map(bank => (
-                <button
-                  key={bank.code}
-                  onClick={() => { setSelectedBank(bank); setShowBankPicker(false); setBankSearch(''); }}
-                  style={{ width: '100%', textAlign: 'left', background: 'none', border: 'none', borderBottom: '1px solid rgba(255,255,255,0.05)', padding: '14px 4px', color: '#fff', fontSize: '15px', cursor: 'pointer' }}
-                >
-                  {bank.name}
-                </button>
-              ))
-            )}
-          </div>
-        </div>
+        <PickerSheet
+          title="Select Bank"
+          searchPlaceholder="Search banks…"
+          value={selectedBank?.code || ''}
+          options={banks.map(b => ({ value: b.code, label: b.name }))}
+          onSelect={(code) => {
+            const bank = banks.find(b => b.code === code);
+            if (bank) setSelectedBank(bank);
+            setShowBankPicker(false);
+          }}
+          onClose={() => setShowBankPicker(false)}
+          zIndex={9600}
+        />
       )}
 
       {/* Security gate: password / biometric confirmation for bank mutations */}
       {confirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9800, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '6px' }}>
-              <ShieldCheck size={20} color="#A855F7" />
+              <ShieldCheck size={20} color={ventsColors.accent} />
               <p style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>Confirm it's you</p>
             </div>
-            <p style={{ fontSize: '13px', color: '#8B8FA8', margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
+            <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>{confirm.label}. For your security, re-enter your password{biometricAvailable ? ' or use biometrics' : ''} to continue.</p>
 
             <div style={{ position: 'relative', marginBottom: '10px' }}>
               <input
@@ -722,26 +1037,26 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                 onKeyDown={e => { if (e.key === 'Enter' && !confirmBusy) runConfirm(confirmPassword); }}
                 style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px 44px 14px 14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
               />
-              <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: '#8B8FA8', display: 'flex' }}>
+              <button type="button" onClick={() => setShowConfirmPw(v => !v)} tabIndex={-1} style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: '6px', color: ventsColors.ink2, display: 'flex' }}>
                 {showConfirmPw ? <EyeOff size={17} /> : <Eye size={17} />}
               </button>
             </div>
 
             {biometricAvailable && (
-              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: '#C4B5FD', fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
+              <button onClick={confirmWithBiometrics} disabled={confirmBusy} style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '12px', padding: '12px', color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600, cursor: 'pointer', marginBottom: '10px' }}>
                 <Fingerprint size={17} /> Use Face ID / Touch ID
               </button>
             )}
 
             {confirmError && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-                <AlertCircle size={14} color="#EF4444" />
-                <span style={{ color: '#EF4444', fontSize: '13px' }}>{confirmError}</span>
+                <AlertCircle size={14} color={ventsColors.error} />
+                <span style={{ color: ventsColors.error, fontSize: '13px' }}>{confirmError}</span>
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
-              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: '#8B8FA8', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => { setConfirm(null); setConfirmPassword(''); setConfirmError(''); }} disabled={confirmBusy} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={() => runConfirm(confirmPassword)} disabled={confirmBusy || !confirmPassword} style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (confirmBusy || !confirmPassword) ? 'not-allowed' : 'pointer', opacity: (confirmBusy || !confirmPassword) ? 0.6 : 1 }}>
                 {confirmBusy ? 'Confirming…' : 'Confirm'}
               </button>
@@ -749,6 +1064,216 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// A single labeled row in the receipt (label left, value right).
+function ReceiptRow({ label, value, valueColor, muted }: { label: string; value: string; valueColor?: string; muted?: boolean }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <span style={{ color: ventsColors.ink2, fontSize: '13px', flexShrink: 0 }}>{label}</span>
+      <span style={{ color: valueColor || (muted ? ventsColors.ink2 : ventsColors.ink1), fontSize: '13px', fontWeight: 600, textAlign: 'right', wordBreak: 'break-word' }}>{value}</span>
+    </div>
+  );
+}
+
+const STATUS_COLORS: Record<string, string> = {
+  paid: ventsColors.success, confirmed: ventsColors.success, completed: ventsColors.success,
+  pending: ventsColors.pending, processing: ventsColors.pending,
+  failed: ventsColors.error, rejected: ventsColors.error,
+  cancelled: ventsColors.ink2, 'cancelled — refunded': ventsColors.ink2,
+};
+
+function fmtDateTime(iso: string) {
+  return new Date(iso).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+// Transaction detail / receipt screen. Branches by feed item kind:
+// - Ledger 'credit' rows (ticket sale revenue): Gross -> VENTS fee (buyer-
+//   paid, informational, NOT deducted) -> Net Received, plus event/ticket/
+//   buyer/Paystack context from metadata where present.
+// - Ledger 'payout' / 'cancelled_payout_refund' rows: Requested -> Fee
+//   (VENTS charges none today) -> Amount Sent/Refunded, masked bank details.
+// - withdrawal_request rows with no ledger counterpart (pending/processing/
+//   failed/rejected): the same Requested/Fee framing plus the failure or
+//   rejection reason straight from admin_note -- this table is the
+//   authoritative record for a withdrawal that never completed.
+function TransactionDetail({ item, onClose }: { item: FeedItem; onClose: () => void }) {
+  const na = (v: string | null | undefined) => (v && v.trim() ? v : 'Not available');
+
+  let icon = <Receipt size={22} color={ventsColors.accent} />;
+  let title = 'Transaction';
+  let isMoneyIn = true;
+  let amountLabel = '';
+  let statusLabel = '';
+  let dateLabel = '';
+  let rows: { label: string; value: string; valueColor?: string; muted?: boolean }[] = [];
+
+  if (item.kind === 'ledger') {
+    const t = item.row;
+    const meta = t.metadata || {};
+    isMoneyIn = CREDIT_TYPES.has(t.type);
+    amountLabel = fmt(t.amount_kobo);
+
+    if (t.type === 'credit') {
+      icon = <Ticket size={22} color={ventsColors.success} />;
+      title = 'Ticket Sale';
+      statusLabel = 'Paid';
+      dateLabel = fmtDateTime(t.created_at);
+      const gross = meta.gross_kobo ?? t.amount_kobo;
+      const buyerFee = meta.buyer_fee_kobo;
+      rows = [
+        { label: 'Gross amount', value: fmt(gross) },
+        {
+          label: 'VENTS service fee',
+          value: buyerFee != null ? `${fmt(buyerFee)} (paid by buyer, not deducted)` : 'Not available for this transaction',
+          muted: true,
+        },
+        { label: 'Net amount received', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
+        { label: 'Currency', value: 'NGN (₦)' },
+        { label: 'Event', value: na(meta.event_title) },
+        { label: 'Ticket type', value: na(meta.ticket_type) },
+        { label: 'Quantity', value: meta.quantity != null ? String(meta.quantity) : 'Not available' },
+        { label: 'Buyer name', value: na(meta.buyer_name) },
+        { label: 'Buyer email', value: na(meta.buyer_email) },
+        { label: 'Buyer phone', value: na(meta.buyer_phone) },
+        { label: 'Payment method', value: 'Not available', muted: true },
+        { label: 'Paystack reference', value: na(meta.paystack_reference) },
+        { label: 'Status', value: 'Paid', valueColor: STATUS_COLORS.paid },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    } else if (t.type === 'payout') {
+      icon = <Landmark size={22} color={ventsColors.error} />;
+      title = 'Withdrawal';
+      statusLabel = 'Completed';
+      dateLabel = fmtDateTime(t.created_at);
+      rows = [
+        { label: 'Requested amount', value: fmt(t.amount_kobo) },
+        { label: 'Withdrawal fee', value: 'None', muted: true },
+        { label: 'Amount sent', value: fmt(t.amount_kobo), valueColor: ventsColors.error },
+        { label: 'Destination bank', value: na(meta.bank_name) },
+        { label: 'Account number', value: maskAccountNumber(meta.account_number) },
+        { label: 'Account name', value: na(meta.account_name) },
+        { label: 'Status', value: 'Completed', valueColor: STATUS_COLORS.completed },
+        { label: 'Completed', value: fmtDateTime(t.created_at) },
+      ];
+    } else if (t.type === 'cancelled_payout_refund') {
+      icon = <Landmark size={22} color={ventsColors.success} />;
+      title = 'Withdrawal Cancelled — Refunded';
+      statusLabel = 'Refunded';
+      dateLabel = fmtDateTime(t.created_at);
+      rows = [
+        { label: 'Refunded amount', value: fmt(t.amount_kobo), valueColor: ventsColors.success },
+        { label: 'Reason', value: na(t.description) },
+        { label: 'Destination bank', value: na(meta.bank_name) },
+        { label: 'Account number', value: maskAccountNumber(meta.account_number) },
+        { label: 'Status', value: 'Cancelled — Refunded', valueColor: STATUS_COLORS.cancelled },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    } else {
+      title = TYPE_LABELS[t.type] || 'Transaction';
+      rows = [
+        { label: 'Amount', value: fmt(t.amount_kobo) },
+        { label: 'Description', value: na(t.description) },
+        { label: 'Date & time', value: fmtDateTime(t.created_at) },
+      ];
+    }
+  } else if (item.kind === 'spendable') {
+    const t = item.row;
+    isMoneyIn = SPENDABLE_CREDIT_TYPES.has(t.type);
+    amountLabel = fmt(t.amountKobo);
+    title = SPENDABLE_TYPE_LABELS[t.type];
+    statusLabel = 'Completed';
+    dateLabel = fmtDateTime(t.createdAt);
+    icon = <Wallet size={22} color={isMoneyIn ? ventsColors.success : ventsColors.error} />;
+    rows = [
+      { label: 'Amount', value: fmt(t.amountKobo) },
+      { label: 'Description', value: na(t.description) },
+      ...(t.metadata?.paystack_reference ? [{ label: 'Paystack reference', value: String(t.metadata.paystack_reference) }] : []),
+      { label: 'Status', value: 'Completed', valueColor: STATUS_COLORS.completed },
+      { label: 'Date & time', value: fmtDateTime(t.createdAt) },
+    ];
+  } else {
+    const wr = item.row;
+    const isReversed = wr.status === 'failed' || wr.status === 'rejected';
+    icon = <Landmark size={22} color={isReversed ? ventsColors.ink2 : ventsColors.pending} />;
+    title = WITHDRAWAL_REQUEST_LABELS[wr.status];
+    isMoneyIn = isReversed; // reversed = funds back in the wallet
+    amountLabel = fmt(wr.amount_kobo);
+    statusLabel = wr.status;
+    dateLabel = fmtDateTime(wr.updated_at || wr.created_at);
+    rows = [
+      { label: 'Requested amount', value: fmt(wr.amount_kobo) },
+      { label: 'Withdrawal fee', value: 'None', muted: true },
+      { label: isReversed ? 'Amount sent' : 'Amount to be sent', value: isReversed ? '₦0.00 (not sent — refunded to balance)' : fmt(wr.amount_kobo) },
+      { label: 'Destination bank', value: na(wr.bank_name) },
+      { label: 'Account number', value: maskAccountNumber(wr.account_number) },
+      { label: 'Account name', value: na(wr.account_name) },
+      { label: 'Withdrawal reference', value: na(wr.paystack_reference || wr.transfer_code) },
+      { label: 'Status', value: wr.status.charAt(0).toUpperCase() + wr.status.slice(1), valueColor: STATUS_COLORS[wr.status] },
+      { label: 'Requested', value: fmtDateTime(wr.created_at) },
+      ...(wr.updated_at && wr.updated_at !== wr.created_at ? [{ label: isReversed ? 'Resolved' : 'Last updated', value: fmtDateTime(wr.updated_at) }] : []),
+      ...(isReversed ? [{ label: 'Failure / rejection reason', value: na(wr.admin_note), valueColor: ventsColors.error }] : []),
+    ];
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: ventsColors.bg, zIndex: 9200, display: 'flex', flexDirection: 'column', color: ventsColors.ink1 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <button onClick={onClose} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={16} color={ventsColors.ink2} />
+        </button>
+        <span style={{ fontSize: '18px', fontWeight: 700 }}>Transaction Details</span>
+      </div>
+
+      {/* scrollbarWidth hides it in Firefox; WebKit (desktop Safari/Chrome --
+          which is what this screen was reviewed in via the web Preview
+          build, unlike native iOS WebView which already auto-hides overlay
+          scrollbars) ignores that property entirely and needs its own
+          ::-webkit-scrollbar rule, which can only be set via a class, not
+          inline style -- .no-scrollbar (src/styles/index.css) already
+          defines both. */}
+      <div className="no-scrollbar" style={{ flex: 1, minHeight: 0, overflowY: 'auto', WebkitOverflowScrolling: 'touch', padding: '20px' }}>
+        {/* Receipt header card */}
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '28px 24px', marginBottom: '20px', textAlign: 'center' }}>
+          <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: isMoneyIn ? 'rgba(16,185,129,0.12)' : 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+            {icon}
+          </div>
+          <p style={{ margin: '0 0 6px', fontSize: '13px', color: ventsColors.ink2 }}>{title}</p>
+          <p style={{ margin: '0 0 10px', fontSize: '32px', fontWeight: 800, letterSpacing: '-0.02em', fontVariantNumeric: 'tabular-nums lining-nums', color: isMoneyIn ? ventsColors.success : ventsColors.error, wordBreak: 'break-all' }}>
+            {isMoneyIn ? '+' : '-'}{amountLabel}
+          </p>
+          {/* Handoff F3: mono uppercase status chip tinted by its own status
+              color (e.g. COMPLETED = translucent green), not a flat
+              neutral-gray pill regardless of outcome -- ventsStatusColors
+              already carries the exact bg/fg pairs the design uses. */}
+          {(() => {
+            const key = statusLabel.toLowerCase();
+            const chip = key.includes('cancel') ? ventsStatusColors.transferred
+              : key === 'pending' || key === 'processing' ? ventsStatusColors.pending
+              : key === 'failed' || key === 'rejected' ? ventsStatusColors.error
+              : ventsStatusColors.paid;
+            return (
+              <span style={{ display: 'inline-block', fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.12em', padding: '5px 9px', borderRadius: '7px', color: chip.fg, background: chip.bg }}>
+                {statusLabel}
+              </span>
+            );
+          })()}
+          <p style={{ margin: '10px 0 0', fontSize: '12px', color: ventsColors.ink2 }}>{dateLabel}</p>
+        </div>
+
+        {/* Detail rows */}
+        <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '20px', padding: '4px 20px' }}>
+          {rows.map((r, i) => (
+            <ReceiptRow key={i} label={r.label} value={r.value} valueColor={r.valueColor} muted={r.muted} />
+          ))}
+        </div>
+
+        <p style={{ margin: '16px 0 0', fontSize: '11px', color: ventsColors.ink3, textAlign: 'center', lineHeight: 1.6 }}>
+          Card numbers, bank credentials, and other sensitive payment details are never shown here.
+        </p>
+      </div>
     </div>
   );
 }

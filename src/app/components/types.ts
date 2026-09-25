@@ -18,6 +18,11 @@ export interface Event {
   area: string;
   city: string;
   state: string;
+  // ISO 3166-1 alpha-2 (e.g. 'NG', 'RW') -- discovery-default metadata
+  // only, never a visibility restriction (see events_country_format_check,
+  // 0038_events_country.sql, and select_events RLS, which has no country
+  // predicate).
+  country: string;
   price: number;
   image: string;
   // Flyer gallery for the multi-image carousel: image_url followed by
@@ -96,6 +101,69 @@ export interface PurchasedTicket {
   // is already confirmed server-side by confirm_ticket_payment_via_wallet
   // and has no matching Paystack transaction to verify.
   paymentMethod?: 'paystack' | 'wallet';
+  // Set only by CheckoutScreen's Wallet payment branch, where
+  // confirm_ticket_payment_via_wallet (0066) already atomically verified
+  // the payment and issued the ticket server-side -- there is no Paystack
+  // transaction behind ticketId at all in that case. Without this flag,
+  // App.tsx's handleCheckoutSuccess unconditionally re-verified EVERY
+  // non-free ticket via api/webhook/paystack.ts's ?action=verify, passing
+  // it the wallet payment_ref as if it were a real Paystack reference --
+  // Paystack correctly has no record of it, so verify failed with
+  // "Transaction reference not found." and threw, even though the ticket
+  // was already successfully paid and issued. Real production incident:
+  // Sentry JAVASCRIPT-REACT-1G, confirmed via Supabase (ticket paid via
+  // wallet at 01:42:14 UTC, error thrown 3s later for the same order).
+  skipPaymentVerification?: boolean;
+  // tickets.checked_in -- a checked-in ticket can never be transferred
+  // (initiate_ticket_transfer/accept_ticket_transfer both re-check this
+  // server-side; this only drives the UI gate, see 0040_ticket_transfer.sql).
+  checkedIn?: boolean;
+  // From get_ticket_provenance (0071) -- display-only context for the
+  // ticket/QR screen. Never affects ownership: tickets.user_id (not these)
+  // is the sole authority on who holds/can check in this ticket.
+  paidByName?: string;
+  transferredFromName?: string;
+  // tickets.status / payment_status (real, enforced check-constraint
+  // values -- 0005_primary_unique_check_constraints.sql). A ticket whose
+  // status is 'cancelled' or payment_status is 'refunded'/'refund_pending'
+  // has no valid QR to show; My Tickets routes it to TicketRefundScreen
+  // (real refund_id/refund_reason data) instead of QRTicket.
+  status?: 'active' | 'cancelled';
+  paymentStatus?: 'pending' | 'paid' | 'failed' | 'refunded' | 'refund_pending';
+}
+
+export type TicketTransferStatus = 'pending' | 'accepted' | 'declined' | 'cancelled' | 'expired';
+
+// One ticket_transfers row, joined with just enough ticket/event context to
+// render an incoming-request or outgoing-pending card in My Tickets.
+export interface TicketTransfer {
+  id: string;
+  ticketId: string;
+  fromUserId: string;
+  toUserId: string;
+  toIdentifier: string;
+  status: TicketTransferStatus;
+  createdAt: string;
+  // Set once the transfer leaves 'pending' (accepted/declined/cancelled) --
+  // ticket_transfers.responded_at, used to order/label History entries.
+  respondedAt?: string;
+  expiresAt: string;
+  eventTitle?: string;
+  ticketTypeLabel?: string;
+  // Display name for the OTHER party in this transfer (sender's username/
+  // full_name for an incoming transfer, recipient's for outgoing) --
+  // resolved via public_profiles, never raw email/phone.
+  counterpartyLabel?: string;
+  // Recipient-paid transfer fee (0043_ticket_transfer_fee.sql) -- locked in
+  // server-side at initiate time from the ticket's own amount (7.5%,
+  // clamped NGN 500-5000), in kobo. Never a client-computed number; always
+  // read straight from the row so the fee shown is the fee that will
+  // actually be charged.
+  feeKobo: number;
+  // Set only once confirm_transfer_fee_payment has verified the payment
+  // with Paystack AND swapped ownership, atomically -- never set on its
+  // own without ownership having moved.
+  feePaidAt?: string;
 }
 
 export interface UserProfile {
@@ -114,23 +182,123 @@ export interface UserProfile {
   isOrganizer?: boolean;
   isVerified?: boolean;
   vc_badge?: string;
+  // Whether this user has an approved service_providers row -- real,
+  // publicly-readable capability data (service_providers_public_select_
+  // approved RLS policy), not a role-column value.
+  isServiceProvider?: boolean;
+  // Real per-user social handles (users.instagram_handle/x_handle/
+  // tiktok_handle, 0079_user_social_handles.sql) -- shown on the public
+  // profile's Connected Accounts row. Distinct from SettingsScreen's
+  // static "Follow VENTS on..." links to VENTS' own corporate accounts.
+  instagram_handle?: string | null;
+  x_handle?: string | null;
+  tiktok_handle?: string | null;
+}
+
+// Mirrors notifications.push_data (jsonb, nullable) -- shape varies by
+// notification type (see NOTIFICATION_ROUTING_AUDIT / App.tsx's routing
+// function for the exact fields each type actually carries). Every field
+// optional and typed as unknown-ish primitives rather than `any`, since a
+// given row only ever has a subset of these depending on its type.
+export interface NotificationPushData {
+  eventId?: string;
+  userId?: string;
+  screen?: string;
+  paymentRef?: string;
+  transferId?: string;
+  ticketId?: string;
+  bookingId?: string;
+  requestId?: string;
+  [key: string]: string | undefined;
 }
 
 export interface Notification {
   id: string;
-  type: 'reminder' | 'booking' | 'promo' | 'social';
+  type: 'reminder' | 'booking' | 'promo' | 'social' | 'broadcast' | 'message' | 'sale' | 'event_update';
   title: string;
   body: string;
   time: string;
   read: boolean;
   icon: string;
+  push_data: NotificationPushData | null;
+}
+
+// Frontend-shape mirror of a public.service_providers row (see
+// supabase/migrations/0034_service_providers.sql). `status` here reflects
+// the LISTING'S visibility, separate from users.is_service_provider (the
+// capability grant, 0033) -- a listing can only exist for a capability
+// holder, but the two are tracked independently by design.
+export type ServiceProviderStatus = 'draft' | 'approved' | 'rejected';
+
+export interface ServiceProvider {
+  id: string;
+  userId: string;
+  businessName: string;
+  category: string;
+  description?: string | null;
+  location?: string | null;
+  // Geocoded via LocationPicker at setup (0056_service_provider_geolocation.sql)
+  // -- null for a listing saved before this existed, or one whose free-text
+  // location was never resolved to a real place. Used only for distance
+  // sorting in get_nearby_service_providers; never a customer's own
+  // location, which is never persisted anywhere.
+  latitude?: number | null;
+  longitude?: number | null;
+  // From service_provider_ratings (0057_provider_rating_aggregate.sql) --
+  // undefined until fetched/merged in by the caller; a real 0/null
+  // reviewCount means no reviews yet, never fabricated.
+  avgRating?: number | null;
+  reviewCount?: number | null;
+  // ISO 3166-1 alpha-2 code (e.g. 'NG', 'QA', 'US'), or '' for a listing
+  // saved before this field existed / before onboarding sets it -- the
+  // structured field discovery filters on (see 0036_service_providers_
+  // country.sql). Never derived from `location` (free text, display only).
+  country: string;
+  photoUrls: string[];
+  startingPrice?: number | null;
+  startingPriceCurrency?: string | null;
+  servicesOffered: string[];
+  offersHomeService: boolean;
+  offersDelivery: boolean;
+  offersSameDay: boolean;
+  status: ServiceProviderStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// A single priced offering under a provider's listing (see
+// supabase/migrations/0048_provider_services.sql). Deliberately keyed by
+// `providerId` (service_providers.id, the LISTING), not the provider's
+// user_id -- ownership for writes is still resolved back to the owning
+// user via that FK in RLS, but every reference this stage or the next
+// needs (a future booking_requests.service_id) points at this row's own
+// `id`, not the provider account.
+export interface ProviderService {
+  id: string;
+  providerId: string;
+  name: string;
+  description?: string | null;
+  price: number;
+  // ISO 4217 code (e.g. 'NGN', 'USD') -- same convention as
+  // ServiceProvider.startingPriceCurrency, stored per-service rather than
+  // assumed from the provider's listing so a provider can price different
+  // services in different currencies if they ever need to.
+  currency: string;
+  durationMinutes?: number | null;
+  // Free text, defaults to the provider's own category at creation time but
+  // independently editable per service -- same convention as
+  // ServiceProvider.category (no DB enum, client-enforced list).
+  category?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type Screen =
   | 'referral'
   | 'splash'
   | 'welcome'
-  | 'role-select'
+  | 'country-select'
   | 'auth'
   | 'home'
   | 'explore'
@@ -149,6 +317,9 @@ export type Screen =
   | 'checkout'
   | 'payment-success'
   | 'payment-failed'
+  | 'payment-request'
+  | 'payment-request-sent'
+  | 'payment-requests'
   | 'org-dashboard'
   | 'create-event'
   | 'manage-events'
@@ -163,7 +334,16 @@ export type Screen =
   | 'inbox'
   | 'conversation'
   | 'wallet'
-  | 'customer-wallet';
+  | 'customer-wallet'
+  | 'services-home'
+  | 'services-category'
+  | 'service-provider-profile'
+  | 'service-provider-setup'
+  | 'service-provider-verify'
+  | 'manage-provider-services'
+  | 'service-bookings'
+  | 'provider-service-bookings'
+  | 'ticket-refund';
 
 export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';

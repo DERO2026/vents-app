@@ -42,6 +42,34 @@ export function trackPushEvent(eventName: string, properties?: Record<string, st
   trackEvent(eventName, properties);
 }
 
+// Event-driven push delivery trigger -- call this immediately after any
+// client action whose RPC just inserted a `notifications` row for ANOTHER
+// user (ticket-transfer initiate/decline, a service-provider admin
+// decision, etc.), so that recipient's push goes out within seconds
+// instead of waiting for the once-a-day cron safety-net sweep (Vercel
+// Hobby caps cron frequency to daily, so that sweep can never be the
+// primary delivery path for a transactional notification). Fire-and-forget
+// by design: never awaited by callers for its result, never throws, and a
+// missed/failed call is not a regression from before this existed --
+// worst case the daily sweep still delivers it eventually, same as always.
+export function triggerPushDelivery(userId: string | null | undefined): void {
+  if (!userId) return;
+  (async () => {
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) return;
+      await fetch('/api/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ deliverForUserId: userId }),
+      });
+    } catch {
+      // Best-effort only -- the daily cron sweep is the safety net.
+    }
+  })();
+}
+
 async function persistToken(userId: string, token: string) {
   try {
     const { error } = await supabase.rpc('register_push_token' as any, {

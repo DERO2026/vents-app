@@ -1,22 +1,30 @@
-import React, { useState, useEffect, useCallback, useRef, Component, ErrorInfo, ReactNode } from 'react';
-import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole } from './components/types';
-import { NIGERIA_STATES } from './components/StateSelectScreen';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
 import { registerPushNotifications, unregisterPushNotifications, setPushActionHandler } from '../lib/pushNotifications';
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification, clearPendingVerification } from '../lib/pendingVerification';
+import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
 import { analytics } from '../lib/analyticsEvents';
-import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken } from '../lib/ticketToken';
+import { prefetchTicketTokens, cacheTicketToken, ensureTicketToken, clearTicketTokenCache } from '../lib/ticketToken';
+import { invalidateVcBalanceCache } from '../lib/vcBalanceCache';
 import { hasCapability, hasAnyOrganizerCapability, SCREEN_CAPABILITY, ROOT_UID } from '../lib/permissions';
 import { PermissionSheetHost } from './components/shared/PermissionSheetHost';
 import { useSwipeBack } from '../lib/useSwipeBack';
 
 import { WelcomeScreen } from './components/WelcomeScreen';
-import { RoleSelectScreen } from './components/RoleSelectScreen';
+import { CountrySelectScreen } from './components/CountrySelectScreen';
+import { ServicesHomeScreen } from './components/ServicesHomeScreen';
+import { ServiceCategoryScreen } from './components/ServiceCategoryScreen';
+import { ServiceProviderProfileScreen } from './components/ServiceProviderProfileScreen';
+import { ServiceProviderSetupScreen } from './components/ServiceProviderSetupScreen';
+import { ServiceProviderVerificationScreen } from './components/ServiceProviderVerificationScreen';
+import { ManageProviderServicesScreen } from './components/ManageProviderServicesScreen';
+import { ServiceBookingsScreen } from './components/ServiceBookingsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -34,6 +42,8 @@ import { ConversationScreen } from './components/ConversationScreen';
 import { EventDetailsScreen } from './components/EventDetailsScreen';
 import { TicketSelectScreen } from './components/TicketSelectScreen';
 import { CheckoutScreen } from './components/CheckoutScreen';
+import { PaymentRequestScreen } from './components/PaymentRequestScreen';
+import { PaymentRequestsScreen } from './components/PaymentRequestsScreen';
 import { PaymentSuccessScreen } from './components/PaymentSuccessScreen';
 import { PaymentFailedScreen } from './components/PaymentFailedScreen';
 import { OrganizerDashboard } from './components/OrganizerDashboard';
@@ -42,6 +52,7 @@ import { ManageEventsScreen } from './components/ManageEventsScreen';
 import { SalesAnalyticsScreen } from './components/SalesAnalyticsScreen';
 import { WalletScreen } from './components/WalletScreen';
 import { CustomerWalletScreen } from './components/CustomerWalletScreen';
+import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
@@ -116,7 +127,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
           boxSizing: 'border-box'
         }}>
           <span style={{ fontSize: '48px', marginBottom: '16px' }}>⚠️</span>
-          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '8px' }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '8px' }}>
             Application Crash
           </h1>
           <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.6, marginBottom: '24px' }}>
@@ -165,12 +176,35 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('splash');
+  // Flips true the first time the user reaches Home, then stays true for
+  // the rest of the session -- see the HomeScreen render call site below,
+  // which uses this (instead of `screen === 'home'`) to decide whether to
+  // mount HomeScreen at all, so it mounts once and is only ever hidden/
+  // shown afterward, never destroyed and recreated on every tab switch.
+  const [homeEverMounted, setHomeEverMounted] = useState(false);
+  useEffect(() => {
+    if (screen === 'home') setHomeEverMounted(true);
+  }, [screen]);
+  // Same pattern for My Tickets -- switching to another tab and back was
+  // destroying and recreating it (screen === 'my-tickets' && <...>), which
+  // reset its activeTab/transferSubTab back to Upcoming/Incoming and
+  // re-fetched transfers every single time, instead of just picking back
+  // up where the user left it.
+  const [myTicketsEverMounted, setMyTicketsEverMounted] = useState(false);
+  useEffect(() => {
+    if (screen === 'my-tickets') setMyTicketsEverMounted(true);
+  }, [screen]);
   const [activeTab, setActiveTab] = useState<TabId>('home');
   const [orgTab, setOrgTab] = useState<OrgTab>('home');
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | undefined>(undefined);
   const [pendingResetEmail, setPendingResetEmail] = useState<string | undefined>(undefined);
   const [pendingPaymentRef, setPendingPaymentRef] = useState<string | undefined>(undefined);
+  // "Someone else is paying": the reference of the request the payer is
+  // currently viewing (PaymentRequestScreen), and the confirmation shown to
+  // the recipient right after create_pending_purchase resolves a payer.
+  const [viewingPaymentRequestRef, setViewingPaymentRequestRef] = useState<string | undefined>(undefined);
+  const [paymentRequestSentInfo, setPaymentRequestSentInfo] = useState<{ paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType } | null>(null);
   const [screenStack, setScreenStack] = useState<Screen[]>([]);
   // Tracks events viewed via the in-page "Related Events" carousel while
   // already on the event-details screen. navigateTo('event-details') is a
@@ -183,7 +217,7 @@ export default function App() {
   const screenRef = useRef(screen);
   const screenStackRef = useRef(screenStack);
   const goBackRef = useRef<() => void>(() => {});
-  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean } | null>(null);
+  const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean; country?: string } | null>(null);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   // Set when the 15s hydration safety timeout fires — lets the Splash
@@ -229,10 +263,44 @@ export default function App() {
   // Bumped on every Home-tab tap so HomeScreen can scroll itself back to
   // top -- see handleTabChange below.
   const [homeScrollSignal, setHomeScrollSignal] = useState(0);
+  // Same idea, for My Tickets -- bumped on every tap of the My Tickets tab
+  // so it can refresh its internally-fetched transfers list, now that it
+  // stays mounted across tab switches (myTicketsEverMounted) instead of
+  // remounting (which used to refetch everything for free).
+  const [myTicketsRefreshSignal, setMyTicketsRefreshSignal] = useState(0);
+  // Bumped by the shared notification-routing function when a ticket-
+  // transfer notification is tapped, so MyTicketsScreen can jump straight
+  // to its existing Transfers tab instead of landing on Upcoming with the
+  // transfer buried in a different tab.
+  const [myTicketsFocusTransfersSignal, setMyTicketsFocusTransfersSignal] = useState(0);
+  // Set by the shared notification-routing function when a ticket
+  // notification (confirmed/refunded) is tapped -- MyTicketsScreen resolves
+  // this against its own already-fetched `tickets` list and opens the exact
+  // ticket via its existing onViewTicket (the same handler its own ticket
+  // cards call), never a new ticket-detail screen. nonce forces the effect
+  // to re-fire even if the same ticket is tapped again from a notification.
+  const [myTicketsFocusTicket, setMyTicketsFocusTicket] = useState<{ ticketId: string; nonce: number } | null>(null);
+  // The ticket a "Ticket refunded" notification's push_data.ticketId
+  // points at -- routed to TicketRefundScreen, never MyTicketsScreen: a
+  // refunded ticket's status is flipped to 'cancelled' the moment the
+  // refund starts, which MyTicketsScreen's own `.eq('status', 'active')`
+  // query can never return.
+  const [refundTicketId, setRefundTicketId] = useState<string | null>(null);
+  // Set by the shared notification-routing function when a "wants to
+  // message you" request notification is tapped -- opens ExploreScreen's
+  // own existing Message Requests overlay (never a second Requests UI) and
+  // highlights the specific requester it points at. nonce forces the
+  // overlay open again even if the same request is tapped a second time.
+  const [exploreOpenRequestsSignal, setExploreOpenRequestsSignal] = useState(0);
+  const [exploreHighlightRequesterId, setExploreHighlightRequesterId] = useState<string | undefined>(undefined);
   const [userRole, setUserRole] = useState<UserRole>('attendee');
   const [resetToken, setResetToken] = useState<string | undefined>(undefined);
   const [unreadCount, setUnreadCount] = useState(0);
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
+  // Bumped on a Profile-tab re-tap (see handleTabChange) -- forwarded to
+  // ProfileScreen as refreshSignal, which turns it into its own internal
+  // profileRefreshKey to re-run its existing stats fetch effects.
+  const [profileTabRefreshSignal, setProfileTabRefreshSignal] = useState(0);
 
   const handleSwitchToAttendee = useCallback(() => {
     setUserRole('attendee');
@@ -342,12 +410,18 @@ export default function App() {
     const syncRole = () => {
       supabase
         .from('users')
-        .select('role')
+        .select('role, is_service_provider')
         .eq('id', currentUser.id)
         .maybeSingle()
         .then(({ data }) => {
-          if (cancelled || !data?.role || data.role === currentUser.role) return;
-          setCurrentUser(prev => (prev ? { ...prev, role: data.role } : prev));
+          if (cancelled || !data) return;
+          setCurrentUser(prev => {
+            if (!prev) return prev;
+            const roleChanged = data.role && data.role !== prev.role;
+            const spChanged = data.is_service_provider !== prev.is_service_provider;
+            if (!roleChanged && !spChanged) return prev;
+            return { ...prev, role: data.role || prev.role, is_service_provider: data.is_service_provider === true };
+          });
         }, () => {});
     };
     syncRole(); // run IMMEDIATELY — a just-promoted organizer must not wait 15s
@@ -478,6 +552,19 @@ export default function App() {
           window.history.replaceState({}, document.title, cleanUrl);
         }
 
+        // "Someone else is paying" -- the shareable link sent to the payer:
+        // ?payment_request=<payment_ref>. Opens PaymentRequestScreen, which
+        // fetches get_payment_request_details itself (payer or recipient
+        // only, per its RLS-backed RPC) -- this just navigates there.
+        const paymentRequestRef = params.get('payment_request');
+        if (paymentRequestRef) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+          setViewingPaymentRequestRef(paymentRequestRef);
+          setScreenStack([]);
+          setScreen('payment-request');
+        }
+
         // Store referral code from ?ref= so it can be claimed after signup
         const refCode = params.get('ref');
         if (refCode && refCode.length === 8) {
@@ -540,7 +627,7 @@ export default function App() {
           Promise.resolve(
             supabase
               .from('public_profiles')
-              .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+              .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
               .eq('id', userDeepLink)
               .maybeSingle()
           )
@@ -698,6 +785,8 @@ export default function App() {
           isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser'),
           vc_badge: profile?.vc_badge,
           is_verified: profile?.is_verified === true,
+          is_service_provider: profile?.is_service_provider === true,
+          country: profile?.country || undefined,
         });
       } catch (err: any) {
         console.error("Auth rehydration failed:", err);
@@ -890,6 +979,48 @@ export default function App() {
   }, [currentUser, screen]);
 
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [selectedServiceCategory, setSelectedServiceCategory] = useState<string | null>(null);
+  const [selectedServiceProvider, setSelectedServiceProvider] = useState<ServiceProvider | null>(null);
+  // The provider LISTING id (service_providers.id, not a user id) whose
+  // catalog is being managed -- set right before navigating to
+  // 'manage-provider-services' from ServiceProviderSetupScreen.
+  const [manageServicesProviderId, setManageServicesProviderId] = useState<string | null>(null);
+  // Single shared discovery-country state for both Home and Services (Stage
+  // B) -- previously each screen kept its own local country state
+  // (HomeScreen's own `countryFilter`, and this `discoveryCountryIso` for
+  // Services alone), which is exactly what let them disagree: opening
+  // Services from Home could show a stale/different country than whatever
+  // Home was actively browsing. One piece of state, read and written by
+  // both screens, makes that structurally impossible instead of relying on
+  // a reset-on-navigate patch (which is what the previous, incomplete fix
+  // here did). Deliberately NOT persisted to users.country or localStorage
+  // under the account-country key -- this is a session-only browsing
+  // preference, distinct from selectedCountryIso (the signup/account
+  // country, below) which it defaults from exactly once (see the effect
+  // near selectedCountryIso) but never overwrites once the user has picked
+  // a discovery country themselves.
+  // Falls back to 'NG' only for the brief window before auth hydrates (or
+  // permanently for a guest session with no account country at all) --
+  // the effect below immediately replaces this with the real
+  // currentUser.country the moment it's known, same as HomeScreen's own
+  // prior default did.
+  const [discoveryCountryIso, setDiscoveryCountryIso] = useState<string>(() => currentUser?.country || 'NG');
+  const discoveryCountryTouchedRef = useRef(false);
+  const handleDiscoveryCountryChange = useCallback((iso: string) => {
+    discoveryCountryTouchedRef.current = true;
+    setDiscoveryCountryIso(iso);
+  }, []);
+  // Default the shared discovery country to the account's own country
+  // (users.country) the moment it's known -- currentUser is often still
+  // null on first render while auth is hydrating, so this can't just be the
+  // useState initializer above. Adopts it exactly once; a country the user
+  // has already deliberately picked (in Home or Services, either sets the
+  // same touched flag) is never silently overwritten by this effect again,
+  // even if currentUser?.country changes identity on an unrelated update.
+  useEffect(() => {
+    if (discoveryCountryTouchedRef.current) return;
+    if (currentUser?.country) setDiscoveryCountryIso(currentUser.country);
+  }, [currentUser?.country]);
   const [selectedTicketType, setSelectedTicketType] = useState<TicketType | null>(null);
   const [selectedTicketQty, setSelectedTicketQty] = useState(1);
   const [purchasedTicket, setPurchasedTicket] = useState<PurchasedTicket | null>(null);
@@ -901,6 +1032,17 @@ export default function App() {
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
+  // Stable array identity for HomeScreen's blockedUserIds prop -- passing
+  // `[...blockedIds]` inline at the render call site made a brand new array
+  // (and downstream, via HomeScreen's own `useMemo(() => new Set(...), [blockedUserIds])`,
+  // a brand new Set) on every single App re-render, not just when the block
+  // list itself changed. That unstable Set reference feeds directly into
+  // HomeScreen's country/category/price filter effect's dependency array,
+  // so any unrelated App-level state change (a 15s timer tick, an unread
+  // count update, etc.) was silently re-triggering that effect -- and its
+  // skeleton -- while the user was just browsing. Only recomputed when
+  // `blockedIds` itself changes.
+  const blockedUserIdsArray = useMemo(() => [...blockedIds], [blockedIds]);
 
   // Fetch the user's blocked-organizer list so the main feed can exclude
   // their events (App Store Guideline 1.2 UGC requirement).
@@ -973,11 +1115,17 @@ export default function App() {
   const fetchUserTickets = useCallback(async (userId: string) => {
     setTicketsLoading(true);
     try {
+      // Real cancelled/refunded tickets (tickets.status/payment_status,
+      // 0005_primary_unique_check_constraints.sql) used to be excluded
+      // entirely by the old .eq('status', 'active') filter -- the ticket
+      // remains fully selectable under select_tickets RLS regardless of
+      // status, so this only ever hid real data, never restricted access.
+      // My Tickets now shows them in Past with a real status badge, routed
+      // to TicketRefundScreen instead of the QR screen.
       const { data, error } = await supabase
         .from('tickets')
         .select('*, events(*)')
         .eq('user_id', userId)
-        .eq('status', 'active')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -1027,6 +1175,7 @@ export default function App() {
             area: venue,
             city: city,
             state: city + ' State',
+            country: dbEvent.country || 'NG',
             price: Number(dbEvent.price || 0),
             image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
             description: dbEvent.description || '',
@@ -1068,8 +1217,32 @@ export default function App() {
             // for, not just the purchaser's own name on every card.
             holderName: t.holder_name || currentUser?.full_name || 'Attendee',
             holderEmail: t.holder_email || undefined,
+            checkedIn: !!t.checked_in,
+            status: t.status,
+            paymentStatus: t.payment_status,
           };
         });
+
+        // Display-only "Paid by X" / "Transferred to you from X" context
+        // (get_ticket_provenance, 0071) -- never affects ownership, only
+        // adds two names to already-fetched tickets. Best-effort: a
+        // failure here shouldn't block the ticket list itself from showing.
+        try {
+          const ticketIds = mappedTickets.map((t) => t.ticketId);
+          if (ticketIds.length > 0) {
+            const { data: provenance } = await supabase.rpc('get_ticket_provenance', { p_ticket_ids: ticketIds });
+            const byId: Record<string, { paidByName?: string; transferredFromName?: string }> = {};
+            (provenance || []).forEach((row: any) => {
+              byId[row.ticket_id] = { paidByName: row.paid_by_name || undefined, transferredFromName: row.transferred_from_name || undefined };
+            });
+            mappedTickets.forEach((t) => {
+              const p = byId[t.ticketId];
+              if (p) { t.paidByName = p.paidByName; t.transferredFromName = p.transferredFromName; }
+            });
+          }
+        } catch (err) {
+          Sentry.captureException(err, { tags: { area: 'get_ticket_provenance' } });
+        }
 
         setAllTickets(mappedTickets);
         // Warm the signed-token cache for every ticket as soon as the list is
@@ -1086,11 +1259,22 @@ export default function App() {
   }, [currentUser?.id, currentUser?.full_name]);
 
   const lastFetchRef = useRef<number>(0);
+  // Request-ordering guard: force=true (handleTabChange's Home-tap refresh,
+  // several "revalidate after X" call sites) bypasses the 5s debounce above,
+  // so two overlapping fetchEvents calls are possible (e.g. a fast
+  // double-tap on the Home tab). Without this, whichever request's series
+  // of awaits happens to resolve last always wins and sets dbEvents,
+  // regardless of which one was actually started last -- an older request
+  // finishing after a newer one could silently replace fresher data with
+  // stale data. Bumped once per call; a response only gets to write state
+  // if it's still the most recently *started* call by the time it resolves.
+  const fetchRequestIdRef = useRef(0);
   const fetchEvents = useCallback(async (force = false, loadMore = false) => {
     if (!force && !loadMore && Date.now() - lastFetchRef.current < 5000) {
       return;
     }
     lastFetchRef.current = Date.now();
+    const requestId = ++fetchRequestIdRef.current;
     setLoadingEvents(true);
     try {
       const nextPage = loadMore ? eventsPageRef.current + 1 : 0;
@@ -1104,12 +1288,24 @@ export default function App() {
         ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
         : 99;
 
+      // Conservative server-side prefilter, exact client-side filter (see
+      // src/lib/eventLifecycle.ts): an event is still possibly-active if
+      // either its explicit end_date hasn't passed, or (no end_date) its
+      // start was within the last 24h -- the widest window the fallback
+      // rule could ever consider active. isEventDiscoverable() below then
+      // applies the EXACT rule per-row. This replaces a plain date-only
+      // `event_date >= today` filter that let an event which started AND
+      // ended earlier today stay visible/purchasable until midnight, and
+      // that ignored end_date/archived_at entirely.
+      const nowIso = new Date().toISOString();
+      const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       let eventsQuery = supabase
         .from('events')
         .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
         .eq('hidden_by_admin', false)
         .is('deleted_at', null)
-        .gte('event_date', new Date().toISOString().split('T')[0])
+        .is('archived_at', null)
+        .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
         .in('status', ['live', 'published']);
 
       // Hide 18+ events from underage users
@@ -1128,13 +1324,20 @@ export default function App() {
 
       if (dbEventsError) throw dbEventsError;
 
+      // A newer fetchEvents call has started since this one began -- its
+      // response (whenever it lands) is the one that should win. Bail out
+      // before touching any state so this stale response can't stomp
+      // fresher data or flip loading back on/off out of turn.
+      if (requestId !== fetchRequestIdRef.current) return;
+
       if (dbEventsData) {
         const hasMore = dbEventsData.length === 20;
         setHasMoreEvents(hasMore);
         eventsPageRef.current = loadMore ? nextPage : 0;
 
-        const eventIds = dbEventsData.map((e: any) => e.id);
-        const mapped = dbEventsData.map((e: any) => {
+        const activeDbEventsData = dbEventsData.filter((e: any) => isEventDiscoverable(e));
+        const eventIds = activeDbEventsData.map((e: any) => e.id);
+        const mapped = activeDbEventsData.map((e: any) => {
           const orgUser = e.users;
           return mapDbEventToFrontend({
             ...e,
@@ -1270,7 +1473,10 @@ export default function App() {
       console.error('Failed to fetch events / rank feed centrally:', err);
       Sentry.captureException(err);
     } finally {
-      setLoadingEvents(false);
+      // Same guard as above -- a stale request resolving (success or error)
+      // after a newer one has already started must not flip loading back
+      // off while that newer request is still in flight.
+      if (requestId === fetchRequestIdRef.current) setLoadingEvents(false);
     }
   }, []);
 
@@ -1360,9 +1566,30 @@ export default function App() {
   const [conversationEventTitle, setConversationEventTitle] = useState<string | undefined>(undefined);
   const [exploreTab, setExploreTab] = useState<'people' | 'chats'>('people');
 
+  // Legacy relic of the pre-country-select signup flow (see AuthScreen's
+  // signupState, which is now what actually drives the signup form's own
+  // state field) -- nothing live ever calls setSelectedState anymore
+  // (HomeScreen's selectedState/onStateChange props are unread), so this
+  // was previously just a silent fallback that could inject a hardcoded
+  // Nigerian state ('Abia', NIGERIA_STATES[0]) into a non-Nigerian
+  // signup's `state` field if signupState was ever empty (AuthScreen.tsx:
+  // `state: signupState || selectedState || ...`). Defaulting to '' means
+  // that fallback can never silently supply the wrong country's state.
   const [selectedState, setSelectedState] = useState<string>(() => {
-    return localStorage.getItem('selected_state_preference') || NIGERIA_STATES[0].name;
+    return localStorage.getItem('selected_state_preference') || '';
   });
+
+  // Account/home country chosen via CountrySelectScreen (ISO 3166-1 alpha-2,
+  // e.g. 'NG', 'US') -- persisted account metadata only, never an
+  // event-visibility restriction (see select_events RLS policy: purely
+  // deletion/ownership based, no country/state predicate anywhere). Reused
+  // across a fresh signup attempt the same way selectedState is, above.
+  const [selectedCountryIso, setSelectedCountryIso] = useState<string | undefined>(() => {
+    return localStorage.getItem('selected_country_preference') || undefined;
+  });
+  useEffect(() => {
+    if (selectedCountryIso) localStorage.setItem('selected_country_preference', selectedCountryIso);
+  }, [selectedCountryIso]);
 
   const [pendingSignup, setPendingSignup] = useState(false);
   // Per-event context for screens navigated to from ManageEventsScreen
@@ -1371,6 +1598,7 @@ export default function App() {
   const [analyticsEventTitle, setAnalyticsEventTitle] = useState<string | undefined>(undefined);
 
   const handleTabChange = useCallback((tab: TabId) => {
+    const wasAlreadyActive = activeTab === tab;
     setActiveTab(tab);
     setScreen(TAB_SCREENS[tab]);
     setScreenStack([]);
@@ -1388,12 +1616,42 @@ export default function App() {
     if (tab === 'home') {
       fetchEvents(true);
       // Bumping this on every Home tap (not just re-taps) is deliberate:
-      // switching in from another tab always lands scrolled to top anyway
-      // (HomeScreen remounts fresh dbEvents), so this only has a visible
+      // HomeScreen now stays mounted across tab switches (see homeEverMounted
+      // above) rather than remounting, so scrollToTopSignal is what actually
+      // scrolls it back to top on switch-in -- this only has a visible
       // effect exactly when it matters -- tapping Home while already on it.
       setHomeScrollSignal(s => s + 1);
+    } else if (tab === 'my-tickets') {
+      // Same always-fires approach as Home, for the same reason: My Tickets
+      // also now stays mounted across tab switches (myTicketsEverMounted)
+      // instead of remounting, so both its tickets prop (via fetchUserTickets
+      // here) and its internally-fetched transfers list (via
+      // myTicketsRefreshSignal, which MyTicketsScreen turns into its own
+      // loadTransfers() call) need an explicit refresh trigger on every tap
+      // of this tab now -- the old "remount refetches everything" guarantee
+      // this used to lean on (see wasAlreadyActive branch below) is gone.
+      if (currentUser?.id) fetchUserTickets(currentUser.id);
+      setMyTicketsRefreshSignal(s => s + 1);
+    } else if (wasAlreadyActive) {
+      // Same "tap the active tab to refresh" gesture as Home/My Tickets,
+      // extended to the remaining two tabs -- but ONLY on a re-tap (unlike
+      // Home/My Tickets' always-fires approach above), since these two
+      // don't already remount/refetch on every switch-in the way
+      // HomeScreen/MyTicketsScreen do. Each reuses its existing fetch/
+      // revalidation path, no new fetch logic: Chats bumps chatRefreshKey,
+      // the same signal ConversationScreen's own goBack already uses to
+      // make ExploreScreen's inbox list refetch; Profile bumps
+      // profileTabRefreshSignal, which ProfileScreen turns into its own
+      // internal profileRefreshKey (already-existing stats/service-
+      // provider-profile fetch effects, previously dead since nothing
+      // ever incremented it).
+      if (tab === 'explore') {
+        setChatRefreshKey(k => k + 1);
+      } else if (tab === 'profile') {
+        setProfileTabRefreshSignal(s => s + 1);
+      }
     }
-  }, [fetchEvents]);
+  }, [fetchEvents, activeTab, currentUser?.id, fetchUserTickets]);
 
   const handleOrgTabChange = useCallback((tab: OrgTab) => {
     setOrgTab(tab);
@@ -1472,6 +1730,31 @@ export default function App() {
         });
         if (insertError) throw insertError;
         rows = Array.isArray(tokenRows) ? tokenRows : [];
+      } else if (ticket.skipPaymentVerification) {
+        // Wallet payment (CheckoutScreen.tsx) -- confirm_ticket_payment_via_
+        // wallet already verified the total and issued the ticket
+        // atomically server-side. ticket.ticketId here is the wallet
+        // payment_ref, never a real Paystack reference, so calling
+        // ?action=verify on it would always fail with Paystack's own
+        // "Transaction reference not found." (real production incident:
+        // Sentry JAVASCRIPT-REACT-1G). Read the already-paid ticket rows
+        // back directly instead -- select_tickets' RLS policy already
+        // scopes this to the caller's own rows.
+        const { data: ticketRows, error: ticketsError } = await supabase
+          .from('tickets')
+          .select('id')
+          .eq('payment_ref', ticket.ticketId)
+          .eq('user_id', currentUser.id);
+        if (ticketsError) throw ticketsError;
+        const ticketIds = (ticketRows || []).map((r: any) => r.id);
+        if (ticketIds.length === 0) {
+          throw new Error('Payment confirmed, but no ticket was found for this order. Contact support with your reference.');
+        }
+        rows = await Promise.all(ticketIds.map(async (id) => {
+          const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
+          if (tokErr) throw tokErr;
+          return { ticket_id: id, token: tok as string };
+        }));
       } else {
         // Paid purchases: NEVER treat "the Paystack popup called back" as
         // proof of payment — that's just the client's own JS reporting
@@ -1624,66 +1907,16 @@ export default function App() {
     }
   }, [currentUser, fetchEvents, fetchUserTickets]);
 
-  // Completion path for a wallet-paid ticket. CheckoutScreen already ran
-  // confirm_ticket_payment_via_wallet (atomic debit + ticket issuance +
-  // organizer credit, all server-side and idempotent) before calling this --
-  // there is no Paystack transaction behind this purchase at all, so this
-  // handler MUST NEVER call api/webhook/paystack?action=verify the way
-  // handleCheckoutSuccess above does for the Paystack path. Doing so would
-  // be a stale/pointless verification attempt against a reference Paystack
-  // has never heard of.
-  const handleWalletCheckoutSuccess = useCallback(async (ticket: PurchasedTicket) => {
-    if (!currentUser) return;
-    try {
-      const { data: rows, error } = await supabase
-        .from('tickets')
-        .select('id')
-        .eq('payment_ref', ticket.ticketId)
-        .eq('user_id', currentUser.id)
-        .eq('status', 'active')
-        .order('created_at', { ascending: true });
-      if (error) throw error;
-
-      const ticketIds = (rows || []).map((r: any) => r.id as string);
-      if (ticketIds.length === 0) {
-        throw new Error('Payment confirmed, but no ticket was found for this order. Contact support with your reference.');
-      }
-
-      const tokenPairs = await Promise.all(ticketIds.map(async (id) => {
-        const { data: tok, error: tokErr } = await supabase.rpc('generate_ticket_token', { p_ticket_id: id });
-        if (tokErr) throw tokErr;
-        return { ticket_id: id, token: tok as string };
-      }));
-      tokenPairs.forEach((r) => cacheTicketToken(r.ticket_id, r.token));
-
-      analytics.ticketPurchased({
-        eventId: ticket.event.id,
-        eventTitle: ticket.event.title,
-        ticketType: ticket.ticketType?.name,
-        quantity: ticket.quantity,
-        amount: ticket.totalAmount,
-        free: false,
-        reference: ticket.ticketId,
-      });
-
-      await fetchUserTickets(currentUser.id);
-      await fetchEvents(true);
-
-      setPurchasedTicket({ ...ticket, ticketId: tokenPairs[0].ticket_id, token: tokenPairs[0].token });
-      setScreenStack([]);
-      setScreen('payment-success');
-    } catch (err: any) {
-      console.error('Failed to finalize wallet ticket purchase:', err);
-      Sentry.captureException(err);
-      setPaymentFailure({
-        eventTitle: ticket.event.title,
-        reference: ticket.ticketId ?? 'unknown',
-        message: err?.message || 'Something went wrong while confirming your wallet purchase.',
-      });
-      setScreenStack([]);
-      setScreen('payment-failed');
-    }
-  }, [currentUser, fetchEvents, fetchUserTickets]);
+  // "Someone else is paying": create_pending_purchase already resolved a
+  // real VENTS account as payer and persisted the request server-side.
+  // Nothing to verify or finalize here — no payment happened yet, no ticket
+  // is created, and this recipient never sees Paystack. Just show them the
+  // request was sent.
+  const handlePaymentRequestSent = useCallback((info: { paymentRef: string; payerIdentifier: string; event: Event; ticketType: TicketType }) => {
+    setPaymentRequestSentInfo(info);
+    setScreenStack([]);
+    setScreen('payment-request-sent');
+  }, []);
 
   // Resolves a payment reference that arrived via Paystack's own post-
   // payment redirect (?reference=/?trxref= on web, vents://payment?ref= on
@@ -1864,6 +2097,99 @@ export default function App() {
     // a "sale" push carries both eventId and screen:'sales-analytics', and a
     // "message" push carries userId + screen:'chat'; without this ordering
     // they'd fall into the generic event-details/user-profile routes instead.
+    if (data.paymentRef) {
+      // "Someone else is paying" -- same screen/state PaymentRequestScreen.tsx
+      // and the ?payment_request= deep link already use; get_payment_request_
+      // details itself scopes this to whichever of payer/recipient the
+      // current session actually is.
+      setViewingPaymentRequestRef(data.paymentRef);
+      setScreenStack([]);
+      setScreen('payment-request');
+      return;
+    }
+    if (data.transferId) {
+      // Real existing destination: My Tickets' own Transfers tab
+      // (MyTicketsScreen.tsx) -- not a new screen. ticketId travels
+      // alongside transferId in every transfer notification's push_data
+      // but isn't needed here; the Transfers tab itself resolves the
+      // specific transfer from ticket_transfers, scoped by RLS to rows this
+      // user is actually a party to.
+      setMyTicketsFocusTransfersSignal((s) => s + 1);
+      setScreenStack([]);
+      setScreen('my-tickets');
+      return;
+    }
+    if (data.ticketId) {
+      // A refunded/refund-pending ticket's status is 'cancelled', which
+      // MyTicketsScreen's own active-tickets query can never return -- so
+      // "Ticket refunded" notifications (the only push carrying ticketId
+      // with no other identifying field) need to check the ticket's real
+      // payment_status before deciding where to send the tap, rather than
+      // always assuming the still-active-ticket destination.
+      supabase
+        .from('tickets')
+        .select('id, payment_status')
+        .eq('id', data.ticketId)
+        .maybeSingle()
+        .then(({ data: row }) => {
+          if (row && (row.payment_status === 'refund_pending' || row.payment_status === 'refunded')) {
+            setRefundTicketId(row.id);
+            setScreenStack([]);
+            setScreen('ticket-refund');
+            return;
+          }
+          // Real existing destination: the same QR/detail view any ticket
+          // card in MyTicketsScreen already opens (App.tsx's own
+          // onViewTicket -> 'payment-success' screen) -- MyTicketsScreen
+          // resolves the id against its own tickets list, never a new
+          // ticket-detail screen.
+          setMyTicketsFocusTicket({ ticketId: data.ticketId, nonce: Date.now() });
+          setScreenStack([]);
+          setScreen('my-tickets');
+        });
+      return;
+    }
+    if (data.requestId && data.userId) {
+      // Real existing destination: ExploreScreen's own Message Requests
+      // overlay (the actual production Chats screen) -- never a second
+      // Requests UI. respond_to_message_request (Accept/Decline) stays the
+      // only way the request itself ever changes state; this only opens
+      // the overlay and highlights the row for data.userId (the sender),
+      // which the overlay already keys its rows by.
+      setExploreHighlightRequesterId(data.userId);
+      setExploreOpenRequestsSignal((s) => s + 1);
+      setScreenStack([]);
+      setScreen('explore');
+      return;
+    }
+    if (data.bookingId && currentUser?.id) {
+      // Real existing destinations: ServiceBookingsScreen in either
+      // 'customer' or 'provider' mode (both already built, already routed
+      // to elsewhere in this file) -- never a new booking-detail screen.
+      // Neither booking-confirmed notification (customer's or provider's
+      // copy) says which side the recipient is on, so that's resolved here
+      // from the booking's own real customer_id/provider row, never
+      // guessed. Falls through to a no-op if the row can't be read (RLS
+      // already scopes this correctly) rather than opening a wrong list.
+      const bookingId = data.bookingId;
+      supabase
+        .from('service_bookings')
+        .select('customer_id, provider_id, service_providers(user_id)')
+        .eq('id', bookingId)
+        .maybeSingle()
+        .then(({ data: row, error: rowError }: any) => {
+          if (rowError || !row) return;
+          if (row.customer_id === currentUser.id) {
+            setScreenStack([]);
+            setScreen('service-bookings');
+          } else if (row.service_providers?.user_id === currentUser.id) {
+            setManageServicesProviderId(row.provider_id);
+            setScreenStack([]);
+            setScreen('provider-service-bookings');
+          }
+        });
+      return;
+    }
     if (data.screen === 'sales-analytics' && data.eventId) {
       supabase
         .from('events')
@@ -1918,7 +2244,7 @@ export default function App() {
     if (data.userId) {
       supabase
         .from('public_profiles')
-        .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+        .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
         .eq('id', data.userId)
         .maybeSingle()
         .then(({ data: userData, error: userError }) => {
@@ -1934,26 +2260,49 @@ export default function App() {
     if (data.screen === 'wallet') { setScreenStack([]); setScreen('wallet'); return; }
   };
 
+  // Stable identity (never recreated) wrapping the always-current
+  // pushActionRef.current -- this is the one function both a native push
+  // tap (via setPushActionHandler below) and an in-app NotificationsScreen
+  // tap (passed down as a prop) ever call, so the two can never resolve the
+  // same notification to two different destinations.
+  const routeNotification = useCallback((data: Record<string, any>) => {
+    pushActionRef.current(data);
+  }, []);
+
   useEffect(() => {
     setPushActionHandler((data) => pushActionRef.current(data));
     return () => setPushActionHandler(null);
   }, []);
 
   // Native deep links (a shared https://getvents.com/?event=… or vents://
-  // link opened while the app is installed) previously had no handler at
-  // all — there was no @capacitor/app listener anywhere in the codebase, so
-  // App.tsx's URL parsing (which only runs once, off window.location.search
-  // during the initial hydrateAuth pass) never saw these: a Capacitor
-  // WebView's window.location is the local bundle URL, not the link that
-  // opened the app. This requires the platform-side association to route
-  // getvents.com/vents:// links to the app in the first place — Android's
-  // intent-filter is set up in AndroidManifest.xml; a full domain-verified
-  // Android App Link additionally needs a hosted
-  // /.well-known/assetlinks.json with the release signing certificate's
-  // SHA-256 fingerprint, and iOS Universal Links need an
-  // apple-app-site-association file plus the Associated Domains
-  // entitlement — neither is wired up yet (no iOS project exists in this
-  // repo yet, and the Android release fingerprint isn't available here).
+  // link opened while the app is installed) -- handled here via @capacitor/
+  // app's appUrlOpen, since App.tsx's URL parsing (which only runs once, off
+  // window.location.search during the initial hydrateAuth pass) never sees
+  // these: a Capacitor WebView's window.location is the local bundle URL,
+  // not the link that opened the app.
+  //
+  // This requires the platform-side association to route getvents.com/
+  // vents:// links to the app in the first place. Current repo-side state:
+  //   - Android: the vents:// intent-filter and an autoVerify="true" https://
+  //     getvents.com intent-filter both exist in AndroidManifest.xml;
+  //     public/.well-known/assetlinks.json is checked in with a
+  //     sha256_cert_fingerprints value. That fingerprint has NOT been
+  //     verified from this repo alone -- it must actually match the real
+  //     release signing certificate, and the file must actually be reachable
+  //     at https://getvents.com/.well-known/assetlinks.json in production,
+  //     neither of which this codebase can confirm on its own.
+  //   - iOS: the App target now has an Associated Domains entitlement
+  //     (ios/App/App/App.entitlements, applinks:getvents.com) wired into
+  //     ios/App/App.xcodeproj/project.pbxproj via CODE_SIGN_ENTITLEMENTS, and
+  //     public/.well-known/apple-app-site-association is checked in with
+  //     event/user link paths. Its appIDs entry still has a literal
+  //     REPLACE_WITH_APPLE_TEAM_ID placeholder -- the real Apple Developer
+  //     Team ID isn't available anywhere in this repo and must never be
+  //     guessed; swap it in before this can work.
+  // Until both are genuinely verified end-to-end (not just present in the
+  // repo), a getvents.com link falls back to opening in the browser -- safe,
+  // but not yet the native-app experience. vents:// (this listener's other
+  // branch) works today on both platforms independent of any of the above.
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     let removeListener: (() => void) | undefined;
@@ -2054,11 +2403,27 @@ export default function App() {
     return () => removeListener?.();
   }, [hydrateAuth]);
 
-  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string }) => {
+  const handleAuthSuccess = useCallback(async (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string; profileWarning?: string }) => {
+    // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): a
+    // username/phone that couldn't be saved at signup (a genuine unique-
+    // constraint collision, e.g. someone else already has it) used to be
+    // silently swallowed -- AuthScreen.tsx now surfaces it here instead of
+    // masking it. Shown once via the existing toast, not persisted on
+    // currentUser (it's a one-time notice, not profile data).
+    const { profileWarning, ...profileFields } = userProfile;
+    if (profileWarning) setAppToastError(profileWarning);
     const enriched = {
-      ...userProfile,
+      ...profileFields,
       isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
     };
+    // Defense in depth for a shared device where a previous session wasn't
+    // cleanly signed out first (e.g. the app was killed): never let a NEW
+    // login on this browser inherit a DIFFERENT previous user's cached
+    // ticket tokens/VC balance.
+    if (currentUser && currentUser.id !== userProfile.id) {
+      clearTicketTokenCache();
+      invalidateVcBalanceCache();
+    }
     setCurrentUser(enriched);
     // Register this device for native push (no-op on web); token is synced to
     // the backend keyed to the user.
@@ -2072,9 +2437,16 @@ export default function App() {
         setShowInterests(true);
       }
     } catch { /* ignore — don't block login on interests check failure */ }
-  }, []);
+  }, [currentUser]);
 
-  const handleSignOut = useCallback(async () => {
+  // toForgotPassword: used by ChangePasswordScreen's "I don't remember my
+  // current password" link -- signs out (a user who doesn't know their
+  // current password can't safely stay in an authenticated Change Password
+  // flow anyway) and lands directly on the login screen with the existing
+  // forgot-password flow pre-selected, instead of just Welcome. Does not
+  // change what that flow itself requires (still email OTP-gated) -- this
+  // only saves the extra "tap Sign In, then tap Forgot Password" steps.
+  const handleSignOut = useCallback(async (toForgotPassword?: boolean) => {
     setAuthLoading(true);
     analytics.loggedOut();
     // Drop this device's push token so a signed-out user stops receiving pushes.
@@ -2087,9 +2459,26 @@ export default function App() {
     }
     setCurrentUser(null);
     setUserRole('attendee');
-    setScreen('welcome');
     setScreenStack([]);
     setActiveTab('home');
+    // On a shared device, these client-side caches would otherwise keep the
+    // signed-out user's data (ticket QR tokens, VC balance) reachable to
+    // whoever signs in next on the same browser -- clear them here, not
+    // just rely on each cache's own userId check.
+    clearTicketTokenCache();
+    invalidateVcBalanceCache();
+    // Strict === true, not a truthy check -- this is the one call this
+    // function makes that decides whether a sign-out lands on Welcome/Login
+    // (the only correct destination for a plain Sign Out) or detours into
+    // Forgot Password, and a caller passing this straight through as a
+    // React event handler (as SettingsScreen's Sign Out row previously did)
+    // would otherwise leak a truthy SyntheticEvent into this parameter.
+    if (toForgotPassword === true) {
+      setAuthMode('forgot');
+      setScreen('auth');
+    } else {
+      setScreen('welcome');
+    }
     setAuthLoading(false);
   }, [currentUser?.id]);
 
@@ -2105,13 +2494,13 @@ export default function App() {
         style={{
           background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>⬆️</span>
         </div>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
           Update Required
         </h1>
         <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, marginBottom: '28px', maxWidth: '300px' }}>
@@ -2138,13 +2527,13 @@ export default function App() {
         style={{
           background: '#020005', width: '100%', height: '100dvh', display: 'flex',
           flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          padding: '32px 24px', textAlign: 'center', fontFamily: 'Inter, sans-serif',
+          padding: '32px 24px', textAlign: 'center', fontFamily: 'Manrope, sans-serif',
         }}
       >
         <div style={{ width: '72px', height: '72px', borderRadius: '20px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '24px', boxShadow: '0 8px 30px rgba(123,47,190,0.35)' }}>
           <span style={{ fontSize: '32px' }}>🛠️</span>
         </div>
-        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginBottom: '10px' }}>
+        <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginBottom: '10px' }}>
           Under Maintenance
         </h1>
         <p style={{ color: '#94A3B8', fontSize: '14px', lineHeight: 1.6, maxWidth: '300px' }}>
@@ -2159,7 +2548,7 @@ export default function App() {
       className="min-h-screen flex items-center justify-center"
       style={{
         background: 'linear-gradient(135deg, #050010 0%, #000000 50%, #080014 100%)',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       {appToastError && (
@@ -2282,7 +2671,13 @@ export default function App() {
               onGetStarted={() => {
                 setPendingSignup(true);
                 setAuthMode('signup');
-                navigateTo('role-select');
+                // Registration no longer forces an Attendee/Organizer choice
+                // up front -- every new account starts as 'attendee'.
+                // Existing users can still become an Organizer afterwards
+                // via ProfileScreen's "Become an Organizer" request flow
+                // (onBecomeOrganizer below), which is unaffected by this.
+                setUserRole('attendee');
+                navigateTo('country-select');
               }}
               onSignIn={() => {
                 setPendingSignup(false);
@@ -2292,7 +2687,8 @@ export default function App() {
               onPickState={() => {
                 setPendingSignup(true);
                 setAuthMode('signup');
-                navigateTo('role-select');
+                setUserRole('attendee');
+                navigateTo('country-select');
               }}
               onBrowseGuest={() => {
                 setScreen('home');
@@ -2300,46 +2696,121 @@ export default function App() {
               }}
             />
           )}
-          {screen === 'role-select' && (
-            <RoleSelectScreen
+          {screen === 'country-select' && (
+            <CountrySelectScreen
               onBack={goBack}
-              onSelect={async (role) => {
-                if (currentUser) {
-                  // Already logged in — switch mode directly without re-auth
-                  if (role === 'organizer') {
-                    setUserRole('organizer');
-                    setOrgTab('home');
-                    setActiveTab('home');
-                    setScreen('home');
-                    setScreenStack([]);
-                    if (currentUser.id && currentUser.role !== 'admin') {
-                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
-                      localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                      try {
-                        await supabase.rpc('promote_to_organizer');
-                      } catch (err) {
-                        console.error('Failed to promote to organizer:', err);
-                        Sentry.captureException(err);
-                      }
-                    }
-                  } else {
-                    setUserRole('attendee');
-                    setScreen('home');
-                    setActiveTab('home');
-                    setScreenStack([]);
-                  }
-                } else {
-                  setUserRole(role);
-                  navigateTo('auth');
-                }
+              selectedIso={selectedCountryIso}
+              onContinue={(country) => {
+                setSelectedCountryIso(country.iso);
+                navigateTo('auth');
               }}
             />
+          )}
+          {screen === 'services-home' && (
+            <ServicesHomeScreen
+              onBack={goBack}
+              accountCountryIso={currentUser?.country || selectedCountryIso}
+              discoveryCountryIso={discoveryCountryIso}
+              onDiscoveryCountryChange={handleDiscoveryCountryChange}
+              onCategoryPress={(category) => {
+                setSelectedServiceCategory(category);
+                navigateTo('services-category');
+              }}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
+              onMyBookingsPress={currentUser ? () => navigateTo('service-bookings') : undefined}
+            />
+          )}
+          {screen === 'services-category' && selectedServiceCategory && (
+            <ServiceCategoryScreen
+              category={selectedServiceCategory}
+              onBack={goBack}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
+            />
+          )}
+          {screen === 'service-provider-profile' && selectedServiceProvider && (
+            <ServiceProviderProfileScreen
+              providerId={selectedServiceProvider.id}
+              initialProvider={selectedServiceProvider}
+              currentUserId={currentUser?.id}
+              currentUserEmail={currentUser?.email}
+              onBack={goBack}
+              onContactProvider={currentUser ? async (provider) => {
+                try {
+                  // "First provider photo, falling back to user avatar" --
+                  // the PROVIDER's own account avatar, not the viewer's, so
+                  // this needs a lookup (public_profiles, same safe public
+                  // read every other cross-account avatar fetch in this
+                  // file uses) when the listing itself has no photos yet.
+                  let avatarUrl = provider.photoUrls[0] || undefined;
+                  if (!avatarUrl) {
+                    const { data } = await supabase
+                      .from('public_profiles')
+                      .select('avatar_url')
+                      .eq('id', provider.userId)
+                      .maybeSingle();
+                    avatarUrl = data?.avatar_url || undefined;
+                  }
+                  setConversationUser({ id: provider.userId, name: provider.businessName, avatarUrl });
+                  // No event context for a Services contact -- clear any
+                  // leftover eventId/eventTitle from a previous event-
+                  // context chat so ConversationScreen doesn't show a
+                  // stale event banner here.
+                  setConversationEventId(undefined);
+                  setConversationEventTitle(undefined);
+                  navigateTo('conversation');
+                } catch (err) {
+                  console.error('Failed to open provider conversation:', err);
+                  Sentry.captureException(err);
+                  setAppToastError("Couldn't start the conversation. Please try again.");
+                }
+              } : undefined}
+            />
+          )}
+          {screen === 'service-provider-setup' && currentUser && (
+            <ServiceProviderSetupScreen
+              currentUser={{ id: currentUser.id, country: currentUser.country }}
+              onBack={goBack}
+              onSaved={() => goBack()}
+              onManageServices={(providerId) => {
+                setManageServicesProviderId(providerId);
+                navigateTo('manage-provider-services');
+              }}
+            />
+          )}
+          {screen === 'service-provider-verify' && currentUser && (
+            <ServiceProviderVerificationScreen
+              currentUser={{ id: currentUser.id, country: currentUser.country }}
+              onBack={goBack}
+              onApprovedSetup={() => navigateTo('service-provider-setup')}
+            />
+          )}
+          {screen === 'manage-provider-services' && manageServicesProviderId && (
+            <ManageProviderServicesScreen
+              providerId={manageServicesProviderId}
+              accountCountry={currentUser?.country}
+              onBack={goBack}
+              onViewBookings={() => navigateTo('provider-service-bookings')}
+              onEditLocation={() => navigateTo('service-provider-setup')}
+            />
+          )}
+          {screen === 'service-bookings' && currentUser && (
+            <ServiceBookingsScreen mode="customer" onBack={goBack} />
+          )}
+          {screen === 'provider-service-bookings' && manageServicesProviderId && (
+            <ServiceBookingsScreen mode="provider" providerId={manageServicesProviderId} onBack={goBack} />
           )}
           {screen === 'auth' && (
             <AuthScreen
               initialMode={authMode}
               userRole={userRole}
               selectedState={selectedState}
+              selectedCountryIso={selectedCountryIso}
               onBack={goBack}
               onSuccess={handleAuthSuccess}
               resetToken={resetToken}
@@ -2362,8 +2833,22 @@ export default function App() {
           )}
 
           {/* ── ATTENDEE MAIN TABS ── */}
-          {screen === 'home' && (
-            <HomeScreen
+          {/* HomeScreen mounts once (the first time the user reaches Home)
+              and then stays mounted for the rest of the session -- switching
+              to another tab/screen only hides it (display:none), it no
+              longer unmounts. Previously `{screen === 'home' && <HomeScreen/>}`
+              destroyed and recreated the component on every tab switch,
+              which reset its local filter/search state and re-ran its
+              mount-time fetch every time, on top of the dedicated
+              `screen === 'home'` fetch effect and handleTabChange's own
+              refresh-on-tap -- three redundant fetch triggers stacked on
+              top of a full remount. Home's own scrollToTopSignal prop
+              already handles "tapping the active tab scrolls to top"
+              independently of mount/unmount, so nothing here changes that
+              behavior. */}
+          {homeEverMounted && (
+            <div style={{ display: screen === 'home' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <HomeScreen
               onEventPress={handleEventPress}
               savedEvents={savedEvents}
               onToggleSave={handleToggleSave}
@@ -2374,7 +2859,7 @@ export default function App() {
               onUserPress={async (u) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', u.id)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -2382,6 +2867,11 @@ export default function App() {
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
+              onServicesPress={() => navigateTo('services-home')}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
               dbEvents={dbEvents}
               loading={loadingEvents}
               fetchEvents={fetchEvents}
@@ -2389,9 +2879,12 @@ export default function App() {
               hasMore={hasMoreEvents}
               onLoadMore={() => fetchEvents(false, true)}
               unreadNotificationsCount={unreadCount}
-              blockedUserIds={[...blockedIds]}
+              blockedUserIds={blockedUserIdsArray}
               scrollToTopSignal={homeScrollSignal}
+              countryFilter={discoveryCountryIso}
+              onCountryFilterChange={handleDiscoveryCountryChange}
             />
+            </div>
           )}
           {screen === 'explore' && (
             <ExploreScreen
@@ -2408,6 +2901,8 @@ export default function App() {
               chatRefreshKey={chatRefreshKey}
               initialTab={exploreTab}
               onTabChange={setExploreTab}
+              openRequestsSignal={exploreOpenRequestsSignal}
+              highlightRequesterId={exploreHighlightRequesterId}
             />
           )}
           {screen === 'saved' && (
@@ -2432,6 +2927,7 @@ export default function App() {
               }}
               onNavigate={handleProfileNavigate}
               unreadNotificationsCount={unreadCount}
+              refreshSignal={profileTabRefreshSignal}
               onBecomeOrganizer={async () => {
                 setUserRole('organizer');
                 setOrgTab('home');
@@ -2526,25 +3022,45 @@ export default function App() {
               onBack={goBack}
               currentUser={currentUser}
               onRefreshUnread={fetchUnreadCount}
+              onRouteNotification={routeNotification}
             />
           )}
-          {screen === 'my-tickets' && (
-            <MyTicketsScreen
-              tickets={allTickets}
-              loading={ticketsLoading}
-              onBack={goBack}
-              onViewTicket={(ticket) => {
-                setPurchasedTicket(ticket);
-                navigateTo('payment-success');
-              }}
-              onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
-            />
+          {myTicketsEverMounted && (
+            <div style={{ display: screen === 'my-tickets' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <MyTicketsScreen
+                tickets={allTickets}
+                loading={ticketsLoading}
+                onBack={goBack}
+                onViewTicket={(ticket) => {
+                  // A cancelled/refunded ticket has no valid QR to show --
+                  // route to the real refund detail screen (real
+                  // refund_id/refund_reason/timestamp) instead of the QR
+                  // view, reusing the same mechanism a refund notification
+                  // tap already uses (see refundTicketId above).
+                  if (ticket.status === 'cancelled' || ticket.paymentStatus === 'refunded' || ticket.paymentStatus === 'refund_pending') {
+                    setRefundTicketId(ticket.ticketId);
+                    navigateTo('ticket-refund');
+                    return;
+                  }
+                  setPurchasedTicket(ticket);
+                  navigateTo('payment-success');
+                }}
+                onRefresh={currentUser ? () => fetchUserTickets(currentUser.id) : undefined}
+                currentUserId={currentUser?.id}
+                currentUserEmail={currentUser?.email}
+                refreshSignal={myTicketsRefreshSignal}
+                focusTransfersSignal={myTicketsFocusTransfersSignal}
+                focusTicket={myTicketsFocusTicket}
+                onExploreEvents={() => { setScreen('home'); setActiveTab('home'); }}
+              />
+            </div>
           )}
           {screen === 'settings' && (
           <SettingsScreen
               currentUser={currentUser}
               onBack={goBack}
               onSignOut={handleSignOut}
+              onForgotPassword={() => handleSignOut(true)}
               onNavigate={navigateTo}
               isDark={true}
               onToggleDark={() => {}}
@@ -2587,7 +3103,7 @@ export default function App() {
               onOrganizerPress={async (organizerId) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', organizerId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }
@@ -2624,8 +3140,66 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               onSuccess={handleCheckoutSuccess}
-              onWalletSuccess={handleWalletCheckoutSuccess}
+              onPaymentRequestSent={handlePaymentRequestSent}
             />
+          )}
+          {screen === 'payment-request' && viewingPaymentRequestRef && (
+            <PaymentRequestScreen
+              paymentRef={viewingPaymentRequestRef}
+              currentUser={currentUser}
+              onBack={goBack}
+              onPaid={() => {
+                setAppToastSuccess('Payment confirmed! A receipt is on its way.');
+              }}
+            />
+          )}
+          {screen === 'payment-request-sent' && paymentRequestSentInfo && (
+            <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', gap: '16px', textAlign: 'center' }}>
+              <div style={{ width: '64px', height: '64px', borderRadius: '50%', background: 'rgba(16,185,129,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '32px' }}>✅</div>
+              <h1 style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 700 }}>Payment Request Sent</h1>
+              <p style={{ color: '#8B8FA8', fontSize: '14px', maxWidth: '320px', lineHeight: 1.6 }}>
+                We've notified {paymentRequestSentInfo.payerIdentifier} to pay for your {paymentRequestSentInfo.ticketType.name} ticket to {paymentRequestSentInfo.event.title}. You'll get your ticket and QR code the moment they pay — expires in 48 hours if unpaid.
+              </p>
+              <button
+                onClick={async () => {
+                  // Always the real public domain, never window.location.origin --
+                  // that resolves to a Vercel Preview branch URL (or, inside the
+                  // native app, capacitor://localhost/https://localhost) on
+                  // every build except Production web, none of which a payer
+                  // opening this link on a different device could ever reach.
+                  // Same fixed-domain pattern EventDetailsScreen.tsx's own Share
+                  // Event link already uses.
+                  const link = `https://getvents.com/?payment_request=${encodeURIComponent(paymentRequestSentInfo.paymentRef)}`;
+                  try {
+                    if (navigator.share) {
+                      await navigator.share({ title: 'Pay for my VENTS ticket', url: link });
+                    } else {
+                      await navigator.clipboard.writeText(link);
+                      setAppToastSuccess('Payment link copied to clipboard.');
+                    }
+                  } catch { /* user cancelled share sheet — not an error */ }
+                }}
+                style={{ height: '48px', padding: '0 28px', background: 'linear-gradient(135deg, #7B2FBE 0%, #4F46E5 100%)', border: 'none', borderRadius: '100px', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Share Payment Link
+              </button>
+              <button
+                onClick={() => {
+                  setViewingPaymentRequestRef(paymentRequestSentInfo.paymentRef);
+                  setScreenStack([]);
+                  setScreen('payment-request');
+                }}
+                style={{ height: '44px', padding: '0 28px', background: 'transparent', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '100px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                View / Manage Request
+              </button>
+              <button
+                onClick={() => { setScreenStack([]); setScreen('home'); }}
+                style={{ height: '36px', padding: '0 20px', background: 'transparent', border: 'none', color: '#6B7280', fontSize: '13px', cursor: 'pointer' }}
+              >
+                Done
+              </button>
+            </div>
           )}
           {screen === 'payment-success' && purchasedTicket && (
             <PaymentSuccessScreen
@@ -2678,9 +3252,20 @@ export default function App() {
                 navigateTo('checkin-scanner');
               }}
               onEventPress={(event) => {
-                // Navigate to event management / analytics for this event
+                // Navigate to event management / analytics for this event.
+                // dbEvents is the public Home feed, which now (correctly)
+                // excludes ended/draft/hidden events -- so for any event in
+                // OrganizerDashboard's Past Events / Drafts tabs, `mapped`
+                // was always undefined here. The old code then silently did
+                // NOT call setSelectedEvent on a miss, yet still navigated
+                // to event-details -- showing whatever event was PREVIOUSLY
+                // selected (a stale, unrelated, often-live event) instead of
+                // the one just tapped. orgEvents rows are already full
+                // `select('*')` rows (see OrganizerDashboard's own fetch),
+                // so map the tapped row directly as the fallback instead of
+                // depending on a dbEvents hit.
                 const mapped = dbEvents.find(e => e.id === event.id);
-                if (mapped) setSelectedEvent(mapped);
+                setSelectedEvent(mapped || mapDbEventToFrontend(event));
                 navigateTo('event-details');
               }}
               onManageEvents={() => navigateTo('manage-events')}
@@ -2765,10 +3350,11 @@ export default function App() {
                 setSavedEvents((prev) => prev.filter((id) => id !== eventId));
                 if (selectedEvent?.id === eventId) setSelectedEvent(null);
               }}
+              onNavigate={handleOrgNavigate}
             />
           )}
           {screen === 'sales-analytics' && (
-            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} eventId={analyticsEventId} eventTitle={analyticsEventTitle} />
+            <SalesAnalyticsScreen currentUser={currentUser} onBack={goBack} eventId={analyticsEventId} eventTitle={analyticsEventTitle} onNavigate={handleOrgNavigate} />
           )}
           {screen === 'attendee-list' && (
             <AttendeeListScreen onBack={goBack} eventId={selectedEvent?.id} eventTitle={selectedEvent?.title} />
@@ -2820,6 +3406,27 @@ export default function App() {
             />
           )}
 
+          {/* ── TICKET REFUND (attendee side) ── */}
+          {screen === 'ticket-refund' && refundTicketId && (
+            <TicketRefundScreen
+              ticketId={refundTicketId}
+              onBack={goBack}
+              onViewWallet={() => navigateTo('customer-wallet')}
+            />
+          )}
+
+          {/* ── PAYMENT REQUESTS (payer receipts) ── */}
+          {screen === 'payment-requests' && (
+            <PaymentRequestsScreen
+              currentUser={currentUser}
+              onBack={goBack}
+              onOpenRequest={(paymentRef) => {
+                setViewingPaymentRequestRef(paymentRef);
+                navigateTo('payment-request');
+              }}
+            />
+          )}
+
           {/* ── CONVERSATION ── */}
           {screen === 'conversation' && currentUser && conversationUser && (
             <ConversationScreen
@@ -2831,7 +3438,7 @@ export default function App() {
               onNavigateToProfile={async (userId) => {
                 const { data } = await supabase
                   .from('public_profiles')
-                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+                  .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge, instagram_handle, x_handle, tiktok_handle')
                   .eq('id', userId)
                   .maybeSingle();
                 if (data) { setSelectedUser(mapDbUserToUserProfile(data)); navigateTo('user-profile'); }

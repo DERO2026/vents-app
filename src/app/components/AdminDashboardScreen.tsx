@@ -6,15 +6,28 @@ import {
   Copy, CheckCircle, BadgeCheck, Megaphone, Swords, Flag, Wallet,
   Mic, Image as ImageIcon, Activity, ShieldCheck,
   Ticket, ScanLine, UserPlus, Banknote, MapPin,
+  Briefcase, Plus, Pencil,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { isRoot as permIsRoot, isAdminTier as permIsAdminTier, isSuperAdmin as permIsSuperAdmin } from '../../lib/permissions';
+import { triggerPushDelivery } from '../../lib/pushNotifications';
 import { AdminActionsTab } from './AdminActionsTab';
-import { extractEventsFromText, resolveEventLocations, publishEvents, isEventExtractionConfigured, friendlyPublishError, type ImportedEvent } from '../../lib/eventImporter';
 import { uploadImage } from '../../lib/mediaPipeline';
+import { appVersionLabel } from '../../lib/appVersion';
+import { withTimeoutFallback } from '../../lib/withTimeoutFallback';
+import { SERVICE_CATEGORIES } from '../../lib/servicesDesignTokens';
+import { COUNTRY_CODES } from '../../lib/countries';
+import { PickerField, PickerSheet } from './shared/PickerSheet';
+import { CURRENCIES } from '../../lib/currencies';
+import {
+  fetchOwnServicesForProvider as fetchServicesForProviderId,
+  createProviderService, updateProviderService, setProviderServiceActive, deleteProviderService,
+  ProviderServiceInput,
+} from '../../lib/providerServices';
+import { ProviderService } from './types';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -45,7 +58,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'import-events' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -114,7 +127,7 @@ function ConfirmModal({
         <div style={{ width: '52px', height: '52px', borderRadius: '50%', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
           <AlertCircle size={24} color="#EF4444" />
         </div>
-        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif' }}>{title}</h3>
+        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, margin: '0 0 8px', fontFamily: 'Manrope, sans-serif' }}>{title}</h3>
         <p style={{ color: '#8B8FA8', fontSize: '13px', lineHeight: 1.5, margin: '0 0 24px' }}>{message}</p>
         {typedConfirmationText && (
           <div style={{ marginBottom: '20px', textAlign: 'left' }}>
@@ -236,7 +249,13 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const [reqRes, walRes] = await Promise.all([
+      // ROOT-CAUSE FIX (Admin Console "buffering" audit): neither request
+      // here had a timeout -- a hung Supabase call (network stall, a slow
+      // admin_list_pending_payouts join) left `loading` true indefinitely
+      // with no recovery, same failure mode already fixed once in
+      // AuthScreen.tsx but never applied to this tab.
+      const [reqRes, walRes] = await withTimeoutFallback(
+        Promise.all([
         // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
         // it joins organizer + bank metadata server-side in one call, so the
         // panel always shows Name/Email/Phone/Amount/Bank/recipient_code.
@@ -252,7 +271,9 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
           .order('balance_kobo', { ascending: false })
           .limit(100),
-      ]);
+        ]),
+        { timeoutMs: 15000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
+      );
       const { data: reqs, error: reqError } = reqRes;
       const { data: walsRaw, error: walError } = walRes;
       if (reqError || walError) {
@@ -664,6 +685,12 @@ export function AdminDashboardScreen({
   const [eventSearch, setEventSearch] = useState('');
   const [eventsFilter, setEventsFilter] = useState<'active' | 'deleted'>('active');
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Per-row pickers for the Users table's role-change and ban-duration
+  // actions -- keyed by user id, since these controls are inside a mapped
+  // list (one native <select> per row was the last holdout; every other
+  // dropdown in the app already routes through PickerSheet).
+  const [rolePickerUserId, setRolePickerUserId] = useState<string | null>(null);
+  const [banPickerUserId, setBanPickerUserId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -716,49 +743,42 @@ export function AdminDashboardScreen({
   const [orgRequests, setOrgRequests] = useState<any[]>([]);
   const [orgRequestsLoading, setOrgRequestsLoading] = useState(false);
 
-  // Import Events tab state
-  const [importText, setImportText] = useState('');
-  const [importLoading, setImportLoading] = useState(false);
-  const [importResults, setImportResults] = useState<ImportedEvent[]>([]);
-  const [importError, setImportError] = useState<string | null>(null);
-  const [selectedImports, setSelectedImports] = useState<Set<number>>(new Set());
-  const [publishLoading, setPublishLoading] = useState(false);
-  const [publishMsg, setPublishMsg] = useState<string | null>(null);
-  const [extractionConfigured, setExtractionConfigured] = useState(true);
-  // Manual flyer override per imported event (keyed by its index in
-  // importResults) — lets an admin replace/attach a flyer before publishing,
-  // instead of only ever using whatever image the AI extraction found.
-  const [importFlyers, setImportFlyers] = useState<Record<number, { file: File; previewUrl: string }>>({});
-  const [flyerUploading, setFlyerUploading] = useState<number | null>(null);
+  // Service Provider Requests tab state -- deliberately its own state block
+  // (not shared with orgRequests above), same reasoning as the client-side
+  // request flow in ProfileScreen.tsx: keeps this fully independent of the
+  // Organizer review flow so neither can ever affect the other.
+  const [spRequests, setSpRequests] = useState<any[]>([]);
+  const [spRequestsLoading, setSpRequestsLoading] = useState(false);
 
-  useEffect(() => {
-    if (tab !== 'import-events') return;
-    isEventExtractionConfigured().then(setExtractionConfigured);
-  }, [tab]);
+  // Services (Admin/Sub-Admin management surface, Services Stage 3) --
+  // list/search/filter service_providers, drill into one, and manage its
+  // provider_services rows. Every read/write here goes through the SAME
+  // RLS this whole feature already relies on (service_providers_admin_*,
+  // provider_services_admin_*, both is_admin()-gated, 0034/0045/0048) --
+  // this tab adds no new server-side surface at all, purely a client UI
+  // over existing admin-bypass policies. A non-admin session reaching this
+  // tab's code would still get empty results / RLS-denied writes; nothing
+  // here is a client-side-only security boundary.
+  const [svcProviders, setSvcProviders] = useState<any[] | null>(null);
+  const [svcProvidersLoading, setSvcProvidersLoading] = useState(false);
+  const [svcProvidersError, setSvcProvidersError] = useState<string | null>(null);
+  const [svcSearch, setSvcSearch] = useState('');
+  const [svcCountryFilter, setSvcCountryFilter] = useState('');
+  const [svcCategoryFilter, setSvcCategoryFilter] = useState('');
+  const [svcStatusFilter, setSvcStatusFilter] = useState<'all' | 'draft' | 'approved' | 'rejected'>('all');
+  const [svcServiceStatusFilter, setSvcServiceStatusFilter] = useState<'all' | 'has-active' | 'no-active'>('all');
+  const [openSvcFilterPicker, setOpenSvcFilterPicker] = useState<'country' | 'category' | 'status' | 'serviceStatus' | null>(null);
+  const [svcSelectedProviderId, setSvcSelectedProviderId] = useState<string | null>(null);
+  const [svcServices, setSvcServices] = useState<ProviderService[] | null>(null);
+  const [svcServicesLoading, setSvcServicesLoading] = useState(false);
+  const [svcServicesError, setSvcServicesError] = useState<string | null>(null);
+  const [svcServiceForm, setSvcServiceForm] = useState<null | { editing: ProviderService | null; input: ProviderServiceInput }>(null);
+  const [svcServiceFormError, setSvcServiceFormError] = useState('');
+  const [showSvcServiceCategoryPicker, setShowSvcServiceCategoryPicker] = useState(false);
+  const [showSvcServiceCurrencyPicker, setShowSvcServiceCurrencyPicker] = useState(false);
+  const [svcServiceSaving, setSvcServiceSaving] = useState(false);
+  const [svcServiceBusyId, setSvcServiceBusyId] = useState<string | null>(null);
 
-  // Revoke every flyer preview blob URL on unmount so they don't leak.
-  useEffect(() => {
-    return () => { Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl)); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const handleImportFlyerSelect = (index: number, file: File) => {
-    setImportFlyers((prev) => {
-      const existing = prev[index];
-      if (existing) URL.revokeObjectURL(existing.previewUrl);
-      return { ...prev, [index]: { file, previewUrl: URL.createObjectURL(file) } };
-    });
-  };
-
-  const clearImportFlyer = (index: number) => {
-    setImportFlyers((prev) => {
-      const existing = prev[index];
-      if (existing) URL.revokeObjectURL(existing.previewUrl);
-      const next = { ...prev };
-      delete next[index];
-      return next;
-    });
-  };
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -1227,6 +1247,230 @@ export function AdminDashboardScreen({
     }
   };
 
+  // Service Provider requests -- own fetch effect and review function,
+  // deliberately mirroring the org-requests pair above rather than sharing
+  // code with it, so the Organizer flow is never touched by this addition.
+  useEffect(() => {
+    if (tab !== 'sp-requests') return;
+    if (!isAdminOrSubAdmin) return;
+    setSpRequestsLoading(true);
+    (async () => {
+      try {
+        const { data: reqs, error } = await supabase
+          .from('service_provider_requests')
+          .select('id, user_id, reason, status, admin_note, created_at, provider_type, country, owner_name, business_name, cac_number, identity_id_type, identity_id_number, document_url')
+          .order('created_at', { ascending: false })
+          .limit(100);
+        if (error) throw error;
+        const rows = reqs || [];
+        const userIds = [...new Set(rows.map((r: any) => r.user_id).filter(Boolean))];
+        let usersMap: Record<string, any> = {};
+        if (userIds.length > 0) {
+          const { data: users } = await supabase
+            .from('users')
+            .select('id, username, full_name, email, phone_number, state')
+            .in('id', userIds);
+          (users || []).forEach((u: any) => { usersMap[u.id] = u; });
+        }
+        setSpRequests(rows.map((r: any) => ({ ...r, users: usersMap[r.user_id] || null })));
+      } catch (error: any) {
+        console.error('Service provider requests fetch error:', error);
+        Sentry.captureException(error);
+        flash(false, 'Failed to load requests: ' + (error?.message || JSON.stringify(error)));
+      } finally {
+        setSpRequestsLoading(false);
+      }
+    })();
+  }, [tab, currentUser?.id, isRoot]);
+
+  const reviewSpRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
+    // Single atomic RPC: updates the request, grants/leaves the capability,
+    // AND inserts the applicant's notification together -- see
+    // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    const req = spRequests.find((r) => r.id === id);
+    const { error } = await supabase.rpc('admin_decide_service_provider_request', {
+      p_request_id: id,
+      p_status: status,
+      p_admin_note: adminNote || null,
+    });
+    if (!error) {
+      setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+      triggerPushDelivery(req?.user_id);
+    } else {
+      flash(false, error.message || 'Failed to review request.');
+    }
+  };
+
+  // ── Services (Admin/Sub-Admin management surface) ──────────────────────
+  // service_providers_admin_select (is_admin(), 0034) lets an admin session
+  // read every listing regardless of status -- the same server-side gate
+  // that protects provider self-management already covers this tab.
+  const loadSvcProviders = useCallback(async () => {
+    if (!isAdminOrSubAdmin) return;
+    setSvcProvidersLoading(true);
+    setSvcProvidersError(null);
+    try {
+      let q = supabase
+        .from('service_providers')
+        .select('id, user_id, business_name, category, country, status, created_at, updated_at')
+        .order('created_at', { ascending: false })
+        .limit(200);
+      if (svcCountryFilter) q = q.eq('country', svcCountryFilter);
+      if (svcCategoryFilter) q = q.eq('category', svcCategoryFilter);
+      if (svcStatusFilter !== 'all') q = q.eq('status', svcStatusFilter);
+      if (svcSearch.trim()) {
+        const like = escapePostgrestOrValue(`%${svcSearch.trim()}%`);
+        q = q.ilike('business_name', like);
+      }
+      const { data: rows, error } = await q;
+      if (error) throw error;
+      const providerRows = rows || [];
+
+      const ownerIds = [...new Set(providerRows.map((r: any) => r.user_id).filter(Boolean))];
+      let ownersMap: Record<string, any> = {};
+      if (ownerIds.length > 0) {
+        const { data: owners } = await supabase.from('users').select('id, username, full_name, email').in('id', ownerIds);
+        (owners || []).forEach((u: any) => { ownersMap[u.id] = u; });
+      }
+
+      // Service-status filter needs to know, per provider, whether it has
+      // at least one active service -- one batch query across every
+      // provider on this page rather than N+1 per-row queries.
+      const providerIds = providerRows.map((r: any) => r.id);
+      let activeServiceProviderIds = new Set<string>();
+      if (providerIds.length > 0) {
+        const { data: activeRows } = await supabase
+          .from('provider_services')
+          .select('provider_id')
+          .eq('is_active', true)
+          .in('provider_id', providerIds);
+        activeServiceProviderIds = new Set((activeRows || []).map((r: any) => r.provider_id));
+      }
+
+      let merged = providerRows.map((r: any) => ({
+        ...r,
+        owner: ownersMap[r.user_id] || null,
+        hasActiveService: activeServiceProviderIds.has(r.id),
+      }));
+      if (svcServiceStatusFilter === 'has-active') merged = merged.filter((r: any) => r.hasActiveService);
+      if (svcServiceStatusFilter === 'no-active') merged = merged.filter((r: any) => !r.hasActiveService);
+
+      setSvcProviders(merged);
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setSvcProvidersError(err?.message || 'Failed to load service providers.');
+      setSvcProviders([]);
+    } finally {
+      setSvcProvidersLoading(false);
+    }
+  }, [isAdminOrSubAdmin, svcCountryFilter, svcCategoryFilter, svcStatusFilter, svcServiceStatusFilter, svcSearch]);
+
+  useEffect(() => {
+    if (tab !== 'services-admin' || svcSelectedProviderId) return;
+    loadSvcProviders();
+  }, [tab, svcSelectedProviderId, loadSvcProviders]);
+
+  const loadSvcServices = useCallback(async (providerId: string) => {
+    setSvcServicesLoading(true);
+    setSvcServicesError(null);
+    try {
+      // Same helper the provider's own management screen uses -- returns
+      // every service regardless of active status; for an admin caller,
+      // provider_services_admin_select (is_admin(), 0048) is what actually
+      // authorizes seeing a provider that isn't the caller's own.
+      const rows = await fetchServicesForProviderId(providerId);
+      setSvcServices(rows);
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setSvcServicesError(err?.message || 'Failed to load services for this provider.');
+      setSvcServices([]);
+    } finally {
+      setSvcServicesLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!svcSelectedProviderId) { setSvcServices(null); return; }
+    loadSvcServices(svcSelectedProviderId);
+  }, [svcSelectedProviderId, loadSvcServices]);
+
+  const svcSelectedProvider = svcProviders?.find((p) => p.id === svcSelectedProviderId) || null;
+
+  const openSvcServiceForm = (existing: ProviderService | null) => {
+    setSvcServiceFormError('');
+    setSvcServiceForm({
+      editing: existing,
+      input: existing
+        ? {
+            name: existing.name, description: existing.description || '', price: existing.price,
+            currency: existing.currency, durationMinutes: existing.durationMinutes ?? null,
+            category: existing.category || svcSelectedProvider?.category || '', isActive: existing.isActive,
+          }
+        : {
+            name: '', description: '', price: 0, currency: CURRENCIES[0]?.code || 'NGN',
+            durationMinutes: null, category: svcSelectedProvider?.category || '', isActive: true,
+          },
+    });
+  };
+
+  const handleSvcServiceSubmit = async () => {
+    if (!svcServiceForm || !svcSelectedProviderId) return;
+    const { editing, input } = svcServiceForm;
+    if (!input.name.trim()) { setSvcServiceFormError('Service name is required.'); return; }
+    if (!(input.price >= 0)) { setSvcServiceFormError('A valid price is required.'); return; }
+    if (!/^[A-Z]{3}$/.test(input.currency)) { setSvcServiceFormError('A valid currency is required.'); return; }
+    setSvcServiceSaving(true);
+    setSvcServiceFormError('');
+    try {
+      if (editing) {
+        await updateProviderService(editing.id, input);
+      } else {
+        await createProviderService(svcSelectedProviderId, input);
+      }
+      setSvcServiceForm(null);
+      await loadSvcServices(svcSelectedProviderId);
+      flash(true, editing ? 'Service updated.' : 'Service added.');
+    } catch (err: any) {
+      setSvcServiceFormError(err?.message || 'Failed to save this service.');
+    } finally {
+      setSvcServiceSaving(false);
+    }
+  };
+
+  const handleSvcToggleActive = async (svc: ProviderService) => {
+    setSvcServiceBusyId(svc.id);
+    try {
+      await setProviderServiceActive(svc.id, !svc.isActive);
+      if (svcSelectedProviderId) await loadSvcServices(svcSelectedProviderId);
+    } catch (err: any) {
+      flash(false, err?.message || 'Failed to update this service.');
+    } finally {
+      setSvcServiceBusyId(null);
+    }
+  };
+
+  const handleSvcDeleteService = (svc: ProviderService) => {
+    setConfirmModal({
+      title: 'Delete this service?',
+      message: `"${svc.name}" will be permanently removed from this provider's listing. This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setSvcServiceBusyId(svc.id);
+        try {
+          await deleteProviderService(svc.id);
+          if (svcSelectedProviderId) await loadSvcServices(svcSelectedProviderId);
+          flash(true, 'Service deleted.');
+        } catch (err: any) {
+          flash(false, err?.message || 'Failed to delete this service.');
+        } finally {
+          setSvcServiceBusyId(null);
+        }
+      },
+    });
+  };
+
   const loadEvents = useCallback(async (filter: 'active' | 'deleted') => {
     setEventsLoading(true);
     try {
@@ -1356,10 +1600,20 @@ export function AdminDashboardScreen({
   };
 
   // ── Flash ────────────────────────────────────────────────────────────────────
-  const flash = (ok: boolean, msg: string) => {
+  // ROOT-CAUSE FIX (Admin Console "buffering" audit): this was a plain
+  // inline function, recreated with a new identity on every render of this
+  // (very large, frequently-re-rendering) component -- including every 20s
+  // from refreshPendingCount's poll below. AdminActionsTab receives this as
+  // a prop and includes it in a useCallback dependency array for its own
+  // data-load effect, so a new `flash` identity every ~20s was silently
+  // re-triggering that effect and resetting its `loading` state to true --
+  // "repeatedly sitting on Loading requests…" was a real refetch loop, not
+  // a stuck spinner. Only calls stable React state setters internally, so
+  // an empty dependency array gives it a permanently stable identity.
+  const flash = useCallback((ok: boolean, msg: string) => {
     if (ok) setSuccessMessage(msg); else setErrorMessage(msg);
     setTimeout(() => { setSuccessMessage(null); setErrorMessage(null); }, 3500);
-  };
+  }, []);
 
   // ── Maker-checker gate (single source of truth for every admin action) ───────
   // Super Admins (Root + full Admin) execute immediately. Sub-Admins NEVER
@@ -1742,13 +1996,14 @@ export function AdminDashboardScreen({
     // approval dispatcher, so there is no safe maker-checker path for them.
     ...(isSuperAdmin ? [{ key: 'payouts' as Tab, label: 'Payouts', icon: <Wallet size={14} /> }] : []),
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
-    { key: 'import-events' as Tab, label: 'Import', icon: <Zap size={14} /> },
+    { key: 'sp-requests' as Tab, label: 'SP Reqs', icon: <Briefcase size={14} /> },
+    { key: 'services-admin' as Tab, label: 'Services', icon: <Wrench size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', fontFamily: 'Manrope, sans-serif' }}>
 
       {confirmModal && (
         <ConfirmModal
@@ -1776,7 +2031,7 @@ export function AdminDashboardScreen({
             pointerEvents: 'none', padding: '0 60px', textAlign: 'center',
           }}
         >
-          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', margin: 0 }}>
+          <h1 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
             Admin Console
             {isRoot && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#A855F7', background: 'rgba(168,85,247,0.15)', border: '1px solid rgba(168,85,247,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>ROOT</span>}
             {isSubAdmin && <span style={{ marginLeft: '8px', fontSize: '11px', color: '#F59E0B', background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', padding: '2px 8px', borderRadius: '6px', fontWeight: 700 }}>SUB-ADMIN</span>}
@@ -1935,20 +2190,16 @@ export function AdminDashboardScreen({
                           // demoted deputy can be re-promoted).
                           (() => {
                             const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+                            const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
                             return (
-                              <select
-                                value={roleOptions.includes(u.role) ? u.role : ''}
-                                onChange={e => handleRoleChange(u.id, e.target.value)}
+                              <button
+                                type="button"
+                                onClick={() => setRolePickerUserId(u.id)}
                                 disabled={isBusy}
-                                style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', outline: 'none', cursor: 'pointer' }}
+                                style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
                               >
-                                {!roleOptions.includes(u.role) && (
-                                  <option value="" disabled>{u.role}</option>
-                                )}
-                                <option value="attendee">Attendee</option>
-                                <option value="organizer">Organizer</option>
-                                {isRoot && <option value="sub-admin">Sub-Admin</option>}
-                              </select>
+                                {roleLabels[u.role] || u.role}
+                              </button>
                             );
                           })()
                         )}
@@ -1979,23 +2230,14 @@ export function AdminDashboardScreen({
                                 <UserCheck size={13} />
                               </button>
                             ) : (
-                              <select
+                              <button
+                                type="button"
+                                onClick={() => setBanPickerUserId(u.id)}
                                 disabled={isBusy || isRootUser}
-                                defaultValue=""
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  if (!val) return;
-                                  e.target.value = '';
-                                  handleSuspend(u, val === 'permanent' ? null : Number(val));
-                                }}
-                                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: 'pointer', outline: 'none' }}
+                                style={{ background: 'rgba(245,158,11,0.10)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '8px', color: '#F59E0B', fontSize: '11px', padding: '4px 6px', cursor: (isBusy || isRootUser) ? 'not-allowed' : 'pointer', opacity: (isBusy || isRootUser) ? 0.6 : 1 }}
                               >
-                                <option value="" disabled>🚫 Ban</option>
-                                <option value="1">1 day</option>
-                                <option value="7">7 days</option>
-                                <option value="30">30 days</option>
-                                <option value="permanent">Permanent</option>
-                              </select>
+                                🚫 Ban
+                              </button>
                             )
                           )}
 
@@ -2021,6 +2263,43 @@ export function AdminDashboardScreen({
           </div>
         </>
       )}
+
+      {rolePickerUserId && (() => {
+        const u = users.find(x => x.id === rolePickerUserId);
+        if (!u) return null;
+        const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+        const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+        return (
+          <PickerSheet
+            title="Change Role"
+            searchable={false}
+            options={roleOptions.map(r => ({ value: r, label: roleLabels[r] }))}
+            value={u.role}
+            onSelect={(v) => { handleRoleChange(u.id, v); setRolePickerUserId(null); }}
+            onClose={() => setRolePickerUserId(null)}
+          />
+        );
+      })()}
+
+      {banPickerUserId && (() => {
+        const u = users.find(x => x.id === banPickerUserId);
+        if (!u) return null;
+        return (
+          <PickerSheet
+            title="Ban User"
+            searchable={false}
+            options={[
+              { value: '1', label: '1 day' },
+              { value: '7', label: '7 days' },
+              { value: '30', label: '30 days' },
+              { value: 'permanent', label: 'Permanent' },
+            ]}
+            value=""
+            onSelect={(v) => { handleSuspend(u, v === 'permanent' ? null : Number(v)); setBanPickerUserId(null); }}
+            onClose={() => setBanPickerUserId(null)}
+          />
+        );
+      })()}
 
       {/* ════════════════ DELETED USERS TAB ═══════════════════════════════ */}
       {tab === 'deleted' && (
@@ -2296,7 +2575,7 @@ export function AdminDashboardScreen({
             ].map(card => (
               <div key={card.label} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px 16px', boxSizing: 'border-box' }}>
                 <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
+                <div style={{ color: '#F0F0FF', fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{vcLoading ? '…' : card.value}</div>
               </div>
             ))}
           </div>
@@ -2480,7 +2759,7 @@ export function AdminDashboardScreen({
                 ].map(card => (
                   <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '16px' }}>
                     <div style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                    <div style={{ color: card.color, fontSize: '22px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                    <div style={{ color: card.color, fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{card.value}</div>
                   </div>
                 ))}
               </div>
@@ -2508,7 +2787,7 @@ export function AdminDashboardScreen({
               ].map(card => (
                 <div key={card.label} style={{ background: 'rgba(255,255,255,0.04)', border: `1px solid ${card.color}25`, borderRadius: '14px', padding: '14px' }}>
                   <div style={{ color: '#8B8FA8', fontSize: '10.5px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: '6px' }}>{card.label}</div>
-                  <div style={{ color: card.color, fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>{card.value}</div>
+                  <div style={{ color: card.color, fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>{card.value}</div>
                 </div>
               ))}
             </div>
@@ -2518,7 +2797,7 @@ export function AdminDashboardScreen({
             {(['cac', 'unverified'] as const).map(s => (
               <button key={s} onClick={() => setVerifySection(s)}
                 style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: verifySection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: verifySection === s ? '#A855F7' : '#8B8FA8' }}>
-                {s === 'cac' ? 'CAC Requests' : 'Unverified Organizers'}
+                {s === 'cac' ? 'Verification Requests' : 'Unverified Organizers'}
               </button>
             ))}
           </div>
@@ -2530,8 +2809,8 @@ export function AdminDashboardScreen({
                 <input
                   value={cacSearchInput}
                   onChange={e => setCacSearchInput(e.target.value)}
-                  placeholder="Search by business name, CAC number, organizer name or email…"
-                  style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                  placeholder="Search by business/organizer name, CAC/ID number, or email…"
+                  style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px 10px 34px', color: '#F0F0FF', fontSize: '13px', outline: 'none', boxSizing: 'border-box', fontFamily: 'Manrope, sans-serif' }}
                 />
               </div>
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
@@ -2555,11 +2834,16 @@ export function AdminDashboardScreen({
                   <div key={r.request_id} style={{ background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.05)', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     <div onClick={() => setExpandedCacId(expanded ? null : r.request_id)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', cursor: 'pointer' }}>
                       <div>
-                        <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name}</div>
+                        <div style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{r.company_name || r.owner_name || r.full_name}</div>
                         <div style={{ color: '#8B8FA8', fontSize: '12px' }}>{r.full_name || 'No Name'} · {r.state || 'No state'}</div>
                         <div style={{ color: '#555C7A', fontSize: '11px' }}>{r.email}</div>
                       </div>
-                      <span style={{ fontSize: '10px', color: statusColor, background: `${statusColor}1A`, padding: '2px 8px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.status}</span>
+                      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                        <span style={{ fontSize: '10px', color: statusColor, background: `${statusColor}1A`, padding: '2px 8px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{r.status}</span>
+                        <span style={{ fontSize: '9px', color: '#8B8FA8', background: 'rgba(255,255,255,0.06)', padding: '2px 7px', borderRadius: '6px', fontWeight: 600, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                          {r.organizer_type === 'individual' ? 'Individual' : 'Business'} · {r.country || 'NG'}
+                        </span>
+                      </div>
                     </div>
                     <div style={{ color: '#555C7A', fontSize: '10px' }}>Submitted {new Date(r.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}</div>
 
@@ -2587,12 +2871,27 @@ export function AdminDashboardScreen({
                         </div>
 
                         <div style={{ background: 'rgba(255,255,255,0.03)', borderRadius: '10px', padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Owner/Director:</strong> {r.owner_name || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Registration Date:</strong> {r.registration_date ? new Date(r.registration_date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Email:</strong> {r.business_email || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Phone:</strong> {r.business_phone || '—'}</p>
-                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address}</p>
+                          <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>{r.organizer_type === 'individual' ? 'Full Name' : 'Owner/Director'}:</strong> {r.owner_name || '—'}</p>
+                          {r.organizer_type === 'individual' ? (
+                            <>
+                              {r.identity_id_type && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>{r.identity_id_type}:</strong> {r.identity_id_number || '—'}</p>
+                              )}
+                              {!r.identity_id_type && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#555C7A' }}>No structured ID requirement for {r.country || 'this country'} yet — see uploaded document.</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {r.cac_number && (
+                                <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>CAC Number:</strong> {r.cac_number}</p>
+                              )}
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Registration Date:</strong> {r.registration_date ? new Date(r.registration_date).toLocaleDateString('en-NG', { dateStyle: 'medium' }) : '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Email:</strong> {r.business_email || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Phone:</strong> {r.business_phone || '—'}</p>
+                              <p style={{ margin: 0, fontSize: '12px', color: '#C4C9E0' }}><strong style={{ color: '#8B8FA8' }}>Business Address:</strong> {r.business_address || '—'}</p>
+                            </>
+                          )}
                           {r.status !== 'pending' && r.admin_note && (
                             <p style={{ margin: 0, fontSize: '12px', color: '#EF4444' }}><strong style={{ color: '#8B8FA8' }}>Rejection Reason:</strong> {r.admin_note}</p>
                           )}
@@ -2615,7 +2914,7 @@ export function AdminDashboardScreen({
                               onChange={e => setCacRejectReason(e.target.value)}
                               placeholder="Reason for rejecting this request (shown to the organizer)…"
                               rows={2}
-                              style={{ width: '100%', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'Inter, sans-serif' }}
+                              style={{ width: '100%', background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '8px 10px', color: '#F0F0FF', fontSize: '12px', outline: 'none', resize: 'none', boxSizing: 'border-box', fontFamily: 'Manrope, sans-serif' }}
                             />
                           </div>
                         )}
@@ -2764,252 +3063,363 @@ export function AdminDashboardScreen({
         </div>
       )}
 
-      {/* ════════════════ IMPORT EVENTS TAB ═══════════════ */}
-      {tab === 'import-events' && (
-        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px 40px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Header */}
-          <div style={{ background: 'rgba(123,47,247,0.08)', border: '1px solid rgba(123,47,247,0.25)', borderRadius: '16px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: 'linear-gradient(135deg, #7B2FF7, #F107A3)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Zap size={20} color="#fff" />
-            </div>
-            <div>
-              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>Import Free Events</h3>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Copy event details from tix.africa, pulse.ng or any site and paste below. AI will format and categorise them instantly.</p>
-            </div>
-          </div>
-
-          {/* Paste input */}
-          <div>
-            <p style={{ color: '#8B8FA8', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>PASTE EVENT DETAILS</p>
-            <textarea
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              placeholder={`Paste event details here — copy from any website:\n\nEvent Name: \nDate: \nTime: \nVenue: \nCity/State: \nDescription: \nPrice: Free\n\nYou can paste multiple events separated by ---`}
-              rows={10}
-              style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px 14px', color: '#F0F0FF', fontSize: '13px', outline: 'none', fontFamily: 'Inter, sans-serif', boxSizing: 'border-box', resize: 'vertical', lineHeight: 1.6 }}
-            />
-          </div>
-
-          {/* Extract button */}
-          <button
-            onClick={async () => {
-              if (!importText.trim()) return;
-              setImportLoading(true);
-              setImportError(null);
-              setImportResults([]);
-              setSelectedImports(new Set());
-              setPublishMsg(null);
-              try {
-                const results = await extractEventsFromText(importText.trim());
-                // Best-effort — never blocks or fails the import if Places
-                // is unavailable, just leaves those events unverified.
-                const verified = await resolveEventLocations(results);
-                setImportResults(verified);
-                if (verified.length === 0) setImportError('No events found. Try adding more details like event name, date, and venue.');
-                else setSelectedImports(new Set(verified.map((_, i) => i)));
-              } catch (err: any) {
-                setImportError(friendlyPublishError(err) || 'Failed to format events. Check your API key and try again.');
-              } finally {
-                setImportLoading(false);
-              }
-            }}
-            disabled={importLoading || !importText.trim()}
-            style={{ width: '100%', background: importLoading || !importText.trim() ? 'rgba(123,47,247,0.3)' : 'linear-gradient(135deg, #7B2FF7, #F107A3)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: importLoading || !importText.trim() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
-          >
-            {importLoading ? (
-              <>
-                <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                Formatting with AI...
-              </>
-            ) : (
-              <><Zap size={14} /> Format with AI</>
-            )}
-          </button>
-
-          {importError && (
-            <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '10px', padding: '12px', color: '#EF4444', fontSize: '13px' }}>
-              {importError}
-            </div>
-          )}
-
-          {/* Results */}
-          {importResults.length > 0 && (
-            <>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>{importResults.length} event{importResults.length !== 1 ? 's' : ''} found</p>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => setSelectedImports(new Set(importResults.map((_, i) => i)))} style={{ background: 'none', border: '1px solid rgba(167,139,250,0.3)', borderRadius: '8px', padding: '4px 10px', color: '#A78BFA', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>All</button>
-                  <button onClick={() => setSelectedImports(new Set())} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '4px 10px', color: '#8B8FA8', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>None</button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {importResults.map((event, i) => {
-                  const selected = selectedImports.has(i);
-                  return (
-                    <div
-                      key={i}
-                      onClick={() => {
-                        const next = new Set(selectedImports);
-                        if (selected) next.delete(i); else next.add(i);
-                        setSelectedImports(next);
-                      }}
-                      style={{ background: selected ? 'rgba(123,47,247,0.08)' : '#131629', border: selected ? '1.5px solid rgba(123,47,247,0.4)' : '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', cursor: 'pointer' }}
+      {tab === 'sp-requests' && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>Service Provider Requests</p>
+          {spRequestsLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : spRequests.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No requests yet.</p>
+          ) : (
+            spRequests.map((req: any) => {
+              const user = req.users;
+              const name = user?.full_name || user?.username || user?.email || req.user_id;
+              return (
+                <div key={req.id} style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{name}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: req.status === 'pending' ? 'rgba(245,158,11,0.15)' : req.status === 'approved' ? 'rgba(16,185,129,0.15)' : 'rgba(239,68,68,0.15)', color: req.status === 'pending' ? '#F59E0B' : req.status === 'approved' ? '#10B981' : '#EF4444', textTransform: 'uppercase' as const }}>
+                      {req.status}
+                    </span>
+                  </div>
+                  {(user?.email || user?.phone_number || user?.state) && (
+                    <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 8px' }}>
+                      {[user?.email, user?.phone_number, user?.state].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {(req.provider_type || req.country) && (
+                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 6px' }}>
+                      {[req.provider_type && req.provider_type.toUpperCase(), req.country, req.business_name, req.cac_number && `CAC ${req.cac_number}`, req.identity_id_number && `${req.identity_id_type || 'ID'} ${req.identity_id_number}`].filter(Boolean).join(' · ')}
+                    </p>
+                  )}
+                  {req.reason && <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 10px', lineHeight: 1.4 }}>{req.reason}</p>}
+                  <p style={{ color: '#555C7A', fontSize: '11px', margin: '0 0 10px' }}>{new Date(req.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                  {req.document_url && (
+                    <button
+                      onClick={() => handlePreviewCacDocument(req.id, req.document_url)}
+                      disabled={cacPreviewLoadingId === req.id}
+                      style={{ width: '100%', height: '32px', borderRadius: '10px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer', marginBottom: '8px' }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
-                        <div style={{ width: '18px', height: '18px', borderRadius: '5px', border: selected ? 'none' : '2px solid rgba(255,255,255,0.2)', background: selected ? '#7B2FF7' : 'transparent', flexShrink: 0, marginTop: '2px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          {selected && <span style={{ color: '#fff', fontSize: '11px', fontWeight: 800 }}>✓</span>}
-                        </div>
-
-                        {/* Flyer thumbnail — manual override preview takes priority over the AI-found image_url */}
-                        <div style={{ width: '52px', height: '52px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: 'rgba(255,255,255,0.04)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid rgba(255,255,255,0.06)' }}>
-                          {importFlyers[i] ? (
-                            <img src={importFlyers[i].previewUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : event.image_url ? (
-                            <img src={event.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                          ) : (
-                            <ImageIcon size={18} color="#555C7A" />
-                          )}
-                        </div>
-
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 700, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{event.title}</p>
-                          <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '0 0 4px' }}>
-                            {event.date}{event.end_date && event.end_date !== event.date ? ` – ${event.end_date}` : ''} {event.time && `· ${event.time}${event.end_time ? `–${event.end_time}` : ''}`} · {event.venue || 'No venue'}
-                          </p>
-                          {(event.organizer_name || event.contact_phone || event.social_instagram) && (
-                            <p style={{ color: '#6B7280', fontSize: '10.5px', margin: '0 0 4px' }}>
-                              {[event.organizer_name, event.contact_phone, event.social_instagram && `@${event.social_instagram}`].filter(Boolean).join(' · ')}
-                            </p>
-                          )}
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#10B981', fontSize: '10px', fontWeight: 600 }}>
-                              {event.is_free ? 'FREE' : `₦${Number(event.price || 0).toLocaleString()}`}
-                            </span>
-                            {event.categories?.[0] && <span style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.2)', borderRadius: '5px', padding: '2px 7px', color: '#A78BFA', fontSize: '10px' }}>{event.categories[0]}</span>}
-                            {event.state && <span style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '5px', padding: '2px 7px', color: '#8B8FA8', fontSize: '10px' }}>{event.city ? `${event.city}, ` : ''}{event.state}</span>}
-                            {event.location_verified && (
-                              <span style={{ background: 'rgba(6,214,160,0.1)', border: '1px solid rgba(6,214,160,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#06D6A0', fontSize: '10px', fontWeight: 600 }}>
-                                📍 Location verified
-                              </span>
-                            )}
-                            {!(event.venue && event.state && event.city) && !(event.location_verified && event.latitude != null) && (
-                              <span style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '5px', padding: '2px 7px', color: '#F59E0B', fontSize: '10px', fontWeight: 600 }}>
-                                Needs review — will save as draft
-                              </span>
-                            )}
-                          </div>
-                          {event.description && <p style={{ color: '#6B7280', fontSize: '11px', margin: '6px 0 0', lineHeight: 1.5, display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{event.description}</p>}
-
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }} onClick={(e) => e.stopPropagation()}>
-                            <label style={{ background: 'rgba(167,139,250,0.1)', border: '1px solid rgba(167,139,250,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#A78BFA', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
-                              {importFlyers[i] ? 'Replace flyer' : event.image_url ? 'Replace flyer' : 'Add flyer'}
-                              <input
-                                type="file"
-                                accept="image/*"
-                                style={{ display: 'none' }}
-                                onChange={(e) => {
-                                  const file = e.target.files?.[0];
-                                  if (file) handleImportFlyerSelect(i, file);
-                                  e.target.value = '';
-                                }}
-                              />
-                            </label>
-                            {importFlyers[i] && (
-                              <button onClick={() => clearImportFlyer(i)} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '7px', padding: '4px 10px', color: '#EF4444', fontSize: '10.5px', fontWeight: 600, cursor: 'pointer' }}>
-                                Remove
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
+                      {cacPreviewLoadingId === req.id ? 'Loading...' : 'View Document'}
+                    </button>
+                  )}
+                  {req.status === 'pending' && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => reviewSpRequest(req.id, 'approved')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#10B981', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Approve</button>
+                      <button onClick={() => reviewSpRequest(req.id, 'rejected')} style={{ flex: 1, height: '36px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: '#EF4444', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>Reject</button>
                     </div>
-                  );
-                })}
-              </div>
-
-              {/* Publish button */}
-              <button
-                onClick={async () => {
-                  const selectedIndices = importResults.map((_, i) => i).filter((i) => selectedImports.has(i));
-                  if (selectedIndices.length === 0) return;
-                  setPublishLoading(true);
-                  setPublishMsg(null);
-                  try {
-                    // Upload any manually-attached flyers first so publishEvents
-                    // writes the real hosted URL as image_url — the event card
-                    // must show the correct image immediately, not the AI's
-                    // (possibly missing/wrong) extracted one.
-                    const toPublish = await Promise.all(selectedIndices.map(async (i) => {
-                      const event = importResults[i];
-                      const flyer = importFlyers[i];
-                      if (!flyer) return event;
-                      try {
-                        setFlyerUploading(i);
-                        const asset = await uploadImage(flyer.file, { bucket: 'events', filenameBase: `import-${Date.now()}-${i}` });
-                        return { ...event, image_url: asset.url };
-                      } catch (e) {
-                        console.error('[admin-import] flyer upload failed for index', i, e);
-                        Sentry.captureException(e);
-                        return event; // fall back to the AI's image_url rather than blocking the whole publish
-                      }
-                    }));
-                    setFlyerUploading(null);
-                    const result = await publishEvents(toPublish, 'dfca505f-b2f6-449f-aa86-f7e7ece7d1dc', supabase);
-                    if (result.success > 0) {
-                      const liveCount = result.success - result.drafted;
-                      const parts = [
-                        liveCount > 0 ? `${liveCount} published live` : null,
-                        result.drafted > 0 ? `${result.drafted} saved as draft (missing venue/state/city — complete in Edit Event)` : null,
-                        result.failed > 0 ? `${result.failed} failed` : null,
-                      ].filter(Boolean);
-                      setPublishMsg(`✓ ${parts.join(', ')}.`);
-                      Object.values(importFlyers).forEach((f) => URL.revokeObjectURL(f.previewUrl));
-                      setImportFlyers({});
-                      setImportResults([]);
-                      setSelectedImports(new Set());
-                      setImportText('');
-                    } else {
-                      setPublishMsg(`✗ All ${result.failed} event${result.failed !== 1 ? 's' : ''} failed to publish.${result.lastError ? ` Error: ${result.lastError}` : ''}`);
-                    }
-                  } catch (err: any) {
-                    setPublishMsg(`✗ ${friendlyPublishError(err)}`);
-                  } finally {
-                    setFlyerUploading(null);
-                    setPublishLoading(false);
-                  }
-                }}
-                disabled={publishLoading || selectedImports.size === 0}
-                style={{ width: '100%', background: publishLoading || selectedImports.size === 0 ? 'rgba(123,47,247,0.3)' : '#7B2FF7', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: publishLoading || selectedImports.size === 0 ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: selectedImports.size > 0 ? '0 4px 16px rgba(123,47,247,0.4)' : 'none' }}
-              >
-                {publishLoading ? (
-                  <>
-                    <div style={{ width: '14px', height: '14px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 0.7s linear infinite' }} />
-                    {flyerUploading !== null ? 'Uploading flyer…' : 'Publishing...'}
-                  </>
-                ) : (
-                  `Publish ${selectedImports.size} Selected Event${selectedImports.size !== 1 ? 's' : ''}`
-                )}
-              </button>
-            </>
-          )}
-
-          {publishMsg && (
-            <div style={{ background: publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${publishMsg.startsWith('✓') ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.25)'}`, borderRadius: '10px', padding: '12px', color: publishMsg.startsWith('✓') ? '#10B981' : '#EF4444', fontSize: '13px', fontWeight: 600 }}>
-              {publishMsg}
-            </div>
-          )}
-
-          {/* Instructions — only show if API key not configured */}
-          {!extractionConfigured && (
-            <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.25)', borderRadius: '12px', padding: '14px' }}>
-              <p style={{ color: '#F59E0B', fontSize: '11px', fontWeight: 600, letterSpacing: '0.07em', marginBottom: '8px' }}>⚠ SETUP REQUIRED</p>
-              <p style={{ color: '#6B7280', fontSize: '12px', lineHeight: 1.6 }}>
-                Add <span style={{ color: '#A78BFA', fontFamily: 'monospace' }}>ANTHROPIC_API_KEY</span> (server-only — no <span style={{ fontFamily: 'monospace' }}>VITE_</span> prefix) in Vercel dashboard → Vents project → Settings → Environment Variables. Get your key from <span style={{ color: '#A78BFA' }}>console.anthropic.com → API Keys</span>. Redeploy after adding.
-              </p>
-            </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
+      )}
+
+      {/* ════════════════ SERVICES (ADMIN) TAB ═══════════════
+          Two sub-views in one tab: a filterable provider list, and (once a
+          provider is selected) that provider's profile summary + its
+          service catalog. Every read/write here is the same is_admin()-
+          gated RLS path (0034/0045/0048) the rest of this feature already
+          uses -- this is a client UI over that, never a bypass of it. */}
+      {tab === 'services-admin' && !svcSelectedProviderId && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>
+            Service Providers &amp; Services
+          </p>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+            <div style={{ flex: 1, position: 'relative' }}>
+              <Search size={14} color="#6B7280" style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)' }} />
+              <input
+                value={svcSearch}
+                onChange={(e) => setSvcSearch(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') loadSvcProviders(); }}
+                placeholder="Search business name..."
+                style={{ width: '100%', boxSizing: 'border-box', height: '36px', paddingLeft: '32px', paddingRight: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+            </div>
+            <button onClick={() => loadSvcProviders()} style={{ height: '36px', padding: '0 14px', borderRadius: '10px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+              Search
+            </button>
+          </div>
+
+          {(() => {
+            const chipStyle: React.CSSProperties = { height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' };
+            const countryLabel = svcCountryFilter ? COUNTRY_CODES.find((c) => c.iso === svcCountryFilter)?.name : 'All countries';
+            const statusLabels: Record<string, string> = { all: 'All provider statuses', draft: 'Draft', approved: 'Approved', rejected: 'Rejected' };
+            const serviceStatusLabels: Record<string, string> = { all: 'All service statuses', 'has-active': 'Has active service(s)', 'no-active': 'No active services' };
+            return (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('country')}>{countryLabel || 'All countries'}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('category')}>{svcCategoryFilter || 'All categories'}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('status')}>{statusLabels[svcStatusFilter]}</div>
+                <div style={chipStyle} onClick={() => setOpenSvcFilterPicker('serviceStatus')}>{serviceStatusLabels[svcServiceStatusFilter]}</div>
+              </div>
+            );
+          })()}
+
+          {openSvcFilterPicker === 'country' && (
+            <PickerSheet
+              title="Filter by Country"
+              options={[{ value: '', label: 'All countries' }, ...COUNTRY_CODES.map((c) => ({ value: c.iso, label: c.name }))]}
+              value={svcCountryFilter}
+              onSelect={(v) => { setSvcCountryFilter(v); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'category' && (
+            <PickerSheet
+              title="Filter by Category"
+              options={[{ value: '', label: 'All categories' }, ...SERVICE_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+              value={svcCategoryFilter}
+              onSelect={(v) => { setSvcCategoryFilter(v); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'status' && (
+            <PickerSheet
+              title="Filter by Provider Status"
+              searchable={false}
+              options={[
+                { value: 'all', label: 'All provider statuses' },
+                { value: 'draft', label: 'Draft' },
+                { value: 'approved', label: 'Approved' },
+                { value: 'rejected', label: 'Rejected' },
+              ]}
+              value={svcStatusFilter}
+              onSelect={(v) => { setSvcStatusFilter(v as any); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+          {openSvcFilterPicker === 'serviceStatus' && (
+            <PickerSheet
+              title="Filter by Service Status"
+              searchable={false}
+              options={[
+                { value: 'all', label: 'All service statuses' },
+                { value: 'has-active', label: 'Has active service(s)' },
+                { value: 'no-active', label: 'No active services' },
+              ]}
+              value={svcServiceStatusFilter}
+              onSelect={(v) => { setSvcServiceStatusFilter(v as any); setOpenSvcFilterPicker(null); }}
+              onClose={() => setOpenSvcFilterPicker(null)}
+            />
+          )}
+
+          {svcProvidersError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcProvidersError}</p>}
+
+          {svcProvidersLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : !svcProviders || svcProviders.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No service providers match these filters.</p>
+          ) : (
+            svcProviders.map((p: any) => {
+              const ownerName = p.owner?.full_name || p.owner?.username || p.owner?.email || p.user_id;
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => setSvcSelectedProviderId(p.id)}
+                  style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                    <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{p.business_name}</span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: p.status === 'approved' ? 'rgba(16,185,129,0.15)' : p.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)', color: p.status === 'approved' ? '#10B981' : p.status === 'rejected' ? '#EF4444' : '#94A3B8', textTransform: 'uppercase' as const }}>
+                      {p.status}
+                    </span>
+                  </div>
+                  <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 4px' }}>
+                    {[p.category, p.country].filter(Boolean).join(' · ')}
+                  </p>
+                  <p style={{ color: '#6B7280', fontSize: '11px', margin: 0 }}>
+                    Owner: {ownerName}
+                  </p>
+                  <p style={{ color: p.hasActiveService ? '#10B981' : '#6B7280', fontSize: '11px', margin: '6px 0 0', fontWeight: 600 }}>
+                    {p.hasActiveService ? 'Has active service(s)' : 'No active services'}
+                  </p>
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+
+      {tab === 'services-admin' && svcSelectedProviderId && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <button
+            onClick={() => setSvcSelectedProviderId(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: '14px' }}
+          >
+            <ArrowLeft size={14} /> Back to all providers
+          </button>
+
+          {svcSelectedProvider && (
+            <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>{svcSelectedProvider.business_name}</span>
+                <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: svcSelectedProvider.status === 'approved' ? 'rgba(16,185,129,0.15)' : svcSelectedProvider.status === 'rejected' ? 'rgba(239,68,68,0.15)' : 'rgba(148,163,184,0.15)', color: svcSelectedProvider.status === 'approved' ? '#10B981' : svcSelectedProvider.status === 'rejected' ? '#EF4444' : '#94A3B8', textTransform: 'uppercase' as const }}>
+                  {svcSelectedProvider.status}
+                </span>
+              </div>
+              <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 4px' }}>
+                {[svcSelectedProvider.category, svcSelectedProvider.country].filter(Boolean).join(' · ')}
+              </p>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: 0 }}>
+                Owner: {svcSelectedProvider.owner?.full_name || svcSelectedProvider.owner?.username || svcSelectedProvider.owner?.email || svcSelectedProvider.user_id}
+                {' · '}Listing ID: {svcSelectedProvider.id}
+              </p>
+              {svcSelectedProvider.status !== 'approved' && (
+                <p style={{ color: '#F59E0B', fontSize: '11px', margin: '8px 0 0' }}>
+                  This listing is not approved -- none of its services (active or not) are visible to customers regardless of their own status.
+                </p>
+              )}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <p style={{ color: '#8B8FA8', fontSize: '12px', margin: 0 }}>Services</p>
+            <button
+              onClick={() => openSvcServiceForm(null)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', height: '30px', padding: '0 12px', borderRadius: '8px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              <Plus size={13} /> Add Service
+            </button>
+          </div>
+
+          {svcServicesError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcServicesError}</p>}
+
+          {svcServicesLoading ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '30px' }}>Loading...</p>
+          ) : !svcServices || svcServices.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '30px' }}>No services yet for this provider.</p>
+          ) : (
+            svcServices.map((svc) => (
+              <div key={svc.id} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px', padding: '14px', marginBottom: '10px', opacity: svc.isActive ? 1 : 0.6 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0 }}>{svc.name}</p>
+                    {svc.category && <p style={{ color: '#6B7280', fontSize: '11px', margin: '2px 0 0' }}>{svc.category}</p>}
+                  </div>
+                  <span style={{ fontSize: '10px', fontWeight: 700, padding: '3px 8px', borderRadius: '8px', background: svc.isActive ? 'rgba(16,185,129,0.15)' : 'rgba(148,163,184,0.15)', color: svc.isActive ? '#10B981' : '#94A3B8', flexShrink: 0 }}>
+                    {svc.isActive ? 'ACTIVE' : 'INACTIVE'}
+                  </span>
+                </div>
+                {svc.description && <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '8px 0 0', lineHeight: 1.4 }}>{svc.description}</p>}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '10px' }}>
+                  <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700 }}>
+                    {svc.currency} {svc.price.toLocaleString('en-US')}
+                    {svc.durationMinutes ? <span style={{ color: '#8B8FA8', fontWeight: 500 }}> · {svc.durationMinutes} min</span> : null}
+                  </span>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button onClick={() => handleSvcToggleActive(svc)} disabled={svcServiceBusyId === svc.id} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', padding: '6px 10px', color: '#C4C9E0', fontSize: '11px', fontWeight: 700, cursor: 'pointer' }}>
+                      {svc.isActive ? 'Deactivate' : 'Activate'}
+                    </button>
+                    <button onClick={() => openSvcServiceForm(svc)} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Pencil size={12} color="#C4C9E0" />
+                    </button>
+                    {/* Delete kept visually separated (red, own spacing) from
+                        Activate/Edit -- the only destructive action here. */}
+                    <button onClick={() => handleSvcDeleteService(svc)} disabled={svcServiceBusyId === svc.id} style={{ background: 'none', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                      <Trash2 size={12} color="#EF4444" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {svcServiceForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9998, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => !svcServiceSaving && setSvcServiceForm(null)}>
+          <div style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '20px', width: '100%', maxWidth: '460px', maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '10px' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, margin: '0 0 4px' }}>
+              {svcServiceForm.editing ? 'Edit Service' : 'Add Service'}
+            </h3>
+            <input
+              value={svcServiceForm.input.name}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, name: e.target.value } })}
+              placeholder="Service name"
+              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <textarea
+              value={svcServiceForm.input.description}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, description: e.target.value } })}
+              placeholder="Description (optional)"
+              rows={3}
+              style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none', resize: 'none' }}
+            />
+            <PickerField
+              value={svcServiceForm.input.category || ''}
+              placeholder="No category"
+              onOpen={() => setShowSvcServiceCategoryPicker(true)}
+            />
+            <div style={{ display: 'flex', gap: '8px', minWidth: 0 }}>
+              <input
+                type="number" min="0"
+                value={svcServiceForm.input.price || ''}
+                onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, price: Number(e.target.value) } })}
+                placeholder="Price"
+                style={{ flex: 1, minWidth: 0, height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+              />
+              <div style={{ width: '100px', flexShrink: 0 }}>
+                <PickerField
+                  value={svcServiceForm.input.currency}
+                  placeholder="Currency"
+                  onOpen={() => setShowSvcServiceCurrencyPicker(true)}
+                />
+              </div>
+            </div>
+            <input
+              type="number" min="1"
+              value={svcServiceForm.input.durationMinutes ?? ''}
+              onChange={(e) => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, durationMinutes: e.target.value ? Number(e.target.value) : null } })}
+              placeholder="Duration in minutes (optional)"
+              style={{ height: '38px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '0 12px', color: '#F0F0FF', fontSize: '13px', outline: 'none' }}
+            />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: '#060A12', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px' }}>
+              <span style={{ color: '#C4C9E0', fontSize: '12px', fontWeight: 600 }}>Published (visible to customers)</span>
+              <div
+                onClick={() => setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, isActive: !svcServiceForm.input.isActive } })}
+                style={{ width: '38px', height: '22px', borderRadius: '11px', background: svcServiceForm.input.isActive ? '#7B2FBE' : '#1A1625', cursor: 'pointer', position: 'relative' }}
+              >
+                <div style={{ position: 'absolute', top: '2px', left: svcServiceForm.input.isActive ? '18px' : '2px', width: '18px', height: '18px', borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+              </div>
+            </div>
+
+            {svcServiceFormError && <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{svcServiceFormError}</p>}
+
+            <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
+              <button onClick={() => setSvcServiceForm(null)} disabled={svcServiceSaving} style={{ flex: 1, height: '42px', borderRadius: '10px', background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#C4C9E0', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}>
+                Cancel
+              </button>
+              <button onClick={handleSvcServiceSubmit} disabled={svcServiceSaving} style={{ flex: 1, height: '42px', borderRadius: '10px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '13px', fontWeight: 700, cursor: svcServiceSaving ? 'wait' : 'pointer', opacity: svcServiceSaving ? 0.7 : 1 }}>
+                {svcServiceSaving ? 'Saving...' : svcServiceForm.editing ? 'Save Changes' : 'Add Service'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {svcServiceForm && showSvcServiceCategoryPicker && (
+        <PickerSheet
+          title="Select Category"
+          options={[{ value: '', label: 'No category' }, ...SERVICE_CATEGORIES.map((c) => ({ value: c, label: c }))]}
+          value={svcServiceForm.input.category || ''}
+          onSelect={(v) => { setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, category: v } }); setShowSvcServiceCategoryPicker(false); }}
+          onClose={() => setShowSvcServiceCategoryPicker(false)}
+          zIndex={9999}
+        />
+      )}
+      {svcServiceForm && showSvcServiceCurrencyPicker && (
+        <PickerSheet
+          title="Select Currency"
+          options={CURRENCIES.map((c) => ({ value: c.code, label: c.code }))}
+          value={svcServiceForm.input.currency}
+          onSelect={(v) => { setSvcServiceForm({ ...svcServiceForm, input: { ...svcServiceForm.input, currency: v } }); setShowSvcServiceCurrencyPicker(false); }}
+          onClose={() => setShowSvcServiceCurrencyPicker(false)}
+          zIndex={9999}
+        />
       )}
 
       {/* ════════════════ SYSTEM CONTROLLER TAB (ROOT ONLY) ═══════════════ */}
@@ -3022,7 +3432,7 @@ export function AdminDashboardScreen({
               <Zap size={20} color="#A855F7" />
             </div>
             <div>
-              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Space Grotesk, sans-serif' }}>System Controller</h3>
+              <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, margin: 0, fontFamily: 'Manrope, sans-serif' }}>System Controller</h3>
               <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>Root-level platform controls. All actions are logged.</p>
             </div>
           </div>
@@ -3219,7 +3629,7 @@ export function AdminDashboardScreen({
               onChange={e => setBroadcastMsg(e.target.value)}
               placeholder="Type your announcement…"
               rows={3}
-              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', resize: 'none', outline: 'none', fontFamily: 'Inter, sans-serif' }}
+              style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '13px', resize: 'none', outline: 'none', fontFamily: 'Manrope, sans-serif' }}
             />
             <button
               onClick={handleBroadcast}
@@ -3303,7 +3713,7 @@ export function AdminDashboardScreen({
 
           {/* Footer */}
           <p style={{ color: '#333', fontSize: '10px', textAlign: 'center', marginTop: '4px' }}>
-            VENTS v1.1.0 | © VENTS LTD · All root actions are immutably logged.
+            {appVersionLabel()} · All root actions are immutably logged.
           </p>
         </div>
       )}

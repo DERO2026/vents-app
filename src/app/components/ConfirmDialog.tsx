@@ -58,7 +58,7 @@ export function ConfirmDialog({
           boxShadow: '0 24px 60px rgba(0,0,0,0.5)',
         }}
       >
-        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px', fontFamily: 'Manrope, sans-serif' }}>
           {title}
         </h3>
         <p style={{ color: '#9BA0BC', fontSize: '13px', lineHeight: 1.5, margin: '0 0 20px' }}>
@@ -68,7 +68,7 @@ export function ConfirmDialog({
           <SecondaryButton
             onClick={onCancel}
             size="sm"
-            style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#C4C9E0', fontFamily: 'Inter, sans-serif', fontWeight: 600 }}
+            style={{ flex: 1, background: 'transparent', border: '1px solid rgba(255,255,255,0.12)', color: '#C4C9E0', fontFamily: 'Manrope, sans-serif', fontWeight: 600 }}
           >
             {cancelLabel}
           </SecondaryButton>

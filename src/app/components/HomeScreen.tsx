@@ -1,23 +1,33 @@
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
-  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
+  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond, Store,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
+  ChevronDown,
 } from 'lucide-react';
-import { Event } from './types';
+import { Event, ServiceProvider } from './types';
 import { supabase } from '../../lib/supabase';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings, NearbyServiceProvider } from '../../lib/serviceProviders';
+import { useGeolocation } from '../../lib/useGeolocation';
+import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { analytics } from '../../lib/analyticsEvents';
 import { escapePostgrestOrValue } from '../../lib/sanitize';
 import { EVENT_CARD_ASPECT_CSS } from '../../lib/eventCardAspect';
+import { isEventDiscoverable } from '../../lib/eventLifecycle';
 import { VentsLogo } from './VentsLogo';
 import BadgeChip from './BadgeChip';
 import { formatEventDateRange, formatCardCTA } from './data';
 import { haptics } from '../../lib/haptics';
 import { CATEGORIES as CATEGORY_LIST } from './categories';
-import { NIGERIA_STATES } from './StateSelectScreen';
+import { subdivisionsForCountry } from '../../lib/countrySubdivisions';
+import { COUNTRY_CODES as COUNTRY_CODES_HOME } from '../../lib/countries';
+import { PickerSheet } from './shared/PickerSheet';
 import { ImageCarousel } from './ImageCarousel';
 import { SkeletonCard } from './SkeletonCard';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
+import { AmbientGlow } from './shared/AmbientGlow';
 
 // Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -34,10 +44,12 @@ interface HomeScreenProps {
   selectedState?: string;
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
+  onServicesPress?: () => void;
+  onProviderPress?: (provider: ServiceProvider) => void;
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
-  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string } | null;
+  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; country?: string } | null;
   hasMore?: boolean;
   onLoadMore?: () => void;
   unreadNotificationsCount?: number;
@@ -53,6 +65,14 @@ interface HomeScreenProps {
   // so repeated taps (same intent, no other state change) still each fire
   // the effect below, which keys off the value changing.
   scrollToTopSignal?: number;
+  // Shared discovery-country state (Stage B) -- lifted up to App.tsx so
+  // Home and Services read/write the exact same value instead of each
+  // keeping their own local country state, which is what previously let
+  // them disagree (opening Services from Home could show a stale/different
+  // country). Always a specific ISO code, never 'all' -- there is no more
+  // "All Countries" option.
+  countryFilter: string;
+  onCountryFilterChange: (iso: string) => void;
 }
 
 
@@ -94,6 +114,32 @@ function useCardCountdown(eventDate?: string): string | null {
 }
 
 const CATEGORIES = [{ id: 'all', label: 'All', icon: '' }, ...CATEGORY_LIST];
+
+// Compact "SEP 12" style date badge for the top-left corner of an event
+// image (matches the approved landing/Home mockup's card treatment) --
+// purely a display parse of event_date, no new data. Renders nothing if
+// event_date can't be parsed rather than showing a broken/blank badge.
+// Handoff spec (file 1, B1 HomeScreen card anatomy): a single-line dark
+// glass pill overlaid on the card image top-left -- "FRI 11" in JetBrains
+// Mono caps -- not a two-line solid-white badge.
+function DateBadge({ eventDate }: { eventDate?: string }) {
+  const parsed = useMemo(() => {
+    if (!eventDate) return null;
+    const d = new Date(eventDate);
+    if (isNaN(d.getTime())) return null;
+    return `${d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase()} ${d.getDate()}`;
+  }, [eventDate]);
+  if (!parsed) return null;
+  return (
+    <div style={{
+      position: 'absolute', top: '8px', left: '8px',
+      background: 'rgba(8,7,12,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+      border: '1px solid rgba(255,255,255,0.14)', borderRadius: '6px', padding: '4px 7px',
+      fontFamily: "'JetBrains Mono', monospace", fontSize: '10px', fontWeight: 700,
+      letterSpacing: '0.1em', color: ventsColors.ink1,
+    }}>{parsed}</div>
+  );
+}
 
 // end_time is stored as a raw 24h "HH:MM" (straight from <input type="time">)
 // — reformatted to match event.time's 12h "h:mm AM/PM" so the two never
@@ -142,6 +188,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     area: venue,
     city: city,
     state: stateFromLocation || city,
+    country: dbEvent.country || 'NG',
     price: Number(dbEvent.price || 0),
     image: dbEvent.image_url || 'https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?w=800',
     images: [
@@ -208,10 +255,10 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '100%',
-        background: '#090514',
-        borderRadius: '28px',
-        border: '1px solid rgba(255,255,255,0.07)',
-        boxShadow: '0 20px 40px rgba(0,0,0,0.35), 0 2px 10px rgba(0,0,0,0.25)',
+        background: ventsColors.surface,
+        borderRadius: '22px',
+        border: '1px solid rgba(255,255,255,0.08)',
+        boxShadow: '0 20px 40px rgba(88,28,135,0.16), 0 2px 10px rgba(0,0,0,0.3)',
       }}
     >
       <div style={{ aspectRatio: EVENT_CARD_ASPECT_CSS, position: 'relative' }}>
@@ -222,9 +269,10 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           showDots={cardImages.length > 1}
           style={{ width: '100%', height: '100%' }}
         />
-        {/* FOMO tag */}
+        <DateBadge eventDate={event.event_date} />
+        {/* FOMO tag -- offset below the date badge so the two never overlap */}
         {isSelling && (
-          <div style={{ position: 'absolute', top: '8px', left: '8px', background: 'rgba(255,0,110,0.15)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '6px', padding: '2px 7px', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          <div style={{ position: 'absolute', top: '46px', left: '8px', background: 'rgba(255,0,110,0.18)', backdropFilter: 'blur(4px)', border: '1px solid rgba(255,0,110,0.5)', borderRadius: '999px', padding: '3px 9px', display: 'flex', alignItems: 'center', gap: '3px' }}>
             <span style={{ fontSize: '9px', color: '#FF006E', fontWeight: 800, letterSpacing: '0.02em' }}>Selling Fast!</span>
           </div>
         )}
@@ -237,7 +285,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -248,12 +296,14 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
           <span
             style={{
               fontSize: '9px',
-              color: '#A78BFA',
+              color: ventsColors.accentSoft,
               fontWeight: 700,
-              background: 'rgba(167,139,250,0.12)',
-              padding: '2px 6px',
-              borderRadius: '4px',
+              background: 'rgba(167,139,250,0.14)',
+              border: '1px solid rgba(167,139,250,0.3)',
+              padding: '3px 9px',
+              borderRadius: '999px',
               width: 'fit-content',
+              letterSpacing: '0.03em',
             }}
           >
             {event.category.toUpperCase()}
@@ -262,12 +312,12 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             <span
               style={{
                 fontSize: '8px',
-                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                color: event.promoPlan === 'trending' ? ventsColors.error : event.promoPlan === 'featured' ? ventsColors.pending : '#3B82F6',
                 fontWeight: 800,
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
                 padding: '2px 5px',
-                borderRadius: '4px',
+                borderRadius: '999px',
                 letterSpacing: '0.05em',
               }}
             >
@@ -280,7 +330,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             primary heading. */}
         <h4
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '13px',
             fontWeight: 700,
             lineHeight: 1.35,
@@ -302,7 +352,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
               {event.organizer && event.organizer !== 'Verified Organizer' && (
                 <>
-                  <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <span style={{ fontSize: '9px', color: ventsColors.accentSoft, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     @{event.organizer}
                   </span>
                   <BadgeChip tier={event.organizerVcBadge} />
@@ -311,7 +361,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             </div>
             {countdown && (
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 6px' }}>
-                <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '9px', color: countdown === 'Happening now' ? '#10B981' : ventsColors.accent, fontWeight: 700, whiteSpace: 'nowrap' }}>
                   {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
                 </span>
               </div>
@@ -324,14 +374,14 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             competing for the same left-aligned line. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <Calendar size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.date}{event.time ? ` · ${event.time}` : ''}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0, flexShrink: 1 }}>
-            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <MapPin size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.city}
             </span>
           </div>
@@ -350,7 +400,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? '#06D6A0' : '#fff',
+                color: isFree ? ventsColors.success : '#fff',
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -359,7 +409,7 @@ const FeedCard = memo(function FeedCard({ event, onPress, isSaved, onToggleSave 
             );
           })()}
           {event.is_18_plus && (
-            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: '#EF4444', fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
+            <span style={{ fontSize: '10px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '5px', padding: '1px 5px', color: ventsColors.error, fontWeight: 700, flexShrink: 0, width: 'fit-content' }}>18+</span>
           )}
         </div>
       </div>
@@ -373,7 +423,7 @@ function CardSkeleton() {
       style={{
         width: '100%',
         height: '210px',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '16px',
         border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
@@ -382,12 +432,12 @@ function CardSkeleton() {
         opacity: 0.6,
       }}
     >
-      <div style={{ height: '110px', background: '#1A1D36' }} />
+      <div style={{ height: '110px', background: ventsColors.elevated }} />
       <div style={{ padding: '10px', display: 'flex', flexDirection: 'column', gap: '6px', flex: 1 }}>
-        <div style={{ width: '50px', height: '12px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '80%', height: '14px', background: '#1A1D36', borderRadius: '4px' }} />
-        <div style={{ width: '60%', height: '10px', background: '#1A1D36', borderRadius: '4px', marginTop: '4px' }} />
-        <div style={{ width: '40%', height: '10px', background: '#1A1D36', borderRadius: '4px' }} />
+        <div style={{ width: '50px', height: '12px', background: ventsColors.elevated, borderRadius: '4px' }} />
+        <div style={{ width: '80%', height: '14px', background: ventsColors.elevated, borderRadius: '4px' }} />
+        <div style={{ width: '60%', height: '10px', background: ventsColors.elevated, borderRadius: '4px', marginTop: '4px' }} />
+        <div style={{ width: '40%', height: '10px', background: ventsColors.elevated, borderRadius: '4px' }} />
       </div>
     </div>
   );
@@ -410,11 +460,11 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
       className="relative overflow-hidden cursor-pointer active:opacity-90 flex flex-col"
       style={{
         width: '162px',
-        background: '#090514',
-        borderRadius: '18px',
-        border: '1px solid rgba(255,255,255,0.07)',
+        background: ventsColors.surface,
+        borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.08)',
         flexShrink: 0,
-        boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
+        boxShadow: '0 10px 26px rgba(88,28,135,0.14), 0 2px 8px rgba(0,0,0,0.25)',
       }}
     >
       <div style={{ height: '110px', position: 'relative' }}>
@@ -436,16 +486,17 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             }
           }}
         />
+        <DateBadge eventDate={event.event_date} />
         {badgeText && (
           <div
             style={{
               position: 'absolute',
-              top: '8px',
+              top: '46px',
               left: '8px',
               background: badgeColor || 'rgba(168,85,247,0.9)',
               backdropFilter: 'blur(4px)',
-              padding: '3px 8px',
-              borderRadius: '6px',
+              padding: '3px 9px',
+              borderRadius: '999px',
               display: 'flex',
               alignItems: 'center',
               boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
@@ -465,7 +516,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           className="absolute top-2 right-2 w-7 h-7 rounded-full flex items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', border: 'none', cursor: 'pointer' }}
         >
-          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
+          <svg key={String(isSaved)} width="12" height="12" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5" style={{ animation: 'bookmarkPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>
             <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
           </svg>
         </button>
@@ -476,12 +527,14 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
           <span
             style={{
               fontSize: '9px',
-              color: '#A78BFA',
+              color: ventsColors.accentSoft,
               fontWeight: 700,
-              background: 'rgba(167,139,250,0.12)',
-              padding: '2px 6px',
-              borderRadius: '4px',
+              background: 'rgba(167,139,250,0.14)',
+              border: '1px solid rgba(167,139,250,0.3)',
+              padding: '3px 9px',
+              borderRadius: '999px',
               width: 'fit-content',
+              letterSpacing: '0.03em',
             }}
           >
             {event.category.toUpperCase()}
@@ -490,12 +543,12 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             <span
               style={{
                 fontSize: '8px',
-                color: event.promoPlan === 'trending' ? '#EF4444' : event.promoPlan === 'featured' ? '#F59E0B' : '#3B82F6',
+                color: event.promoPlan === 'trending' ? ventsColors.error : event.promoPlan === 'featured' ? ventsColors.pending : '#3B82F6',
                 fontWeight: 800,
                 background: event.promoPlan === 'trending' ? 'rgba(239,68,68,0.12)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.12)' : 'rgba(59,130,246,0.12)',
                 border: `1px solid ${event.promoPlan === 'trending' ? 'rgba(239,68,68,0.3)' : event.promoPlan === 'featured' ? 'rgba(245,158,11,0.3)' : 'rgba(59,130,246,0.3)'}`,
                 padding: '2px 5px',
-                borderRadius: '4px',
+                borderRadius: '999px',
                 letterSpacing: '0.05em',
               }}
             >
@@ -505,7 +558,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
         </div>
         <h4
           style={{
-            color: '#F0F0FF',
+            color: ventsColors.ink1,
             fontSize: '13px',
             fontWeight: 700,
             lineHeight: 1.3,
@@ -524,12 +577,12 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
             room before it even reaches price. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', marginTop: '2px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <Calendar size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.date}</span>
+            <Calendar size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{event.date}</span>
           </div>
           {countdown && (
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '3px', flexShrink: 0, background: countdown === 'Happening now' ? 'rgba(16,185,129,0.12)' : 'rgba(168,85,247,0.1)', border: `1px solid ${countdown === 'Happening now' ? 'rgba(16,185,129,0.3)' : 'rgba(168,85,247,0.25)'}`, borderRadius: '5px', padding: '2px 5px' }}>
-              <span style={{ fontSize: '8px', color: countdown === 'Happening now' ? '#10B981' : '#A855F7', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              <span style={{ fontSize: '8px', color: countdown === 'Happening now' ? '#10B981' : ventsColors.accent, fontWeight: 700, whiteSpace: 'nowrap' }}>
                 {countdown === 'Happening now' ? '🟢 Now' : `⏱ ${countdown}`}
               </span>
             </div>
@@ -539,14 +592,14 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
         {/* Location (left) / organizer (right) — same pairing logic. */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px', minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px', minWidth: 0 }}>
-            <MapPin size={10} color="#94A3B8" style={{ flexShrink: 0 }} />
-            <span style={{ fontSize: '10px', color: '#94A3B8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            <MapPin size={10} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '10px', color: ventsColors.ink2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {event.city}
             </span>
           </div>
           {event.organizer && event.organizer !== 'Verified Organizer' && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0, minWidth: 0 }}>
-              <span style={{ fontSize: '9px', color: '#A78BFA', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{event.organizer}</span>
+              <span style={{ fontSize: '9px', color: ventsColors.accentSoft, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>@{event.organizer}</span>
               <BadgeChip tier={event.organizerVcBadge} />
             </div>
           )}
@@ -560,7 +613,7 @@ export const HorizontalEventCard = memo(function HorizontalEventCard({ event, on
               <span style={{
                 fontSize: '11px', fontWeight: 800, letterSpacing: '0.02em', width: 'fit-content',
                 borderRadius: '20px', padding: '4px 12px',
-                color: isFree ? '#06D6A0' : '#fff',
+                color: isFree ? ventsColors.success : '#fff',
                 background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                 border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
               }}>
@@ -586,7 +639,7 @@ function HorizontalCardSkeleton() {
       style={{
         width: '180px',
         height: '220px',
-        background: '#090514',
+        background: ventsColors.surface,
         borderRadius: '18px',
         border: '1px solid rgba(255,255,255,0.07)',
         display: 'flex',
@@ -659,7 +712,7 @@ function FeaturedCarousel({
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between px-4 mb-3">
-        <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+        <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
           Featured
         </h3>
         {events.length > 1 && (
@@ -672,7 +725,7 @@ function FeaturedCarousel({
                   width: i === currentIndex ? '18px' : '6px',
                   height: '6px',
                   borderRadius: '3px',
-                  background: i === currentIndex ? '#A78BFA' : 'rgba(255,255,255,0.2)',
+                  background: i === currentIndex ? ventsColors.accentSoft : 'rgba(255,255,255,0.2)',
                   border: 'none',
                   cursor: 'pointer',
                   padding: 0,
@@ -692,7 +745,7 @@ function FeaturedCarousel({
         onTouchEnd={handleTouchEnd}
         style={{ cursor: 'pointer' }}
       >
-        <div style={{ borderRadius: '32px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', boxShadow: '0 24px 48px rgba(0,0,0,0.4), 0 4px 12px rgba(0,0,0,0.3)' }}>
+        <div style={{ borderRadius: '28px', overflow: 'hidden', position: 'relative', height: '52vh', minHeight: '280px', maxHeight: '460px', background: ventsColors.surface, border: '1px solid rgba(168,85,247,0.15)', boxShadow: '0 24px 48px rgba(88,28,135,0.22), 0 4px 12px rgba(0,0,0,0.35)' }}>
           {/* This card's own swipe (above) switches between featured EVENTS;
               a single event's own image list rarely has more than one entry
               today (events only store one image_url), so ImageCarousel's own
@@ -706,9 +759,15 @@ function FeaturedCarousel({
           />
           {/* Deep gradient from transparent at top to almost-black at bottom */}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.08) 0%, transparent 30%, rgba(0,0,0,0.55) 60%, rgba(0,0,0,0.92) 100%)' }} />
-          {/* FEATURED badge */}
+          {/* FEATURED badge -- handoff anatomy: dark glass pill, JetBrains
+              Mono caps, not a purple gradient pill. */}
           <div style={{ position: 'absolute', top: '14px', left: '14px' }}>
-            <span style={{ background: 'rgba(167,139,250,0.92)', backdropFilter: 'blur(8px)', color: '#fff', fontSize: '10px', fontWeight: 800, padding: '4px 10px', borderRadius: '8px', letterSpacing: '0.05em' }}>FEATURED</span>
+            <span style={{
+              background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(14px)', WebkitBackdropFilter: 'blur(14px)',
+              border: '1px solid rgba(255,255,255,0.16)', color: '#fff',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: '9px', fontWeight: 700,
+              padding: '6px 10px', borderRadius: '8px', letterSpacing: '0.14em',
+            }}>FEATURED</span>
           </div>
           {/* Save button */}
           <button
@@ -721,11 +780,11 @@ function FeaturedCarousel({
           <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px 16px 18px' }}>
             {event.organizer && event.organizer !== 'Verified Organizer' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '4px' }}>
-                <p style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
+                <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 600, margin: 0 }}>@{event.organizer}</p>
                 <BadgeChip tier={event.organizerVcBadge} />
               </div>
             )}
-            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
+            <p style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 900, margin: '0 0 10px', fontFamily: 'Manrope, sans-serif', lineHeight: 1.2, textShadow: '0 1px 8px rgba(0,0,0,0.6)' }}>{event.title}</p>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.date}</span>
               <span style={{ color: 'rgba(255,255,255,0.8)', fontSize: '12px', display: 'flex', alignItems: 'center', gap: '4px' }}>{event.city}</span>
@@ -736,7 +795,7 @@ function FeaturedCarousel({
                   <span style={{
                     fontSize: '12px', fontWeight: 800, width: 'fit-content',
                     borderRadius: '20px', padding: '4px 12px',
-                    color: isFree ? '#06D6A0' : '#fff',
+                    color: isFree ? ventsColors.success : '#fff',
                     background: isFree ? 'rgba(6,214,160,0.15)' : 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
                     border: isFree ? '1px solid rgba(6,214,160,0.4)' : 'none',
                   }}>
@@ -752,6 +811,22 @@ function FeaturedCarousel({
   );
 }
 
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <button
+      onClick={onClear}
+      style={{
+        display: 'flex', alignItems: 'center', gap: '5px',
+        background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)',
+        borderRadius: '999px', padding: '5px 8px 5px 10px', cursor: 'pointer',
+      }}
+    >
+      <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 600, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{label}</span>
+      <X size={11} color={ventsColors.accentSoft} />
+    </button>
+  );
+}
+
 export function HomeScreen({
   onEventPress,
   savedEvents,
@@ -762,6 +837,8 @@ export function HomeScreen({
   onCreatePress,
   onUserPress,
   onLiveMapPress,
+  onServicesPress,
+  onProviderPress,
   dbEvents,
   loading,
   fetchEvents,
@@ -771,9 +848,41 @@ export function HomeScreen({
   unreadNotificationsCount,
   blockedUserIds,
   scrollToTopSignal,
+  countryFilter,
+  onCountryFilterChange,
 }: HomeScreenProps) {
+  useDesktopWideShell();
   const blockedIdSet = useMemo(() => new Set(blockedUserIds || []), [blockedUserIds]);
+
+  // Providers Near You (Services surfaced directly on Home, per the
+  // redesign) -- real GPS-distance discovery when granted
+  // (get_nearby_service_providers, 0056_service_provider_geolocation.sql),
+  // falling back to the account's country the same way Services' own home
+  // screen does when location is denied/unavailable/still resolving.
+  const homeGeo = useGeolocation(true);
+  const [nearbyProviders, setNearbyProviders] = useState<(ServiceProvider | NearbyServiceProvider)[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (homeGeo.status === 'requesting' || homeGeo.status === 'idle') return;
+    if (homeGeo.status === 'granted' && homeGeo.lat != null && homeGeo.lng != null) {
+      fetchNearbyServiceProviders(homeGeo.lat, homeGeo.lng, { limit: 10 })
+        .then((rows) => withProviderRatings(rows))
+        .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
+        .catch(() => { if (!cancelled) setNearbyProviders([]); });
+    } else {
+      fetchApprovedServiceProviders({ limit: 10, country: countryFilter })
+        .then((rows) => withProviderRatings(rows))
+        .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
+        .catch(() => { if (!cancelled) setNearbyProviders([]); });
+    }
+    return () => { cancelled = true; };
+  }, [homeGeo.status, homeGeo.lat, homeGeo.lng, countryFilter]);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  // Scroll anchors for the new quick-action row's "Trending"/"Near You"
+  // chips -- both sections already exist further down; these chips jump to
+  // the real thing rather than duplicating it as a separate filtered view.
+  const trendingSectionRef = useRef<HTMLDivElement>(null);
+  const nearbyProvidersRef = useRef<HTMLDivElement>(null);
   // Skip the very first signal value (mount) — only an actual tap-while-on-
   // Home should scroll; landing on Home fresh shouldn't jump anything.
   const scrollSignalMounted = useRef(false);
@@ -790,6 +899,32 @@ export function HomeScreen({
   const [searchOpen, setSearchOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState('all');
   const [stateFilter, setStateFilter] = useState<string>('all');
+  // Discovery country is controlled by App.tsx now (see countryFilter/
+  // onCountryFilterChange props) -- one shared piece of state read and
+  // written by both Home and Services, so the two can never disagree about
+  // which country is being browsed. Always a specific ISO code; there is
+  // no "All Countries" state to default to or fall back on. App.tsx owns
+  // defaulting it to the account's country and never silently resetting a
+  // country the user has deliberately picked -- this component only needs
+  // to forward changes upward and keep its own subdivision filter in sync.
+  const [showCountryPicker, setShowCountryPicker] = useState(false);
+  const handleCountryFilterChange = useCallback((iso: string) => {
+    onCountryFilterChange(iso);
+    // A subdivision chosen for the previous country (e.g. "Lagos" while
+    // browsing Nigeria) is meaningless once the browsing country changes —
+    // clear it rather than silently applying a stale, invalid filter (or,
+    // worse, one that happens to collide with a same-named place elsewhere).
+    setStateFilter((prev) => {
+      if (prev === 'all') return prev;
+      const subs = subdivisionsForCountry(iso);
+      return subs && subs.options.includes(prev) ? prev : 'all';
+    });
+  }, [onCountryFilterChange]);
+  // The single source of truth for which subdivision list (if any) applies
+  // to the country currently being browsed -- Nigeria states, Rwanda
+  // provinces, Qatar municipalities, or null (no subdivision field shown)
+  // for every other country. Never a hardcoded Nigeria-only list.
+  const subdivisions = useMemo(() => subdivisionsForCountry(countryFilter), [countryFilter]);
   const [priceFilter, setPriceFilter] = useState<'all' | 'free' | 'paid'>('all');
   const [upcomingOnly, setUpcomingOnly] = useState(true);
   const [featuredIndex, setFeaturedIndex] = useState(0);
@@ -816,7 +951,12 @@ export function HomeScreen({
     setTempState('all');
     setTempPrice('all');
   };
-  const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all';
+  // Country is intentionally excluded here -- it's always a specific
+  // selection now (never 'all'), so it's the base browsing context (shown
+  // permanently via the country pill), not a togglable "filter" that should
+  // light up the Filters button's dot or add a clearable chip.
+  const hasActiveFilters = stateFilter !== 'all' || priceFilter !== 'all'
+    || (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week');
 
   // Pull-to-refresh
   const [pullRefreshing, setPullRefreshing] = useState(false);
@@ -837,13 +977,13 @@ export function HomeScreen({
   const ICON_CATEGORIES: { id: string; label: string; icon: React.ElementType; color: string }[] = [
     { id: 'today', label: 'Today', icon: Clock, color: '#A0A0A0' },
     { id: 'week', label: 'This Week', icon: CalendarDays, color: '#A8DADC' },
-    { id: 'all', label: 'All', icon: LayoutGrid, color: '#7B2FBE' },
+    { id: 'all', label: 'All', icon: LayoutGrid, color: ventsColors.accent },
     { id: 'Music', label: 'Music', icon: Music, color: '#FF6B6B' },
     { id: 'Technology', label: 'Tech', icon: Cpu, color: '#4ECDC4' },
     { id: 'Food & Drinks', label: 'Food', icon: UtensilsCrossed, color: '#FFE66D' },
     { id: 'Comedy Shows', label: 'Comedy', icon: Laugh, color: '#FF8C42' },
     { id: 'Arts & Culture', label: 'Arts', icon: Palette, color: '#C77DFF' },
-    { id: 'Sports & Wellness', label: 'Sports', icon: Dumbbell, color: '#06D6A0' },
+    { id: 'Sports & Wellness', label: 'Sports', icon: Dumbbell, color: ventsColors.success },
     { id: 'Conferences', label: 'Conferences', icon: Presentation, color: '#4CC9F0' },
     { id: 'Family Events', label: 'Family', icon: Heart, color: '#FF6B9D' },
     { id: 'Nightlife', label: 'Nightlife', icon: Moon, color: '#9B5DE5' },
@@ -940,16 +1080,42 @@ export function HomeScreen({
   // People search state (for full-screen search overlay)
   const [searchPeople, setSearchPeople] = useState<any[]>([]);
   const [loadingPeople, setLoadingPeople] = useState(false);
-  const [suggestedPeople, setSuggestedPeople] = useState<any[]>([]);
 
+  // Handoff B2: the pre-typing state shows "Recent" (past search terms) and
+  // "Browse categories" -- not a suggested-people/popular-events preview.
+  // Recent searches are real, locally-remembered past queries (no backend
+  // search-suggestion API exists to power the mockup's keyword-autocomplete
+  // list, so that part isn't fabricated here); per-account key so they don't
+  // leak across accounts on a shared device.
+  const recentSearchesKey = currentUser?.id ? `vents_recent_searches_${currentUser.id}` : 'vents_recent_searches_guest';
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
   useEffect(() => {
-    supabase
-      .from('public_profiles')
-      .select('id, full_name, username, avatar_url, is_verified, role, vc_badge')
-      .eq('is_verified', true)
-      .limit(5)
-      .then(({ data }) => setSuggestedPeople(data || []), () => { /* ignore */ });
-  }, []);
+    try {
+      const saved = localStorage.getItem(recentSearchesKey);
+      if (saved) setRecentSearches(JSON.parse(saved));
+    } catch { /* ignore */ }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentSearchesKey]);
+
+  const saveRecentSearch = useCallback((term: string) => {
+    const trimmed = term.trim();
+    if (!trimmed) return;
+    setRecentSearches((prev) => {
+      const next = [trimmed, ...prev.filter((t) => t.toLowerCase() !== trimmed.toLowerCase())].slice(0, 6);
+      try { localStorage.setItem(recentSearchesKey, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentSearchesKey]);
+
+  // Remembers a search once the user has paused typing (same 300ms debounce
+  // as the query itself commits on) -- only while the overlay is actually
+  // open, so unrelated searchQuery changes elsewhere never pollute Recent.
+  useEffect(() => {
+    if (!searchOpen || !searchQuery.trim()) return;
+    saveRecentSearch(searchQuery);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery, searchOpen]);
 
   useEffect(() => {
     const q = inputValue.trim();
@@ -990,9 +1156,20 @@ export function HomeScreen({
   // preloaded. null = no active filter fetch (fall back to dbEvents).
   const [filterResults, setFilterResults] = useState<Event[] | null>(null);
   const [filterLoading, setFilterLoading] = useState(false);
-  const filtersActive = activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week'
-    || stateFilter !== 'all'
-    || priceFilter !== 'all';
+  // Always true now: countryFilter is always a specific ISO code (never
+  // 'all'), and dbEvents (App.tsx's paginated feed) has no server-side
+  // country scoping at all -- so the country/category/state/price-scoped
+  // query below must always run to actually filter by country, not just
+  // when category/state/price happen to be non-default.
+  const filtersActive = true;
+
+  // Narrowed to the single primitive field this effect actually reads off
+  // currentUser -- depending on the whole `currentUser` object below meant
+  // any unrelated update to it (role sync, profile edits, etc. all replace
+  // it with a new object reference even when date_of_birth is unchanged)
+  // re-ran this fetch, re-showing the filter-grid skeleton for no reason
+  // related to what the user was doing.
+  const currentUserDob = (currentUser as any)?.date_of_birth;
 
   useEffect(() => {
     const q = searchQuery.trim();
@@ -1001,17 +1178,24 @@ export function HomeScreen({
     setFilterLoading(true);
     (async () => {
       try {
-        const userDob = (currentUser as any)?.date_of_birth;
-        const userAgeYears = userDob
-          ? Math.floor((Date.now() - new Date(userDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+        const userAgeYears = currentUserDob
+          ? Math.floor((Date.now() - new Date(currentUserDob).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
           : 99;
 
+        // See src/lib/eventLifecycle.ts: conservative server prefilter
+        // (widest possible active window) + exact client-side filter below,
+        // instead of a date-only `event_date >= today` check that let an
+        // event which started AND ended earlier today stay visible/
+        // purchasable until midnight and ignored end_date/archived_at.
+        const nowIso = new Date().toISOString();
+        const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         let query = supabase
           .from('events')
           .select('*, users!events_organizer_id_fkey(username, full_name, vc_badge)')
           .eq('hidden_by_admin', false)
           .is('deleted_at', null)
-          .gte('event_date', new Date().toISOString().split('T')[0])
+          .is('archived_at', null)
+          .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
           .in('status', ['live', 'published']);
 
         if (activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week') {
@@ -1020,20 +1204,38 @@ export function HomeScreen({
         if (priceFilter === 'free') query = query.eq('price', 0);
         if (priceFilter === 'paid') query = query.gt('price', 0);
         if (stateFilter !== 'all') query = query.ilike('location', `%, ${stateFilter},%`);
+        // countryFilter is always a specific ISO code now -- no 'all' branch.
+        query = query.eq('country', countryFilter);
         if (userAgeYears < 18) query = query.eq('is_18_plus', false);
         if (blockedIdSet.size > 0) query = query.not('organizer_id', 'in', `(${[...blockedIdSet].join(',')})`);
 
-        const { data, error } = await query.limit(200);
+        const { data: rawData, error } = await query.limit(200);
         if (cancelled) return;
-        if (error || !data) { setFilterResults([]); return; }
+        if (error || !rawData) { setFilterResults([]); return; }
+        const data = rawData.filter((e: any) => isEventDiscoverable(e));
+
+        // Trending/Featured now source from this same country/state/
+        // category/price-scoped set (see baseEvents below) rather than the
+        // separately-fetched, country-blind dbEvents page -- so this fetch
+        // needs the same trending score every event card elsewhere relies
+        // on (App.tsx's own fetchEvents computes it identically).
+        const eventIds = data.map((e: any) => e.id);
+        let trendingScoreMap: Record<string, number> = {};
+        if (eventIds.length > 0) {
+          const { data: trendingRes } = await supabase.rpc('get_event_trending_scores', { p_event_ids: eventIds });
+          (trendingRes || []).forEach((t: any) => { trendingScoreMap[t.event_id] = Number(t.trending_score) || 0; });
+        }
 
         const mapped = data.map((e: any) => {
           const orgUser = e.users;
-          return mapDbEventToFrontend({
-            ...e,
-            organizer_name: orgUser?.username || orgUser?.full_name || null,
-            organizer_vc_badge: orgUser?.vc_badge || null,
-          });
+          return {
+            ...mapDbEventToFrontend({
+              ...e,
+              organizer_name: orgUser?.username || orgUser?.full_name || null,
+              organizer_vc_badge: orgUser?.vc_badge || null,
+            }),
+            trendingScore: trendingScoreMap[e.id] || 0,
+          };
         });
         setFilterResults(mapped);
       } catch {
@@ -1043,7 +1245,7 @@ export function HomeScreen({
       }
     })();
     return () => { cancelled = true; };
-  }, [searchQuery, activeCategory, priceFilter, stateFilter, currentUser, blockedIdSet, filtersActive]);
+  }, [searchQuery, activeCategory, priceFilter, stateFilter, countryFilter, currentUserDob, blockedIdSet, filtersActive]);
 
   // While a search query is active, filter/sort the server's fuzzy-matched
   // results instead of the locally loaded feed page — search_events_fuzzy
@@ -1084,6 +1286,11 @@ export function HomeScreen({
       stateFilter === 'all' ||
       event.state?.toLowerCase() === stateFilter.toLowerCase();
 
+    // Country filter -- discovery-default metadata only, never a real
+    // access restriction (see events.country's own doc comment).
+    // countryFilter is always a specific ISO code now -- no 'all' branch.
+    const matchCountry = (event.country || 'NG').toUpperCase() === countryFilter.toUpperCase();
+
     // Price filter (free vs paid). "Paid" means at least one ticket tier
     // costs money — event.price alone is only ever the LOWEST tier, so an
     // event with a free tier alongside a paid one would otherwise never
@@ -1100,22 +1307,13 @@ export function HomeScreen({
     const dt = event.event_date ? new Date(event.event_date) : new Date(event.date + ' ' + event.time);
     const matchUpcoming = !upcomingOnly || dt >= new Date();
 
-    return matchCategory && matchDateCategory && matchState && matchPrice && matchUpcoming;
+    return matchCategory && matchDateCategory && matchState && matchCountry && matchPrice && matchUpcoming;
   }).sort((a, b) => {
     // Nearest date to furthest across the board.
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
     const dtB = b.event_date ? new Date(b.event_date).getTime() : (b.date ? new Date(b.date).getTime() : Infinity);
     return dtA - dtB;
-  }), [baseEvents, activeCategory, stateFilter, priceFilter, upcomingOnly, blockedIdSet]);
-
-  const todayStart = new Date(new Date().toISOString().split('T')[0]);
-  const upcomingDbEvents = dbEvents.filter(e => {
-    const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
-    return d && d >= todayStart;
-  });
-
-  const matchesStateFilter = (event: any) =>
-    stateFilter === 'all' || event.state?.toLowerCase() === stateFilter.toLowerCase();
+  }), [baseEvents, activeCategory, stateFilter, countryFilter, priceFilter, upcomingOnly, blockedIdSet]);
 
   const byNearestDate = (a: any, b: any) => {
     const dtA = a.event_date ? new Date(a.event_date).getTime() : (a.date ? new Date(a.date).getTime() : Infinity);
@@ -1123,41 +1321,56 @@ export function HomeScreen({
     return dtA - dtB;
   };
 
+  // Trending/Featured source from `baseEvents` -- the SAME pool the main
+  // grid uses (server-side country/state/category/price-scoped via
+  // filterResults whenever any filter is active, falling back to the
+  // country-blind dbEvents page only when browsing with every filter at
+  // its neutral "all" value). Previously these two sourced from dbEvents/
+  // upcomingDbEvents directly and only re-applied country/state as a
+  // client-side pass -- correct as far as it went, but blind to any
+  // matching event outside whatever page of the country-blind feed
+  // happened to already be loaded. Sourcing from baseEvents instead means
+  // Trending and Featured are always exactly as country/state-aware as the
+  // grid immediately below them, with the same data.
+  const todayStart = new Date(new Date().toISOString().split('T')[0]);
+  const upcomingBaseEvents = useMemo(() => baseEvents.filter(e => {
+    if (blockedIdSet.has((e as any).organizer_id)) return false;
+    const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
+    return d && d >= todayStart;
+  }), [baseEvents, blockedIdSet]);
+
   // Trending events: selection is the real, server-computed trending score
   // (get_event_trending_scores — recent booking velocity weighted well
   // above lifetime sales/saves, migrations/20260801134748). Purely organic:
   // no promotion purchase or admin action can place an event here, and a
   // brand-new event scores 0 until it earns real engagement. Display order
-  // is nearest-date-first; state filter applies same as the Explore grid.
-  const trendingEvents = [...upcomingDbEvents]
-    .filter(matchesStateFilter)
-    .filter((e) => (e.trendingScore || 0) > 0)
-    .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
-    .slice(0, 5)
-    .sort(byNearestDate);
+  // is nearest-date-first.
+  const trendingEvents = useMemo(() =>
+    [...upcomingBaseEvents]
+      .filter((e) => (e.trendingScore || 0) > 0)
+      .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
+      .slice(0, 5)
+      .sort(byNearestDate),
+    [upcomingBaseEvents]
+  );
 
-  // Featured events: selection stays isFeatured + upcoming, but display
-  // order is now nearest-date-first (previously randomized), and the
-  // state filter now applies here too.
-  const featuredEvents = useMemo(() => {
-    const start = new Date(new Date().toISOString().split('T')[0]);
-    return dbEvents.filter(e => {
-      if (!e.isFeatured) return false;
-      if (!matchesStateFilter(e)) return false;
-      const d = e.event_date ? new Date(e.event_date) : (e.date ? new Date(e.date) : null);
-      return d && d >= start;
-    }).sort(byNearestDate);
-  }, [dbEvents, stateFilter]);
+  // Featured events: selection stays isFeatured + upcoming, display order
+  // nearest-date-first.
+  const featuredEvents = useMemo(() =>
+    upcomingBaseEvents.filter(e => e.isFeatured).sort(byNearestDate),
+    [upcomingBaseEvents]
+  );
 
   const isDefaultState = !searchQuery.trim() && activeCategory === 'all' && priceFilter === 'all';
 
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#020005', position: 'relative' }}
+      style={{ background: ventsColors.bg, position: 'relative', overflow: 'hidden' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
+      <AmbientGlow />
       {/* Pull-to-refresh spinner */}
       {pullRefreshing && (
         <div style={{
@@ -1174,28 +1387,28 @@ export function HomeScreen({
       )}
       {/* Full-screen Search overlay */}
       {searchOpen && (
-        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: '#020005', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ position: 'absolute', inset: 0, zIndex: 100, background: ventsColors.bg, display: 'flex', flexDirection: 'column' }}>
           {/* Search bar */}
           <div style={{ padding: 'calc(14px + env(safe-area-inset-top)) 16px 10px', flexShrink: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
-              <Search size={17} color="#94A3B8" />
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '10px', background: ventsColors.surface, borderRadius: '14px', border: '1px solid rgba(255,255,255,0.07)', padding: '0 14px', height: '46px' }}>
+              <Search size={17} color={ventsColors.ink2} />
               <input
                 autoFocus
                 type="text"
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 placeholder="Search people and events..."
-                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+                style={{ flex: 1, background: 'none', border: 'none', outline: 'none', color: ventsColors.ink1, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
               />
               {inputValue && (
                 <button onClick={() => { setInputValue(''); setSearchQuery(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                  <X size={15} color="#94A3B8" />
+                  <X size={15} color={ventsColors.ink2} />
                 </button>
               )}
             </div>
             <button
               onClick={() => { setSearchOpen(false); setInputValue(''); setSearchQuery(''); }}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: '#A78BFA', fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600, whiteSpace: 'nowrap' }}
             >
               Cancel
             </button>
@@ -1205,59 +1418,51 @@ export function HomeScreen({
           <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: '0 16px 32px' }}>
             {!inputValue.trim() ? (
               <>
-                {/* Suggested People */}
-                {suggestedPeople.length > 0 && (
+                {/* Handoff B2: Recent (real past search terms, per-account,
+                    localStorage-backed) then Browse categories -- not a
+                    suggested-people/popular-events preview. There's no
+                    backend keyword-suggestion API to power the mockup's
+                    "afrobeats"/"afro house night" autocomplete list, so that
+                    part isn't fabricated; Recent is genuinely what the user
+                    searched before. */}
+                {recentSearches.length > 0 && (
                   <>
-                    <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>SUGGESTED PEOPLE</p>
-                    {suggestedPeople.map((u: any) => (
-                      <div
-                        key={u.id}
-                        onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
-                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                      >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-                          <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
-                          {u.avatar_url && (
-                            <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
-                          )}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
-                            <BadgeChip tier={u.vc_badge} />
-                          </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
-                        </div>
-                      </div>
-                    ))}
+                    <p style={{ color: 'rgba(237,234,245,0.55)', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '12px' }}>Recent</p>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '22px' }}>
+                      {recentSearches.map((term) => (
+                        <button
+                          key={term}
+                          onClick={() => setInputValue(term)}
+                          style={{ height: '36px', padding: '0 14px', borderRadius: '999px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', color: ventsColors.ink1, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+                        >
+                          {term}
+                        </button>
+                      ))}
+                    </div>
                   </>
                 )}
-                {/* Popular Events */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '16px 0 10px' }}>POPULAR EVENTS</p>
-                {dbEvents.slice(0, 4).map(ev => (
-                  <div
-                    key={ev.id}
-                    onClick={() => { setSearchOpen(false); setInputValue(''); onEventPress(ev); }}
-                    style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                  >
-                    <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
-                      <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                      <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
-                    </div>
-                  </div>
-                ))}
+
+                <p style={{ color: 'rgba(237,234,245,0.55)', fontFamily: ventsTypography.fontMono, fontSize: '11px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', marginBottom: '12px' }}>Browse categories</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                  {CATEGORY_LIST.slice(0, 6).map((cat) => (
+                    <button
+                      key={cat.id}
+                      onClick={() => { setActiveCategory(cat.id); setSearchOpen(false); setInputValue(''); }}
+                      style={{ height: '62px', borderRadius: '14px', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.09)', display: 'flex', alignItems: 'center', padding: '0 16px', fontSize: '15px', fontWeight: 700, color: ventsColors.ink1, cursor: 'pointer', textAlign: 'left' }}
+                    >
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
               </>
             ) : (
               <>
                 {/* People results */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', marginBottom: '10px' }}>PEOPLE</p>
                 {loadingPeople ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '16px' }}>Searching…</p>
                 ) : searchPeople.length === 0 ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px', marginBottom: '16px' }}>No people found</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', marginBottom: '16px' }}>No people found</p>
                 ) : (
                   <>
                     {searchPeople.map((u: any) => (
@@ -1266,7 +1471,7 @@ export function HomeScreen({
                         onClick={() => { setSearchOpen(false); setInputValue(''); onUserPress?.({ id: u.id, name: u.full_name || u.username || 'Vents User', username: u.username || '', avatar_url: u.avatar_url }); }}
                         style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
                       >
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#7B2FBE', overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: ventsColors.accent, overflow: 'hidden', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
                           <span style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{(u.full_name || u.username || 'U')[0]?.toUpperCase()}</span>
                           {u.avatar_url && (
                             <img src={u.avatar_url} alt="" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { e.currentTarget.style.display = 'none'; }} />
@@ -1274,40 +1479,61 @@ export function HomeScreen({
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                            <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
+                            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{u.full_name || u.username}</span>
                             <BadgeChip tier={u.vc_badge} />
                           </div>
-                          <span style={{ color: '#94A3B8', fontSize: '12px' }}>@{u.username}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>@{u.username}</span>
                         </div>
                       </div>
                     ))}
                   </>
                 )}
 
-                {/* Event results */}
-                <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: '14px 0 10px' }}>EVENTS</p>
+                {/* Event results -- handoff B4: result-count header + active
+                    filter chip (real, from the same activeCategory/priceFilter
+                    state the main feed uses -- not a fabricated filter count),
+                    and a per-event availability badge computed from real
+                    ticketTypes[].available stock, not a placeholder. */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '14px 0 10px' }}>
+                  <p style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', margin: 0 }}>
+                    {searchLoading ? 'EVENTS' : `${filteredEvents.length} RESULT${filteredEvents.length !== 1 ? 'S' : ''}`}
+                  </p>
+                  {activeCategory !== 'all' && activeCategory !== 'today' && activeCategory !== 'week' && (
+                    <FilterChip label={activeCategory} onClear={() => setActiveCategory('all')} />
+                  )}
+                </div>
                 {searchLoading ? (
                   <>
                     {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="row" />)}
                   </>
                 ) : filteredEvents.length === 0 ? (
-                  <p style={{ color: '#94A3B8', fontSize: '13px' }}>No events found</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px' }}>No events found</p>
                 ) : (
-                  filteredEvents.slice(0, 8).map(ev => (
-                    <div
-                      key={ev.id}
-                      onClick={() => { setSearchOpen(false); onEventPress(ev); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
-                    >
-                      <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: '#090514' }}>
-                        <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  filteredEvents.slice(0, 8).map(ev => {
+                    const totalAvailable = ev.ticketTypes?.reduce((sum, t) => sum + (t.available || 0), 0) ?? 0;
+                    const availability =
+                      totalAvailable <= 0 ? { label: 'SOLD OUT', color: '#F87171', bg: 'rgba(248,113,113,0.12)' }
+                      : totalAvailable < 20 ? { label: 'FEW LEFT', color: '#FBBF24', bg: 'rgba(251,191,36,0.12)' }
+                      : { label: 'AVAILABLE', color: '#4ADE80', bg: 'rgba(74,222,128,0.12)' };
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => { setSearchOpen(false); onEventPress(ev); }}
+                        style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)', cursor: 'pointer' }}
+                      >
+                        <div style={{ width: '44px', height: '44px', borderRadius: '10px', overflow: 'hidden', flexShrink: 0, background: ventsColors.surface }}>
+                          <img src={ev.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
+                          <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: '9px', fontWeight: 700, letterSpacing: '0.06em', color: availability.color, background: availability.bg, border: `1px solid ${availability.color}33`, borderRadius: '999px', padding: '4px 8px' }}>
+                          {availability.label}
+                        </span>
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 600, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.title}</span>
-                        <span style={{ color: '#94A3B8', fontSize: '11px' }}>{ev.date} · {ev.venue}</span>
-                      </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </>
             )}
@@ -1338,7 +1564,7 @@ export function HomeScreen({
               showing its own placeholder text -- this still opens the same
               real search overlay via setSearchOpen). */}
           <button
-            onClick={openFilterSheet}
+            onClick={() => setSearchOpen(true)}
             style={{
               flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
@@ -1366,15 +1592,15 @@ export function HomeScreen({
           )}
           <button
             onClick={onNotificationsPress}
-            style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}
           >
-            <Bell size={16} color="#C4C9E0" />
+            <Bell size={16} color={ventsColors.ink2} />
             {!!unreadNotificationsCount && unreadNotificationsCount > 0 && (
               <span
                 style={{
                   position: 'absolute', top: '-4px', right: '-4px',
                   minWidth: '16px', height: '16px', padding: '0 4px',
-                  borderRadius: '9px', background: '#EF4444', border: '2px solid #020005',
+                  borderRadius: '9px', background: ventsColors.error, border: '2px solid #020005',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: '9px', fontWeight: 800, color: '#fff', lineHeight: 1,
                 }}
@@ -1386,58 +1612,77 @@ export function HomeScreen({
           {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button
               onClick={onCreatePress}
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: '#7B2FBE', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 12px rgba(123,47,247,0.45)' }}
+              style={{ width: '36px', height: '36px', borderRadius: '50%', background: ventsColors.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}
             >
               <Plus size={17} color="#fff" strokeWidth={2.5} />
             </button>
           )}
         </div>
-      </div>
-
-      {/* Scrollable content */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'none', paddingBottom: 'calc(80px + env(safe-area-inset-bottom))' }}>
 
 
+        {/* ONE single horizontally scrollable control row -- Nigeria,
+            Trending/Near You/This Weekend/Free Events, and Filters are all
+            direct children of the same overflowX:auto container, so the
+            whole row scrolls together as one strip (no pinned/fixed ends,
+            no second row, no separate section). */}
+        <div style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px 0', overflowX: 'auto', scrollbarWidth: 'none' }}>
+          <button
+            onClick={() => setShowCountryPicker(true)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0,
+              background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              borderRadius: '999px', padding: '7px 12px', cursor: 'pointer',
+            }}
+          >
+            <MapPin size={12} color={ventsColors.accent} style={{ flexShrink: 0 }} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: ventsColors.ink1, whiteSpace: 'nowrap' }}>
+              {COUNTRY_CODES_HOME.find((c) => c.iso === countryFilter)?.name || 'your area'}
+            </span>
+            <ChevronDown size={11} color={ventsColors.ink2} />
+          </button>
 
-        {/* Category icon bar */}
-        <div style={{ display: 'flex', gap: '4px', paddingLeft: '12px', paddingRight: '12px', marginBottom: '16px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' } as React.CSSProperties}>
-          {ICON_CATEGORIES.map((cat) => {
-            const active = activeCategory === cat.id;
-            const IconComp = cat.icon;
+          {[
+            { label: 'Trending', icon: TrendingUp, onClick: () => trendingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'Near You', icon: MapPin, onClick: () => nearbyProvidersRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }) },
+            { label: 'This Weekend', icon: CalendarDays, onClick: () => setActiveCategory(activeCategory === 'week' ? 'all' : 'week') },
+            { label: 'Free Events', icon: Gift, onClick: () => setPriceFilter(priceFilter === 'free' ? 'all' : 'free') },
+          ].map(({ label, icon: Icon, onClick }) => {
+            const active = (label === 'This Weekend' && activeCategory === 'week') || (label === 'Free Events' && priceFilter === 'free');
             return (
               <button
-                key={cat.id}
-                onClick={() => setActiveCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
+                key={label}
+                onClick={onClick}
                 style={{
-                  width: '64px', minWidth: '64px', padding: '8px 4px',
-                  display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                  background: active ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.07)',
+                  backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  border: active ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.13)',
+                  borderRadius: '999px', padding: '7px 13px', cursor: 'pointer',
                 }}
               >
-                <div style={{
-                  width: '44px', height: '44px', borderRadius: '12px',
-                  background: active
-                    ? (cat.id === 'today' ? 'rgba(160,160,160,0.2)' : cat.color)
-                    : 'rgba(255,255,255,0.06)',
-                  boxShadow: active && cat.id !== 'today' ? `0 0 12px ${cat.color}66` : 'none',
-                  border: active && cat.id === 'today' ? '1.5px solid rgba(255,255,255,0.3)' : 'none',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'background 0.2s, box-shadow 0.2s',
-                }}>
-                  <IconComp size={20} color={active ? '#FFFFFF' : cat.color} />
-                </div>
-                <span style={{
-                  fontSize: '10px', fontWeight: 600,
-                  color: active ? '#FFFFFF' : '#AAAAAA',
-                  marginTop: '6px', maxWidth: '62px',
-                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                  textAlign: 'center',
-                }}>
-                  {cat.label}
-                </span>
+                <Icon size={12} color={active ? ventsColors.accentSoft : ventsColors.ink2} />
+                <span style={{ color: active ? ventsColors.ink1 : ventsColors.ink1, fontSize: '12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</span>
               </button>
             );
           })}
+
+          <button
+            onClick={openFilterSheet}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '5px', flexShrink: 0,
+              background: hasActiveFilters ? 'rgba(168,85,247,0.16)' : 'rgba(255,255,255,0.08)',
+              backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+              border: hasActiveFilters ? '1px solid rgba(196,181,253,0.3)' : '1px solid rgba(255,255,255,0.14)',
+              borderRadius: '999px', padding: '7px 13px', cursor: 'pointer', position: 'relative',
+            }}
+          >
+            <SlidersHorizontal size={12} color={hasActiveFilters ? ventsColors.accentSoft : ventsColors.ink2} />
+            <span style={{ fontSize: '12px', fontWeight: 700, color: hasActiveFilters ? ventsColors.ink1 : ventsColors.ink1, whiteSpace: 'nowrap' }}>Filters</span>
+            {hasActiveFilters && (
+              <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '50%', background: ventsColors.accentSoft, border: '2px solid #020005' }} />
+            )}
+          </button>
         </div>
 
       </div>
@@ -1485,7 +1730,7 @@ export function HomeScreen({
               <>
                 <div className="mb-6">
                   <div className="px-4 mb-3">
-                    <div style={{ width: '120px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                    <div style={{ width: '120px', height: '18px', background: ventsColors.elevated, borderRadius: '4px' }} />
                   </div>
                   <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -1496,7 +1741,7 @@ export function HomeScreen({
 
                 <div className="mb-6">
                   <div className="px-4 mb-3">
-                    <div style={{ width: '140px', height: '18px', background: '#1A1D36', borderRadius: '4px' }} />
+                    <div style={{ width: '140px', height: '18px', background: ventsColors.elevated, borderRadius: '4px' }} />
                   </div>
                   <div className="flex gap-3 px-4 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
                     {Array.from({ length: 3 }).map((_, i) => (
@@ -1509,7 +1754,7 @@ export function HomeScreen({
 
             <div className="px-4">
               <div className="mb-3">
-                <div style={{ width: '100px', height: '16px', background: '#1A1D36', borderRadius: '4px' }} />
+                <div style={{ width: '100px', height: '16px', background: ventsColors.elevated, borderRadius: '4px' }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {Array.from({ length: 4 }).map((_, i) => (
@@ -1536,9 +1781,9 @@ export function HomeScreen({
 
                 {/* Trending Events */}
                 {trendingEvents.length > 0 && (
-                  <div className="mb-6">
+                  <div className="mb-6" ref={trendingSectionRef}>
                     <div className="flex items-center justify-between px-4 mb-3">
-                      <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                      <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
                         Trending Events
                       </h3>
                     </div>
@@ -1590,57 +1835,110 @@ export function HomeScreen({
               </>
             )}
 
-            {/* Main grid of events */}
-            <div className="px-4">
+            {/* Main grid of events -- tablet (TB1): two-column card grid at
+                >=768px with 32px margins, per the design's §07/§28 tablet
+                composition. Desktop (>=1100px) goes to three columns and
+                caps its own content width -- without this, HomeScreen has
+                no inner max-width of its own (unlike screens with a bespoke
+                desktop layout), so the global #root widening added for
+                Creator Studio/ManageEvents/SalesAnalytics would otherwise
+                stretch a single FeedCard edge-to-edge into one oversized
+                card instead of a real desktop grid. */}
+            <style>{`
+              @media (min-width: 768px) and (max-width: 1099px) {
+                .vents-home-main-section { padding-left: 32px; padding-right: 32px; }
+                .vents-home-feed-grid {
+                  display: grid !important;
+                  grid-template-columns: repeat(2, 1fr);
+                  gap: 16px;
+                }
+              }
+              @media (min-width: 1100px) {
+                .vents-home-main-section { max-width: 1100px; margin: 0 auto; padding-left: 32px; padding-right: 32px; box-sizing: border-box; }
+                .vents-home-feed-grid {
+                  display: grid !important;
+                  grid-template-columns: repeat(3, 1fr);
+                  gap: 16px;
+                }
+              }
+            `}</style>
+            <div className="px-4 vents-home-main-section">
               <div className="flex items-center justify-between mb-3">
-                <h3 style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                  {isDefaultState ? 'Explore Events' : 'Search Results'}
+                <h3 style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', textTransform: 'uppercase', letterSpacing: '1px' }}>
+                  {isDefaultState
+                    ? 'Explore Events'
+                    // Name the section after what's actually applied when
+                    // that's the ONLY thing narrowing it (the Free Events/
+                    // This Weekend quick chips), rather than the generic
+                    // "Search Results" label -- so tapping Free Events
+                    // visibly shows "Free Events" with the matching feed
+                    // below it, not an ambiguous relabeled search view.
+                    : (!searchQuery.trim() && stateFilter === 'all' && activeCategory === 'all' && priceFilter === 'free')
+                    ? 'Free Events'
+                    : (!searchQuery.trim() && stateFilter === 'all' && activeCategory === 'week' && priceFilter === 'all')
+                    ? 'This Weekend'
+                    : 'Search Results'}
                 </h3>
-                <span style={{ color: '#94A3B8', fontSize: '11px' }}>
+                <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
                   {searchActive && searchLoading ? 'Searching…' : filtersActive && filterLoading ? 'Loading…' : `${filteredEvents.length} event${filteredEvents.length !== 1 ? 's' : ''}`}
                 </span>
               </div>
 
-              {(searchActive && searchLoading) || (filtersActive && filterLoading) ? (
+              {/* Stale-while-revalidate here too: only show the skeleton for
+                  this section's very first fetch (searchResults/filterResults
+                  still null). A background refetch (e.g. countryFilter's
+                  effect re-running) keeps the already-fetched cards on
+                  screen instead of blanking them -- same principle as the
+                  dbEvents skeleton above. Since countryFilter now defaults
+                  to the account's country instead of 'all', filtersActive
+                  is true for essentially every normal user by default, so
+                  this is no longer a rare edge case -- it's the default
+                  browsing path. */}
+              {(searchActive && searchLoading && searchResults === null) || (filtersActive && filterLoading && filterResults === null) ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} variant="feed" />)}
                 </div>
               ) : filteredEvents.length === 0 ? (
                 <div className="flex flex-col items-center py-12 px-4 text-center">
-                  {isDefaultState ? (
+                  {searchActive ? (
                     <>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
-                        No events yet
+                      <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
+                      <p style={{ color: ventsColors.ink2, fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
+                        No matches
                       </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Check back soon — new events are added every day.
-                      </p>
-                    </>
-                  ) : !searchQuery.trim() && activeCategory !== 'all' ? (
-                    <>
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
-                        No {activeCategory} events yet
-                      </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
-                        Check back soon or browse <span style={{ color: '#A855F7', cursor: 'pointer' }} onClick={() => setActiveCategory('all')}>All events</span>.
+                      <p style={{ color: ventsColors.ink3, fontSize: '13px', marginTop: '4px' }}>
+                        Try a different search or browse all events.
                       </p>
                     </>
                   ) : (
+                    // Country is always a specific selection now, so a zero
+                    // result set is always at least partly "this country/
+                    // filter combination has nothing" rather than "genuinely
+                    // nothing exists in the app" -- one message covers both,
+                    // same reasoning that originally justified splitting this
+                    // copy out, just no longer gated on hasActiveFilters
+                    // (which now deliberately excludes country).
                     <>
-                      <Search size={48} color="#2A2D3E" strokeWidth={1.5} />
-                      <p style={{ color: '#94A3B8', fontSize: '16px', fontWeight: 600, marginTop: '12px' }}>
-                        No matches
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#2A2D3E" strokeWidth="1.5" style={{ marginBottom: '12px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                      <p style={{ color: ventsColors.ink2, fontSize: '16px', fontWeight: 600, marginTop: '4px' }}>
+                        No events match your filters
                       </p>
-                      <p style={{ color: '#6B7280', fontSize: '13px', marginTop: '4px' }}>
-                        Try a different search or browse all events.
+                      <p style={{ color: ventsColors.ink3, fontSize: '13px', marginTop: '6px', lineHeight: 1.6, maxWidth: '260px' }}>
+                        Try a different country, category, or price.
                       </p>
+                      {hasActiveFilters && (
+                        <button
+                          onClick={() => { setActiveCategory('all'); setStateFilter('all'); setPriceFilter('all'); }}
+                          style={{ marginTop: '14px', background: 'rgba(168,85,247,0.12)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px 18px', color: ventsColors.accent, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Clear filters
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div className="vents-home-feed-grid" style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {filteredEvents.map((event) => (
                     <div key={event.id} style={{ width: '100%' }}>
                       <FeedCard
@@ -1663,12 +1961,12 @@ export function HomeScreen({
                       border: '1px solid rgba(167,139,250,0.2)',
                       borderRadius: '12px',
                       padding: '10px 20px',
-                      color: '#A78BFA',
+                      color: ventsColors.accentSoft,
                       fontSize: '13px',
                       fontWeight: 600,
                       cursor: 'pointer',
                       transition: 'all 0.2s',
-                      fontFamily: 'Space Grotesk, sans-serif',
+                      fontFamily: 'Manrope, sans-serif',
                     }}
                   >
                     Load More Events
@@ -1691,7 +1989,7 @@ export function HomeScreen({
           {/* Sheet */}
           <div style={{
             position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 201,
-            background: '#090514', borderRadius: '24px 24px 0 0',
+            background: ventsColors.surface, borderRadius: '24px 24px 0 0',
             border: '1px solid rgba(255,255,255,0.08)',
             paddingBottom: 'calc(20px + env(safe-area-inset-bottom))',
             maxHeight: '85vh', display: 'flex', flexDirection: 'column',
@@ -1700,44 +1998,84 @@ export function HomeScreen({
             <div style={{ display: 'flex', justifyContent: 'center', padding: '12px 0 4px' }}>
               <div style={{ width: '36px', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.15)' }} />
             </div>
-            {/* Title */}
+            {/* Title -- handoff B3: title + a plain "Reset" text link (no
+                X-close icon; the sheet dismisses via backdrop tap or the
+                footer buttons, same as the design). */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 20px 16px' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 800 }}>Filters</span>
-              <button onClick={() => setFilterSheetOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px' }}>
-                <X size={20} color="#94A3B8" />
+              <span style={{ color: ventsColors.white, fontSize: '22px', fontWeight: 800, letterSpacing: '-0.02em' }}>Filters</span>
+              <button onClick={clearFilters} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', fontSize: '15px', fontWeight: 700, color: '#B79BFF' }}>
+                Reset
               </button>
             </div>
 
             {/* Scrollable content */}
             <div style={{ overflowY: 'auto', flex: 1, scrollbarWidth: 'none', padding: '0 20px' }}>
-              {/* STATE */}
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>STATE</p>
+              {/* CATEGORY -- moved here from a permanently-visible icon row
+                  on the main screen (the redesign's whole point: a clean,
+                  uncrowded Home) into this existing Filters sheet. Same
+                  ids/logic as before (tempCategory -> applyFilters ->
+                  setActiveCategory), just presented as compact wrapped
+                  chips instead of a horizontal icon rail. */}
+              <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>Category</p>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
-                {['All States', 'Lagos', 'Abuja', 'Rivers', 'Kano', 'Oyo', 'Enugu', 'Delta',
-                  'Anambra', 'Edo', 'Ogun', 'Ondo', 'Kwara', 'Kogi', 'Benue', 'Plateau',
-                  'Kaduna', 'Sokoto', 'Kebbi', 'Zamfara', 'Katsina', 'Jigawa', 'Bauchi',
-                  'Gombe', 'Yobe', 'Borno', 'Adamawa', 'Taraba', 'Nasarawa', 'Niger',
-                  'Ekiti', 'Imo', 'Abia', 'Ebonyi', 'Cross River', 'Akwa Ibom', 'Bayelsa'
-                ].map((st) => {
-                  const stId = st === 'All States' ? 'all' : st;
-                  const active = tempState === stId;
+                {ICON_CATEGORIES.map((cat) => {
+                  const active = tempCategory === cat.id;
                   return (
                     <button
-                      key={st}
-                      onClick={() => setTempState(stId)}
+                      key={cat.id}
+                      onClick={() => setTempCategory(active && cat.id !== 'all' ? 'all' : cat.id)}
                       style={{
-                        padding: '6px 14px', borderRadius: '20px', fontSize: '13px', fontWeight: 500,
-                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FBE' : 'transparent',
-                        color: active ? '#fff' : '#666666',
+                        height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
+                        fontWeight: active ? 700 : 600, cursor: 'pointer',
+                        border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                        color: active ? '#0B0812' : '#EDEAF5',
                       }}
-                    >{st}</button>
+                    >
+                      {cat.label}
+                    </button>
                   );
                 })}
               </div>
 
-              {/* PRICE */}
-              <p style={{ color: '#94A3B8', fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', marginBottom: '10px' }}>PRICE</p>
+              {/* SUBDIVISION -- Nigeria states, Rwanda provinces, Qatar
+                  municipalities, driven entirely by countrySubdivisions.ts
+                  for whichever country is currently being browsed. No
+                  subdivision list exists for most countries yet, so the
+                  whole field is simply omitted rather than showing a
+                  mismatched (or empty) list -- never a Nigeria-only
+                  fallback for a non-Nigeria country. */}
+              {subdivisions && (
+                <>
+                  <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>{subdivisions.label}</p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '24px' }}>
+                    {[`All ${subdivisions.label}s`, ...subdivisions.options].map((st) => {
+                      const stId = st === `All ${subdivisions.label}s` ? 'all' : st;
+                      const active = tempState === stId;
+                      return (
+                        <button
+                          key={st}
+                          onClick={() => setTempState(stId)}
+                          style={{
+                            height: '38px', padding: '0 16px', borderRadius: '9999px', fontSize: '14px',
+                            fontWeight: active ? 700 : 600, cursor: 'pointer',
+                            border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                            background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                            color: active ? '#0B0812' : '#EDEAF5',
+                          }}
+                        >{st}</button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
+              {/* PRICE -- kept as a 3-way All/Free/Paid control rather than
+                  the design's binary "Free events only" toggle: a toggle
+                  would drop the real, working "paid only" filter, which the
+                  design's simpler mock never had to account for. Restyled
+                  to the same pill language as Category/{subdivision} above. */}
+              <p style={{ fontFamily: ventsTypography.fontMono, fontSize: '11px', letterSpacing: '0.18em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.55)', marginBottom: '12px' }}>Price</p>
               <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
                 {(['all', 'free', 'paid'] as const).map((p) => {
                   const active = tempPrice === p;
@@ -1746,10 +2084,11 @@ export function HomeScreen({
                       key={p}
                       onClick={() => setTempPrice(p)}
                       style={{
-                        flex: 1, padding: '10px', borderRadius: '12px', fontSize: '13px', fontWeight: 600,
-                        cursor: 'pointer', border: active ? 'none' : '1px solid #333',
-                        background: active ? '#7B2FBE' : 'transparent',
-                        color: active ? '#fff' : '#666666',
+                        flex: 1, height: '38px', borderRadius: '9999px', fontSize: '14px',
+                        fontWeight: active ? 700 : 600, cursor: 'pointer',
+                        border: active ? 'none' : '1px solid rgba(255,255,255,0.14)',
+                        background: active ? '#EDEAF5' : 'rgba(255,255,255,0.07)',
+                        color: active ? '#0B0812' : '#EDEAF5',
                       }}
                     >{p === 'all' ? 'All' : p === 'free' ? 'Free' : 'Paid'}</button>
                   );
@@ -1758,25 +2097,37 @@ export function HomeScreen({
             </div>
 
             {/* Footer buttons */}
-            <div style={{ display: 'flex', gap: '12px', padding: '16px 20px 0' }}>
+            <div style={{ display: 'flex', gap: '10px', padding: '16px 20px 0' }}>
               <button
                 onClick={clearFilters}
                 style={{
-                  flex: 1, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
-                  background: 'transparent', border: '1px solid rgba(255,255,255,0.12)',
-                  color: '#C4C9E0', cursor: 'pointer',
+                  flex: 1, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
+                  background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)',
+                  color: '#fff', cursor: 'pointer',
                 }}
-              >Clear All</button>
+              >Clear</button>
               <button
                 onClick={applyFilters}
                 style={{
-                  flex: 2, padding: '14px', borderRadius: '14px', fontSize: '14px', fontWeight: 700,
-                  background: '#7B2FBE', border: 'none', color: '#fff', cursor: 'pointer',
+                  flex: 2, height: '54px', borderRadius: '15px', fontSize: '16px', fontWeight: 700,
+                  background: ventsColors.accent, border: 'none', color: '#fff', cursor: 'pointer',
+                  boxShadow: '0 12px 34px -14px rgba(142,92,247,1)',
                 }}
-              >Apply</button>
+              >Show results</button>
             </div>
           </div>
         </>
+      )}
+
+      {showCountryPicker && (
+        <PickerSheet
+          title="Discover Events In"
+          searchPlaceholder="Search country..."
+          value={countryFilter}
+          options={COUNTRY_CODES_HOME.map((c) => ({ value: c.iso, label: c.name }))}
+          onSelect={(v) => { handleCountryFilterChange(v); setShowCountryPicker(false); }}
+          onClose={() => setShowCountryPicker(false)}
+        />
       )}
     </div>
   );

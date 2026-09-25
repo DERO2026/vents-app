@@ -70,7 +70,7 @@ export function PaymentFailedScreen({ eventTitle, reference, message, onGoHome }
             color: '#F0F0FF',
             fontSize: '24px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             marginBottom: '6px',
           }}
         >

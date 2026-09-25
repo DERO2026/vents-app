@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, memo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
@@ -27,7 +28,9 @@ import {
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
+import { COUNTRY_CODES } from '../../lib/countries';
 import { formatPrice, formatPriceRange, formatCardCTA } from './data';
+import { hasEventEnded, isEventDiscoverable } from '../../lib/eventLifecycle';
 import { mapDbEventToFrontend, HorizontalEventCard } from './HomeScreen';
 import { supabase } from '../../lib/supabase';
 import { SecondaryButton } from './shared/Button';
@@ -177,18 +180,18 @@ function CountdownUnit({ value, label }: { value: number; label: string }) {
     <div style={{ textAlign: 'center' }}>
       <div
         style={{
-          background: '#090514',
+          background: ventsColors.surface,
           border: '1px solid rgba(168,85,247,0.2)',
           borderRadius: '12px',
           padding: '8px 12px',
           minWidth: '50px',
         }}
       >
-        <span style={{ color: '#FFFFFF', fontSize: '20px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif' }}>
+        <span style={{ color: ventsColors.white, fontSize: '20px', fontWeight: 800, fontFamily: 'Manrope, sans-serif' }}>
           {String(value).padStart(2, '0')}
         </span>
       </div>
-      <span style={{ color: '#94A3B8', fontSize: '10px', display: 'block', marginTop: '4px' }}>
+      <span style={{ color: ventsColors.ink3, fontSize: '10px', display: 'block', marginTop: '4px' }}>
         {label}
       </span>
     </div>
@@ -206,16 +209,16 @@ const EventCountdown = memo(function EventCountdown({ event_date, date, time }: 
   if (!countdown) return null;
   return (
     <div style={{ marginBottom: '16px' }}>
-      <div style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
+      <div style={{ color: ventsColors.ink2, fontSize: '12px', marginBottom: '8px', fontWeight: 500 }}>
         EVENT STARTS IN
       </div>
       <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
         <CountdownUnit value={countdown.d} label="Days" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.h} label="Hours" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.m} label="Mins" />
-        <span style={{ color: '#8B8FA8', fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
+        <span style={{ color: ventsColors.ink2, fontSize: '18px', fontWeight: 300, marginBottom: '16px' }}>:</span>
         <CountdownUnit value={countdown.s} label="Secs" />
       </div>
     </div>
@@ -287,11 +290,23 @@ export function EventDetailsScreen({
   // buy more (extra tickets for friends, a different tier, etc). isBooked
   // now only drives the small "you already have a ticket" notice below,
   // never whether buying is possible.
-  const canBook = !!selectedTicket && selectedQty > 0;
+  // Single source of truth for "has this event ended" (requirement #3 of
+  // the event-lifecycle fix) -- see src/lib/eventLifecycle.ts. Direct links
+  // to an ended event must show "Event Ended" with no purchase CTA, even
+  // though the row is still readable (organizer/admin/ticket-holders keep
+  // access per RLS -- ended-ness is a UI/purchase-eligibility concern, not
+  // a visibility one).
+  const hasEnded = hasEventEnded({ event_date: (event as any).event_date, end_date: (event as any).endDate });
+  const canBook = !hasEnded && !!selectedTicket && selectedQty > 0;
   const [reviewText, setReviewText] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
 
+  const aboutRef = useRef<HTMLDivElement>(null);
+  const ticketsRef = useRef<HTMLDivElement>(null);
+  const organizerRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const [activeSection, setActiveSection] = useState<'About' | 'Tickets' | 'Organizer' | 'More'>('About');
   const [realAttendeeCount, setRealAttendeeCount] = useState(event.attendees);
   const [organizerProfile, setOrganizerProfile] = useState<any>(null);
   const [relatedEvents, setRelatedEvents] = useState<any[]>([]);
@@ -326,13 +341,21 @@ export function EventDetailsScreen({
     const fetchRelatedEvents = async () => {
       setLoadingRelated(true);
       try {
+        // Requirement #4: Related Events must never show ended events. No
+        // date/expiry filter existed here at all before -- conservative
+        // server prefilter + exact client-side isEventDiscoverable() below,
+        // same pattern as the Home/Explore feed (see src/lib/eventLifecycle.ts).
+        const nowIso = new Date().toISOString();
+        const cutoffIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         let relatedQuery = supabase
           .from('events')
           .select('*')
           .eq('category', event.category)
           .in('status', ['live', 'published'])
           .is('deleted_at', null)
+          .is('archived_at', null)
           .eq('hidden_by_admin', false)
+          .or(`end_date.gte.${nowIso},and(end_date.is.null,event_date.gte.${cutoffIso})`)
           .neq('id', event.id);
 
         // Every other event surface (home feed, search) hides 18+ events
@@ -346,11 +369,11 @@ export function EventDetailsScreen({
           relatedQuery = relatedQuery.eq('is_18_plus', false);
         }
 
-        const { data, error } = await relatedQuery.limit(4);
+        const { data, error } = await relatedQuery.limit(8);
 
         if (error) throw error;
         if (data && !cancelled) {
-          const mapped = data.map(mapDbEventToFrontend);
+          const mapped = data.filter((e: any) => isEventDiscoverable(e)).slice(0, 4).map(mapDbEventToFrontend);
           setRelatedEvents(mapped);
         }
       } catch (err) {
@@ -390,7 +413,13 @@ export function EventDetailsScreen({
 
   const handleShare = async () => {
     analytics.eventShared(event.id, event.title);
-    const deepLink = `${window.location.origin}/?event=${event.id}`;
+    // Always the real public domain, never window.location.origin -- inside
+    // the native app that resolves to the WebView's own internal origin
+    // (capacitor://localhost on iOS, https://localhost on Android per
+    // capacitor.config.ts's androidScheme/hostname), which is meaningless
+    // to anyone the link is shared with. Same pattern PaymentSuccessScreen's
+    // ticket-share link already uses.
+    const deepLink = `https://getvents.com/?event=${event.id}`;
     const text =
       `🎟️ ${event.title}\n` +
       `📅 ${event.date} · ${event.time}\n` +
@@ -427,7 +456,11 @@ export function EventDetailsScreen({
   }
 
   const openMap = (provider: 'google' | 'apple') => {
-    const label = `${event.venue}, ${event.area}, ${event.city}, Nigeria`;
+    // event.country is a real ISO code (events_country.sql) -- resolve it to
+    // a name for the map search label instead of hardcoding Nigeria, which
+    // sent every non-Nigerian event's map search to the wrong country.
+    const countryName = COUNTRY_CODES.find((c) => c.iso === event.country)?.name || event.country;
+    const label = `${event.venue}, ${event.area}, ${event.city}, ${countryName}`;
     const query = encodeURIComponent(label);
     const hasCoords = event.latitude != null && event.longitude != null;
     const coords = hasCoords ? `${event.latitude},${event.longitude}` : '';
@@ -504,7 +537,7 @@ export function EventDetailsScreen({
   return (
     <div
       style={{
-        background: '#020005',
+        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -513,6 +546,99 @@ export function EventDetailsScreen({
         scrollbarWidth: 'none',
       }}
     >
+      {/* Desktop containment (interim, real fix pending the full TB2/DT
+          media-left/sticky-purchase-panel-right split the handoff spec
+          calls for): without this, widening the shared #root shell to
+          1200px (this session's viewport fix) would stretch this screen's
+          full-bleed hero/content edge-to-edge again -- the exact "desktop
+          is mobile stretched" bug from earlier in this effort. Caps
+          content at a readable width instead of reintroducing that
+          regression while the real two-column rework is still pending. */}
+      <style>{`
+        .event-details-content { display: flex; flex-direction: column; }
+        .edt-purchase-panel { display: none; }
+        /* Tablet split (TB2 export, 834px worked example): media-left /
+           content-right instead of the mobile full-bleed hero + sticky
+           footer stack. Reuses the exact same hero, main-content and
+           purchase-panel blocks the mobile and >=1200px desktop layouts
+           already render -- only their grid placement/sizing changes here,
+           no new components and no functional change (ticket selection,
+           promo codes, purchase flow all still the same real code). */
+        /* !important throughout this tier: the hero/main/panel elements
+           carry their own inline styles (mobile padding/margins, the hero's
+           aspect-ratio card sizing) which otherwise always win over an
+           external stylesheet rule for the same property at any width. */
+        @media (min-width: 768px) and (max-width: 1199px) {
+          .event-details-content {
+            display: grid !important;
+            grid-template-columns: 52% 1fr;
+            column-gap: 0;
+            align-items: stretch;
+            height: 100%;
+            max-width: none !important;
+            margin: 0 !important;
+          }
+          .event-details-hero {
+            grid-column: 1;
+            grid-row: 1 / span 2;
+            padding: 0 !important;
+            margin: 0 !important;
+            height: 100%;
+            position: sticky;
+            top: 0;
+          }
+          .event-details-hero > div {
+            border-radius: 0 !important;
+            height: 100% !important;
+            aspect-ratio: auto !important;
+          }
+          .event-details-main {
+            grid-column: 2;
+            padding: calc(24px + env(safe-area-inset-top)) 24px 24px !important;
+            overflow-y: auto;
+          }
+          .edt-bottom-bar { display: none !important; }
+          .edt-purchase-panel {
+            display: block;
+            grid-column: 2;
+            margin: 0 24px 24px;
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 20px;
+          }
+        }
+        @media (min-width: 1200px) {
+          .event-details-content {
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            column-gap: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+            width: 100%;
+            align-items: start;
+          }
+          .event-details-hero { grid-column: 1; }
+          .event-details-main { grid-column: 1; padding-bottom: 40px; }
+          .edt-bottom-bar { display: none !important; }
+          .edt-purchase-panel {
+            display: block;
+            grid-column: 2;
+            grid-row: 1 / span 2;
+            position: sticky;
+            top: 24px;
+            align-self: start;
+            background: rgba(255,255,255,0.04);
+            backdrop-filter: blur(20px) saturate(160%);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 20px;
+            padding: 20px;
+            margin-top: calc(16px + env(safe-area-inset-top));
+          }
+        }
+      `}</style>
+      <div className="event-details-content" style={{ flex: 1 }}>
       {/* Full-screen flyer lightbox */}
       {flyerFullScreen && (
         <FlyerLightbox
@@ -528,6 +654,7 @@ export function EventDetailsScreen({
           legibility, category pill + share/save/report overlaid on the
           image, and a subtle fade-in on mount. */}
       <div
+        className="event-details-hero"
         style={{
           padding: '0 16px',
           marginTop: 'calc(16px + env(safe-area-inset-top))',
@@ -572,9 +699,10 @@ export function EventDetailsScreen({
               position: 'absolute',
               top: '16px',
               left: '16px',
-              background: 'rgba(0,0,0,0.4)',
-              backdropFilter: 'blur(10px)',
-              border: '1px solid rgba(255,255,255,0.15)',
+              background: 'rgba(255,255,255,0.1)',
+              backdropFilter: 'blur(16px) saturate(180%)',
+              WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+              border: '1px solid rgba(255,255,255,0.16)',
               borderRadius: '50%',
               width: '40px',
               height: '40px',
@@ -592,9 +720,10 @@ export function EventDetailsScreen({
             <button
               onClick={(e) => { e.stopPropagation(); handleShare(); }}
               style={{
-                background: 'rgba(0,0,0,0.4)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.16)',
                 borderRadius: '50%',
                 width: '38px',
                 height: '38px',
@@ -609,9 +738,10 @@ export function EventDetailsScreen({
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSave(); }}
               style={{
-                background: 'rgba(0,0,0,0.4)',
-                backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.15)',
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.16)',
                 borderRadius: '50%',
                 width: '38px',
                 height: '38px',
@@ -621,7 +751,7 @@ export function EventDetailsScreen({
                 cursor: 'pointer',
               }}
             >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? '#A78BFA' : 'none'} stroke={isSaved ? '#A78BFA' : '#fff'} strokeWidth="2.5">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill={isSaved ? ventsColors.accentSoft : 'none'} stroke={isSaved ? ventsColors.accentSoft : '#fff'} strokeWidth="2.5">
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
@@ -629,9 +759,10 @@ export function EventDetailsScreen({
               <button
                 onClick={(e) => { e.stopPropagation(); setShowReport(true); }}
                 style={{
-                  background: 'rgba(0,0,0,0.4)',
-                  backdropFilter: 'blur(10px)',
-                  border: '1px solid rgba(255,255,255,0.15)',
+                  background: 'rgba(255,255,255,0.1)',
+                  backdropFilter: 'blur(16px) saturate(180%)',
+                  WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                  border: '1px solid rgba(255,255,255,0.16)',
                   borderRadius: '50%',
                   width: '38px',
                   height: '38px',
@@ -664,7 +795,7 @@ export function EventDetailsScreen({
               backdropFilter: 'blur(6px)',
             }}
           >
-            <span style={{ color: '#C084FC', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+            <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
               {event.category.toUpperCase()}
             </span>
           </div>
@@ -672,12 +803,12 @@ export function EventDetailsScreen({
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, padding: '0 16px 120px' }}>
+      <div className="event-details-main" style={{ flex: 1, padding: '0 16px 120px' }}>
         {/* Title + Rating */}
         <div style={{ marginBottom: '12px' }}>
           <h1
             style={{
-              color: '#FFFFFF',
+              color: ventsColors.white,
               fontSize: '24px',
               fontWeight: 700,
               fontFamily: 'Outfit, sans-serif',
@@ -688,24 +819,272 @@ export function EventDetailsScreen({
           >
             {event.title}
             {(event as any).is_18_plus && (
-              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: '#EF4444', fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
+              <span style={{ fontSize: '11px', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '6px', padding: '2px 7px', color: ventsColors.error, fontWeight: 700, verticalAlign: 'middle', marginLeft: '8px' }}>18+</span>
             )}
           </h1>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              <Users size={13} color="#8B8FA8" />
-              <span style={{ color: '#8B8FA8', fontSize: '13px' }}>
+              <Users size={13} color={ventsColors.ink2} />
+              <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                 {realAttendeeCount.toLocaleString()} attending
               </span>
             </div>
           </div>
         </div>
 
+        {/* Section navigation -- moved here, directly under the title/
+            attendee row, matching the exported design's C1 layout exactly
+            (tabs sit right below the title/date, ABOVE the About-tab
+            content -- not below the Organizer card, which used to sit
+            here and made the Organizer tab scroll target appear ABOVE its
+            own nav bar, before the tab strip even rendered). About /
+            Tickets / Organizer / More scroll to the corresponding section
+            already on the page (same anchor-scroll pattern as Home's
+            Trending/Near You chips); no conditional rendering, so nothing
+            below moves or unmounts. */}
+        <div
+          className="no-scrollbar"
+          style={{
+            display: 'flex', gap: '4px', overflowX: 'auto', marginBottom: '18px', scrollbarWidth: 'none',
+            background: 'rgba(255,255,255,0.05)',
+            backdropFilter: 'blur(20px) saturate(180%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(180%)',
+            border: '1px solid rgba(255,255,255,0.09)',
+            borderRadius: '999px',
+            padding: '4px',
+          }}
+        >
+          {[
+            { label: 'About', ref: aboutRef },
+            { label: 'Tickets', ref: ticketsRef, show: ticketTypes.length > 0 },
+            { label: 'Organizer', ref: organizerRef },
+            { label: 'More', ref: moreRef },
+          ].filter((t) => t.show !== false).map((t) => {
+            const active = activeSection === t.label;
+            return (
+              <button
+                key={t.label}
+                onClick={() => { setActiveSection(t.label as any); t.ref.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                style={{
+                  flex: 1,
+                  flexShrink: 0,
+                  background: active ? 'linear-gradient(135deg, #7B2FBE, #5B3FCB)' : 'transparent',
+                  border: 'none',
+                  borderRadius: '999px',
+                  padding: '9px 14px',
+                  cursor: 'pointer',
+                }}
+              >
+                <span style={{ color: active ? '#fff' : ventsColors.ink3, fontSize: '13px', fontWeight: 700, whiteSpace: 'nowrap' }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Description -- moved here, directly under the tab strip, matching
+            the exported C1 order (description comes before the Doors/Age-
+            style info cards, not after Capacity/Countdown/Organizer Tools
+            at the very bottom of the page where it used to sit). */}
+        <div style={{ marginBottom: '16px' }}>
+          <span style={{ color: ventsColors.white, fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
+            About
+          </span>
+          <p
+            style={{
+              color: ventsColors.ink3,
+              fontSize: '14px',
+              lineHeight: 1.5,
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: expanded ? 'unset' : 3,
+              WebkitBoxOrient: 'vertical',
+            }}
+          >
+            {event.description}
+          </p>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            style={{
+              background: 'none',
+              border: 'none',
+              color: ventsColors.accentSoft,
+              fontSize: '13px',
+              fontWeight: 600,
+              cursor: 'pointer',
+              padding: '6px 0 0',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '3px',
+            }}
+          >
+            {expanded ? 'Show less' : 'Show more'}
+            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </button>
+        </div>
+
+        {/* Info cards */}
+        <div ref={aboutRef} style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          {[
+            {
+              icon: Calendar,
+              label: 'Date',
+              value: event.date.replace(/^[A-Za-z]+, /, ''),
+            },
+            { icon: Clock, label: 'Time', value: event.endTime ? `${event.time} – ${event.endTime}` : (event.time || 'TBC') },
+          ].map(({ icon: Icon, label, value }) => (
+            <div
+              key={label}
+              style={{
+                flex: 1,
+                background: 'rgba(255,255,255,0.04)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                border: '1px solid rgba(255,255,255,0.08)',
+                borderRadius: '20px',
+                padding: '16px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+              }}
+            >
+              <div
+                style={{
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '10px',
+                  background: 'rgba(168,85,247,0.12)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Icon size={16} color={ventsColors.accent} />
+              </div>
+              <div>
+                <div style={{ color: ventsColors.ink2, fontSize: '10px', fontWeight: 500 }}>{label}</div>
+                <div style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 600 }}>{value}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Location */}
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '20px',
+            padding: '16px',
+            marginBottom: '16px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <div
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '10px',
+                background: 'rgba(168,85,247,0.12)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <MapPin size={16} color={ventsColors.accent} />
+            </div>
+            <div>
+              <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
+                {event.venue}
+              </div>
+              <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
+                {event.area}, {event.city}, {event.state}
+              </div>
+            </div>
+          </div>
+          <EventMap
+            latitude={event.latitude}
+            longitude={event.longitude}
+            venue={event.venue}
+            address={`${event.area}, ${event.city}, ${event.state}`}
+            onGetDirections={() => setShowMapDialog(true)}
+          />
+        </div>
+
+        {/* Organizer -- moved here, after Date/Time and Location/Map,
+            matching the exported design's C1 order (About-tab content:
+            description → info cards → Organizer row → Map is roughly the
+            export's order; Organizer/Map both sit inside About, below the
+            tab strip, never above it). Still serves as the "Organizer"
+            tab's scroll target. */}
+        <div
+          ref={organizerRef}
+          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
+          style={{
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: '16px',
+            padding: '14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '16px',
+            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
+          }}
+        >
+          <div
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '12px',
+              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+              position: 'relative',
+              overflow: 'hidden',
+            }}
+          >
+            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
+              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
+            </span>
+            {organizerProfile?.avatar_url && (
+              <img
+                src={organizerProfile.avatar_url}
+                alt=""
+                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                onError={(e) => { e.currentTarget.style.display = 'none'; }}
+              />
+            )}
+          </div>
+          <div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
+              <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
+                {organizerProfile?.full_name || event.organizer}
+              </span>
+              {(event.organizerVerified || organizerProfile?.is_verified) && (
+                <CheckCircle size={14} fill={ventsColors.accent} color="#fff" />
+              )}
+              <BadgeChip tier={organizerProfile?.vc_badge} />
+            </div>
+            <span style={{ color: ventsColors.ink2, fontSize: '12px', textTransform: 'capitalize' }}>
+              {organizerProfile?.role || 'Event Organizer'}
+            </span>
+          </div>
+        </div>
+
         {/* Organizer Tools — door-staff scanner access. Only ever visible to
             the event's own organizer, a Sub-Admin, or Root/platform admin;
-            regular attendees never see this section at all. Placed at the
-            very top of the content so it's the first thing door staff hit,
-            no scrolling required. */}
+            regular attendees never see this section at all. Now placed
+            below the segmented nav (with the rest of the organizer-facing
+            content) instead of dominating the very top of every attendee's
+            view of their own event. */}
         {canManageDoor && onOpenDoorScanner && (
           <div
             style={{
@@ -717,8 +1096,8 @@ export function EventDetailsScreen({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
-              <Shield size={13} color="#A78BFA" />
-              <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <Shield size={13} color={ventsColors.accentSoft} />
+              <span style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 800, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
                 Organizer Tools
               </span>
             </div>
@@ -758,100 +1137,12 @@ export function EventDetailsScreen({
                   marginTop: '10px',
                 }}
               >
-                <LayoutDashboard size={18} color="#A78BFA" />
-                <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
+                <LayoutDashboard size={18} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>Door Manager Dashboard</span>
               </button>
             )}
           </div>
         )}
-
-        {/* Info cards */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
-          {[
-            {
-              icon: Calendar,
-              label: 'Date',
-              value: event.date.replace(/^[A-Za-z]+, /, ''),
-            },
-            { icon: Clock, label: 'Time', value: event.endTime ? `${event.time} – ${event.endTime}` : (event.time || 'TBC') },
-          ].map(({ icon: Icon, label, value }) => (
-            <div
-              key={label}
-              style={{
-                flex: 1,
-                background: '#090514',
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: '20px',
-                padding: '16px',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-              }}
-            >
-              <div
-                style={{
-                  width: '36px',
-                  height: '36px',
-                  borderRadius: '10px',
-                  background: 'rgba(168,85,247,0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  flexShrink: 0,
-                }}
-              >
-                <Icon size={16} color="#A855F7" />
-              </div>
-              <div>
-                <div style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 500 }}>{label}</div>
-                <div style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: 600 }}>{value}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Location */}
-        <div
-          style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '20px',
-            padding: '16px',
-            marginBottom: '16px',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
-            <div
-              style={{
-                width: '36px',
-                height: '36px',
-                borderRadius: '10px',
-                background: 'rgba(168,85,247,0.12)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              <MapPin size={16} color="#A855F7" />
-            </div>
-            <div>
-              <div style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600 }}>
-                {event.venue}
-              </div>
-              <div style={{ color: '#94A3B8', fontSize: '12px' }}>
-                {event.area}, {event.city}, {event.state}
-              </div>
-            </div>
-          </div>
-          <EventMap
-            latitude={event.latitude}
-            longitude={event.longitude}
-            venue={event.venue}
-            address={`${event.area}, ${event.city}, ${event.state}`}
-            onGetDirections={() => setShowMapDialog(true)}
-          />
-        </div>
 
         {/* Add to Calendar — <a download> is a browser-only mechanism that
             silently no-ops inside a Capacitor WebView release build (no
@@ -864,8 +1155,8 @@ export function EventDetailsScreen({
           <SecondaryButton
             onClick={handleAddToCalendar}
             disabled={addingToCalendar}
-            icon={<CalendarPlus size={16} color="#10B981" />}
-            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: '#10B981', marginBottom: '16px' }}
+            icon={<CalendarPlus size={16} color={ventsColors.success} />}
+            style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.2)', color: ventsColors.success, marginBottom: '16px' }}
           >
             {addingToCalendar ? 'Opening…' : 'Add to Calendar'}
           </SecondaryButton>
@@ -879,16 +1170,18 @@ export function EventDetailsScreen({
         {/* Capacity */}
         <div
           style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
+            background: 'rgba(255,255,255,0.04)',
+            backdropFilter: 'blur(20px) saturate(160%)',
+            WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+            border: '1px solid rgba(255,255,255,0.08)',
             borderRadius: '20px',
             padding: '16px',
             marginBottom: '16px',
           }}
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-            <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500 }}>Capacity</span>
-            <span style={{ color: capacityPct > 80 ? '#EF4444' : '#10B981', fontSize: '13px', fontWeight: 600 }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>Capacity</span>
+            <span style={{ color: capacityPct > 80 ? ventsColors.error : ventsColors.success, fontSize: '13px', fontWeight: 600 }}>
               {capacityPct}% filled
             </span>
           </div>
@@ -914,68 +1207,11 @@ export function EventDetailsScreen({
             />
           </div>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '6px' }}>
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
               {realAttendeeCount.toLocaleString()} attending
             </span>
-            <span style={{ color: '#8B8FA8', fontSize: '11px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
               {(event.capacity ?? 0).toLocaleString()} total capacity
-            </span>
-          </div>
-        </div>
-
-        {/* Organizer */}
-        <div
-          onClick={() => event.organizer_id && onOrganizerPress?.(event.organizer_id)}
-          style={{
-            background: '#090514',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '14px',
-            padding: '14px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '12px',
-            marginBottom: '16px',
-            cursor: event.organizer_id && onOrganizerPress ? 'pointer' : 'default',
-          }}
-        >
-          <div
-            style={{
-              width: '44px',
-              height: '44px',
-              borderRadius: '12px',
-              background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-              position: 'relative',
-              overflow: 'hidden',
-            }}
-          >
-            <span style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>
-              {(organizerProfile?.full_name || event.organizer || 'O')[0].toUpperCase()}
-            </span>
-            {organizerProfile?.avatar_url && (
-              <img
-                src={organizerProfile.avatar_url}
-                alt=""
-                style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
-                onError={(e) => { e.currentTarget.style.display = 'none'; }}
-              />
-            )}
-          </div>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' }}>
-              <span style={{ color: '#C084FC', fontSize: '14px', fontWeight: 600 }}>
-                {organizerProfile?.full_name || event.organizer}
-              </span>
-              {(event.organizerVerified || organizerProfile?.is_verified) && (
-                <CheckCircle size={14} fill="#4F46E5" color="#fff" />
-              )}
-              <BadgeChip tier={organizerProfile?.vc_badge} />
-            </div>
-            <span style={{ color: '#8B8FA8', fontSize: '12px', textTransform: 'capitalize' }}>
-              {organizerProfile?.role || 'Event Organizer'}
             </span>
           </div>
         </div>
@@ -992,17 +1228,17 @@ export function EventDetailsScreen({
             }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Phone size={14} color="#A855F7" />
-              <span style={{ color: '#A855F7', fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>
+              <Phone size={14} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.accent, fontSize: '12px', fontWeight: 700, letterSpacing: '0.05em' }}>
                 ORGANISER CONTACT
               </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div>
-                <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
+                <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.02em' }}>
                   {event.contactPhone}
                 </p>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', marginTop: '2px' }}>
+                <p style={{ color: ventsColors.ink2, fontSize: '11px', marginTop: '2px' }}>
                   For event enquiries only
                 </p>
               </div>
@@ -1021,7 +1257,7 @@ export function EventDetailsScreen({
                     textDecoration: 'none',
                   }}
                 >
-                  <Phone size={16} color="#A855F7" />
+                  <Phone size={16} color={ventsColors.accent} />
                 </a>
                 <button
                   onClick={() => openExternalUrl(`https://wa.me/${event.contactPhone!.replace(/\D/g, '')}`)}
@@ -1048,15 +1284,15 @@ export function EventDetailsScreen({
         {event.lineup && event.lineup.length > 0 && (
           <div style={{ marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Mic2 size={16} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Lineup</span>
+              <Mic2 size={16} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700 }}>Lineup</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {event.lineup.map((artist) => (
                 <div
                   key={artist}
                   style={{
-                    background: '#090514',
+                    background: ventsColors.surface,
                     border: '1px solid rgba(255,255,255,0.08)',
                     borderRadius: '50px',
                     padding: '7px 14px',
@@ -1082,7 +1318,7 @@ export function EventDetailsScreen({
                   >
                     {artist[0]}
                   </div>
-                  <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500 }}>
+                  <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>
                     {artist}
                   </span>
                 </div>
@@ -1091,57 +1327,19 @@ export function EventDetailsScreen({
           </div>
         )}
 
-        {/* Description */}
-        <div style={{ marginBottom: '16px' }}>
-          <span style={{ color: '#FFFFFF', fontSize: '16px', fontWeight: 600, display: 'block', marginBottom: '8px' }}>
-            About
-          </span>
-          <p
-            style={{
-              color: '#94A3B8',
-              fontSize: '14px',
-              lineHeight: 1.5,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: expanded ? 'unset' : 3,
-              WebkitBoxOrient: 'vertical',
-            }}
-          >
-            {event.description}
-          </p>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: '#A78BFA',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              padding: '6px 0 0',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '3px',
-            }}
-          >
-            {expanded ? 'Show less' : 'Show more'}
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-        </div>
-
         {/* Ticket Options — stays available even after a prior purchase, so
             an attendee who already has a ticket can still buy more (extra
             tickets for friends, a different tier, etc). */}
         {ticketTypes.length > 0 && (
-          <div style={{ marginBottom: '24px' }}>
+          <div ref={ticketsRef} className="edt-tickets-inline" style={{ marginBottom: '24px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-              <span style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif' }}>
+              <span style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif' }}>
                 Select Tickets
               </span>
               {isBooked && (
                 <span style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.3)', borderRadius: '20px', padding: '4px 10px', width: 'fit-content' }}>
-                  <CheckCircle size={12} color="#10B981" />
-                  <span style={{ color: '#10B981', fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
+                  <CheckCircle size={12} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '11px', fontWeight: 700 }}>You have a ticket</span>
                 </span>
               )}
             </div>
@@ -1155,7 +1353,7 @@ export function EventDetailsScreen({
                     key={t.id}
                     onClick={() => { if (!soldOut) { haptics.light(); setSelectedTicketId(t.id); } }}
                     style={{
-                      background: isSelected ? 'rgba(124,58,237,0.08)' : '#131629',
+                      background: isSelected ? 'rgba(124,58,237,0.08)' : ventsColors.elevated,
                       border: isSelected ? '1.5px solid rgba(124,58,237,0.4)' : '1px solid rgba(255,255,255,0.06)',
                       borderRadius: '16px',
                       padding: '14px 16px',
@@ -1166,23 +1364,23 @@ export function EventDetailsScreen({
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
-                        <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
-                        {!soldOut && <span style={{ color: '#6B7280', fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
-                        {soldOut && <span style={{ color: '#EF4444', fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
+                        <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, margin: 0 }}>{t.name}</p>
+                        <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: '2px 0 0' }}>{t.description || 'General Admission'}</p>
+                        {!soldOut && <span style={{ color: ventsColors.ink3, fontSize: '11px', display: 'block', marginTop: '4px' }}>{t.available} left</span>}
+                        {soldOut && <span style={{ color: ventsColors.error, fontSize: '11px', display: 'block', marginTop: '4px' }}>Sold out</span>}
                       </div>
-                      <span style={{ color: '#FFB830', fontSize: '16px', fontWeight: 800, fontFamily: 'Space Grotesk, sans-serif', marginLeft: '8px' }}>
+                      <span style={{ color: ventsColors.pending, fontSize: '16px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', marginLeft: '8px' }}>
                         {formatPrice(t.price)}
                       </span>
                     </div>
                     {isSelected && !soldOut && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid rgba(255,255,255,0.06)' }}>
-                        <span style={{ color: '#C4C9E0', fontSize: '13px' }}>Quantity</span>
+                        <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>Quantity</span>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
-                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? '#1A1D2E' : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
-                            <Minus size={14} color="#C4C9E0" />
+                          <button onClick={(e) => { e.stopPropagation(); if (qty > 0) haptics.light(); changeTicketQty(t.id, -1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: qty === 0 ? ventsColors.elevated : 'rgba(124,58,237,0.2)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: qty === 0 ? 'not-allowed' : 'pointer', opacity: qty === 0 ? 0.5 : 1 }}>
+                            <Minus size={14} color={ventsColors.ink2} />
                           </button>
-                          <span key={qty} style={{ color: '#F0F0FF', fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
+                          <span key={qty} style={{ color: ventsColors.ink1, fontSize: '18px', fontWeight: 700, minWidth: '24px', textAlign: 'center', display: 'inline-block', animation: 'ticketQtyPop 0.22s cubic-bezier(0.34, 1.56, 0.64, 1)' }}>{qty}</span>
                           <button onClick={(e) => { e.stopPropagation(); haptics.light(); changeTicketQty(t.id, 1); }} style={{ width: '32px', height: '32px', borderRadius: '50%', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
                             <Plus size={14} color="#fff" />
                           </button>
@@ -1200,8 +1398,8 @@ export function EventDetailsScreen({
         {event.tags && event.tags.length > 0 && (
           <div style={{ marginBottom: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-              <Tag size={15} color="#A855F7" />
-              <span style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Tags</span>
+              <Tag size={15} color={ventsColors.accent} />
+              <span style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Tags</span>
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
               {event.tags.map((tag) => (
@@ -1212,7 +1410,7 @@ export function EventDetailsScreen({
                     border: '1px solid rgba(167,139,250,0.15)',
                     borderRadius: '8px',
                     padding: '5px 12px',
-                    color: '#A78BFA',
+                    color: ventsColors.accentSoft,
                     fontSize: '12px',
                     fontWeight: 500,
                   }}
@@ -1231,36 +1429,36 @@ export function EventDetailsScreen({
               <button
                 onClick={() => onMessageOrganizer(event.organizer_id!, event.id, event.title)}
                 style={{
-                  width: '100%', background: '#090514',
+                  width: '100%', background: ventsColors.surface,
                   border: '1px solid rgba(167,139,250,0.2)', borderRadius: '14px',
                   padding: '14px 16px', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
                 }}
               >
-                <MessageCircle size={16} color="#A78BFA" />
-                <span style={{ color: '#C4C9E0', fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
+                <MessageCircle size={16} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500, flex: 1, textAlign: 'left' }}>
                   Message organizer
                 </span>
-                <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Chat →</span>
+                <span style={{ color: ventsColors.accentSoft, fontSize: '12px', fontWeight: 600 }}>Chat →</span>
               </button>
             )}
           </div>
         )}
 
         {/* Related Events Section */}
-        <div style={{ marginTop: '24px', marginBottom: '16px' }}>
-            <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Space Grotesk, sans-serif' }}>
+        <div ref={moreRef} style={{ marginTop: '24px', marginBottom: '16px' }}>
+            <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700, marginBottom: '12px', fontFamily: 'Manrope, sans-serif' }}>
               Related Events
             </p>
             {loadingRelated ? (
               <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
                 {Array.from({ length: 2 }).map((_, i) => (
-                  <div key={i} style={{ width: '140px', height: '120px', background: '#090514', borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
+                  <div key={i} style={{ width: '140px', height: '120px', background: ventsColors.surface, borderRadius: '16px', opacity: 0.6, flexShrink: 0 }} />
                 ))}
               </div>
             ) : relatedEvents.length === 0 ? (
-              <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B8FA8" strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
-                <p style={{ color: '#8B8FA8', fontSize: '12px' }}>No related events in this category</p>
+              <div style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.05)', borderRadius: '16px', padding: '20px', textAlign: 'center' }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={ventsColors.ink2} strokeWidth="1.5" style={{ display: 'block', margin: '0 auto 4px' }}><path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/></svg>
+                <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>No related events in this category</p>
               </div>
             ) : (
               <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', paddingBottom: '8px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch' }}>
@@ -1277,6 +1475,76 @@ export function EventDetailsScreen({
             )}
           </div>
         </div>
+
+      {/* Desktop sticky purchase panel (handoff DT2/TB2: Event Detail splits
+          media-left / sticky-purchase-panel-right at >=1200px). Hidden below
+          that breakpoint -- .edt-tickets-inline above stays the only ticket
+          UI on mobile/tablet. Mirrors the bottom CTA bar's summary + buy
+          action rather than duplicating the full ticket-tier list, since
+          that list already lives in the left column and stays reachable via
+          the "Tickets" tab / normal scroll on desktop too. */}
+      {ticketTypes.length > 0 && !hasEnded && (
+        <div className="edt-purchase-panel">
+          <div style={{ color: ventsColors.ink2, fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '10px' }}>
+            Your Order
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+            <span style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 600 }}>{selectedTicket?.name || 'Select a ticket'}</span>
+            <span style={{ color: ventsColors.white, fontSize: '14px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {selectedTicket ? formatPrice(selectedTicket.price) : ''}
+            </span>
+          </div>
+          {selectedTicket && (
+            <div style={{ color: ventsColors.ink3, fontSize: '12px', marginBottom: '16px' }}>Qty: {selectedQty}</div>
+          )}
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '12px 0' }} />
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 600 }}>Total</span>
+            <span style={{ color: ventsColors.white, fontSize: '18px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', fontVariantNumeric: 'tabular-nums lining-nums' }}>
+              {selectedTicket ? formatPrice(selectedTicket.price * selectedQty) : formatPrice(0)}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              try {
+                if (canBook && !purchasesDisabled && selectedTicket) {
+                  haptics.medium();
+                  onGetTickets(selectedTicket, selectedQty);
+                }
+              } catch (err: any) {
+                console.error('BOOK BUTTON CRASH:', err);
+                Sentry.captureException(err);
+                setBookingError(err?.message || String(err));
+                setTimeout(() => setBookingError(null), 3500);
+              }
+            }}
+            disabled={!canBook || purchasesDisabled}
+            style={{
+              width: '100%',
+              background: purchasesDisabled
+                ? ventsColors.elevated
+                : canBook
+                ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                : ventsColors.elevated,
+              border: 'none',
+              borderRadius: '14px',
+              padding: '14px',
+              color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
+              fontSize: '15px',
+              fontWeight: 700,
+              fontFamily: 'Manrope, sans-serif',
+              cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+              boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+            }}
+          >
+            {purchasesDisabled
+              ? 'Purchases Paused'
+              : canBook
+              ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+              : 'Select tickets'}
+          </button>
+        </div>
+      )}
 
       {/* Map dialog */}
       {showMapDialog && (
@@ -1296,7 +1564,7 @@ export function EventDetailsScreen({
             onClick={(e) => e.stopPropagation()}
             style={{
               width: '100%',
-              background: '#090514',
+              background: ventsColors.surface,
               borderRadius: '24px 24px 0 0',
               padding: '24px 20px 36px',
               border: '1px solid rgba(255,255,255,0.08)',
@@ -1312,8 +1580,8 @@ export function EventDetailsScreen({
                   margin: '0 auto 16px',
                 }}
               />
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Open Location In</p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px', marginTop: '4px' }}>
+              <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700 }}>Open Location In</p>
+              <p style={{ color: ventsColors.ink2, fontSize: '12px', marginTop: '4px' }}>
                 {event.venue}, {event.city}
               </p>
             </div>
@@ -1341,8 +1609,8 @@ export function EventDetailsScreen({
                   </svg>
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Google Maps</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Opens in browser</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Google Maps</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Opens in browser</p>
                 </div>
               </button>
               <button
@@ -1359,12 +1627,12 @@ export function EventDetailsScreen({
                   width: '100%',
                 }}
               >
-                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#1C1C1E', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: ventsColors.elevated, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <MapPin size={20} color="#fff" />
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  <p style={{ color: '#F0F0FF', fontSize: '15px', fontWeight: 700 }}>Apple Maps</p>
-                  <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Opens on iOS/macOS</p>
+                  <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 700 }}>Apple Maps</p>
+                  <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>Opens on iOS/macOS</p>
                 </div>
               </button>
             </div>
@@ -1374,77 +1642,88 @@ export function EventDetailsScreen({
 
       {bookingError && (
         <div style={{ position: 'absolute', left: '16px', right: '16px', bottom: '88px', zIndex: 20 }}>
-          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: '#FCA5A5', fontSize: '13px', fontWeight: 600 }}>
+          <div style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '12px', padding: '10px 14px', color: ventsColors.error, fontSize: '13px', fontWeight: 600 }}>
             {bookingError}
           </div>
         </div>
       )}
 
-      {/* Sticky bottom bar */}
+      {/* Sticky bottom bar -- mobile/tablet only; desktop's sticky
+          .edt-purchase-panel in the right column replaces it. */}
       <div
+        className="edt-bottom-bar"
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          background: 'rgba(2,0,5,0.85)',
-          backdropFilter: 'blur(20px)',
-          borderTop: '1px solid rgba(255,255,255,0.07)',
+          background: 'rgba(10,6,18,0.88)',
+          backdropFilter: 'blur(24px) saturate(160%)',
+          WebkitBackdropFilter: 'blur(24px) saturate(160%)',
+          borderTop: '1px solid rgba(255,255,255,0.09)',
           padding: '14px 16px 24px',
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
         }}
       >
-        {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
-            "Buy from ₦X") instead of a bare "FROM / Free" label, which read
-            as a fully free event even when paid tiers also exist. */}
-        <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? '#06D6A0' : '#FFFFFF', fontSize: '15px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', flexShrink: 0 }}>
-          {formatCardCTA(event.ticketTypes)}
-        </div>
-        <button
-          onClick={() => {
-            try {
-              if (canBook && !purchasesDisabled && selectedTicket) {
-                haptics.medium();
-                onGetTickets(selectedTicket, selectedQty);
-              }
-            } catch (err: any) {
-              console.error('BOOK BUTTON CRASH:', err);
-              Sentry.captureException(err);
-              setBookingError(err?.message || String(err));
-              setTimeout(() => setBookingError(null), 3500);
-            }
-          }}
-          disabled={!canBook || purchasesDisabled}
-          style={{
-            flex: 1,
-            background: purchasesDisabled
-              ? '#1A1D2E'
-              : canBook
-              ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-              : '#1A1D2E',
-            border: 'none',
-            borderRadius: '16px',
-            padding: '14px 28px',
-            color: purchasesDisabled ? '#6B7280' : canBook ? '#fff' : '#8B8FA8',
-            fontSize: '16px',
-            fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
-            cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
-            boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '8px',
-          }}
-        >
-          {purchasesDisabled
-            ? 'Purchases Temporarily Paused'
-            : canBook
-            ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
-            : 'Select tickets above'}
-        </button>
+        {hasEnded ? (
+          <div style={{ flex: 1, textAlign: 'center', color: ventsColors.ink2, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', padding: '14px 28px' }}>
+            Event Ended
+          </div>
+        ) : (
+          <>
+            {/* Same CTA wording as the home/explore cards ("Book Free" / "Buy" /
+                "Buy from ₦X") instead of a bare "FROM / Free" label, which read
+                as a fully free event even when paid tiers also exist. */}
+            <div style={{ color: formatCardCTA(event.ticketTypes) === 'Book Free' ? ventsColors.success : ventsColors.white, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', flexShrink: 0 }}>
+              {formatCardCTA(event.ticketTypes)}
+            </div>
+            <button
+              onClick={() => {
+                try {
+                  if (canBook && !purchasesDisabled && selectedTicket) {
+                    haptics.medium();
+                    onGetTickets(selectedTicket, selectedQty);
+                  }
+                } catch (err: any) {
+                  console.error('BOOK BUTTON CRASH:', err);
+                  Sentry.captureException(err);
+                  setBookingError(err?.message || String(err));
+                  setTimeout(() => setBookingError(null), 3500);
+                }
+              }}
+              disabled={!canBook || purchasesDisabled}
+              style={{
+                flex: 1,
+                background: purchasesDisabled
+                  ? ventsColors.elevated
+                  : canBook
+                  ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
+                  : ventsColors.elevated,
+                border: 'none',
+                borderRadius: '16px',
+                padding: '14px 28px',
+                color: purchasesDisabled ? ventsColors.ink3 : canBook ? '#fff' : ventsColors.ink2,
+                fontSize: '16px',
+                fontWeight: 700,
+                fontFamily: 'Manrope, sans-serif',
+                cursor: !canBook || purchasesDisabled ? 'not-allowed' : 'pointer',
+                boxShadow: canBook && !purchasesDisabled ? '0 8px 24px rgba(123,47,190,0.35)' : 'none',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+              }}
+            >
+              {purchasesDisabled
+                ? 'Purchases Temporarily Paused'
+                : canBook
+                ? (selectedTicket!.price * selectedQty === 0 ? 'Book Free Ticket' : `Pay ${formatPrice(selectedTicket!.price * selectedQty)}`)
+                : 'Select tickets above'}
+            </button>
+          </>
+        )}
       </div>
 
       {shared && (
@@ -1493,6 +1772,7 @@ export function EventDetailsScreen({
           onClose={() => setShowReport(false)}
         />
       )}
+      </div>
     </div>
   );
 }

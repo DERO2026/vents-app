@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { ChevronDown, X, Search } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, Search } from 'lucide-react';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, CountryOption, maxDigitsFor, formatNationalNumber } from '../../lib/countries';
 
 export type { CountryOption } from '../../lib/countries';
@@ -42,8 +42,11 @@ function detectFlagEmojiSupport(): boolean {
 // Computed once per session — the result cannot change while the app is open.
 const SUPPORTS_FLAG_EMOJI = detectFlagEmojiSupport();
 
-/** A country's flag, or a legible ISO badge on platforms without flag glyphs. */
-function CountryMark({ country, size = 16 }: { country: CountryOption; size?: number }) {
+/** A country's flag, or a legible ISO badge on platforms without flag glyphs.
+ *  Exported for reuse by CountrySelectScreen (the account/home-country picker
+ *  shown once at signup, distinct from this component's phone-dial-code
+ *  picker) so both surfaces render the exact same flag/fallback logic. */
+export function CountryMark({ country, size = 16 }: { country: CountryOption; size?: number }) {
   if (SUPPORTS_FLAG_EMOJI) {
     return <span style={{ fontSize: `${size}px`, lineHeight: 1 }}>{flagEmojiFor(country.iso)}</span>;
   }
@@ -92,7 +95,17 @@ export function PhoneInput({
   background = '#090514', borderColor = 'rgba(255,255,255,0.08)', radius = '12px',
 }: PhoneInputProps) {
   const [showPicker, setShowPicker] = useState(false);
-  const [search, setSearch] = useState('');
+  const [query, setQuery] = useState('');
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showPicker) { setQuery(''); return; }
+    const handleClick = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) setShowPicker(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showPicker]);
 
   // Some dial codes are shared (+1 is USA and Canada). The parent stores only
   // the dial code — deliberately, since both countries produce the identical
@@ -111,20 +124,17 @@ export function PhoneInput({
   const maxDigits = maxDigitsFor(selected);
   const displayValue = formatNationalNumber(value, selected);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return COUNTRY_CODES;
-    return COUNTRY_CODES.filter(
-      (c) => c.name.toLowerCase().includes(q) || c.code.includes(q) || c.iso.toLowerCase() === q
-    );
-  }, [search]);
+
+  const filtered = query.trim()
+    ? COUNTRY_CODES.filter((c) => `${c.name} ${c.code} ${c.iso}`.toLowerCase().includes(query.trim().toLowerCase()))
+    : COUNTRY_CODES;
 
   return (
     <>
-      <div style={{ display: 'flex', gap: '8px' }}>
+      <div ref={wrapperRef} style={{ display: 'flex', gap: '8px', position: 'relative' }}>
         <button
           type="button"
-          onClick={() => setShowPicker(true)}
+          onClick={() => setShowPicker((v) => !v)}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -143,8 +153,92 @@ export function PhoneInput({
           <span style={{ color: '#F0F0FF', fontSize: '13px', fontWeight: 500 }}>{selected.code}</span>
           <ChevronDown size={12} color="#8B8FA8" />
         </button>
+
+        {/* Handoff PK2: an inline anchored dropdown, distinct from the
+            full-screen PickerSheet used for account country/state/category
+            pickers -- it opens right below the dial-code chip, not as a
+            screen-covering sheet. Kept a search field (the real list is
+            ~195 countries, not the mockup's illustrative 3-row example),
+            but the panel itself stays compact and anchored, per P23's own
+            rule that a long list still needs search even in this pattern. */}
+        {showPicker && (
+          <div
+            style={{
+              position: 'absolute',
+              top: `calc(${height}px + 8px)`,
+              left: 0,
+              width: '280px',
+              maxHeight: '320px',
+              zIndex: 1000,
+              background: 'rgba(18,16,25,0.98)',
+              backdropFilter: 'blur(24px)',
+              WebkitBackdropFilter: 'blur(24px)',
+              border: '1px solid rgba(255,255,255,0.12)',
+              borderRadius: '16px',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.45)',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '10px',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: '#1A1724', border: '1px solid rgba(255,255,255,0.1)',
+                borderRadius: '10px', height: '38px', padding: '0 10px', marginBottom: '8px', flexShrink: 0,
+              }}
+            >
+              <Search size={13} color="rgba(237,234,245,0.5)" />
+              <input
+                autoFocus
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search country or code..."
+                style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#fff', fontSize: '13px' }}
+              />
+            </div>
+            <div style={{ overflowY: 'auto', display: 'flex', flexDirection: 'column' }}>
+              {filtered.length === 0 && (
+                <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '12px', textAlign: 'center', margin: '16px 0' }}>No results found.</p>
+              )}
+              {filtered.map((c, i) => (
+                <div
+                  key={c.iso}
+                  onClick={() => {
+                    setPickedIso(c.iso);
+                    onCountryCodeChange(c.code);
+                    setShowPicker(false);
+                  }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 4px',
+                    borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.05)' : 'none',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <CountryMark country={c} size={15} />
+                  <span style={{ flex: 1, fontSize: '13px', color: '#EDEAF5', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</span>
+                  <span style={{ fontSize: '13px', fontWeight: 700, color: c.iso === selected.iso ? '#B79BFF' : 'rgba(237,234,245,0.6)', flexShrink: 0 }}>{c.code}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <input
-          type="tel"
+          // Deliberately type="text" + inputMode="tel", not type="tel" --
+          // type="tel" is exactly the signal iOS Safari (and some Android
+          // keyboards) use to show the QuickType contact-suggestion strip
+          // above the keyboard while typing, which is what this was fixing.
+          // inputMode="tel" alone still brings up the numeric phone keypad,
+          // so entry UX is unchanged; autoComplete/autoCorrect/autoCapitalize
+          // are all suppressed too since none of them make sense for a
+          // digits-only national-number field with its own country-code
+          // selector right next to it.
+          type="text"
+          inputMode="tel"
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
           placeholder={placeholder || selected.format}
           value={displayValue}
           onChange={(e) => onChange(e.target.value.replace(/\D/g, '').slice(0, maxDigits))}
@@ -157,72 +251,13 @@ export function PhoneInput({
             padding: '0 14px',
             color: '#F0F0FF',
             fontSize: '14px',
-            fontFamily: 'Inter, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             outline: 'none',
             boxSizing: 'border-box',
             minWidth: 0,
           }}
         />
       </div>
-
-      {showPicker && (
-        <div
-          onClick={() => { setShowPicker(false); setSearch(''); }}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'flex-end', zIndex: 1000 }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{ width: '100%', background: '#090514', borderRadius: '24px 24px 0 0', maxHeight: '75%', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}
-          >
-            <div style={{ padding: '20px 20px 12px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700 }}>Select Country</p>
-              <button onClick={() => { setShowPicker(false); setSearch(''); }} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
-                <X size={20} color="#8B8FA8" />
-              </button>
-            </div>
-            <div style={{ padding: '12px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#131629', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '10px 12px' }}>
-                <Search size={15} color="#8B8FA8" style={{ flexShrink: 0 }} />
-                <input
-                  autoFocus
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search country or code..."
-                  style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
-                />
-              </div>
-            </div>
-            <div style={{ overflowY: 'auto', padding: '8px 0 28px' }}>
-              {filtered.length === 0 ? (
-                <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 20px' }}>No countries match "{search}".</p>
-              ) : filtered.map((c) => (
-                <button
-                  key={`${c.iso}`}
-                  type="button"
-                  onClick={() => { setPickedIso(c.iso); onCountryCodeChange(c.code); setShowPicker(false); setSearch(''); }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '12px',
-                    width: '100%',
-                    padding: '14px 20px',
-                    background: selected.iso === c.iso ? 'rgba(124,58,237,0.1)' : 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                  }}
-                >
-                  <CountryMark country={c} size={22} />
-                  <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-                    <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.name}</p>
-                    <p style={{ color: '#8B8FA8', fontSize: '12px' }}>Format: {c.format}</p>
-                  </div>
-                  <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600, flexShrink: 0 }}>{c.code}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -1,101 +1,80 @@
-import { Home, Ticket, MessageCircle, User } from 'lucide-react';
 import { TabId } from './types';
+import { haptics } from '../../lib/haptics';
 
 interface BottomNavProps {
   activeTab: TabId;
   onTabChange: (tab: TabId) => void;
+  hasUnreadChats?: boolean;
 }
 
-const TABS: { id: TabId; Icon: typeof Home; label: string }[] = [
-  { id: 'home',       Icon: Home,          label: 'Home'      },
-  { id: 'my-tickets', Icon: Ticket,        label: 'My Tickets' },
-  { id: 'explore',    Icon: MessageCircle, label: 'Chats'      },
-  { id: 'profile',    Icon: User,          label: 'Profile'    },
+// Handoff spec (file 1 §05, B1 HomeScreen footer): four uniform 58x58
+// floating circles, active = solid #8E5CF7 fill, inactive = glass
+// (rgba(255,255,255,.07) + blur(24px) + rgba(255,255,255,.14) border),
+// each labeled with a short JetBrains Mono caps word INSIDE the circle
+// (HOME/TIX/CHAT/YOU) rather than an icon + separate label below.
+const TABS: { id: TabId; label: string }[] = [
+  { id: 'home',       label: 'HOME' },
+  { id: 'my-tickets', label: 'TIX'  },
+  { id: 'explore',    label: 'CHAT' },
+  { id: 'profile',    label: 'YOU'  },
 ];
 
-export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
+export function BottomNav({ activeTab, onTabChange, hasUnreadChats }: BottomNavProps) {
   return (
     <div
       style={{
-        background: 'rgba(13,13,13,0.95)',
-        backdropFilter: 'blur(20px)',
-        borderTop: '1px solid rgba(123,47,247,0.2)',
-        boxShadow: '0 -8px 32px rgba(123,47,247,0.12)',
-        borderRadius: '24px 24px 0 0',
-        paddingBottom: 'env(safe-area-inset-bottom, 8px)',
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
         display: 'flex',
-        alignItems: 'stretch',
-        height: '70px',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '12px',
+        padding: `0 20px calc(20px + env(safe-area-inset-bottom, 6px))`,
         zIndex: 50,
+        pointerEvents: 'none',
       }}
     >
-      {TABS.map(({ id, Icon, label }) => {
+      {TABS.map(({ id, label }) => {
         const isActive = activeTab === id;
         return (
           <button
             key={id}
-            onClick={() => onTabChange(id)}
+            onClick={() => { if (!isActive) haptics.light(); onTabChange(id); }}
+            aria-label={label}
             style={{
-              flex: 1,
+              position: 'relative',
+              width: '58px',
+              height: '58px',
+              borderRadius: '9999px',
               display: 'flex',
-              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              background: 'none',
-              border: 'none',
+              background: isActive ? '#8E5CF7' : 'rgba(255,255,255,0.07)',
+              backdropFilter: isActive ? 'none' : 'blur(24px) saturate(160%)',
+              WebkitBackdropFilter: isActive ? 'none' : 'blur(24px) saturate(160%)',
+              border: isActive ? 'none' : '1px solid rgba(255,255,255,0.14)',
+              boxShadow: isActive ? '0 12px 34px -10px rgba(142,92,247,1)' : 'none',
               cursor: 'pointer',
-              paddingTop: '8px',
-              paddingBottom: '0',
-              position: 'relative',
-              gap: '4px',
-              transition: 'all 0.2s ease',
+              pointerEvents: 'auto',
+              flexShrink: 0,
             }}
           >
-            {/* Active indicator pill at top */}
-            <div style={{
-              position: 'absolute',
-              top: 0,
-              left: '50%',
-              transform: `translateX(-50%)`,
-              width: isActive ? '20px' : '0px',
-              height: '3px',
-              borderRadius: '0 0 4px 4px',
-              background: 'linear-gradient(90deg, #7B2FF7, #F107A3)',
-              transition: 'width 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
-            }} />
-
-            {/* Icon with pill background when active */}
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '6px 20px',
-              borderRadius: '14px',
-              background: isActive
-                ? 'linear-gradient(135deg, rgba(123,47,247,0.3), rgba(241,7,163,0.2))'
-                : 'transparent',
-              transition: 'all 0.2s ease',
-            }}>
-              <Icon
-                size={isActive ? 22 : 20}
-                strokeWidth={isActive ? 2.2 : 1.8}
-                color={isActive ? '#FFFFFF' : '#444444'}
-              />
-            </div>
-
-            {/* Label */}
             <span style={{
+              fontFamily: "'JetBrains Mono', monospace",
               fontSize: '9px',
-              fontWeight: isActive ? 800 : 500,
-              color: isActive ? '#FFFFFF' : '#444444',
-              letterSpacing: isActive ? '0.8px' : '0.5px',
-              textTransform: 'uppercase',
-              lineHeight: 1,
+              fontWeight: 700,
+              letterSpacing: '0.1em',
+              color: isActive ? '#fff' : 'rgba(237,234,245,0.8)',
             }}>{label}</span>
+            {id === 'explore' && hasUnreadChats && (
+              <span style={{
+                position: 'absolute', top: '10px', right: '12px',
+                width: '9px', height: '9px', borderRadius: '9999px',
+                background: '#8E5CF7', border: '2px solid #0B0912', display: 'block',
+              }} />
+            )}
           </button>
         );
       })}

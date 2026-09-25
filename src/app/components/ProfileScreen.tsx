@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 import BadgeChip from './BadgeChip';
 import {
   Settings,
@@ -7,25 +8,29 @@ import {
   Ticket,
   ChevronRight,
   Star,
-  LogOut,
   Shield,
   MapPin,
   Users,
   BadgeCheck,
+  ShieldCheck,
   Gift,
   Camera,
-  Wallet,
+  WalletCards,
+  Briefcase,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { PurchasedTicket } from './types';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { getVcBalance } from '../../lib/vcBalanceCache';
+import { COUNTRY_CODES } from '../../lib/countries';
+import { AppVersionFooter } from './shared/AppVersionFooter';
+import { CACVerificationScreen } from './SettingsScreen';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean; country?: string } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -35,6 +40,13 @@ interface ProfileScreenProps {
   onBecomeOrganizer?: () => void;
   userRole?: 'attendee' | 'organizer';
   unreadNotificationsCount?: number;
+  // Bumped by App.tsx whenever the Profile tab is tapped while already
+  // active (the same "tap active tab to refresh" gesture Home already
+  // has) -- re-triggers the existing stats/hasProviderProfile fetch
+  // effects below via profileRefreshKey, rather than adding new fetch
+  // logic. A plain number (not a boolean) so repeated taps each still
+  // register as a change.
+  refreshSignal?: number;
 }
 
 export function ProfileScreen({
@@ -48,16 +60,48 @@ export function ProfileScreen({
   onBecomeOrganizer,
   userRole,
   unreadNotificationsCount = 0,
+  refreshSignal,
 }: ProfileScreenProps) {
   const [eventsCreated, setEventsCreated] = useState(0);
   const [attendees, setAttendees] = useState(0);
   const [profileRefreshKey, setProfileRefreshKey] = useState(0);
+  useEffect(() => {
+    if (refreshSignal) setProfileRefreshKey((k) => k + 1);
+  }, [refreshSignal]);
   const [showOrgRequestModal, setShowOrgRequestModal] = useState(false);
+  const [showCacVerify, setShowCacVerify] = useState(false);
   const [orgRequestReason, setOrgRequestReason] = useState('');
-  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'sent' | 'already'>('idle');
+  // Tracks the actual DB state machine (pending/rejected/approved) instead
+  // of squashing pending+approved into one 'already'/'sent' bucket -- same
+  // fix pattern applied to the Service Provider flow above (see
+  // spRequestStatus): a squashed status can't tell "nothing to do yet" from
+  // "approved, should already have organizer access", and 'approved' here
+  // is also trusted directly (isOrganizerEffective below) instead of
+  // waiting on App.tsx's separate 15s role-sync poll to flip
+  // currentUser.role -- closing the same race that could show/hide the
+  // wrong section for a few seconds right after admin approval.
+  const [orgRequestStatus, setOrgRequestStatus] = useState<'idle' | 'sending' | 'pending' | 'rejected' | 'approved'>('idle');
+  const [orgRequestAdminNote, setOrgRequestAdminNote] = useState<string | null>(null);
   const [orgRequestError, setOrgRequestError] = useState('');
   const [hasOrgDraft, setHasOrgDraft] = useState(false);
   const [vcBalance, setVcBalance] = useState<number | null>(null);
+
+  // Service Provider request — same pattern as the Organizer request above,
+  // deliberately a separate independent state block (not shared) so an
+  // existing Organizer can also request this capability, and so this can
+  // evolve independently of the Organizer flow without risk to it.
+  // ROOT CAUSE of the "approved application shows a dead 'Application
+  // Submitted' button" bug: this used to collapse every non-rejected
+  // status (both 'pending' AND 'approved') into a single 'already' bucket,
+  // which the CTA below both disabled AND made unclickable (`if
+  // (spRequestStatus === 'already') return;`) -- so an approved applicant
+  // saw the exact same greyed-out, do-nothing button as someone still
+  // pending review, with no way to open the application or continue into
+  // setup until currentUser.is_service_provider happened to sync from its
+  // separate 15s poll (App.tsx's syncRole effect) or a full reload. Now
+  // tracks the actual DB status so 'approved' can be handled as its own
+  // state instead of being indistinguishable from 'pending'.
+  const [spRequestStatus, setSpRequestStatus] = useState<'idle' | 'pending' | 'approved'>('idle');
 
   useEffect(() => {
     if (!currentUser?.id) { setVcBalance(null); return; }
@@ -95,6 +139,7 @@ export function ProfileScreen({
       }
     } catch { /* ignore */ }
   };
+
   const [coverLoadFailed, setCoverLoadFailed] = useState(false);
   const [avatarLoadFailed, setAvatarLoadFailed] = useState(false);
   const [freshCoverUrl, setFreshCoverUrl] = useState<string | undefined>(undefined);
@@ -190,12 +235,15 @@ export function ProfileScreen({
       if (!currentUser?.id) return;
       const { data } = await supabase
         .from('organizer_requests')
-        .select('status')
+        .select('status, admin_note')
         .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (data) setOrgRequestStatus(data.status === 'approved' ? 'sent' : data.status === 'rejected' ? 'idle' : 'already');
+      if (data) {
+        setOrgRequestStatus(data.status === 'approved' ? 'approved' : data.status === 'rejected' ? 'rejected' : 'pending');
+        setOrgRequestAdminNote(data.admin_note ?? null);
+      }
     }
     checkOrgRequest();
   }, [currentUser?.id]);
@@ -211,19 +259,79 @@ export function ProfileScreen({
       if (error) throw error;
       if (orgDraftKey) { try { localStorage.removeItem(orgDraftKey); } catch { /* ignore */ } }
       setHasOrgDraft(false);
-      setOrgRequestStatus('sent');
+      setOrgRequestAdminNote(null);
+      setOrgRequestStatus('pending');
       setShowOrgRequestModal(false);
     } catch (err: any) {
+      // A duplicate-submit race (e.g. two tabs) hits the DB's own
+      // organizer_requests_one_pending_per_user guard -- treat that as
+      // "you already have one pending", not a generic failure back to idle.
+      if (err?.code === '23505') {
+        setOrgRequestStatus('pending');
+        setShowOrgRequestModal(false);
+        return;
+      }
       setOrgRequestError(err?.message || 'Failed to submit request.');
       setOrgRequestStatus('idle');
     }
   };
 
+  useEffect(() => {
+    async function checkSpRequest() {
+      if (!currentUser?.id) return;
+      const { data } = await supabase
+        .from('service_provider_requests')
+        .select('status')
+        .eq('user_id', currentUser.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) setSpRequestStatus(data.status === 'rejected' ? 'idle' : data.status === 'approved' ? 'approved' : 'pending');
+    }
+    checkSpRequest();
+  }, [currentUser?.id]);
+
+  // Stage 3: does the capability holder already have a service_providers
+  // listing? Drives the "Set Up Your Service Profile" vs "Edit Service
+  // Profile" label -- independent of the capability-request status above
+  // (spRequestStatus governs the request card, hasProviderProfile governs
+  // the setup/edit card that only appears once the capability is granted).
+  // Admin/Sub-Admin must have full access to Services -- same admin reach
+  // as every other admin-managed section -- without being blocked by the
+  // normal provider onboarding/KYC gate. Privileged writes still go through
+  // RLS's own is_admin() policies server-side (0045_service_provider_admin_
+  // access.sql); this only decides what the Profile UI offers them.
+  const isAdminOrSubAdminForServices = currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID;
+  // Also trust spRequestStatus === 'approved' directly, not just the
+  // currentUser.is_service_provider flag -- that flag is only refreshed by
+  // App.tsx's 15s syncRole poll, so relying on it alone left a real (if
+  // short-lived) window right after admin approval where this screen's own
+  // service_provider_requests fetch already knows the applicant is
+  // approved, but the CTA below hadn't caught up yet and still rendered as
+  // a dead, disabled "Application Submitted" button.
+  const canAccessProviderSetup = currentUser?.is_service_provider === true || isAdminOrSubAdminForServices || spRequestStatus === 'approved';
+
+  const [hasProviderProfile, setHasProviderProfile] = useState<boolean | null>(null);
+  useEffect(() => {
+    if (!currentUser?.id || !canAccessProviderSetup) { setHasProviderProfile(null); return; }
+    let cancelled = false;
+    Promise.resolve(
+      supabase
+        .from('service_providers')
+        .select('id')
+        .eq('user_id', currentUser.id)
+        .maybeSingle()
+    )
+      .then(({ data }: any) => { if (!cancelled) setHasProviderProfile(!!data); })
+      .catch(() => { if (!cancelled) setHasProviderProfile(false); });
+    return () => { cancelled = true; };
+  }, [currentUser?.id, canAccessProviderSetup, profileRefreshKey]);
+
   if (!currentUser) {
     return (
-      <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: '#94A3B8', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
-        <div style={{ fontSize: '20px', fontWeight: 700, color: '#FFFFFF' }}>Sign in to view your profile</div>
-        <div style={{ fontSize: '14px', color: '#94A3B8', maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
+      <div style={{ background: ventsColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px', padding: '24px', color: ventsColors.ink3, fontFamily: 'Manrope, sans-serif', textAlign: 'center' }}>
+        <div style={{ fontSize: '20px', fontWeight: 700, color: ventsColors.white }}>Sign in to view your profile</div>
+        <div style={{ fontSize: '14px', color: ventsColors.ink3, maxWidth: '280px' }}>Create an account or sign in to manage tickets, follow organizers, and more.</div>
         <button
           onClick={() => onNavigate('auth')}
           style={{
@@ -238,7 +346,7 @@ export function ProfileScreen({
             color: '#fff',
             fontSize: '15px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: 'pointer',
             boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
           }}
@@ -251,10 +359,21 @@ export function ProfileScreen({
 
   const menuItems = [
     {
+      icon: WalletCards,
+      // One Wallet entry point for everyone -- routes to the universal
+      // customer wallet (spendable balance, deposits), which itself exposes
+      // an Earnings tab for organizers/admins via showEarningsTab below,
+      // rather than sending organizers to a second, separate screen.
+      label: 'Wallet',
+      sublabel: 'Balance, deposits & statement',
+      color: ventsColors.accent,
+      screen: 'customer-wallet',
+    },
+    {
       icon: Bell,
       label: 'Notifications',
       sublabel: 'Manage alerts',
-      color: '#F59E0B',
+      color: ventsColors.pending,
       screen: 'notifications',
       badge: unreadNotificationsCount > 0 ? unreadNotificationsCount : undefined,
     },
@@ -269,8 +388,15 @@ export function ProfileScreen({
       icon: Gift,
       label: 'Vents Cents',
       sublabel: 'Earn Vents Cents',
-      color: '#FFB830',
+      color: ventsColors.pending,
       screen: 'referral',
+    },
+    {
+      icon: Ticket,
+      label: 'Payment Requests',
+      sublabel: 'Tickets you sent or paid for someone',
+      color: ventsColors.accentSoft,
+      screen: 'payment-requests',
     },
     {
       icon: Settings,
@@ -286,6 +412,14 @@ export function ProfileScreen({
   const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
   const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
   const isSubAdmin = currentUser?.role === 'sub-admin';
+  // Trusts an 'approved' organizer_requests row immediately, rather than
+  // only currentUser.role -- which is only refreshed by App.tsx's 15s
+  // syncRole poll -- so approval doesn't leave a stale window where this
+  // screen still renders the application CTA. Independent of, and does not
+  // replace, isOrganizer: roleLabel/badge/menu filtering below intentionally
+  // keep using the role-derived isOrganizer since those reflect the actual
+  // account role, while capability GATING (below) uses this.
+  const isOrganizerEffective = isOrganizer || orgRequestStatus === 'approved';
   const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
   const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Attendee';
   
@@ -305,10 +439,24 @@ export function ProfileScreen({
   const badgeTextColor = isAdmin ? '#fff' : '#000';
   const starColor = isAdmin ? '#fff' : '#000';
 
+  // Get Verified as an Organizer (CAC submission) -- moved here from
+  // Settings so both organizer-related capability entry points
+  // (Become an Organizer / Get Verified as an Organizer) live in one place,
+  // directly below Become a Service Provider.
+  if (showCacVerify) {
+    return (
+      <CACVerificationScreen
+        currentUser={currentUser}
+        onBack={() => setShowCacVerify(false)}
+        onContactSupport={() => { setShowCacVerify(false); onNavigate('help-support'); }}
+      />
+    );
+  }
+
   return (
     <div
       className="flex flex-col h-full"
-      style={{ background: '#020005', position: 'relative' }}
+      style={{ background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)', position: 'relative' }}
       onTouchStart={handlePullTouchStart}
       onTouchEnd={handlePullTouchEnd}
     >
@@ -519,9 +667,11 @@ export function ProfileScreen({
         <div className="px-4 mb-4">
           <div
             style={{
-              background: '#090514',
-              borderRadius: '16px',
-              border: '1px solid rgba(255,255,255,0.05)',
+              background: 'rgba(255,255,255,0.04)',
+              backdropFilter: 'blur(20px) saturate(160%)',
+              WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+              borderRadius: '18px',
+              border: '1px solid rgba(255,255,255,0.08)',
               overflow: 'hidden',
             }}
           >
@@ -535,28 +685,28 @@ export function ProfileScreen({
                   style={{
                     borderBottom:
                       index < filteredMenuItems.length - 1
-                        ? '1px solid rgba(255,255,255,0.04)'
+                        ? '1px solid rgba(255,255,255,0.05)'
                         : 'none',
                     cursor: item.screen ? 'pointer' : 'default',
                   }}
                 >
                   <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: 'rgba(123,47,190,0.15)' }}
+                    style={{ background: 'rgba(168,85,247,0.14)', border: '1px solid rgba(255,255,255,0.06)' }}
                   >
-                    <Icon size={17} color="#7B2FBE" />
+                    <Icon size={17} color={ventsColors.accentSoft} />
                   </div>
                   <div className="flex-1">
-                    <p style={{ color: '#FFFFFF', fontSize: '15px', fontWeight: 500 }}>
+                    <p style={{ color: ventsColors.ink1, fontSize: '15px', fontWeight: 600 }}>
                       {item.label}
                     </p>
-                    <p style={{ color: '#94A3B8', fontSize: '12px' }}>{item.sublabel}</p>
+                    <p style={{ color: ventsColors.ink3, fontSize: '12px' }}>{item.sublabel}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {item.badge && (
                       <div
                         style={{
-                          background: '#EF4444',
+                          background: ventsColors.error,
                           borderRadius: '50%',
                           width: '18px',
                           height: '18px',
@@ -570,7 +720,7 @@ export function ProfileScreen({
                         </span>
                       </div>
                     )}
-                    <ChevronRight size={15} color="#94A3B8" />
+                    <ChevronRight size={15} color={ventsColors.ink3} />
                   </div>
                 </button>
               );
@@ -578,44 +728,11 @@ export function ProfileScreen({
           </div>
         </div>
 
-        {/* VENTS Wallet (universal, spendable customer balance) */}
-        {currentUser && (
-          <div className="px-4 mb-3">
-            <button
-              onClick={() => onNavigate('customer-wallet')}
-              className="w-full flex items-center justify-center gap-2 p-4"
-              style={{
-                background: 'linear-gradient(135deg, rgba(124,58,237,0.2), rgba(168,85,247,0.12))',
-                borderRadius: '14px',
-                border: '1px solid rgba(168,85,247,0.35)',
-                boxShadow: '0 0 18px rgba(124,58,237,0.15)',
-                cursor: 'pointer',
-              }}
-            >
-              <Wallet size={16} color="#D8B4FE" />
-              <span style={{ color: '#D8B4FE', fontSize: '14px', fontWeight: 700 }}>VENTS Wallet</span>
-            </button>
-          </div>
-        )}
-
-        {/* Organizer/Provider Earnings (withdrawable) */}
-        {(isOrganizer || isAdmin || isSubAdmin) && (
-          <div className="px-4 mb-3">
-            <button
-              onClick={() => onNavigate('wallet')}
-              className="w-full flex items-center justify-center gap-2 p-4"
-              style={{
-                background: 'linear-gradient(135deg, rgba(79,70,229,0.15), rgba(168,85,247,0.1))',
-                borderRadius: '14px',
-                border: '1px solid rgba(168,85,247,0.3)',
-                cursor: 'pointer',
-              }}
-            >
-              <Wallet size={16} color="#A855F7" />
-              <span style={{ color: '#A855F7', fontSize: '14px', fontWeight: 700 }}>My Earnings</span>
-            </button>
-          </div>
-        )}
+        {/* Wallet now lives only in the menu list above ("Wallet" ->
+            'customer-wallet' for everyone, with its own Earnings tab for
+            organizers/admins) -- this used to be two separate standalone
+            buttons here for the same destinations; removed rather than
+            kept as a redundant shortcut. */}
 
         {/* Admin Dashboard (Admin/Sub-Admin/Root) */}
         {(isAdmin || isSubAdmin) && (
@@ -625,99 +742,221 @@ export function ProfileScreen({
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
-                border: '1px solid rgba(239,68,68,0.35)',
+                border: '1px solid rgba(239,68,68,0.3)',
                 cursor: 'pointer',
-                boxShadow: '0 0 18px rgba(239,68,68,0.18)',
               }}
             >
-              <Shield size={16} color="#EF4444" />
-              <span style={{ color: '#EF4444', fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
+              <Shield size={16} color={ventsColors.error} />
+              <span style={{ color: ventsColors.error, fontSize: '14px', fontWeight: 700, letterSpacing: '0.02em' }}>
                 Admin Dashboard
               </span>
             </button>
           </div>
         )}
 
-        {/* Become an Organizer — only for attendees */}
-        {!isOrganizer && !isAdmin && !isSubAdmin && (
+        {/* Become a Service Provider — an independent capability, not a
+            role. Deliberately not excluded for Organizers/Admins: this
+            release's whole point is that a user can hold both the
+            Organizer role and this capability on one account (see
+            0033_service_provider_capability.sql). Admin/Sub-Admin skip the
+            capability check entirely (canAccessProviderSetup) so they can
+            always reach Services setup, matching their reach over every
+            other admin-managed section -- the actual privileged write path
+            still goes through is_admin() RLS server-side, never a client
+            bypass alone (see 0045_service_provider_admin_access.sql). */}
+        {canAccessProviderSetup ? (
           <div className="px-4 mb-3">
             <button
-              onClick={() => {
-                if (orgRequestStatus === 'already' || orgRequestStatus === 'sent') return;
-                setShowOrgRequestModal(true);
-              }}
+              onClick={() => onNavigate('service-provider-setup')}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
-                background: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
+                background: 'rgba(34,211,238,0.08)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
                 borderRadius: '14px',
-                border: `1px solid ${orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
-                cursor: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 'default' : 'pointer',
-                opacity: orgRequestStatus === 'already' || orgRequestStatus === 'sent' ? 0.7 : 1,
+                border: '1px solid rgba(34,211,238,0.25)',
+                cursor: 'pointer',
               }}
             >
-              <BadgeCheck size={16} color="#A78BFA" />
-              <span style={{ color: '#A78BFA', fontSize: '14px', fontWeight: 600 }}>
-                {orgRequestStatus === 'already' ? 'Request Pending Review' : orgRequestStatus === 'sent' ? 'Organizer Request Submitted' : 'Become an Organizer'}
+              <Briefcase size={16} color="#22D3EE" />
+              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 700 }}>
+                {hasProviderProfile ? 'Edit Service Profile' : 'Set Up Your Service Profile'}
               </span>
-              {orgRequestStatus === 'idle' && hasOrgDraft && (
-                <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: '#F59E0B', background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
-                  PENDING COMPLETION
-                </span>
-              )}
+            </button>
+          </div>
+        ) : (
+          <div className="px-4 mb-3">
+            {/* Pending is the ONLY state that should read as "nothing to do
+                yet" -- but it's still clickable, opening
+                ServiceProviderVerificationScreen's own PendingCard, so the
+                application itself is never unreachable (requirement: "the
+                user cannot open the submitted application again" must not
+                happen). 'idle' (never applied, or a past rejection) is a
+                fresh application entry point. 'approved' never reaches this
+                branch at all now -- canAccessProviderSetup above already
+                covers it, sending the user straight to setup instead. */}
+            <button
+              onClick={() => onNavigate('service-provider-verify')}
+              className="w-full flex items-center justify-center gap-2 p-4"
+              style={{
+                background: spRequestStatus === 'pending' ? 'rgba(34,211,238,0.04)' : 'rgba(34,211,238,0.08)',
+                backdropFilter: 'blur(20px) saturate(160%)',
+                WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                borderRadius: '14px',
+                border: `1px solid ${spRequestStatus === 'pending' ? 'rgba(34,211,238,0.15)' : 'rgba(34,211,238,0.25)'}`,
+                cursor: 'pointer',
+                opacity: spRequestStatus === 'pending' ? 0.7 : 1,
+              }}
+            >
+              <Briefcase size={16} color="#22D3EE" />
+              <span style={{ color: '#22D3EE', fontSize: '14px', fontWeight: 600 }}>
+                {spRequestStatus === 'pending' ? 'Application Submitted' : 'Become a Service Provider'}
+              </span>
             </button>
           </div>
         )}
 
-        {/* Become Organizer modal */}
+        {/* Become an Organizer / Get Verified as an Organizer -- one
+            capability lifecycle, directly below Become a Service Provider:
+            not yet an organizer -> apply ("Become an Organizer" /
+            "Application Submitted" / "Apply Again"); organizer but not yet
+            CAC-verified -> "Get Verified as an Organizer"; verified ->
+            a plain confirmation badge, nothing left to do. Gated on
+            admin/sub-admin/root the same way the application CTA always
+            was -- their reach doesn't route through this capability. */}
+        {!isAdmin && !isSubAdmin && (
+          isOrganizerEffective ? (
+            isVerified ? (
+              <div className="px-4 mb-3">
+                <div
+                  className="w-full flex items-center justify-center gap-2 p-4"
+                  style={{ background: 'rgba(16,185,129,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '14px' }}
+                >
+                  <ShieldCheck size={16} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '14px', fontWeight: 700 }}>Verified Organizer</span>
+                </div>
+              </div>
+            ) : (
+              <div className="px-4 mb-3">
+                <button
+                  onClick={() => setShowCacVerify(true)}
+                  className="w-full flex items-center justify-center gap-2 p-4"
+                  style={{ background: 'rgba(124,58,237,0.08)', backdropFilter: 'blur(20px) saturate(160%)', WebkitBackdropFilter: 'blur(20px) saturate(160%)', borderRadius: '14px', border: '1px solid rgba(168,85,247,0.3)', cursor: 'pointer' }}
+                >
+                  <ShieldCheck size={16} color={ventsColors.accentSoft} />
+                  <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 700 }}>Get Verified as an Organizer</span>
+                </button>
+              </div>
+            )
+          ) : (
+            <div className="px-4 mb-3">
+              <button
+                onClick={() => setShowOrgRequestModal(true)}
+                className="w-full flex items-center justify-center gap-2 p-4"
+                style={{
+                  background: orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.04)' : 'rgba(124,58,237,0.08)',
+                  backdropFilter: 'blur(20px) saturate(160%)',
+                  WebkitBackdropFilter: 'blur(20px) saturate(160%)',
+                  borderRadius: '14px',
+                  border: `1px solid ${orgRequestStatus === 'pending' ? 'rgba(124,58,237,0.15)' : 'rgba(124,58,237,0.25)'}`,
+                  cursor: 'pointer',
+                  opacity: orgRequestStatus === 'pending' ? 0.7 : 1,
+                }}
+              >
+                <BadgeCheck size={16} color={ventsColors.accentSoft} />
+                <span style={{ color: ventsColors.accentSoft, fontSize: '14px', fontWeight: 600 }}>
+                  {orgRequestStatus === 'pending' ? 'Application Submitted' : orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
+                </span>
+                {orgRequestStatus === 'idle' && hasOrgDraft && (
+                  <span style={{ marginLeft: '4px', fontSize: '10px', fontWeight: 700, color: ventsColors.pending, background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: '6px', padding: '3px 7px', letterSpacing: '0.03em' }}>
+                    PENDING COMPLETION
+                  </span>
+                )}
+              </button>
+            </div>
+          )
+        )}
+
+        {/* Become Organizer modal -- always clickable (never a dead-end),
+            per capability: idle/rejected shows the submission form,
+            pending shows a read-only status view instead of hiding the
+            application, so it stays reachable while under review. */}
         {showOrgRequestModal && (
           <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9999, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}
             onClick={() => setShowOrgRequestModal(false)}>
-            <div style={{ background: '#090514', borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
+            <div style={{ background: ventsColors.surface, borderRadius: '24px 24px 0 0', padding: '24px 20px 32px', width: '100%', maxWidth: '430px' }}
               onClick={(e) => e.stopPropagation()}>
-              <h3 style={{ color: '#F0F0FF', fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Become an Organizer</h3>
-              <p style={{ color: '#8B8FA8', fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
-                Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
-              </p>
-              <textarea
-                value={orgRequestReason}
-                onChange={(e) => handleOrgReasonChange(e.target.value)}
-                placeholder="e.g. I want to host tech meetups in Lagos..."
-                rows={4}
-                style={{ width: '100%', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: '#F0F0FF', fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
-              />
-              {orgRequestError && <p style={{ color: '#EF4444', fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
-              <button
-                onClick={submitOrgRequest}
-                disabled={orgRequestStatus === 'sending'}
-                style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
-              >
-                {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
-              </button>
+              {orgRequestStatus === 'pending' ? (
+                <>
+                  <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>Application Submitted</h3>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                    Your organizer request is under review. Our team typically responds within 1–3 business days.
+                  </p>
+                  {orgRequestReason && (
+                    <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '13px', lineHeight: 1.5 }}>
+                      {orgRequestReason}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <h3 style={{ color: ventsColors.ink1, fontSize: '17px', fontWeight: 700, margin: '0 0 8px' }}>
+                    {orgRequestStatus === 'rejected' ? 'Apply Again' : 'Become an Organizer'}
+                  </h3>
+                  <p style={{ color: ventsColors.ink2, fontSize: '13px', margin: '0 0 16px', lineHeight: 1.5 }}>
+                    Tell us briefly why you want to become an organizer. Our team will review your request within 1–3 business days.
+                  </p>
+                  {orgRequestStatus === 'rejected' && orgRequestAdminNote && (
+                    <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '12px', marginBottom: '12px' }}>
+                      <p style={{ color: ventsColors.error, fontSize: '12px', fontWeight: 700, margin: '0 0 4px' }}>Your previous application wasn't approved</p>
+                      <p style={{ color: ventsColors.ink2, fontSize: '12px', margin: 0 }}>{orgRequestAdminNote}</p>
+                    </div>
+                  )}
+                  <textarea
+                    value={orgRequestReason}
+                    onChange={(e) => handleOrgReasonChange(e.target.value)}
+                    placeholder="e.g. I want to host tech meetups in Lagos..."
+                    rows={4}
+                    style={{ width: '100%', background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '12px', padding: '12px', color: ventsColors.ink1, fontSize: '14px', resize: 'none', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                  />
+                  {orgRequestError && <p style={{ color: ventsColors.error, fontSize: '12px', marginTop: '8px' }}>{orgRequestError}</p>}
+                  <button
+                    onClick={submitOrgRequest}
+                    disabled={orgRequestStatus === 'sending'}
+                    style={{ marginTop: '16px', width: '100%', height: '48px', borderRadius: '14px', background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: '15px', fontWeight: 700, cursor: orgRequestStatus === 'sending' ? 'wait' : 'pointer', opacity: orgRequestStatus === 'sending' ? 0.7 : 1 }}
+                  >
+                    {orgRequestStatus === 'sending' ? 'Submitting...' : 'Submit Request'}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         )}
 
-        {/* Sign out */}
-        <div className="px-4 mb-5">
+        {/* Main Profile export shows a "Log Out" row here after all --
+            reinstated to match it. Calls the same real onSignOut the app
+            already passes into this screen (identical to Settings' own
+            Sign Out button) -- no new auth logic, no duplicated backend
+            behavior, and Settings keeps its own Sign Out working exactly
+            as before. */}
+        <div className="px-4 mb-3">
           <button
             onClick={onSignOut}
-            className="w-full flex items-center justify-center gap-2 p-4"
+            className="w-full text-center"
             style={{
-              background: 'rgba(239,68,68,0.1)',
-              borderRadius: '14px',
-              border: '1px solid rgba(239,68,68,0.2)',
+              padding: '13px 0', borderRadius: '14px', fontSize: '14px', fontWeight: 600,
+              color: '#F87171', background: 'rgba(248,113,113,0.08)', border: '1px solid rgba(248,113,113,0.2)',
               cursor: 'pointer',
             }}
           >
-            <LogOut size={16} color="#EF4444" />
-            <span style={{ color: '#EF4444', fontSize: '14px', fontWeight: 600 }}>Sign Out</span>
+            Log Out
           </button>
         </div>
 
-        <p style={{ textAlign: 'center', color: '#555C7A', fontSize: '11px', marginTop: '8px', paddingBottom: '4px' }}>
-          VENTS v1.1.0 | © VENTS LTD
-        </p>
+        <AppVersionFooter />
       </div>
     </div>
   );

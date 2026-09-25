@@ -269,7 +269,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
             color: '#fff',
             fontSize: '40px',
             fontWeight: 900,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             lineHeight: 1.0,
             marginBottom: '10px',
           }}
@@ -311,7 +311,7 @@ export function NigeriaLiveScreen({ onBack }: NigeriaLiveScreenProps) {
                 color: '#00FF6A',
                 fontSize: '44px',
                 fontWeight: 900,
-                fontFamily: 'Space Grotesk, sans-serif',
+                fontFamily: 'Manrope, sans-serif',
                 lineHeight: 1,
                 marginBottom: '4px',
                 textShadow: '0 0 20px rgba(0,255,106,0.4)',

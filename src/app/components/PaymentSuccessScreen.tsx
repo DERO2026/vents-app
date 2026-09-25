@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket } from 'lucide-react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
+import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket, Send, AlertCircle, X } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { formatPrice } from './data';
@@ -11,11 +12,23 @@ import { Capacitor } from '@capacitor/core';
 import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
 import { TOAST_TOP_POSITION } from './shared/toastPosition';
+import { supabase } from '../../lib/supabase';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
   onViewTickets: () => void;
   onGoHome: () => void;
+}
+
+// Client-side mirror of initiate_ticket_transfer's own eligibility checks
+// (0040_ticket_transfer.sql) -- purely for the UI gate; the RPC re-validates
+// everything server-side regardless, so this can never be relied on as the
+// actual security boundary.
+function isTransferEligible(ticket: PurchasedTicket): boolean {
+  if (ticket.checkedIn) return false;
+  const eventDate = ticket.event.event_date ? new Date(ticket.event.event_date) : null;
+  if (eventDate && eventDate.getTime() < Date.now()) return false;
+  return true;
 }
 
 // v2 signed tokens are much longer than the old bare UUID, which pushes the
@@ -33,7 +46,7 @@ function QRCode({ value, size = 280 }: { value: string; size?: number }) {
       width: size,
       margin: 4,
       errorCorrectionLevel: 'L',
-      color: { dark: '#0A0A0F', light: '#ffffff' },
+      color: { dark: ventsColors.bg, light: ventsColors.white },
     });
   }, [value, size]);
   return <canvas ref={canvasRef} style={{ display: 'block', borderRadius: '8px' }} />;
@@ -113,7 +126,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
     if (firedRef.current) return;
     firedRef.current = true;
 
-    const colors = ['#7C3AED', '#A855F7', '#4F46E5', '#D946EF', '#FFB830'];
+    const colors = [ventsColors.accent, ventsColors.accent, ventsColors.accent, ventsColors.accentSoft, ventsColors.pending];
     confetti({
       particleCount: 120,
       spread: 80,
@@ -126,6 +139,42 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
     }, 400);
   }, []);
 
+  // Transfer flow -- initiate_ticket_transfer does every real eligibility/
+  // ownership/recipient check server-side; this just collects the
+  // recipient identifier and surfaces the RPC's own error message.
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [transferIdentifier, setTransferIdentifier] = useState('');
+  const [transferSending, setTransferSending] = useState(false);
+  const [transferError, setTransferError] = useState('');
+  const [transferSent, setTransferSent] = useState(false);
+
+  const handleSendTransfer = async () => {
+    const identifier = transferIdentifier.trim();
+    if (!identifier) { setTransferError('Enter the recipient\'s email or username'); return; }
+    setTransferSending(true);
+    setTransferError('');
+    try {
+      const { error } = await supabase.rpc('initiate_ticket_transfer', {
+        p_ticket_id: ticket.ticketId,
+        p_recipient_identifier: identifier,
+      });
+      if (error) throw new Error(error.message);
+      setTransferSent(true);
+      setTransferIdentifier('');
+    } catch (e: any) {
+      setTransferError(e?.message || 'Could not start the transfer. Please try again.');
+    } finally {
+      setTransferSending(false);
+    }
+  };
+
+  const closeTransferModal = () => {
+    setShowTransfer(false);
+    setTransferError('');
+    setTransferSent(false);
+    setTransferIdentifier('');
+  };
+
   const purchaseDate = new Date(ticket.purchasedAt).toLocaleDateString('en-NG', {
     weekday: 'short',
     day: 'numeric',
@@ -136,7 +185,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   return (
     <div
       style={{
-        background: '#020005',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -154,32 +203,32 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       >
         <div
           style={{
-            width: '72px',
-            height: '72px',
+            width: '84px',
+            height: '84px',
             borderRadius: '50%',
-            background: 'linear-gradient(135deg, rgba(16,185,129,0.2), rgba(16,185,129,0.05))',
-            border: '2px solid rgba(16,185,129,0.4)',
+            background: 'rgba(52,211,153,0.14)',
+            border: '1px solid rgba(52,211,153,0.4)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
             margin: '0 auto 16px',
-            boxShadow: '0 0 32px rgba(16,185,129,0.25)',
           }}
         >
-          <CheckCircle size={36} color="#10B981" fill="rgba(16,185,129,0.15)" />
+          <CheckCircle size={40} color="#34D399" fill="rgba(52,211,153,0.15)" />
         </div>
         <h1
           style={{
-            color: '#F0F0FF',
-            fontSize: '24px',
+            color: ventsColors.ink1,
+            fontSize: '27px',
             fontWeight: 800,
-            fontFamily: 'Space Grotesk, sans-serif',
+            letterSpacing: '-0.03em',
+            fontFamily: 'Manrope, sans-serif',
             marginBottom: '6px',
           }}
         >
           Booking Confirmed!
         </h1>
-        <p style={{ color: '#8B8FA8', fontSize: '14px', lineHeight: 1.5 }}>
+        <p style={{ color: ventsColors.ink2, fontSize: '14px', lineHeight: 1.5 }}>
           Your ticket & booking code have been sent to your email. Show the QR code at the gate.
         </p>
       </div>
@@ -188,7 +237,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       <div style={{ padding: '0 16px 24px' }}>
         <div
           style={{
-            background: '#090514',
+            background: ventsColors.surface,
             borderRadius: '24px',
             border: '1px solid rgba(255,255,255,0.08)',
             overflow: 'hidden',
@@ -229,7 +278,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           <div style={{ padding: '16px' }}>
             <h2
               style={{
-                color: '#F0F0FF',
+                color: ventsColors.ink1,
                 fontSize: '17px',
                 fontWeight: 700,
                 marginBottom: '10px',
@@ -248,8 +297,8 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                 },
               ].map(({ icon: Icon, text }) => (
                 <div key={text} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <Icon size={13} color="#8B8FA8" />
-                  <span style={{ color: '#C4C9E0', fontSize: '12px' }}>{text}</span>
+                  <Icon size={13} color={ventsColors.ink2} />
+                  <span style={{ color: ventsColors.ink2, fontSize: '12px' }}>{text}</span>
                 </div>
               ))}
             </div>
@@ -268,7 +317,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   width: '22px',
                   height: '22px',
                   borderRadius: '50%',
-                  background: '#020005',
+                  background: ventsColors.bg,
                   flexShrink: 0,
                 }}
               />
@@ -284,7 +333,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                   width: '22px',
                   height: '22px',
                   borderRadius: '50%',
-                  background: '#020005',
+                  background: ventsColors.bg,
                   flexShrink: 0,
                 }}
               />
@@ -294,7 +343,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px' }}>
               <div
                 style={{
-                  background: '#fff',
+                  background: '#EDEAF5',
                   borderRadius: '16px',
                   padding: '12px',
                   boxShadow: '0 0 40px rgba(168,85,247,0.2)',
@@ -314,19 +363,19 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                 {signedToken
                   ? <QRCode value={signedToken} size={280} />
                   : (
-                    <span style={{ color: '#8B8FA8', fontSize: '12px', textAlign: 'center', padding: '0 16px', lineHeight: 1.5 }}>
+                    <span style={{ color: ventsColors.ink2, fontSize: '12px', textAlign: 'center', padding: '0 16px', lineHeight: 1.5 }}>
                       Your ticket is confirmed and saved.<br />
-                      Open <strong style={{ color: '#C4B5FD' }}>My Tickets</strong> once you're back online to load your QR code.
+                      Open <strong style={{ color: ventsColors.accentSoft }}>My Tickets</strong> once you're back online to load your QR code.
                     </span>
                   )}
               </div>
-              <p style={{ color: '#8B8FA8', fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '2px' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '10px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: '2px' }}>
                 Ticket Reference Number
               </p>
-              <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
+              <p style={{ color: ventsColors.ink1, fontSize: '16px', fontWeight: 700, letterSpacing: '0.08em' }}>
                 {ticketDisplayCode(ticket.ticketId)}
               </p>
-              <p style={{ color: '#8B8FA8', fontSize: '12px' }}>
+              <p style={{ color: ventsColors.ink2, fontSize: '12px' }}>
                 Holder: {ticket.holderName} · {purchaseDate}
               </p>
             </div>
@@ -336,19 +385,19 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
       {/* Toast notifications */}
       {saveToast && (
-        <div style={{ ...TOAST_TOP_POSITION, background: '#10B981', borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.success, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>
             ✓ {Capacitor.getPlatform() === 'ios' ? 'Ticket saved to Photos!' : Capacitor.isNativePlatform() ? 'Ticket saved to Gallery!' : 'Ticket saved!'}
           </span>
         </div>
       )}
       {saveError && (
-        <div style={{ ...TOAST_TOP_POSITION, background: '#EF4444', borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.error, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>Couldn't save ticket — please try again</span>
         </div>
       )}
       {shareToast && (
-        <div style={{ ...TOAST_TOP_POSITION, background: '#7B2FBE', borderRadius: '12px', padding: '10px 18px' }}>
+        <div style={{ ...TOAST_TOP_POSITION, background: ventsColors.accent, borderRadius: '12px', padding: '10px 18px' }}>
           <span style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>✓ Copied to clipboard!</span>
         </div>
       )}
@@ -361,7 +410,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             disabled={saving || !signedToken}
             style={{
               flex: 1,
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '13px',
@@ -373,14 +422,14 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               opacity: (saving || !signedToken) ? 0.6 : 1,
             }}
           >
-            <Download size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save'}</span>
+            <Download size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>{saving ? 'Saving…' : !signedToken ? 'Connecting…' : 'Save'}</span>
           </button>
           <button
             onClick={handleShare}
             style={{
               flex: 1,
-              background: '#090514',
+              background: ventsColors.surface,
               border: '1px solid rgba(255,255,255,0.08)',
               borderRadius: '14px',
               padding: '13px',
@@ -391,10 +440,31 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
               cursor: 'pointer',
             }}
           >
-            <Share2 size={16} color="#A78BFA" />
-            <span style={{ color: '#A78BFA', fontSize: '13px', fontWeight: 600 }}>Share</span>
+            <Share2 size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Share</span>
           </button>
         </div>
+
+        {isTransferEligible(ticket) && (
+          <button
+            onClick={() => setShowTransfer(true)}
+            style={{
+              width: '100%',
+              background: ventsColors.surface,
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+            }}
+          >
+            <Send size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Transfer Ticket</span>
+          </button>
+        )}
 
         <button
           onClick={onViewTickets}
@@ -407,7 +477,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             color: '#fff',
             fontSize: '16px',
             fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
+            fontFamily: 'Manrope, sans-serif',
             cursor: 'pointer',
             boxShadow: '0 6px 24px rgba(123,47,190,0.4)',
           }}
@@ -437,6 +507,63 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           Back to Home
         </button>
       </div>
+
+      {showTransfer && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: ventsColors.ink1 }}>Transfer Ticket</p>
+              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.ink2 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {transferSent ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '13px', lineHeight: 1.5 }}>
+                    Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
+                  </span>
+                </div>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Enter the VENTS email or username of the person you're transferring this ticket to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
+                </p>
+                <input
+                  placeholder="Recipient email or username"
+                  value={transferIdentifier}
+                  onChange={e => setTransferIdentifier(e.target.value)}
+                  autoCapitalize="off"
+                  autoCorrect="off"
+                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
+                />
+                {transferError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color={ventsColors.error} />
+                    <span style={{ color: ventsColors.error, fontSize: '13px' }}>{transferError}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={handleSendTransfer}
+                    disabled={transferSending || !transferIdentifier.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                  >
+                    {transferSending ? 'Sending…' : 'Send Request'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

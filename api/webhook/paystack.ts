@@ -37,10 +37,70 @@
 
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
 import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAdminDb.js';
-import { finalizeAndConfirmPurchase } from '../_lib/finalizePaystackPayment.js';
+import { finalizeAndConfirmPurchase, finalizeAndConfirmServiceBooking } from '../_lib/finalizePaystackPayment.js';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
+import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 import crypto from 'crypto';
+
+// After confirm_transfer_fee_payment confirms/no-ops a transfer-fee payment,
+// trigger immediate push delivery for the notification it just inserted
+// (from_user_id: "Your ticket transfer was accepted") instead of waiting
+// for the daily cron sweep -- this is the fix for the hours-late
+// ticket-transfer push. Never awaited by the caller in a way that could
+// fail the webhook/verify response: deliverPendingPushesForUser already
+// never throws, and this is fired after the response-determining work is
+// done. Safe to call on every 'confirmed'/'already_paid' result, including
+// a retried webhook for an already-delivered notification -- it only ever
+// sends rows still marked unsent.
+async function notifyTransferFeeOutcome(reference: string) {
+  try {
+    const fromUserId = await callProjectAdminRpc<string>('get_ticket_transfer_from_user', [reference]);
+    if (fromUserId) await deliverPendingPushesForUser(fromUserId);
+  } catch (err: any) {
+    console.error('[Paystack webhook] notifyTransferFeeOutcome failed (non-fatal, cron sweep will retry):', err?.message || err);
+  }
+}
+
+// Called only when confirm_transfer_fee_payment's return value carries the
+// ':refund_claimed' suffix (0064_ticket_transfer_fee_refund.sql) -- that
+// suffix IS the idempotency gate: only the one caller that claimed
+// ticket_transfers.fee_refund_needed_at (under the row lock confirm_
+// transfer_fee_payment already holds) ever reaches this function, so this
+// never creates two Paystack refunds for the same payment. Reuses the
+// EXACT existing refund mechanism (api/wallet/refund-ticket.ts's own
+// POST https://api.paystack.co/refund + PAYSTACK_SECRET_KEY) -- no new
+// Paystack API call, no new secret. Async completion (refund.processed/
+// refund.failed) is handled below in handleWebhook, mirroring finalize_
+// ticket_refund/fail_ticket_refund exactly.
+async function attemptTransferFeeRefund(reference: string, amountKobo: number, note: string) {
+  try {
+    const paystackSecret = process.env.PAYSTACK_SECRET_KEY;
+    if (!paystackSecret) {
+      console.error('[Paystack webhook] Cannot auto-refund transfer fee (PAYSTACK_SECRET_KEY not set) for reference', reference);
+      return;
+    }
+    const refundRes = await fetch('https://api.paystack.co/refund', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${paystackSecret}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ transaction: reference, amount: amountKobo, merchant_note: note }),
+    });
+    const refundJson = await refundRes.json().catch(() => null);
+    const refundId = refundJson?.data?.id != null ? String(refundJson.data.id) : null;
+
+    if (!refundRes.ok || !refundJson?.status || !refundId) {
+      console.error('[Paystack webhook] Transfer fee auto-refund initiation FAILED for reference', reference, '-', refundJson?.message || `HTTP ${refundRes.status}`);
+      await callProjectAdminRpc('mark_transfer_fee_refund_initiation_failed', [reference, refundJson?.message || `HTTP ${refundRes.status}`]).catch(() => {});
+      return;
+    }
+
+    await callProjectAdminRpc('attach_transfer_fee_refund_id', [reference, refundId]);
+    console.log('[Paystack webhook] Transfer fee auto-refund initiated:', refundId, 'for reference', reference);
+  } catch (err: any) {
+    console.error('[Paystack webhook] attemptTransferFeeRefund threw for reference', reference, ':', err?.message || err);
+    await callProjectAdminRpc('mark_transfer_fee_refund_initiation_failed', [reference, err?.message || 'unknown error']).catch(() => {});
+  }
+}
 
 function fmtNaira(kobo) {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -148,18 +208,72 @@ async function handleClientVerify(req, res) {
     return res.status(500).json({ error: 'Payment verification not configured' });
   }
 
+  // Ticket-transfer fee payments use the same Paystack-verify machinery as
+  // a ticket purchase, distinguished only by their reference prefix
+  // (initiate_transfer_fee_payment, 0043_ticket_transfer_fee.sql, always
+  // generates 'txf_' + a random uuid) -- kept in this same handler rather
+  // than a new serverless function (Vercel Hobby's 12-function cap is
+  // already exactly hit, see this file's header comment).
+  const isTransferFeeRef = reference.startsWith('txf_');
+  const isServiceBookingRef = reference.startsWith('BKG-');
+  // Customer wallet deposits (0065_user_wallets.sql) -- distinct prefix,
+  // cannot collide with either of the above.
+  const isWalletDepositRef = reference.startsWith('wdep_');
+  // Resolved below (ticket-purchase branch only) from the incoming
+  // reference -- which since 0060 may be a disposable per-attempt
+  // paystack_ref, not pending_purchases' own stable payment_ref -- to the
+  // stable payment_ref that finalize_pending_purchase/confirm_ticket_
+  // payment/get_tickets_for_payment_ref all still key off, unchanged.
+  let ticketPurchasePaymentRef = reference;
+
   try {
-    // Ownership check: confirm the caller actually owns the pending
-    // purchase this reference belongs to before spending a Paystack call or
-    // finalizing anything on their say-so. A reference with no matching
-    // pending_purchases row (already finalized in a prior call, or simply
-    // unknown) isn't itself an error here -- finalize_pending_purchase's own
-    // idempotency and confirm_ticket_payment's ticket lookup below handle
-    // that; this only blocks a caller asking about a reference that
+    // Ownership check: confirm the caller actually owns the payment this
+    // reference belongs to (the pending purchase, or the transfer-fee
+    // recipient) before spending a Paystack call or finalizing anything on
+    // their say-so. A reference with no matching row (already finalized in
+    // a prior call, or simply unknown) isn't itself an error here --
+    // finalize_pending_purchase/confirm_ticket_payment's and
+    // confirm_transfer_fee_payment's own idempotency and lookups below
+    // handle that; this only blocks a caller asking about a reference that
     // demonstrably belongs to someone else.
-    const ownerId = await callProjectAdminRpc('get_pending_purchase_owner', [reference]);
-    if (ownerId && ownerId !== session.userId) {
-      return res.status(403).json({ error: 'Not authorized for this payment reference' });
+    if (isTransferFeeRef) {
+      const ownerId = await callProjectAdminRpc('get_transfer_fee_payment_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else if (isServiceBookingRef) {
+      const ownerId = await callProjectAdminRpc('get_service_booking_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else if (isWalletDepositRef) {
+      const ownerId = await callProjectAdminRpc('get_wallet_deposit_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else {
+      // get_pending_purchase_owner (0060) now resolves EITHER a disposable
+      // per-attempt paystack_ref (every payment initiated via
+      // initiate_ticket_payment_attempt, i.e. everything going forward) OR
+      // a bare payment_ref (any pending_purchases row whose live Paystack
+      // reference literally equalled its own payment_ref from BEFORE that
+      // migration shipped) back to {payment_ref, owner_id, payer_id}.
+      // reference itself is never assumed to already BE the stable
+      // payment_ref from here on -- ticketPurchasePaymentRef (resolved
+      // here) is what every downstream ticket-purchase call below uses
+      // instead. Either the recipient (owner_id) OR the resolved
+      // authenticated payer (payer_id, "someone else is paying") may
+      // complete this payment -- never anyone else. A reference with no
+      // matching row (already finalized, or unknown) is still not an error
+      // here, per the original comment above -- ticketPurchasePaymentRef
+      // falls back to the raw reference so finalizeAndConfirmPurchase's own
+      // "not_found" handling still applies unchanged for a truly unknown one.
+      const rows = await callProjectAdminTableRpc<{ payment_ref: string; owner_id: string; payer_id: string | null }>('get_pending_purchase_owner', [reference]);
+      const row = rows[0];
+      if (row && row.owner_id && session.userId !== row.owner_id && session.userId !== row.payer_id) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+      ticketPurchasePaymentRef = row?.payment_ref || reference;
     }
 
     const pRes = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
@@ -168,6 +282,15 @@ async function handleClientVerify(req, res) {
     const pJson = await pRes.json().catch(() => null);
 
     if (!pRes.ok || !pJson?.status) {
+      // Never a silent 502 -- this exact branch was previously indistinguishable
+      // from a platform-level crash in the logs (no application output at all),
+      // which cost real debugging time. Paystack's own verify API returning
+      // status:false with a message (e.g. "Transaction reference not found" --
+      // typically a test/live key mismatch between the public key that opened
+      // the popup and the secret key used here to verify) is a normal, expected
+      // outcome, not a crash -- log it plainly, with the reference for
+      // correlation but no secret values.
+      console.error('[webhook/paystack?action=verify] Paystack verify non-success:', { reference, httpStatus: pRes.status, paystackMessage: pJson?.message });
       return res.status(502).json({ status: 'error', error: pJson?.message || 'Could not reach Paystack to verify this payment.' });
     }
 
@@ -177,8 +300,9 @@ async function handleClientVerify(req, res) {
     if (txStatus !== 'success') {
       // Covers failed, abandoned, and cancelled payments alike -- Paystack's
       // own transaction record is the source of truth for all three; none
-      // of them ever reach finalizeAndConfirmPurchase, so no ticket is ever
-      // created for a payment that didn't actually succeed.
+      // of them ever reach finalizeAndConfirmPurchase/confirm_transfer_fee_
+      // payment, so no ticket is ever created and no transfer ownership
+      // ever moves for a payment that didn't actually succeed.
       return res.status(200).json({ status: txStatus === 'abandoned' ? 'abandoned' : 'failed' });
     }
 
@@ -186,10 +310,91 @@ async function handleClientVerify(req, res) {
       return res.status(502).json({ status: 'error', error: 'Paystack returned no amount for this transaction.' });
     }
 
-    const result = await finalizeAndConfirmPurchase(reference, amountKobo);
+    if (isTransferFeeRef) {
+      const rawFeeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+      // 0064_ticket_transfer_fee_refund.sql: a ':refund_claimed' suffix
+      // means THIS call is the one that must actually initiate the
+      // Paystack refund (see attemptTransferFeeRefund's own header comment
+      // for why that can never happen twice for the same payment).
+      const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
+      const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
+
+      if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
+        const [, expected, got] = feeStatus.split(':');
+        console.error('[webhook/paystack?action=verify] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', expected, 'vs', got);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected transfer fee.' });
+      }
+      if (feeStatus === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching transfer was found for this payment.' });
+      }
+      // These three all mean the same thing to the recipient: the fee
+      // payment itself succeeded, but the transfer could no longer be
+      // completed -- explicit about the charge and the refund in progress,
+      // never the old generic "this transfer is no longer pending" wording
+      // that left a charged user with no idea what happens next.
+      if (feeStatus === 'expired' || feeStatus === 'ticket_ineligible' || (typeof feeStatus === 'string' && feeStatus.startsWith('transfer_not_pending'))) {
+        if (refundClaimed) await attemptTransferFeeRefund(reference, amountKobo, 'Ticket transfer could not complete after fee payment');
+        const reasonText = feeStatus === 'expired'
+          ? 'This transfer request expired'
+          : feeStatus === 'ticket_ineligible'
+            ? 'This ticket is no longer eligible for transfer'
+            : 'This transfer is no longer pending';
+        return res.status(200).json({
+          status: 'error',
+          error: `${reasonText}. You were charged for the transfer fee — a refund has been started automatically and should appear on your statement shortly.`,
+        });
+      }
+
+      // 'confirmed' or 'already_paid' -- either way the fee is paid and
+      // ownership has moved (confirm_transfer_fee_payment does both
+      // atomically), so this is a success from the client's perspective.
+      await notifyTransferFeeOutcome(reference);
+      return res.status(200).json({ status: 'success' });
+    }
+
+    if (isServiceBookingRef) {
+      const bookingStatus = await finalizeAndConfirmServiceBooking(reference, amountKobo);
+
+      if (bookingStatus.status === 'amount_mismatch') {
+        console.error('[webhook/paystack?action=verify] SERVICE BOOKING AMOUNT MISMATCH for reference', reference, '-', bookingStatus.expectedKobo, 'vs', bookingStatus.gotKobo);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected booking total.' });
+      }
+      if (bookingStatus.status === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching booking was found for this payment.' });
+      }
+
+      return res.status(200).json({ status: 'success' });
+    }
+
+    if (isWalletDepositRef) {
+      // p_amount_kobo is Paystack's own verified amount -- confirm_wallet_
+      // deposit reconciles it against the amount initiate_wallet_deposit
+      // locked in server-side for this exact reference (0065_user_wallets.sql)
+      // and refuses to credit on any mismatch.
+      const depositStatus = await callProjectAdminRpc<string>('confirm_wallet_deposit', [reference, amountKobo]);
+
+      if (depositStatus === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching deposit was found for this payment.' });
+      }
+      if (depositStatus === 'invalid_amount') {
+        return res.status(200).json({ status: 'error', error: 'Paystack returned an invalid amount for this deposit.' });
+      }
+      if (typeof depositStatus === 'string' && depositStatus.startsWith('amount_mismatch')) {
+        const [, expected, got] = depositStatus.split(':');
+        console.error('[webhook/paystack?action=verify] WALLET DEPOSIT AMOUNT MISMATCH for reference', reference, '-', expected, 'vs', got);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected deposit amount.' });
+      }
+
+      // 'confirmed' or 'already_credited' -- either way the deposit has
+      // landed in the wallet exactly once, so this is a success from the
+      // client's perspective.
+      return res.status(200).json({ status: 'success' });
+    }
+
+    const result = await finalizeAndConfirmPurchase(ticketPurchasePaymentRef, amountKobo);
 
     if (result.status === 'amount_mismatch') {
-      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
+      console.error('[webhook/paystack?action=verify] AMOUNT MISMATCH for reference', ticketPurchasePaymentRef, '-', result.expectedKobo, 'vs', result.gotKobo);
       return res.status(200).json({ status: 'error', error: 'Payment amount did not match the expected order amount.' });
     }
     if (result.status === 'not_found') {
@@ -253,6 +458,76 @@ async function handleWebhook(req, res) {
       return res.status(200).json({ received: true });
     }
 
+    if (reference.startsWith('txf_')) {
+      // Same recovery-path reasoning as the ticket-purchase branch below,
+      // for a transfer-fee payment: this is the authoritative confirmation
+      // (Paystack's own signed webhook event) if the client's own ?action=
+      // verify call never fired. confirm_transfer_fee_payment is idempotent
+      // (fee_paid_at IS NOT NULL short-circuits to 'already_paid'), so
+      // whichever of the two paths runs first wins and the other no-ops.
+      try {
+        const rawFeeStatus = await callProjectAdminRpc<string>('confirm_transfer_fee_payment', [reference, amountKobo]);
+        const refundClaimed = typeof rawFeeStatus === 'string' && rawFeeStatus.endsWith(':refund_claimed');
+        const feeStatus = refundClaimed ? rawFeeStatus.slice(0, -':refund_claimed'.length) : rawFeeStatus;
+
+        if (typeof feeStatus === 'string' && feeStatus.startsWith('amount_mismatch')) {
+          console.error('[Paystack webhook] TRANSFER FEE AMOUNT MISMATCH for reference', reference, '-', feeStatus);
+        } else {
+          console.log('[Paystack webhook] transfer fee', feeStatus, 'for reference', reference);
+          if (feeStatus === 'confirmed' || feeStatus === 'already_paid') {
+            await notifyTransferFeeOutcome(reference);
+          } else if (refundClaimed) {
+            // Same recovery-path reasoning as the ticket-purchase branch:
+            // this is the authoritative confirmation if the client's own
+            // ?action=verify call never fired (app closed, network drop) --
+            // whichever of the two paths runs first claims the refund, per
+            // attemptTransferFeeRefund's own idempotency guard.
+            await attemptTransferFeeRefund(reference, amountKobo, 'Ticket transfer could not complete after fee payment');
+          }
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_transfer_fee_payment:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('BKG-')) {
+      // Services marketplace booking payment -- same authoritative-webhook
+      // reasoning as the ticket branch below, sharing finalizeAndConfirm
+      // ServiceBooking with the ?action=verify path so both can never
+      // drift out of sync.
+      try {
+        const bookingStatus = await finalizeAndConfirmServiceBooking(reference, amountKobo);
+        if (bookingStatus.status === 'amount_mismatch') {
+          console.error('[Paystack webhook] SERVICE BOOKING AMOUNT MISMATCH for reference', reference, '-', bookingStatus.expectedKobo, 'vs', bookingStatus.gotKobo);
+        } else {
+          console.log('[Paystack webhook] service booking', bookingStatus.status, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_service_booking_payment:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('wdep_')) {
+      // Customer wallet deposit -- same authoritative-webhook recovery
+      // reasoning as every other branch here. confirm_wallet_deposit is
+      // idempotent (user_wallet_transactions_deposit_ref_idx, 0065), so
+      // whichever of this webhook or the client's ?action=verify call runs
+      // first credits the wallet; the other is a guaranteed no-op.
+      try {
+        const depositStatus = await callProjectAdminRpc<string>('confirm_wallet_deposit', [reference, amountKobo]);
+        if (typeof depositStatus === 'string' && depositStatus.startsWith('amount_mismatch')) {
+          console.error('[Paystack webhook] WALLET DEPOSIT AMOUNT MISMATCH for reference', reference, '-', depositStatus);
+        } else {
+          console.log('[Paystack webhook] wallet deposit', depositStatus, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_wallet_deposit:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
     try {
       // Recovery path: if the client was killed/crashed/lost network between
       // Paystack charging the card and its own verify call
@@ -263,7 +538,19 @@ async function handleWebhook(req, res) {
       // finalizeAndConfirmPurchase so the two can never drift out of sync;
       // whichever runs first wins, the other no-ops against the same
       // locked rows.
-      const result = await finalizeAndConfirmPurchase(reference, amountKobo);
+      //
+      // reference here is whatever Paystack itself echoes back on the
+      // charge -- since 0060 that's the disposable per-attempt
+      // paystack_ref, not pending_purchases' own stable payment_ref.
+      // Resolve it the same way the ?action=verify path does before
+      // calling finalizeAndConfirmPurchase, which still expects the stable
+      // payment_ref. get_pending_purchase_owner (0060) also matches a bare
+      // payment_ref for any pre-0060 row, so this stays correct for a
+      // payment that was already in flight when this migration shipped.
+      const ownerRows = await callProjectAdminTableRpc<{ payment_ref: string }>('get_pending_purchase_owner', [reference]);
+      const resolvedPaymentRef = ownerRows[0]?.payment_ref || reference;
+
+      const result = await finalizeAndConfirmPurchase(resolvedPaymentRef, amountKobo);
 
       if (result.status === 'amount_mismatch') {
         console.error('[Paystack webhook] AMOUNT MISMATCH for reference', reference, '-', result.expectedKobo, 'vs', result.gotKobo);
@@ -363,11 +650,38 @@ async function handleWebhook(req, res) {
             amountNaira: fmtNaira(Number(row.refunded_amount_kobo) || 0),
             reason: row.reason || 'Refund requested by the organizer.',
           }).catch((e) => console.error('[Paystack webhook] refund email failed:', e?.message || e));
+        } else if (row?.status === 'not_found') {
+          // Paystack refund ids are one global sequence, not scoped by what
+          // kind of refund created them -- this refund.processed event just
+          // isn't for a ticket refund. Try the transfer-fee refund flow
+          // (0064_ticket_transfer_fee_refund.sql) before giving up on it.
+          const tRows = await callProjectAdminTableRpc<any>('finalize_transfer_fee_refund', [refundId]);
+          const tRow = tRows[0];
+          console.log('[Paystack webhook] refund.processed -> finalize_transfer_fee_refund result:', tRow?.status, 'for', refundId);
+
+          if (tRow?.status === 'not_found') {
+            // Still not found -- try the service-booking refund flow
+            // (0077_service_booking_refunds.sql) as the last link in the chain.
+            const sRows = await callProjectAdminTableRpc<any>('finalize_service_booking_refund', [refundId]);
+            const sRow = sRows[0];
+            console.log('[Paystack webhook] refund.processed -> finalize_service_booking_refund result:', sRow?.status, 'for', refundId);
+          }
         }
       } else {
         const rows = await callProjectAdminTableRpc<any>('fail_ticket_refund', [refundId, event.data?.message || event.event]);
         const row = rows[0];
         console.log('[Paystack webhook] refund.failed -> fail_ticket_refund result:', row?.status, 'for', refundId);
+
+        if (row?.status === 'not_found') {
+          const tStatus = await callProjectAdminRpc<string>('fail_transfer_fee_refund', [refundId, event.data?.message || event.event]);
+          console.log('[Paystack webhook] refund.failed -> fail_transfer_fee_refund result:', tStatus, 'for', refundId);
+
+          if (tStatus === 'not_found') {
+            const sRows = await callProjectAdminTableRpc<any>('fail_service_booking_refund', [refundId, event.data?.message || event.event]);
+            const sRow = sRows[0];
+            console.log('[Paystack webhook] refund.failed -> fail_service_booking_refund result:', sRow?.status, 'for', refundId);
+          }
+        }
       }
     } catch (err: any) {
       console.error(`[Paystack webhook] Error handling ${event.event}:`, err?.message || err);

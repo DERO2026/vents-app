@@ -98,12 +98,14 @@ export function openPaystackPopup(opts: OpenPaystackOptions): void {
     return;
   }
 
+  const resolvedRef = opts.ref || `vents_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
   const handler = window.PaystackPop.setup({
     key: publicKey,
     email: opts.email,
     amount,
     currency: 'NGN',
-    ref: opts.ref || `vents_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+    ref: resolvedRef,
     label: opts.label,
     channels: opts.channels || ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
     metadata: opts.metadata || {},

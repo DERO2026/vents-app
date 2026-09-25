@@ -1,5 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700&display=swap');
 @import "tailwindcss";
+/* Explicit content source (Tailwind v4) so utility classes still generate
+   when this file is bundled from a Vite project whose `root` isn't the
+   repo root -- the real app's own vite.config.ts root already covers all
+   of src/ via Tailwind's automatic detection, so this is a no-op there,
+   but qa-harness/vite.harness.config.ts sets `root: qa-harness/`, which
+   silently scoped auto-detection to just that folder and produced an
+   almost-empty utility stylesheet (found while investigating why every
+   Tailwind-class screen, not just one, rendered as unstyled blocks). */
+@source "../";
 @import "../../default_shadcn_theme.css";
 
 /* ── Midnight Neon Token System ─────────────────────────────────────────────── */
@@ -13,6 +22,26 @@
   --card-border:  rgba(168, 85, 247, 0.12);
 }
 
+/* ── Typography (VENTS redesign §02) ──────────────────────────────────────────
+   ventsTypography.fontBody = Manrope was defined in ventsDesignTokens.ts but
+   never actually wired into any screen -- every component throughout the app
+   still hardcodes `fontFamily: 'Inter, sans-serif'` or `'Space Grotesk, ...'`
+   directly in its inline styles, and only Inter/Space Grotesk were ever
+   loaded as web fonts. That meant the single most visible signal of a visual
+   redesign -- typography -- never actually changed anywhere, which is why
+   the app still looked like its old self after every other pass. Rewriting
+   every inline `fontFamily` across ~150 files is the real, longer-term fix
+   (tracked in the checkpoint) -- as an immediate, safe, verifiable fix this
+   forces every inline Inter/Space Grotesk declaration to Manrope via the
+   same attribute-selector override technique already used below for colors,
+   with `!important` since inline styles otherwise always win. Genuinely
+   monospace ticket-code contexts (`fontFamily: 'monospace'`, no font name)
+   are untouched. */
+[style*="font-family: Inter"], [style*="font-family:Inter"],
+[style*="font-family: Space Grotesk"], [style*="font-family:Space Grotesk"] {
+  font-family: 'Manrope', sans-serif !important;
+}
+
 /* ── Base ───────────────────────────────────────────────────────────────────── */
 html, body {
   margin: 0;
@@ -20,6 +49,7 @@ html, body {
   width: 100%;
   height: 100%;
   background: var(--theme-bg);
+  font-family: 'Manrope', sans-serif;
   overflow: hidden;
   position: fixed;
   inset: 0;
@@ -71,6 +101,66 @@ button:active, [role="button"]:active {
   width: 100%;
   height: 100%;
   background: var(--theme-bg);
+}
+
+/* Desktop is not mobile stretched (redesign audit finding A-desktop --
+   verified via headless-Chromium screenshot at 1440px: every screen was
+   previously edge-to-edge full-bleed, identical to the mobile layout just
+   wider, not a genuine desktop treatment). This is a global, additive,
+   min-width-gated rule -- mobile and tablet layouts (<900px) are
+   completely untouched, so nothing below this breakpoint can regress.
+   Centers the app shell in a moderate content column, matching how the
+   approved design's own desktop worked-examples (Creator Studio,
+   ManageEventsScreen, SalesAnalyticsScreen -- all built around a fixed
+   max content width, not full-bleed) already establish the pattern for
+   the screens that got a bespoke desktop layout designed. Screens that
+   don't yet have a bespoke desktop treatment at minimum stop looking like
+   a stretched phone screen; screens that DO implement their own internal
+   max-width/sidebar layout (via ventsColors-based CSS, not this rule)
+   render inside this same centered shell without conflict, since this
+   only constrains #root's own box, not each screen's internal layout. */
+@media (min-width: 768px) {
+  #root {
+    max-width: 834px;
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 40px 120px -40px rgba(0,0,0,0.9);
+  }
+}
+/* Desktop default per the handoff spec (§07/§28): "1200px max content
+   width" is the universal desktop target, not a narrow centered phone
+   frame -- the previous 640px cap (a stopgap from an earlier pass) left
+   most of a normal desktop window unused, reported back as a "half-screen"
+   Preview. Screens that already have their own internal max-width
+   (WelcomeScreen, the 4 bespoke-sidebar screens, etc.) are unaffected by
+   widening the outer shell; screens that don't yet (EventDetailsScreen,
+   CheckoutScreen, etc.) are the real remaining work, tracked screen by
+   screen in the checkpoint, not something this shell-width rule can
+   substitute for. */
+@media (min-width: 1200px) {
+  #root {
+    max-width: 1200px;
+  }
+}
+
+/* Screens with a genuine bespoke desktop layout (Creator Studio, Manage
+   Events, Sales & Analytics, Home) need real horizontal room for a
+   sidebar/grid composition -- the 640px cap above was sized for screens
+   that don't have one and just needed to stop stretching edge-to-edge.
+   This used to be a blanket `@media (min-width: 1100px)` rule on #root,
+   which was wrong: #root is the single shared SPA container for every
+   screen, so widening it widened EVERY screen, not just the ones with a
+   bespoke layout -- confirmed via qa-harness screenshot that
+   EventDetailsScreen (no inner max-width of its own) stretched its hero
+   media edge-to-edge at 1240px. Fixed by scoping the widen to a class
+   each bespoke-desktop screen toggles on #root itself via a mount/unmount
+   effect (same DOM-class-on-a-shared-ancestor pattern main.tsx already
+   uses for `legal-scroll`), so every other screen keeps the 640px cap. */
+@media (min-width: 1100px) {
+  #root.vents-desktop-wide {
+    max-width: 1200px;
+  }
 }
 
 /* Safety reset */

@@ -25,7 +25,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
         background: '#07030F',
         minHeight: '100dvh',
         color: '#C4C9E0',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'Manrope, sans-serif',
       }}
     >
       <header
@@ -62,9 +62,9 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
                 flexShrink: 0,
               }}
             >
-              <span style={{ color: '#fff', fontWeight: 900, fontSize: '16px', fontFamily: 'Space Grotesk, sans-serif' }}>V</span>
+              <span style={{ color: '#fff', fontWeight: 900, fontSize: '16px', fontFamily: 'Manrope, sans-serif' }}>V</span>
             </div>
-            <span style={{ color: '#F0F0FF', fontWeight: 800, fontSize: '17px', fontFamily: 'Space Grotesk, sans-serif' }}>Vents</span>
+            <span style={{ color: '#F0F0FF', fontWeight: 800, fontSize: '17px', fontFamily: 'Manrope, sans-serif' }}>Vents</span>
           </a>
           <a href="/" style={{ color: '#8B8FA8', fontSize: '13px', textDecoration: 'none' }}>← Back to app</a>
         </div>
@@ -83,7 +83,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
               color: '#F8F8FF',
               fontSize: 'clamp(28px, 5vw, 38px)',
               fontWeight: 800,
-              fontFamily: 'Space Grotesk, sans-serif',
+              fontFamily: 'Manrope, sans-serif',
               margin: '0 0 10px',
               letterSpacing: '-0.02em',
             }}
@@ -123,7 +123,7 @@ export function LegalLayout({ title, intro, lastUpdated, sections, otherPages }:
                     fontSize: '17px',
                     fontWeight: 700,
                     marginBottom: '12px',
-                    fontFamily: 'Space Grotesk, sans-serif',
+                    fontFamily: 'Manrope, sans-serif',
                   }}
                 >
                   {s.title}

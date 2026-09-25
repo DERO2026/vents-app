@@ -2,7 +2,30 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import crypto from 'node:crypto';
 import { callProjectAdminRpc, callProjectAdminTableRpc } from '../_lib/projectAdminDb.js';
 
-// ─── Daily notification sweep (Vercel Cron) ───────────────────────────────
+// ─── Daily notification safety-net sweep (Vercel Cron) ────────────────────
+// PREVIOUS root cause of hours-late push delivery: this daily sweep used to
+// be the ONLY thing that ever turned an unsent `notifications` row into an
+// actual FCM push -- a notification created just after this ran waited up
+// to ~24h for the next tick. Fixed not by running this MORE OFTEN (Vercel's
+// Hobby plan caps cron invocation frequency to once/day regardless of the
+// schedule string configured, so an hourly entry here would silently still
+// only fire daily -- do not "optimize" this back to hourly) but by adding a
+// request-triggered delivery path that fires immediately at the moment each
+// transactional notification is created: api/webhook/paystack.ts (for the
+// ticket-transfer fee flow -- see notifyTransferFeeOutcome there) and the
+// client, via triggerPushDelivery() (src/lib/pushNotifications.ts) right
+// after initiate/decline-transfer and the admin service-provider decision,
+// both hitting api/push/send.ts's `deliverForUserId` mode. See
+// api/_lib/pushDelivery.ts for the shared delivery logic those share.
+//
+// This daily run is now purely the SAFETY NET for whatever that on-demand
+// path misses (app closed before the client-side call fires, a delivery
+// call that itself failed, etc.) and the home for the 24h/1h event-reminder
+// sweep below, which has no "moment of creation" to hook a trigger onto in
+// the first place -- both of those are fine to run once/day. It intentionally
+// still delivers ALL unsent notifications for ALL users (not just the ones
+// the reminder sweep just created), which is what makes it a real safety
+// net rather than only covering reminders.
 // Combines what were originally two separate cron endpoints
 // (event-reminders.ts + send-pending-pushes.ts) into one file, in that
 // order — the Hobby-plan 12-serverless-function cap forced the merge, but
@@ -89,6 +112,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(401).json({ error: 'Not authorized' });
   }
 
+  // ── 0) Event lifecycle archival sweep ──────────────────────────────────
+  // Soft-archives events whose effective end passed >7 days ago (see
+  // migrations/0051_event_lifecycle_single_source_of_truth.sql). Runs first
+  // and independently of the reminder/push steps below so a missing FCM
+  // config never blocks it. Idempotent — safe to re-run every day.
+  let archiveResult: any = null;
+  try {
+    archiveResult = await callProjectAdminRpc<number>('archive_ended_events', []);
+  } catch (err: any) {
+    archiveResult = { error: `archive sweep failed: ${err?.message || err}` };
+  }
+
   // ── 1) Reminder sweep ──────────────────────────────────────────────────
   let reminderResult: any = null;
   try {
@@ -101,31 +136,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // ── 2) Push delivery ────────────────────────────────────────────────────
   const saJson = process.env.FCM_SERVICE_ACCOUNT_JSON;
   if (!saJson) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON missing' } });
   }
 
   let sa: { project_id: string; client_email: string; private_key: string };
   try {
     sa = JSON.parse(saJson);
   } catch {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM_SERVICE_ACCOUNT_JSON is not valid JSON' } });
   }
 
   let rows: PendingRow[];
   try {
     rows = await callProjectAdminTableRpc<PendingRow>('get_pending_push_notifications', [200]);
   } catch (err: any) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'Failed to read pending notifications', detail: String(err?.message || err) } });
   }
   if (!rows.length) {
-    return res.status(200).json({ reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { sent: 0, pruned: 0, marked: 0 } });
   }
 
   let accessToken: string;
   try {
     accessToken = await getAccessToken(sa);
   } catch (err: any) {
-    return res.status(200).json({ reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
+    return res.status(200).json({ archived: archiveResult, reminders: reminderResult, push: { error: 'FCM auth failed', detail: String(err?.message || err) } });
   }
 
   const endpoint = `https://fcm.googleapis.com/v1/projects/${sa.project_id}/messages:send`;
@@ -202,6 +237,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   return res.status(200).json({
+    archived: archiveResult,
     reminders: reminderResult,
     push: { sent, pruned: pruned.size, marked: toMark.size, total: rows.length },
   });

@@ -1,6 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Zap, Ticket, Globe } from 'lucide-react';
 import { VentsLogo } from './VentsLogo';
+import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;
@@ -41,229 +40,141 @@ const STACK_CARDS = [
   },
 ];
 
-export function WelcomeScreen({ onGetStarted, onSignIn, onPickState, onBrowseGuest }: WelcomeScreenProps) {
-  const [slide, setSlide] = useState(0);
-  const [fading, setFading] = useState(false);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setFading(true);
-      setTimeout(() => {
-        setSlide(s => (s + 1) % SLIDES.length);
-        setFading(false);
-      }, 400);
-    }, 3200);
-    return () => clearInterval(timer);
-  }, []);
-
+export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickState, onBrowseGuest }: WelcomeScreenProps) {
   return (
     <div
       style={{
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(123,47,190,0.12) 0%, #050010 40%, #020005 100%)',
+        background: ventsColors.bg,
         width: '100%',
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
         overflow: 'hidden',
         position: 'relative',
+        color: ventsColors.ink1,
       }}
     >
-      <style>{`
-        @keyframes ctaPulse {
-          0%   { box-shadow: 0 8px 36px rgba(168,85,247,0.6), 0 0 0 0 rgba(168,85,247,0.5); }
-          50%  { box-shadow: 0 8px 36px rgba(168,85,247,0.9), 0 0 0 16px rgba(168,85,247,0); }
-          100% { box-shadow: 0 8px 36px rgba(168,85,247,0.6), 0 0 0 0 rgba(168,85,247,0); }
-        }
-        @keyframes arrowBounce {
-          0%, 100% { transform: translateX(0); }
-          50%       { transform: translateX(0); }
-        }
-        @keyframes neonPulse {
-          0%, 100% { opacity: 0.7; }
-          50%       { opacity: 1; }
-        }
-      `}</style>
+      <div style={{ position: 'absolute', inset: 0, background: ventsColors.ambientGradient, opacity: 0.5, pointerEvents: 'none' }} />
 
-      {/* Background glow orbs */}
-      <div style={{ position: 'absolute', width: '350px', height: '350px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(168,85,247,0.18) 0%, transparent 70%)', top: '-120px', right: '-120px', pointerEvents: 'none' }} />
-      <div style={{ position: 'absolute', width: '250px', height: '250px', borderRadius: '50%', background: 'radial-gradient(circle, rgba(0,229,255,0.08) 0%, transparent 70%)', bottom: '100px', left: '-80px', pointerEvents: 'none' }} />
-
-      {/* Hero slideshow — clamped so it can never crowd out the CTAs below
-          it on a short device (older iPhone SE, small Android phones):
-          scales down toward 30vh instead of staying a fixed 310px+ on
-          every screen size. */}
-      <div style={{ position: 'relative', height: 'clamp(200px, 34vh, calc(310px + env(safe-area-inset-top)))', flexShrink: 0 }}>
-        {/* Slide images — cross-fade */}
-        {SLIDES.map((src, idx) => (
-          <img
-            key={src}
-            src={src}
-            alt="Events"
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              opacity: idx === slide ? (fading ? 0 : 1) : 0,
-              transition: 'opacity 0.4s ease',
-            }}
-          />
-        ))}
-        {/* Dark overlay */}
-        <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.0) 35%, rgba(0,0,0,0.95) 95%)' }} />
-
-        {/* Logo */}
-        <div style={{ position: 'absolute', top: 'calc(28px + env(safe-area-inset-top))', left: '24px', zIndex: 2 }}>
-          <VentsLogo size={38} />
-        </div>
-
-        {/* Slide indicators */}
-        <div style={{ position: 'absolute', bottom: '40px', right: '24px', display: 'flex', gap: '5px', zIndex: 2 }}>
-          {SLIDES.map((_, i) => (
-            <div key={i} style={{ width: i === slide ? '16px' : '5px', height: '5px', borderRadius: '3px', background: i === slide ? '#A855F7' : 'rgba(255,255,255,0.3)', transition: 'all 0.3s ease' }} />
-          ))}
-        </div>
-
-        {/* Welcome pill */}
-        <div style={{ position: 'absolute', bottom: '28px', left: '24px', background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(12px)', border: '1px solid rgba(168,85,247,0.25)', borderRadius: '50px', padding: '8px 16px', display: 'flex', alignItems: 'center', gap: '8px', zIndex: 2 }}>
-          <span style={{ color: '#C4C9E0', fontSize: '12px', fontWeight: 500 }}>
-            Welcome to <span style={{ color: '#A855F7', fontWeight: 700 }}>Vents</span>
-          </span>
-        </div>
+      {/* Header */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(48px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
+        <VentsLogo size={86} />
       </div>
 
-      {/* Content — scrolls as a fallback (never clips the guest CTA/footer
-          off the bottom of a short/zoomed screen) and always reserves the
-          real home-indicator/gesture-bar safe area, not just a flat 28px
-          that happened to be enough on the devices this was tested on. */}
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          WebkitOverflowScrolling: 'touch',
-          overscrollBehavior: 'contain',
-          padding: '20px 24px calc(20px + env(safe-area-inset-bottom))',
-          display: 'flex',
-          flexDirection: 'column',
-          position: 'relative',
-          zIndex: 1,
-        }}
-      >
-        <h1 style={{ color: '#FFFFFF', fontSize: '26px', fontWeight: 700, fontFamily: 'Space Grotesk, sans-serif', lineHeight: 1.25, marginBottom: '8px' }}>
-          Discover Nigeria's
+      {/* Handoff A1: single-color headline directly under the logo (no
+          mono eyebrow line above it, no accent-colored second line) and one
+          subtitle line, matching the design's exact copy. */}
+      <div style={{ position: 'relative', padding: '34px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <h1 style={{ margin: 0, color: ventsColors.white, fontSize: '34px', fontWeight: 800, fontFamily: ventsTypography.fontBody, lineHeight: 1.12, letterSpacing: '-0.035em', maxWidth: '310px' }}>
+          More Than Events.
           <br />
-          <span style={{ color: '#A855F7', textShadow: '0 0 20px rgba(168,85,247,0.5)' }}>Best Events</span>
+          Real Experiences.
         </h1>
-
-        <p style={{ color: '#94A3B8', fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
-          Book tickets to concerts, tech summits, food festivals and more — all across Nigeria.
+        <p style={{ margin: '14px 0 0', color: ventsColors.ink2, fontSize: '15px', lineHeight: 1.55, maxWidth: '290px' }}>
+          Tickets, services and the nights worth remembering — in one place.
         </p>
+      </div>
 
-        {/* Feature chips */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '22px' }}>
-          {/* All States chip */}
+      {/* Phone stack visual -- handoff A1: 172x224 side cards (rotated
+          ±10deg) behind a 196x262 center card, mono uppercase captions
+          instead of title+subtitle pairs. */}
+      <div style={{ position: 'relative', flex: 1, minHeight: '236px', maxHeight: '260px', margin: '24px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+        {STACK_CARDS.map(card => (
           <div
-            style={{ background: 'rgba(168,85,247,0.1)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1, cursor: 'pointer', boxShadow: '0 0 12px rgba(168,85,247,0.15)' }}
+            key={card.caption ?? 'center'}
+            style={{
+              position: 'absolute',
+              top: `${card.top}px`,
+              // Side cards get a small inward inset (not flush against the
+              // true screen edge) -- rotating a ±10deg box widens its
+              // rendered footprint by ~16-20px beyond its own pre-rotation
+              // edge, which a flush left:0/right:0 anchor pushed straight
+              // past the container's clipping boundary, truncating the
+              // caption text unevenly on each side ("Experiences" showing
+              // only "ENCES"). The inset gives that rotation spill room to
+              // stay inside the visible/clipped area.
+              left: card.side === 'left' ? '20px' : card.side === 'center' ? '50%' : undefined,
+              right: card.side === 'right' ? '20px' : undefined,
+              transform: card.side === 'center' ? `translateX(-50%) rotate(${card.rotate}deg)` : `rotate(${card.rotate}deg)`,
+              width: card.side === 'center' ? '176px' : '154px',
+              height: card.side === 'center' ? '236px' : '200px',
+              borderRadius: '22px',
+              overflow: 'hidden',
+              border: card.side === 'center' ? '1px solid rgba(183,155,255,0.3)' : '1px solid rgba(255,255,255,0.1)',
+              boxShadow: card.side === 'center'
+                ? '0 34px 70px -20px rgba(0,0,0,0.95), 0 0 60px -20px rgba(142,92,247,0.6)'
+                : '0 24px 50px -18px rgba(0,0,0,0.9)',
+              zIndex: card.side === 'center' ? 3 : 1,
+            }}
           >
-            <Globe size={12} color="#A855F7" />
-            <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 600, lineHeight: 1.3 }}>All States</span>
+            <img src={card.src} alt={card.caption ?? 'Events'} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 45%, rgba(0,0,0,0.85) 100%)' }} />
+            {card.side === 'center' ? (
+              <>
+                <span style={{ position: 'absolute', top: '16px', left: '16px', fontFamily: ventsTypography.fontMono, fontSize: '9px', fontWeight: 700, letterSpacing: '0.14em', padding: '5px 9px', borderRadius: '7px', background: 'rgba(8,7,12,0.55)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)', border: '1px solid rgba(255,255,255,0.16)', color: '#fff' }}>
+                  EVENTS
+                </span>
+              </>
+            ) : (
+              // The higher z-index center card overlaps the INNER half of
+              // each side card (they're stacked, not side-by-side). Text
+              // starting flush against that inner edge renders mostly
+              // underneath the center card -- "Experiences" showed only its
+              // last few letters because it started right where the overlap
+              // begins. Anchoring each caption to its card's OUTER edge
+              // (left card -> left-aligned, right card -> right-aligned)
+              // keeps the whole word in the clear, unobstructed area.
+              <span
+                style={{
+                  position: 'absolute', left: '14px', right: '14px', bottom: '14px',
+                  fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 500,
+                  letterSpacing: '0.16em', textTransform: 'uppercase', color: 'rgba(237,234,245,0.7)',
+                  textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                  textAlign: card.side === 'right' ? 'right' : 'left',
+                }}
+              >
+                {card.caption}
+              </span>
+            )}
           </div>
-          {[
-            { icon: Zap, text: 'Instant booking' },
-            { icon: Ticket, text: 'Digital tickets' },
-          ].map(({ icon: Icon, text }) => (
-            <div key={text} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.15)', borderRadius: '10px', padding: '8px 6px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', flex: 1 }}>
-              <Icon size={12} color="#A855F7" />
-              <span style={{ color: '#C4C9E0', fontSize: '9px', textAlign: 'center', fontWeight: 500, lineHeight: 1.3 }}>{text}</span>
-            </div>
-          ))}
-        </div>
+        ))}
+      </div>
 
-        {/* TAP indicator */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', marginBottom: '10px' }}>
-          <div style={{ height: '1px', flex: 1, background: 'rgba(168,85,247,0.2)' }} />
-          <span style={{ color: 'rgba(168,85,247,0.8)', fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', animation: 'neonPulse 2s ease-in-out infinite' }}>TAP TO BEGIN</span>
-          <div style={{ height: '1px', flex: 1, background: 'rgba(168,85,247,0.2)' }} />
-        </div>
-
-        {/* Get Started — liquid glass button */}
+      {/* Actions -- handoff A1: single primary CTA + a plain "Already have
+          an account? Log in" line (no second full-width Sign In button, no
+          pagination dots, no version footer). Guest browsing has no design
+          slot here either, but the entry point stays reachable as a small
+          understated link rather than being dropped outright. */}
+      <div style={{ position: 'relative', padding: '24px 24px calc(24px + env(safe-area-inset-bottom))', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
         <button
           onClick={onGetStarted}
           style={{
             width: '100%',
-            background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)',
+            height: '56px',
+            background: ventsColors.accent,
             border: 'none',
-            borderRadius: '100px',
-            padding: '16px 32px',
-            color: '#fff',
-            fontSize: '20px',
-            fontWeight: 900,
-            fontFamily: 'Space Grotesk, sans-serif',
+            borderRadius: '16px',
+            color: ventsColors.white,
+            fontSize: '17px',
+            fontWeight: 700,
+            fontFamily: ventsTypography.fontBody,
             cursor: 'pointer',
-            boxShadow: '0 8px 24px rgba(123,47,190,0.35)',
-            marginBottom: '12px',
-            letterSpacing: '0.01em',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            boxShadow: '0 14px 40px -14px rgba(142,92,247,1)',
           }}
         >
-          <span>Get Started</span>
-          <span style={{ fontSize: '22px', animation: 'arrowBounce 1.2s ease-in-out infinite' }}>→</span>
+          Get Started
         </button>
 
-        {/* Sign in */}
-        <button
-          onClick={onSignIn}
-          style={{
-            width: '100%',
-            background: 'transparent',
-            border: '1px solid rgba(255,255,255,0.15)',
-            borderRadius: '100px',
-            padding: '16px 32px',
-            color: 'rgba(255,255,255,0.45)',
-            fontSize: '14px',
-            fontWeight: 400,
-            cursor: 'pointer',
-            textAlign: 'center',
-            marginBottom: '12px',
-          }}
-        >
+        <p style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: ventsColors.ink2, textAlign: 'center' }}>
           Already have an account?{' '}
-          <span style={{ color: '#A855F7', fontWeight: 600 }}>Sign in</span>
-        </button>
-
-        {/* Browse as guest — a real tappable row (not a bare underlined
-            text line easy to mistake for decoration/miss entirely), so it
-            reads as a genuine third option alongside Get Started/Sign in. */}
-        {onBrowseGuest && (
-          <button
-            onClick={onBrowseGuest}
-            style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.04)',
-              border: 'none',
-              borderRadius: '100px',
-              padding: '12px 32px',
-              color: '#94A3B8',
-              fontSize: '13px',
-              fontWeight: 600,
-              cursor: 'pointer',
-              textAlign: 'center',
-              marginTop: '4px',
-              flexShrink: 0,
-            }}
-          >
-            Browse as guest
-          </button>
-        )}
-
-        {/* Footer */}
-        <p style={{ textAlign: 'center', color: '#333', fontSize: '10px', marginTop: '12px', marginBottom: 0, flexShrink: 0 }}>
-          VENTS v1.1.0 | © VENTS LTD
+          <span onClick={onSignIn} style={{ color: '#B79BFF', fontWeight: 700, cursor: 'pointer' }}>Log in</span>
         </p>
+
+        {onBrowseGuest && (
+          <span onClick={onBrowseGuest} style={{ fontSize: '13px', fontWeight: 600, color: '#7C8199', cursor: 'pointer' }}>
+            Browse as guest
+          </span>
+        )}
       </div>
     </div>
   );

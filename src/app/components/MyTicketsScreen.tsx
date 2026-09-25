@@ -1,10 +1,17 @@
-import { useState, useRef, useEffect } from 'react';
-import { Ticket, Calendar, MapPin, QrCode, RefreshCw } from 'lucide-react';
-import { PurchasedTicket } from './types';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
+import { Ticket, Calendar, MapPin, QrCode, RefreshCw, Send, Check, X, Clock, AlertCircle, CheckCircle, XCircle, Ban } from 'lucide-react';
+import { PurchasedTicket, TicketTransfer } from './types';
 import { formatPrice } from './data';
 import { SkeletonCard } from './SkeletonCard';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { prefetchTicketTokens } from '../../lib/ticketToken';
+import { supabase, getAuthToken } from '../../lib/supabase';
+import { haptics } from '../../lib/haptics';
+import { openPaystackPopup } from '../../lib/paystack';
+import { apiUrl } from '../../lib/apiBase';
+import { triggerPushDelivery } from '../../lib/pushNotifications';
+import { UserAutocomplete } from './shared/UserAutocomplete';
 
 interface MyTicketsScreenProps {
   tickets: PurchasedTicket[];
@@ -12,13 +19,113 @@ interface MyTicketsScreenProps {
   onBack: () => void;
   onViewTicket: (ticket: PurchasedTicket) => void;
   onRefresh?: () => Promise<void>;
+  currentUserId?: string;
+  // Needed to open the Paystack popup for the transfer-fee payment (Accept
+  // now requires paying the fee first, see 0043_ticket_transfer_fee.sql).
+  currentUserEmail?: string;
+  // Bumped by App.tsx's handleTabChange on every tap of the My Tickets tab
+  // (including while already on it) -- this screen now stays mounted
+  // across tab switches instead of remounting, so its internally-fetched
+  // transfers list needs an explicit trigger to refresh on switch-in.
+  refreshSignal?: number;
+  // Bumped by App.tsx's shared notification-routing function when a
+  // ticket-transfer notification is tapped -- jumps straight to the
+  // existing Transfers tab below instead of leaving it buried under
+  // whichever tab was already active.
+  focusTransfersSignal?: number;
+  // Set by App.tsx's shared notification-routing function when a ticket
+  // notification (confirmed/refunded) is tapped -- resolved against the
+  // `tickets` prop below and opened via the same onViewTicket every ticket
+  // card already calls. nonce forces a retrigger even for the same ticket.
+  focusTicket?: { ticketId: string; nonce: number } | null;
+  // Handoff S3 ("empty state with a way out"): the never-booked-anything
+  // empty state previously had no CTA at all, just text. Optional so an
+  // older caller that doesn't pass it just keeps today's text-only state
+  // instead of a broken button.
+  onExploreEvents?: () => void;
 }
 
-export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh }: MyTicketsScreenProps) {
-  const [activeTab, setActiveTab] = useState<'upcoming' | 'past'>('upcoming');
+// Short, consistent date/time format for transfer cards -- expiry, sent-at,
+// and resolved-at all read the same way instead of three different styles.
+function formatTransferDate(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-NG', { dateStyle: 'medium' }) +
+    ' · ' + new Date(iso).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' });
+}
+
+// Visual treatment for each terminal transfer status in History -- a
+// resolved transfer is never shown as if it's still pending.
+// isOutgoing: from the SENDER's own perspective, an accepted transfer reads
+// as "Transferred" (their ticket moved on) rather than "Accepted" (which
+// reads like something that happened TO them, ambiguous about direction) --
+// the recipient still sees "Accepted" (they're the one who accepted it).
+function transferStatusBadge(status: TicketTransfer['status'], isOutgoing: boolean) {
+  switch (status) {
+    case 'accepted':
+      return isOutgoing
+        ? { label: 'Transferred', color: ventsColors.success, bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle }
+        : { label: 'Accepted', color: ventsColors.success, bg: 'rgba(16,185,129,0.14)', Icon: CheckCircle };
+    case 'declined':
+      return { label: 'Declined', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)', Icon: XCircle };
+    case 'cancelled':
+      return { label: 'Cancelled', color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)', Icon: Ban };
+    case 'expired':
+      return { label: 'Expired', color: ventsColors.pending, bg: 'rgba(245,158,11,0.14)', Icon: Clock };
+    default:
+      return { label: status, color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)', Icon: Clock };
+  }
+}
+
+// Real ticket-status badge, from tickets.status/payment_status -- shown on
+// a Past ticket card in place of the "View QR" pill when there's no valid
+// QR to show.
+function ticketStatusBadge(t: PurchasedTicket): { label: string; color: string; bg: string } | null {
+  if (t.status === 'cancelled') return { label: 'Cancelled', color: ventsColors.ink3, bg: 'rgba(148,163,184,0.14)' };
+  if (t.paymentStatus === 'refunded') return { label: 'Refunded', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)' };
+  if (t.paymentStatus === 'refund_pending') return { label: 'Refund Pending', color: ventsColors.pending, bg: 'rgba(245,158,11,0.14)' };
+  return null;
+}
+
+function TransferEmptyState({ text }: { text: string }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: '56px', gap: '16px' }}>
+      <div style={{ width: '64px', height: '64px', borderRadius: '18px', background: ventsColors.surface, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <Send size={28} color={ventsColors.ink3} />
+      </div>
+      <p style={{ color: ventsColors.ink3, fontSize: '13.5px', fontWeight: 600, textAlign: 'center', padding: '0 24px' }}>{text}</p>
+    </div>
+  );
+}
+
+export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefresh, currentUserId, currentUserEmail, refreshSignal, focusTransfersSignal, focusTicket, onExploreEvents }: MyTicketsScreenProps) {
+  const [activeTab, setActiveTab] = useState<'upcoming' | 'past' | 'transfers'>('upcoming');
   const [refreshing, setRefreshing] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+  // Skips the initial mount so a default/undefined signal never forces the
+  // tab open on first render -- only an actual bump (a real notification
+  // tap) does.
+  const focusTransfersFirstRunRef = useRef(true);
+  useEffect(() => {
+    if (focusTransfersFirstRunRef.current) { focusTransfersFirstRunRef.current = false; return; }
+    setActiveTab('transfers');
+  }, [focusTransfersSignal]);
+
+  // Opens the exact ticket a notification pointed at, the moment it's
+  // available in `tickets` -- covers both the common case (already loaded
+  // by the time this screen mounts) and a cold tap where the list is still
+  // being fetched. consumedFocusTicketNonceRef prevents re-opening the same
+  // ticket again on every later `tickets` refresh while focusTicket is
+  // still set to that same notification's value.
+  const consumedFocusTicketNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!focusTicket) return;
+    if (consumedFocusTicketNonceRef.current === focusTicket.nonce) return;
+    const match = tickets.find((t) => t.ticketId === focusTicket.ticketId);
+    if (match) {
+      consumedFocusTicketNonceRef.current = focusTicket.nonce;
+      onViewTicket(match);
+    }
+  }, [focusTicket, tickets, onViewTicket]);
 
   // Warm the signed-token cache for every visible ticket the moment the list
   // loads, so tapping a ticket renders its QR instantly instead of showing
@@ -26,6 +133,286 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
   useEffect(() => {
     prefetchTicketTokens(tickets.map((t) => t.ticketId));
   }, [tickets]);
+
+  // ALL ticket transfers involving this user, either direction and any
+  // status -- fetched client-side same as WalletScreen fetches its own
+  // supplementary data. RLS (ticket_transfers_involved_read) already scopes
+  // this to only rows where the caller is from_user_id or to_user_id.
+  // Previously this only loaded status='pending' rows (there was no
+  // History view yet); now it loads everything so accepted/declined/
+  // cancelled transfers have somewhere to appear instead of just vanishing
+  // once resolved.
+  const [transfers, setTransfers] = useState<TicketTransfer[]>([]);
+  // Distinct from transferActionError (an Accept/Decline failure on a
+  // specific transfer) -- this is "the list itself failed to load", which
+  // previously had no UI at all: the catch below just logged and returned,
+  // leaving `transfers` at its initial `[]` so a real fetch failure looked
+  // identical to "you genuinely have no transfers" (TransferEmptyState).
+  const [transfersError, setTransfersError] = useState('');
+  const [transferActionBusy, setTransferActionBusy] = useState<string | null>(null);
+  const [transferActionError, setTransferActionError] = useState('');
+  const [transferSubTab, setTransferSubTab] = useState<'incoming' | 'outgoing' | 'history'>('incoming');
+
+  const loadTransfers = useCallback(async () => {
+    if (!currentUserId) return;
+    const { data, error } = await supabase
+      .from('ticket_transfers')
+      .select('id, ticket_id, from_user_id, to_user_id, to_identifier, status, created_at, responded_at, expires_at, fee_kobo, fee_paid_at, tickets(ticket_type, events(title))')
+      .or(`from_user_id.eq.${currentUserId},to_user_id.eq.${currentUserId}`)
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('Failed to load ticket transfers:', error);
+      setTransfersError('Couldn\'t load your transfers. Pull down to try again.');
+      return;
+    }
+    setTransfersError('');
+    const rows = data || [];
+
+    // Resolve a display name for whichever party ISN'T the current user, via
+    // public_profiles (the same public-safe, RLS-open view used everywhere
+    // else in the app to show another user's name by id) -- never a raw
+    // email/phone, and never a direct query against `users` (which RLS
+    // restricts to the row owner).
+    const otherIds = Array.from(new Set(
+      rows.map((r: any) => (r.from_user_id === currentUserId ? r.to_user_id : r.from_user_id))
+    ));
+    const profileMap: Record<string, string> = {};
+    if (otherIds.length > 0) {
+      const { data: profiles } = await supabase
+        .from('public_profiles')
+        .select('id, username, full_name')
+        .in('id', otherIds);
+      (profiles || []).forEach((p: any) => {
+        profileMap[p.id] = p.username || p.full_name || 'a VENTS user';
+      });
+    }
+
+    const mapped: TicketTransfer[] = rows.map((r: any) => {
+      const otherId = r.from_user_id === currentUserId ? r.to_user_id : r.from_user_id;
+      return {
+        id: r.id,
+        ticketId: r.ticket_id,
+        fromUserId: r.from_user_id,
+        toUserId: r.to_user_id,
+        toIdentifier: r.to_identifier,
+        status: r.status,
+        createdAt: r.created_at,
+        respondedAt: r.responded_at || undefined,
+        expiresAt: r.expires_at,
+        eventTitle: r.tickets?.events?.title,
+        ticketTypeLabel: r.tickets?.ticket_type,
+        counterpartyLabel: profileMap[otherId] || r.to_identifier,
+        feeKobo: Number(r.fee_kobo) || 0,
+        feePaidAt: r.fee_paid_at || undefined,
+      };
+    });
+    setTransfers(mapped);
+  }, [currentUserId]);
+
+  useEffect(() => { loadTransfers(); }, [loadTransfers]);
+
+  // Refresh transfers on every tap of the My Tickets tab (App.tsx bumps
+  // refreshSignal for that, including while already on this tab) -- skip
+  // the very first value since the mount effect above already covers the
+  // initial load; only an actual tab-tap afterward should trigger this.
+  const refreshSignalMounted = useRef(false);
+  useEffect(() => {
+    if (!refreshSignalMounted.current) { refreshSignalMounted.current = true; return; }
+    loadTransfers();
+  }, [refreshSignal, loadTransfers]);
+
+  // Accepting a transfer now requires paying the transfer fee first
+  // (0043_ticket_transfer_fee.sql) -- initiate_transfer_fee_payment gets a
+  // fresh reference + the exact fee to charge (server-computed, never a
+  // client number), the SAME Paystack popup + ?action=verify architecture
+  // CheckoutScreen/App.tsx already use for ticket purchases confirms it,
+  // and confirm_transfer_fee_payment (project_admin-only, called from that
+  // same verify endpoint) does the actual ownership swap -- there is no
+  // client-callable path that accepts a transfer without a verified
+  // payment landing first.
+  const handleAcceptTransfer = async (transfer: TicketTransfer) => {
+    // Explicit re-entrancy guard, not just the button's own `disabled` --
+    // `disabled` only takes effect after React commits the next render, so
+    // a fast enough double-tap could otherwise fire this twice before that
+    // happens. `transferActionBusy` flips synchronously, before any await.
+    if (transferActionBusy) return;
+    setTransferActionBusy(transfer.id);
+    setTransferActionError('');
+    try {
+      const { data, error } = await supabase.rpc('initiate_transfer_fee_payment', { p_transfer_id: transfer.id });
+      if (error) throw new Error(error.message);
+      const reference: string = data?.reference;
+      const feeKobo: number = Number(data?.feeKobo) || transfer.feeKobo;
+      if (!reference) throw new Error('Could not start the transfer fee payment.');
+
+      openPaystackPopup({
+        email: currentUserEmail || '',
+        amountKobo: feeKobo,
+        ref: reference,
+        label: `Transfer fee — ${transfer.eventTitle || 'ticket transfer'}`,
+        metadata: { transferId: transfer.id, kind: 'ticket_transfer_fee' },
+        onSuccess: async () => {
+          try {
+            const token = await getAuthToken();
+            const verifyRes = await fetch(apiUrl('/api/webhook/paystack?action=verify'), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+              body: JSON.stringify({ reference }),
+            });
+            const verifyJson = await verifyRes.json().catch(() => null);
+            if (!verifyRes.ok || verifyJson?.status !== 'success') {
+              throw new Error(verifyJson?.error || 'Could not verify the transfer fee payment. If you were charged, contact support with your reference.');
+            }
+            haptics.success();
+            await loadTransfers();
+            if (onRefresh) await onRefresh();
+          } catch (e: any) {
+            haptics.error();
+            setTransferActionError(e?.message || 'Could not verify the transfer fee payment.');
+          } finally {
+            setTransferActionBusy(null);
+          }
+        },
+        onClose: () => {
+          // Popup dismissed with no charge -- not an error, just stop
+          // showing busy so Accept can be tapped again.
+          setTransferActionBusy(null);
+        },
+        onError: (message) => {
+          haptics.error();
+          setTransferActionError(message);
+          setTransferActionBusy(null);
+        },
+      });
+    } catch (e: any) {
+      haptics.error();
+      setTransferActionError(e?.message || 'Could not start the transfer fee payment.');
+      setTransferActionBusy(null);
+    }
+  };
+
+  const handleDeclineTransfer = async (transferId: string) => {
+    if (transferActionBusy) return;
+    setTransferActionBusy(transferId);
+    setTransferActionError('');
+    try {
+      // Captured before the RPC runs -- fromUserId doesn't change, and
+      // `transfers` is only re-fetched (via loadTransfers) after this call.
+      const notifyUserId = transfers.find((t) => t.id === transferId)?.fromUserId;
+      const { error } = await supabase.rpc('decline_ticket_transfer', { p_transfer_id: transferId });
+      if (error) throw new Error(error.message);
+      haptics.light();
+      triggerPushDelivery(notifyUserId);
+      await loadTransfers();
+    } catch (e: any) {
+      haptics.error();
+      setTransferActionError(e?.message || 'Could not decline this transfer.');
+    } finally {
+      setTransferActionBusy(null);
+    }
+  };
+
+  const handleCancelTransfer = async (transferId: string) => {
+    if (transferActionBusy) return;
+    setTransferActionBusy(transferId);
+    setTransferActionError('');
+    try {
+      const { error } = await supabase.rpc('cancel_ticket_transfer', { p_transfer_id: transferId });
+      if (error) throw new Error(error.message);
+      haptics.light();
+      await loadTransfers();
+    } catch (e: any) {
+      haptics.error();
+      setTransferActionError(e?.message || 'Could not cancel this transfer.');
+    } finally {
+      setTransferActionBusy(null);
+    }
+  };
+
+  // Incoming/Outgoing show only what's actionable (status === 'pending');
+  // everything resolved (accepted/declined/cancelled/expired) moves to
+  // History instead -- a transfer is never shown as still-pending once the
+  // server has resolved it.
+  const incomingPending = transfers.filter((t) => t.toUserId === currentUserId && t.status === 'pending');
+  const outgoingPending = transfers.filter((t) => t.fromUserId === currentUserId && t.status === 'pending');
+  const transferHistory = transfers.filter((t) => t.status !== 'pending');
+
+  // Ticket ids with an already-pending outgoing transfer -- initiate_ticket_
+  // transfer's own unique index (ticket_transfers_one_pending_per_ticket)
+  // is the real guard against a duplicate; this only hides the "Transfer
+  // Ticket" button so a user doesn't tap it and get a server error for a
+  // transfer they can already see pending in the Transfers tab.
+  const ticketsWithPendingTransfer = useMemo(
+    () => new Set(outgoingPending.map((t) => t.ticketId)),
+    [outgoingPending]
+  );
+
+  // Standalone "Transfer this ticket" flow, reachable any time from an
+  // eligible ticket in Upcoming -- not just right after purchase
+  // (PaymentSuccessScreen has the same flow for that moment). Same RPC,
+  // same recipient-identifier collection; initiate_ticket_transfer does
+  // every real eligibility/ownership/recipient check server-side, this UI
+  // gate (isTicketTransferable below) just avoids showing the action where
+  // it would obviously fail.
+  const [transferTicket, setTransferTicket] = useState<PurchasedTicket | null>(null);
+  const [transferIdentifier, setTransferIdentifier] = useState('');
+  const [transferSending, setTransferSending] = useState(false);
+  const [initiateError, setInitiateError] = useState('');
+  const [transferSent, setTransferSent] = useState(false);
+
+  const isTicketTransferable = useCallback((ticket: PurchasedTicket) => {
+    if (ticket.checkedIn) return false;
+    const eventDate = ticket.event.event_date ? new Date(ticket.event.event_date) : null;
+    if (eventDate && eventDate.getTime() < Date.now()) return false;
+    if (ticketsWithPendingTransfer.has(ticket.ticketId)) return false;
+    return true;
+  }, [ticketsWithPendingTransfer]);
+
+  const closeTransferModal = () => {
+    setTransferTicket(null);
+    setTransferIdentifier('');
+    setInitiateError('');
+    setTransferSent(false);
+  };
+
+  const handleSendTransfer = async () => {
+    if (!transferTicket || transferSending) return;
+    const identifier = transferIdentifier.trim();
+    if (!identifier) { setInitiateError("Enter the recipient's email or username"); return; }
+    setTransferSending(true);
+    setInitiateError('');
+    try {
+      const { data: newTransferId, error } = await supabase.rpc('initiate_ticket_transfer', {
+        p_ticket_id: transferTicket.ticketId,
+        p_recipient_identifier: identifier,
+      });
+      if (error) throw new Error(error.message);
+      haptics.success();
+      setTransferSent(true);
+      setTransferIdentifier('');
+      // initiate_ticket_transfer only returns the new transfer's id, not the
+      // resolved recipient -- one extra own-row select (RLS already allows
+      // the sender to read it) to get to_user_id for the delivery trigger.
+      if (newTransferId) {
+        (async () => {
+          try {
+            const { data } = await supabase
+              .from('ticket_transfers')
+              .select('to_user_id')
+              .eq('id', newTransferId)
+              .maybeSingle();
+            triggerPushDelivery(data?.to_user_id);
+          } catch { /* best-effort only -- cron sweep is the safety net */ }
+        })();
+      }
+      await loadTransfers();
+    } catch (e: any) {
+      haptics.error();
+      setInitiateError(e?.message || 'Could not start the transfer. Please try again.');
+    } finally {
+      setTransferSending(false);
+    }
+  };
 
   const handleRefresh = async () => {
     if (refreshing || !onRefresh) return;
@@ -45,15 +432,32 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
       // Pull-to-refresh
       handleRefresh();
     } else if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
-      if (dx < 0) setActiveTab('past');
-      else setActiveTab('upcoming');
+      // Swipe left/right moves one tab at a time through the same
+      // Upcoming/Past/Transfers order the segmented control above renders,
+      // clamped at both ends -- no wraparound, and no accidental jump past
+      // Transfers on a fast swipe. Tap navigation (the segmented control)
+      // still works independently of this gesture.
+      const order: Array<'upcoming' | 'past' | 'transfers'> = ['upcoming', 'past', 'transfers'];
+      const currentIndex = order.indexOf(activeTab);
+      const nextIndex = dx < 0 ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex >= 0 && nextIndex < order.length) {
+        haptics.light();
+        setActiveTab(order[nextIndex]);
+      }
     }
     touchStartX.current = null;
     touchStartY.current = null;
   };
 
   const now = Date.now();
+  // A cancelled/refunded ticket (tickets.status/payment_status, real
+  // check-constraint values) has no valid entry regardless of the event's
+  // date -- it belongs in Past/history, never in Upcoming, even for a
+  // future event.
+  const isCancelledOrRefunded = (t: PurchasedTicket) =>
+    t.status === 'cancelled' || t.paymentStatus === 'refunded' || t.paymentStatus === 'refund_pending';
   const upcoming = tickets.filter((t) => {
+    if (isCancelledOrRefunded(t)) return false;
     try {
       return new Date(`${t.event.date} ${t.event.time}`).getTime() > now;
     } catch {
@@ -61,6 +465,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     }
   });
   const past = tickets.filter((t) => {
+    if (isCancelledOrRefunded(t)) return true;
     try {
       return new Date(`${t.event.date} ${t.event.time}`).getTime() <= now;
     } catch {
@@ -68,14 +473,16 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
     }
   });
 
-  const displayed = activeTab === 'upcoming' ? upcoming : past;
+  // 'transfers' doesn't use `displayed` at all -- it renders the incoming/
+  // outgoing transfer lists below instead of ticket cards.
+  const displayed = activeTab === 'upcoming' ? upcoming : activeTab === 'past' ? past : [];
 
   return (
     <div
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
       style={{
-        background: '#020005',
+        background: 'radial-gradient(ellipse 600px 400px at 30% -5%, rgba(123,47,190,0.13) 0%, rgba(5,0,16,1) 45%, #020005 100%)',
         width: '100%',
         height: '100%',
         display: 'flex',
@@ -96,29 +503,27 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           }} />
         </div>
       )}
-      {/* Header */}
+      {/* Header -- matches the exported D1 · TicketsScreen · upcoming
+          mockup: left-aligned 28px/800 title, 42px circular icon button on
+          the right (rgba(255,255,255,.07) fill / rgba(255,255,255,.14)
+          border), not the old centered-title/refresh-icon treatment. */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: '12px',
-          padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px',
-          position: 'relative',
+          gap: '14px',
+          padding: 'calc(14px + env(safe-area-inset-top)) 20px 0',
         }}
       >
-        <div style={{ width: '36px', flexShrink: 0 }} />
         <h1
           style={{
-            color: '#FFFFFF',
-            fontSize: '20px',
-            fontWeight: 700,
-            fontFamily: 'Space Grotesk, sans-serif',
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            textAlign: 'center',
-            pointerEvents: 'none',
+            color: ventsColors.white,
+            fontSize: '28px',
+            fontWeight: 800,
+            letterSpacing: '-0.03em',
+            fontFamily: 'Manrope, sans-serif',
+            margin: 0,
           }}
         >
           My Tickets
@@ -127,11 +532,12 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           <button
             onClick={handleRefresh}
             style={{
-              background: '#090514',
-              border: '1px solid rgba(255,255,255,0.08)',
-              borderRadius: '50%',
-              width: '36px',
-              height: '36px',
+              background: 'rgba(255,255,255,0.07)',
+              border: '1px solid rgba(255,255,255,0.14)',
+              borderRadius: '99px',
+              width: '42px',
+              height: '42px',
+              flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -140,55 +546,54 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           >
             <RefreshCw
               size={16}
-              color="#A78BFA"
+              color={ventsColors.white}
               style={{ animation: refreshing ? 'spin 0.8s linear infinite' : 'none' }}
             />
           </button>
         )}
       </div>
 
-      {/* Tabs */}
-      <div style={{ padding: '0 16px 14px' }}>
+      {/* Tabs -- matches the export's flat pill treatment: a solid
+          background on the selected tab (no gradient/sliding-indicator
+          animation), plain labels on Upcoming/Past, and a small dot on
+          Transfers (the export's own "needs attention" marker) shown only
+          when something is actually pending, rather than a bare count. */}
+      <div style={{ padding: '20px 20px 14px' }}>
         <div
           style={{
             display: 'flex',
-            background: '#090514',
-            borderRadius: '100px',
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: '14px',
             padding: '4px',
-            gap: '3px',
+            gap: '4px',
           }}
         >
-          {(['upcoming', 'past'] as const).map((tab) => (
+          {(['upcoming', 'past', 'transfers'] as const).map((tab) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(tab)}
+              onClick={() => { haptics.light(); setActiveTab(tab); }}
               style={{
                 flex: 1,
-                padding: '9px',
-                borderRadius: '100px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                borderRadius: '10px',
                 border: 'none',
-                background:
-                  activeTab === tab
-                    ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)'
-                    : 'transparent',
-                color: activeTab === tab ? '#FFFFFF' : '#94A3B8',
-                fontSize: '13px',
-                fontWeight: 600,
+                background: activeTab === tab ? 'rgba(255,255,255,0.14)' : 'transparent',
+                color: activeTab === tab ? ventsColors.white : ventsColors.ink3,
+                fontSize: '14px',
+                fontWeight: activeTab === tab ? 700 : 600,
                 cursor: 'pointer',
-                transition: 'all 0.2s ease',
+                transition: 'background 0.2s ease, color 0.2s ease',
               }}
             >
-              {tab === 'upcoming' ? 'Upcoming' : 'Past'}{' '}
-              <span
-                style={{
-                  background: activeTab === tab ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.07)',
-                  borderRadius: '4px',
-                  padding: '1px 6px',
-                  fontSize: '11px',
-                }}
-              >
-                {tab === 'upcoming' ? upcoming.length : past.length}
-              </span>
+              {tab === 'upcoming' ? 'Upcoming' : tab === 'past' ? 'Past' : 'Transfers'}
+              {tab === 'transfers' && (incomingPending.length + outgoingPending.length) > 0 && (
+                <span style={{ width: '7px', height: '7px', borderRadius: '99px', background: ventsColors.accent, display: 'block' }} />
+              )}
             </button>
           ))}
         </div>
@@ -203,13 +608,204 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           // padding — a flat 24px left the last ticket card partially hidden
           // behind it on shorter-safe-area devices. Matches the same
           // clearance convention already used by Home/Explore/Profile/Saved.
-          padding: '0 16px calc(90px + env(safe-area-inset-bottom))',
+          padding: '0 20px calc(110px + env(safe-area-inset-bottom))',
           scrollbarWidth: 'none',
           WebkitOverflowScrolling: 'touch',
           overscrollBehavior: 'contain',
         }}
       >
-        {loading ? (
+        {/* Transfers is its own tab (Upcoming | Past | Transfers), split
+            into Incoming / Outgoing / History sub-sections so a resolved
+            transfer never sits mixed in with ones that still need action --
+            same accept/decline/cancel RPCs and handlers as before, just
+            reorganized. */}
+        {activeTab === 'transfers' && (
+          <>
+            {transfersError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
+                <span style={{ color: ventsColors.error, fontSize: '12px', flex: 1 }}>{transfersError}</span>
+                <button
+                  onClick={() => loadTransfers()}
+                  style={{ background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', borderRadius: '8px', padding: '5px 10px', color: ventsColors.error, fontSize: '11px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}
+                >
+                  Retry
+                </button>
+              </div>
+            )}
+            {transferActionError && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: '12px', padding: '10px 14px', marginBottom: '12px' }}>
+                <AlertCircle size={14} color={ventsColors.error} style={{ flexShrink: 0 }} />
+                <span style={{ color: ventsColors.error, fontSize: '12px' }}>{transferActionError}</span>
+              </div>
+            )}
+
+            {/* Incoming / Outgoing / History segmented control */}
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '16px' }}>
+              {([
+                { key: 'incoming' as const, label: 'Incoming', count: incomingPending.length },
+                { key: 'outgoing' as const, label: 'Outgoing', count: outgoingPending.length },
+                { key: 'history' as const, label: 'History', count: 0 },
+              ]).map((sub) => (
+                <button
+                  key={sub.key}
+                  onClick={() => { haptics.light(); setTransferSubTab(sub.key); }}
+                  style={{
+                    flex: 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '6px',
+                    padding: '9px 8px',
+                    borderRadius: '12px',
+                    border: transferSubTab === sub.key ? '1px solid rgba(168,85,247,0.4)' : '1px solid rgba(255,255,255,0.08)',
+                    background: transferSubTab === sub.key ? 'rgba(168,85,247,0.12)' : 'rgba(255,255,255,0.02)',
+                    color: transferSubTab === sub.key ? ventsColors.accentSoft : ventsColors.ink2,
+                    fontSize: '12.5px',
+                    fontWeight: 700,
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                  }}
+                >
+                  {sub.label}
+                  {sub.count > 0 && (
+                    <span style={{
+                      minWidth: '16px', height: '16px', padding: '0 4px', borderRadius: '8px',
+                      background: ventsColors.accent, color: '#fff', fontSize: '10px', fontWeight: 800,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {sub.count}
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+
+            {/* Incoming -- action required. Purple-accented cards make it
+                obvious these need a response; Accept/Decline are disabled
+                (not hidden) mid-request to block accidental double-taps
+                without the buttons jumping around. */}
+            {transferSubTab === 'incoming' && (
+              incomingPending.length === 0 ? (
+                <TransferEmptyState text="No incoming transfer requests right now." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {incomingPending.map((t) => (
+                    <div key={t.id} style={{ background: 'rgba(168,85,247,0.08)', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '16px', padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                          <Send size={14} color={ventsColors.accentSoft} style={{ flexShrink: 0 }} />
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                          </span>
+                        </div>
+                        <span style={{ flexShrink: 0, background: 'rgba(168,85,247,0.2)', color: ventsColors.accentSoft, fontSize: '9px', fontWeight: 800, letterSpacing: '0.05em', padding: '3px 7px', borderRadius: '100px', textTransform: 'uppercase' }}>
+                          Action needed
+                        </span>
+                      </div>
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '0 0 6px' }}>
+                        From <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.createdAt)} · expires {formatTransferDate(t.expiresAt)}
+                      </p>
+                      {/* Fee shown clearly before any payment is triggered --
+                          this is the exact amount Paystack will charge,
+                          straight from the server-computed, server-locked
+                          fee_kobo on this row (never a client estimate). */}
+                      <p style={{ color: ventsColors.accentSoft, fontSize: '11px', fontWeight: 700, margin: '0 0 10px' }}>
+                        Transfer fee: {formatPrice(t.feeKobo / 100)} (paid by you to accept)
+                      </p>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <button
+                          onClick={() => handleAcceptTransfer(t)}
+                          disabled={transferActionBusy === t.id}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '10px', padding: '9px', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                        >
+                          <Check size={13} /> {transferActionBusy === t.id ? 'Processing…' : `Accept & Pay ${formatPrice(t.feeKobo / 100)}`}
+                        </button>
+                        <button
+                          onClick={() => handleDeclineTransfer(t.id)}
+                          disabled={transferActionBusy === t.id}
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '10px', padding: '9px', color: ventsColors.ink2, fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                        >
+                          <X size={13} /> Decline
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* Outgoing -- pending only; terminal states live in History. */}
+            {transferSubTab === 'outgoing' && (
+              outgoingPending.length === 0 ? (
+                <TransferEmptyState text="No outgoing transfers pending." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {outgoingPending.map((t) => (
+                    <div key={t.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '16px', padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                        <Clock size={13} color={ventsColors.pending} />
+                        <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                        </span>
+                      </div>
+                      <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: '0 0 10px' }}>
+                        Awaiting <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> to accept · expires {formatTransferDate(t.expiresAt)}
+                      </p>
+                      <button
+                        onClick={() => handleCancelTransfer(t.id)}
+                        disabled={transferActionBusy === t.id}
+                        style={{ width: '100%', background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: '10px', padding: '9px', color: ventsColors.error, fontSize: '12px', fontWeight: 600, cursor: transferActionBusy === t.id ? 'not-allowed' : 'pointer', opacity: transferActionBusy === t.id ? 0.6 : 1 }}
+                      >
+                        Cancel Transfer
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
+
+            {/* History -- read-only. Every terminal transfer (accepted/
+                declined/cancelled/expired) lands here permanently; no
+                action is ever offered on a resolved transfer. */}
+            {transferSubTab === 'history' && (
+              transferHistory.length === 0 ? (
+                <TransferEmptyState text="No past transfers yet." />
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {transferHistory.map((t) => {
+                    const isOutgoing = t.fromUserId === currentUserId;
+                    const badge = transferStatusBadge(t.status, isOutgoing);
+                    const BadgeIcon = badge.Icon;
+                    return (
+                      <div key={t.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px 16px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px', gap: '8px' }}>
+                          <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {t.eventTitle || 'A ticket'}{t.ticketTypeLabel ? ` · ${t.ticketTypeLabel}` : ''}
+                          </span>
+                          <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: '4px', background: badge.bg, color: badge.color, fontSize: '10px', fontWeight: 800, padding: '3px 8px', borderRadius: '100px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            <BadgeIcon size={11} /> {badge.label}
+                          </span>
+                        </div>
+                        <p style={{ color: ventsColors.ink2, fontSize: '11px', margin: 0 }}>
+                          {isOutgoing ? 'To' : 'From'} <strong style={{ color: ventsColors.ink2 }}>{t.counterpartyLabel}</strong> · {formatTransferDate(t.respondedAt || t.createdAt)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            )}
+          </>
+        )}
+
+        {/* Stale-while-revalidate, same principle as Home's fix (Stage A):
+            `loading` flips true on every refresh (pull-to-refresh, or the
+            fetchUserTickets call that follows an Accept), not just the
+            first load -- only show the skeleton when there's nothing to
+            keep on screen yet, otherwise the whole list would blank out on
+            every refresh even though nothing about it needs to. */}
+        {activeTab === 'transfers' ? null : loading && tickets.length === 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <SkeletonCard variant="ticket" />
             <SkeletonCard variant="ticket" />
@@ -229,16 +825,16 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                 width: '72px',
                 height: '72px',
                 borderRadius: '20px',
-                background: '#090514',
+                background: ventsColors.surface,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Ticket size={32} color="#94A3B8" />
+              <Ticket size={32} color={ventsColors.ink3} />
             </div>
             <div style={{ textAlign: 'center', padding: '0 16px' }}>
-              <p style={{ color: '#94A3B8', fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
+              <p style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600, marginBottom: '8px' }}>
                 {activeTab === 'upcoming'
                   ? (past.length > 0
                       ? "You don't have any upcoming tickets right now."
@@ -246,14 +842,19 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                   : 'Your expired tickets will appear here!'}
               </p>
               {activeTab === 'past' && (
-                <p style={{ color: '#94A3B8', fontSize: '14px', marginBottom: '16px' }}>
+                <p style={{ color: ventsColors.ink3, fontSize: '14px', marginBottom: '16px' }}>
                   Please come back later or start exploring events now!
                 </p>
               )}
               <button
                 onClick={() => {
-                  // Signal parent to switch to home tab
-                  onBack();
+                  // Was calling onBack() -- MyTicketsScreen is a bottom-tab
+                  // root screen with nothing to pop back to, so this button's
+                  // own "switch to home tab" comment never actually
+                  // happened. onExploreEvents is the real switch-to-Home
+                  // callback (falls back to onBack only if a caller hasn't
+                  // been updated to pass it).
+                  (onExploreEvents || onBack)();
                 }}
                 style={{
                   marginTop: activeTab === 'upcoming' ? '12px' : '0',
@@ -272,139 +873,265 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
             {displayed.map((ticket) => (
               <div
                 key={ticket.ticketId}
                 onClick={() => onViewTicket(ticket)}
                 style={{
-                  background: '#090514',
-                  border: '1px solid rgba(255,255,255,0.05)',
-                  borderRadius: '20px',
+                  background: ventsColors.bg,
+                  border: '1px solid rgba(255,255,255,0.07)',
+                  borderRadius: '22px',
                   overflow: 'hidden',
                   cursor: 'pointer',
+                  boxShadow: '0 8px 20px rgba(0,0,0,0.25)',
                 }}
               >
                 {/* Event image strip */}
-                <div style={{ position: 'relative', height: '100px' }}>
+                <div style={{ position: 'relative', height: '130px' }}>
                   <img
                     src={ticket.event.image}
                     alt={ticket.event.title}
-                    style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: '20px 20px 0 0' }}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                   />
                   <div
                     style={{
                       position: 'absolute',
                       inset: 0,
-                      background: 'linear-gradient(to bottom, transparent, rgba(19,22,41,0.9))',
+                      background: 'linear-gradient(to bottom, rgba(0,0,0,0.05) 0%, transparent 40%, rgba(10,6,18,0.95) 100%)',
                     }}
                   />
                   <div
                     style={{
                       position: 'absolute',
-                      top: '10px',
+                      top: '12px',
                       left: '12px',
-                      background: 'rgba(123,47,190,0.15)',
-                      border: '1px solid #7B2FBE',
+                      background: 'rgba(255,255,255,0.1)',
+                      backdropFilter: 'blur(16px) saturate(180%)',
+                      WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                      border: '1px solid rgba(196,181,253,0.35)',
                       borderRadius: '100px',
-                      padding: '3px 8px',
+                      padding: '4px 10px',
                     }}
                   >
-                    <span style={{ color: '#C084FC', fontSize: '10px', fontWeight: 700 }}>
+                    <span style={{ color: ventsColors.ink1, fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em' }}>
                       {ticket.ticketType.name.toUpperCase()}
                     </span>
                   </div>
-                  <div
-                    style={{
-                      position: 'absolute',
-                      top: '10px',
-                      right: '12px',
-                      background: 'rgba(0,0,0,0.5)',
-                      backdropFilter: 'blur(8px)',
-                      borderRadius: '8px',
-                      padding: '5px 8px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                    }}
-                  >
-                    <QrCode size={13} color="#7B2FBE" />
-                    <span style={{ color: '#7B2FBE', fontSize: '14px', fontWeight: 600 }}>
-                      View QR
-                    </span>
+                  {(() => {
+                    const statusBadge = ticketStatusBadge(ticket);
+                    return statusBadge ? (
+                      <div
+                        style={{
+                          position: 'absolute', top: '12px', right: '12px',
+                          background: statusBadge.bg, backdropFilter: 'blur(16px) saturate(180%)',
+                          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                          border: `1px solid ${statusBadge.color}55`, borderRadius: '100px',
+                          padding: '5px 10px',
+                        }}
+                      >
+                        <span style={{ color: statusBadge.color, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                          {statusBadge.label}
+                        </span>
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '12px',
+                          right: '12px',
+                          background: 'rgba(255,255,255,0.1)',
+                          backdropFilter: 'blur(16px) saturate(180%)',
+                          WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                          border: '1px solid rgba(255,255,255,0.16)',
+                          borderRadius: '100px',
+                          padding: '5px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '5px',
+                        }}
+                      >
+                        <QrCode size={13} color={ventsColors.ink1} />
+                        <span style={{ color: ventsColors.ink1, fontSize: '11px', fontWeight: 700 }}>
+                          View QR
+                        </span>
+                      </div>
+                    );
+                  })()}
+                  <div style={{ position: 'absolute', left: '14px', right: '14px', bottom: '10px' }}>
+                    <h3
+                      style={{
+                        color: ventsColors.white,
+                        fontSize: '16px',
+                        fontWeight: 800,
+                        fontFamily: 'Manrope, sans-serif',
+                        margin: 0,
+                        textShadow: '0 1px 6px rgba(0,0,0,0.6)',
+                      }}
+                    >
+                      {ticket.event.title}
+                    </h3>
                   </div>
                 </div>
 
                 {/* Ticket info */}
-                <div style={{ padding: '14px' }}>
-                  <h3
-                    style={{
-                      color: '#FFFFFF',
-                      fontSize: '16px',
-                      fontWeight: 700,
-                      marginBottom: '8px',
-                    }}
-                  >
-                    {ticket.event.title}
-                  </h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
+                <div style={{ padding: '16px 18px 18px' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '5px', marginBottom: '12px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <Calendar size={12} color="#94A3B8" />
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                      <Calendar size={12} color={ventsColors.ink3} />
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                         {ticket.event.date} · {ticket.event.time}
                       </span>
                     </div>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <MapPin size={12} color="#94A3B8" />
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                      <MapPin size={12} color={ventsColors.ink3} />
+                      <span style={{ color: ventsColors.ink2, fontSize: '13px' }}>
                         {ticket.event.venue}, {ticket.event.city}
                       </span>
                     </div>
                   </div>
 
-                  {/* Footer row */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      paddingTop: '10px',
-                      borderTop: '1px dashed rgba(255,255,255,0.1)',
-                    }}
-                  >
-                    <div>
-                      <span style={{ color: '#94A3B8', fontSize: '14px' }}>
-                        {ticket.quantity} × {ticket.ticketType.name}
-                      </span>
-                    </div>
-                    <span style={{ color: '#94A3B8', fontSize: '14px' }}>
+                  {/* Compact price/reference line -- real data the export's
+                      placeholder card doesn't depict at all, but dropping it
+                      would remove real ticket information; kept as one
+                      quiet row instead of the old two-block (dashed-divider
+                      row + separate boxed reference) treatment so the card
+                      still reads close to the export's minimal layout. */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <span style={{ color: ventsColors.ink3, fontSize: '12px', fontWeight: 500 }}>
+                      {ticket.quantity} × {ticket.ticketType.name} · <span style={{ fontFamily: 'monospace', letterSpacing: '0.02em' }}>{ticketDisplayCode(ticket.ticketId)}</span>
+                    </span>
+                    <span style={{ color: ventsColors.ink1, fontSize: '13px', fontWeight: 700, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                       {formatPrice(ticket.totalAmount)}
                     </span>
                   </div>
 
-                  {/* Ticket ID */}
-                  <div
-                    style={{
-                      marginTop: '8px',
-                      background: 'rgba(255,255,255,0.04)',
-                      borderRadius: '8px',
-                      padding: '6px 10px',
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#8B8FA8', fontSize: '11px' }}>Ticket Reference No.</span>
-                    <span style={{ color: '#A78BFA', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace', letterSpacing: '0.03em' }}>
-                      {ticketDisplayCode(ticket.ticketId)}
-                    </span>
-                  </div>
+                  {/* Provenance -- display-only, from get_ticket_provenance
+                      (0071). Never implies ownership: ticket.user_id (this
+                      list is already scoped to the current user's own
+                      tickets) is the sole authority on who holds this
+                      ticket. Both can show at once. */}
+                  {(ticket.paidByName || ticket.transferredFromName) && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', marginBottom: '10px' }}>
+                      {ticket.paidByName && (
+                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                          Paid by <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.paidByName}</span>
+                        </span>
+                      )}
+                      {ticket.transferredFromName && (
+                        <span style={{ color: ventsColors.ink2, fontSize: '11px' }}>
+                          Transferred to you from <span style={{ color: ventsColors.accentSoft, fontWeight: 600 }}>{ticket.transferredFromName}</span>
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Action row -- matches the export's two-button card
+                      footer ("Transfer" / "Show QR"): a glass secondary
+                      button and a filled #8E5CF7 primary button, side by
+                      side. Transfer only appears when the ticket is actually
+                      eligible (real server-enforced rule, same gate as
+                      before); a cancelled/refunded ticket has no valid QR,
+                      so it gets no action row at all -- the status badge on
+                      the hero already tells the whole story, and tapping
+                      the card still opens TicketRefundScreen. */}
+                  {!isCancelledOrRefunded(ticket) && (
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {activeTab === 'upcoming' && isTicketTransferable(ticket) && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); haptics.light(); setTransferTicket(ticket); }}
+                          style={{
+                            flex: 1, height: '44px', display: 'flex', alignItems: 'center',
+                            justifyContent: 'center', gap: '6px', background: 'rgba(255,255,255,0.07)',
+                            border: '1px solid rgba(255,255,255,0.14)', borderRadius: '12px',
+                            color: ventsColors.white, fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                          }}
+                        >
+                          <Send size={13} /> Transfer
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => { e.stopPropagation(); onViewTicket(ticket); }}
+                        style={{
+                          flex: 1, height: '44px', display: 'flex', alignItems: 'center',
+                          justifyContent: 'center', gap: '6px', background: ventsColors.accent,
+                          border: 'none', borderRadius: '12px',
+                          color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                        }}
+                      >
+                        <QrCode size={14} /> Show QR
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
       </div>
+
+      {/* Transfer Ticket modal -- same recipient-identifier flow and RPC as
+          PaymentSuccessScreen's post-purchase transfer prompt; initiate_
+          ticket_transfer does every real eligibility/ownership/recipient
+          check server-side, this just collects the identifier and surfaces
+          the RPC's own error message. */}
+      {transferTicket && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: ventsColors.ink1 }}>Transfer Ticket</p>
+              <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.ink2 }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {transferSent ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color={ventsColors.success} />
+                  <span style={{ color: ventsColors.success, fontSize: '13px', lineHeight: 1.5 }}>
+                    Transfer request sent. They have 48 hours to accept it from their own My Tickets — this ticket stays yours until then.
+                  </span>
+                </div>
+                <button onClick={closeTransferModal} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Enter the VENTS email or username of the person you're transferring "{transferTicket.event.title}" to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
+                </p>
+                <div style={{ marginBottom: '12px' }}>
+                  <UserAutocomplete
+                    label="Recipient"
+                    placeholder="Recipient email or username"
+                    value={transferIdentifier}
+                    onChange={setTransferIdentifier}
+                    onSelect={() => {}}
+                  />
+                </div>
+                {initiateError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color={ventsColors.error} />
+                    <span style={{ color: ventsColors.error, fontSize: '13px' }}>{initiateError}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeTransferModal} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: ventsColors.ink2, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={handleSendTransfer}
+                    disabled={transferSending || !transferIdentifier.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (transferSending || !transferIdentifier.trim()) ? 'not-allowed' : 'pointer', opacity: (transferSending || !transferIdentifier.trim()) ? 0.6 : 1 }}
+                  >
+                    {transferSending ? 'Sending…' : 'Send Request'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

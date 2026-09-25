@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { ventsColors } from '../../lib/ventsDesignTokens';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import {
   ArrowLeft, Users, Search, Calendar, MapPin, Edit2, Lock, Zap, MoreVertical,
   Trash2, EyeOff, Eye, Wifi, WifiOff, ArrowUpDown, RefreshCw, AlertCircle,
-  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame,
+  ScanLine, DoorOpen, BarChart3, Ticket, Clock, Flame, Megaphone, X, CheckCircle,
 } from 'lucide-react';
 import { formatPrice } from './data';
 import { OrganizerEventOverview, OrganizerEventDisplayStatus } from './types';
@@ -24,16 +26,22 @@ interface ManageEventsScreenProps {
   // Saved, event-details) — this screen's own list already self-heals via
   // useOrganizerEvents' refresh, but nothing else in the app knows to.
   onEventDeleted?: (eventId: string) => void;
+  // Desktop-only Creator Studio sidebar (DT1 export) -- same nav items and
+  // real navigation targets as OrganizerDashboard's own `.cs-sidebar`
+  // (CS1), so the desktop organizer surfaces read as one shell instead of
+  // each tool being its own disconnected full-page screen. Optional so a
+  // caller that hasn't been updated just doesn't render the sidebar.
+  onNavigate?: (screen: 'org-dashboard' | 'sales-analytics' | 'promote-event' | 'wallet') => void;
 }
 
 // ─── Midnight Neon palette (shared with Door Manager for a consistent
 // organizer-tools look) ────────────────────────────────────────────────────
 const C = {
-  bg: '#020005', card: '#090514', line: 'rgba(255,255,255,0.06)',
-  text: '#F0F0FF', sub: '#8B8FA8', faint: '#555C7A',
-  purple: '#A78BFA', purpleDeep: '#7B2FBE',
-  green: '#10B981', greenGlow: 'rgba(16,185,129,0.16)',
-  red: '#EF4444', gold: '#FFB830', blue: '#3B82F6',
+  bg: ventsColors.bg, card: ventsColors.surface, line: 'rgba(255,255,255,0.06)',
+  text: ventsColors.ink1, sub: ventsColors.ink2, faint: ventsColors.ink3,
+  purple: ventsColors.accentSoft, purpleDeep: ventsColors.accent,
+  green: ventsColors.success, greenGlow: 'rgba(16,185,129,0.16)',
+  red: ventsColors.error, gold: ventsColors.pending, blue: ventsColors.info,
 };
 
 const STATUS_META: Record<OrganizerEventDisplayStatus, { bg: string; color: string; border: string; label: string; icon: any; dot?: boolean }> = {
@@ -57,8 +65,9 @@ function fmtDate(iso: string | null): string {
 
 export function ManageEventsScreen({
   onBack, currentUser, onOpenEdit, onCreateEvent, onViewAttendees, onViewAnalytics,
-  onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted,
+  onOpenDoorManager, onOpenScanner, onPromoteEvent, onEventDeleted, onNavigate,
 }: ManageEventsScreenProps) {
+  useDesktopWideShell();
   const { events, loading, error, sort, setSort, live, refresh } = useOrganizerEvents(currentUser?.id);
   const [query, setQuery] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -72,6 +81,60 @@ export function ManageEventsScreen({
   // instantly, with no warning to the organizer and no notice to buyers who
   // already hold a ticket for it.
   const [hideWarningTarget, setHideWarningTarget] = useState<OrganizerEventOverview | null>(null);
+
+  // Send Announcement — self-contained: send_event_announcement (SECURITY
+  // DEFINER) does every real ownership/eligibility/rate-limit check
+  // server-side (0041_event_announcements.sql); this only collects the
+  // text and surfaces whatever the RPC says.
+  const [announceTarget, setAnnounceTarget] = useState<OrganizerEventOverview | null>(null);
+  const [announceTitle, setAnnounceTitle] = useState('');
+  const [announceBody, setAnnounceBody] = useState('');
+  const [announceSending, setAnnounceSending] = useState(false);
+  const [announceError, setAnnounceError] = useState('');
+  const [announceRecipients, setAnnounceRecipients] = useState<number | null>(null);
+  const ANNOUNCE_TITLE_MAX = 80;
+  const ANNOUNCE_BODY_MAX = 500;
+
+  function openAnnounce(event: OrganizerEventOverview) {
+    setAnnounceTarget(event);
+    setAnnounceTitle('');
+    setAnnounceBody('');
+    setAnnounceError('');
+    setAnnounceRecipients(null);
+  }
+
+  function closeAnnounce() {
+    setAnnounceTarget(null);
+    setAnnounceError('');
+    setAnnounceRecipients(null);
+  }
+
+  async function sendAnnouncement() {
+    if (!announceTarget) return;
+    const title = announceTitle.trim();
+    const body = announceBody.trim();
+    if (!title || !body) { setAnnounceError('Enter a title and a message.'); return; }
+    setAnnounceSending(true);
+    setAnnounceError('');
+    try {
+      const { data, error: err } = await supabase.rpc('send_event_announcement', {
+        p_event_id: announceTarget.id,
+        p_title: title,
+        p_body: body,
+      });
+      if (err) {
+        if (err.message?.includes('rate_limited')) {
+          throw new Error('You already sent an announcement for this event recently — try again in a few minutes.');
+        }
+        throw new Error(err.message);
+      }
+      setAnnounceRecipients((data as any)?.recipients ?? 0);
+    } catch (e: any) {
+      setAnnounceError(e?.message || 'Could not send this announcement. Please try again.');
+    } finally {
+      setAnnounceSending(false);
+    }
+  }
 
   const filtered = useMemo(
     () => events.filter((e) => !query || e.title.toLowerCase().includes(query.toLowerCase())),
@@ -129,7 +192,7 @@ export function ManageEventsScreen({
   }
 
   return (
-    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: 'Inter, sans-serif' }}>
+    <div style={{ background: C.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', fontFamily: 'Manrope, sans-serif' }}>
       <style>{`
         input::placeholder { color: ${C.sub}; }
         @keyframes ventsCardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -139,12 +202,65 @@ export function ManageEventsScreen({
         .vents-manage-card:active { transform: scale(0.99); }
         .vents-action-btn { transition: transform 0.12s ease, opacity 0.12s ease; }
         .vents-action-btn:active { transform: scale(0.95); }
+
+        /* Desktop (DT1): a genuine multi-column content grid instead of a
+           single stretched mobile column -- header/search/list share a
+           centered max-width content column, and events lay out as a
+           responsive card grid rather than one wide stacked list. */
+        .vents-manage-shell { }
+        .vents-manage-list { display: flex; flex-direction: column; gap: 12px; }
+        .vents-manage-sidebar { display: none; }
+        @media (min-width: 900px) {
+          .vents-manage-outer { display: flex; align-items: flex-start; max-width: 1300px; width: 100%; margin: 0 auto; }
+          .vents-manage-sidebar {
+            display: flex; flex-direction: column; gap: 4px; width: 220px; flex: none;
+            padding: 20px 14px; border-right: 1px solid rgba(255,255,255,0.07);
+            position: sticky; top: 0;
+          }
+          .vents-manage-sidebar-item {
+            display: flex; align-items: center; height: 42px; border-radius: 12px; padding: 0 12px;
+            font-size: 14px; font-weight: 600; cursor: pointer; border: 1px solid transparent;
+            background: none; text-align: left; width: 100%; color: ${C.sub};
+          }
+          .vents-manage-shell { max-width: 1100px; width: 100%; margin: 0 auto; padding-left: 8px; padding-right: 8px; box-sizing: border-box; }
+          .vents-manage-list { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; align-items: start; }
+        }
+        @media (min-width: 1300px) {
+          .vents-manage-list { grid-template-columns: repeat(3, 1fr); }
+        }
       `}</style>
 
+      <div className="vents-manage-outer">
+      {/* Desktop-only sidebar (DT1) -- same nav items/targets as CS1's own
+          `.cs-sidebar` in OrganizerDashboard.tsx, "Events" marked active. */}
+      <nav className="vents-manage-sidebar" aria-label="Creator Studio navigation">
+        {[
+          { key: 'overview', label: 'Overview', action: onNavigate ? () => onNavigate('org-dashboard') : undefined },
+          { key: 'events', label: 'Events', action: undefined },
+          { key: 'sales', label: 'Sales & Analytics', action: onNavigate ? () => onNavigate('sales-analytics') : undefined },
+          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promote-event') : undefined },
+          { key: 'earnings', label: 'Earnings', action: onNavigate ? () => onNavigate('wallet') : undefined },
+        ].map((item) => (
+          <button
+            key={item.key}
+            className="vents-manage-sidebar-item"
+            onClick={item.action}
+            disabled={!item.action}
+            style={
+              item.key === 'events'
+                ? { background: 'rgba(142,92,247,0.14)', border: '1px solid rgba(142,92,247,0.4)', color: C.text }
+                : { color: C.sub, cursor: item.action ? 'pointer' : 'default' }
+            }
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <div className="vents-manage-shell">
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: 'calc(20px + env(safe-area-inset-top)) 16px 14px' }}>
         <button onClick={onBack} style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
-          <ArrowLeft size={16} color="#C4C9E0" />
+          <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
@@ -168,7 +284,7 @@ export function ManageEventsScreen({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search your events..."
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '14px', fontFamily: 'Inter, sans-serif' }}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: C.text, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
           />
         </div>
         <button
@@ -209,7 +325,7 @@ export function ManageEventsScreen({
 
         {/* Event cards */}
         {!loading && filtered.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div className="vents-manage-list">
             {filtered.map((event, idx) => {
               const meta = STATUS_META[event.displayStatus];
               const StatusIcon = meta.icon;
@@ -221,7 +337,7 @@ export function ManageEventsScreen({
                   className="vents-manage-card"
                   style={{ background: C.card, border: `1px solid ${meta.border}`, borderRadius: '18px', overflow: 'hidden', animationDelay: `${Math.min(idx, 8) * 30}ms` }}
                 >
-                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? 'linear-gradient(90deg, #10B981, #3B82F6)' : event.displayStatus === 'sold_out' ? '#FFB830' : event.displayStatus === 'ended' ? '#2A2D3E' : '#2A2D3E' }} />
+                  <div style={{ height: '4px', background: event.displayStatus === 'live' ? 'linear-gradient(90deg, #10B981, #3B82F6)' : event.displayStatus === 'sold_out' ? ventsColors.pending : event.displayStatus === 'ended' ? ventsColors.elevated : ventsColors.elevated }} />
 
                   <div style={{ padding: '14px' }}>
                     {/* Status + title */}
@@ -258,7 +374,7 @@ export function ManageEventsScreen({
                           <span style={{ color: C.sub, fontSize: '11px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{event.location}</span>
                         </div>
                       )}
-                      <span style={{ color: C.purple, fontSize: '11px', fontWeight: 600 }}>
+                      <span style={{ color: C.purple, fontSize: '11px', fontWeight: 600, fontVariantNumeric: 'tabular-nums lining-nums' }}>
                         {event.price > 0 ? formatPrice(event.price) : 'Free'}
                       </span>
                     </div>
@@ -299,7 +415,7 @@ export function ManageEventsScreen({
                       <button
                         onClick={() => onPromoteEvent(event.id)}
                         className="vents-action-btn"
-                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: '#A855F7', fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
+                        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', background: 'linear-gradient(135deg, rgba(168,85,247,0.15), rgba(79,70,229,0.15))', border: '1px solid rgba(168,85,247,0.3)', borderRadius: '10px', padding: '9px', color: ventsColors.accent, fontSize: '12px', fontWeight: 700, cursor: 'pointer', marginTop: '8px' }}
                       >
                         <Zap size={12} />
                         Promote Event
@@ -315,7 +431,7 @@ export function ManageEventsScreen({
         {/* Empty state — no events at all */}
         {!loading && !error && filtered.length === 0 && !query && (
           <div style={{ background: 'rgba(168,85,247,0.06)', border: '1.5px dashed rgba(168,85,247,0.2)', borderRadius: '18px', padding: '28px 20px', marginTop: '20px', textAlign: 'center', animation: 'ventsFadeIn 0.3s ease-out' }}>
-            <div style={{ marginBottom: '10px' }}><Ticket size={36} color="#A855F7" strokeWidth={1.5} /></div>
+            <div style={{ marginBottom: '10px' }}><Ticket size={36} color={ventsColors.accent} strokeWidth={1.5} /></div>
             <p style={{ color: C.text, fontSize: '15px', fontWeight: 700, marginBottom: '6px' }}>No events yet</p>
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '16px' }}>
               Create your first event and manage everything — tickets, attendees, and live sales — right here.
@@ -333,6 +449,8 @@ export function ManageEventsScreen({
           </div>
         )}
       </div>
+      </div>
+      </div>
 
       {/* Options bottom sheet */}
       {optionsEvent && (
@@ -347,6 +465,9 @@ export function ManageEventsScreen({
               { icon: <BarChart3 size={18} />, label: 'Analytics', color: C.green, action: () => { onViewAnalytics(optionsEvent); setOptionsEvent(null); } },
               { icon: <DoorOpen size={18} />, label: 'Door Manager', color: C.gold, action: () => { onOpenDoorManager(optionsEvent); setOptionsEvent(null); } },
               { icon: <ScanLine size={18} />, label: 'Scan Tickets', color: C.gold, action: () => { onOpenScanner(optionsEvent); setOptionsEvent(null); } },
+              ...(optionsEvent.displayStatus === 'live' || optionsEvent.displayStatus === 'sold_out'
+                ? [{ icon: <Megaphone size={18} />, label: 'Send Announcement', color: C.purple, action: () => { openAnnounce(optionsEvent); setOptionsEvent(null); } }]
+                : []),
               { icon: optionsEvent.status === 'draft' ? <Eye size={18} /> : <EyeOff size={18} />, label: toggling === optionsEvent.id ? 'Working…' : (optionsEvent.status === 'draft' ? 'Make Live' : 'Hide as Draft'), color: C.sub, disabled: toggling === optionsEvent.id, action: () => toggleHide(optionsEvent) },
               { icon: <Trash2 size={18} />, label: 'Delete Event', color: C.red, action: () => { setDeleteTarget(optionsEvent); setOptionsEvent(null); } },
             ].map((item: any, i) => (
@@ -363,14 +484,14 @@ export function ManageEventsScreen({
       {hideWarningTarget && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px', animation: 'ventsFadeIn 0.15s ease-out' }}>
           <div style={{ background: C.card, border: '1px solid rgba(245,158,11,0.3)', borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '340px' }}>
-            <EyeOff size={32} color="#F59E0B" style={{ marginBottom: '12px' }} />
+            <EyeOff size={32} color={ventsColors.pending} style={{ marginBottom: '12px' }} />
             <p style={{ color: C.text, fontSize: '17px', fontWeight: 700, marginBottom: '8px' }}>Hide an event with sold tickets?</p>
             <p style={{ color: C.sub, fontSize: '13px', lineHeight: 1.6, marginBottom: '20px' }}>
               "{hideWarningTarget.title}" has {hideWarningTarget.soldQuantity || hideWarningTarget.soldCount} ticket(s) already sold. Hiding it removes the event page from every public feed immediately — ticket holders will lose access to the event details and won't be notified.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setHideWarningTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
-              <button onClick={() => toggleHide(hideWarningTarget)} style={{ flex: 1, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '12px', padding: '12px', color: '#F59E0B', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
+              <button onClick={() => setHideWarningTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => toggleHide(hideWarningTarget)} style={{ flex: 1, background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.4)', borderRadius: '12px', padding: '12px', color: ventsColors.pending, fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>
                 Hide Anyway
               </button>
             </div>
@@ -388,11 +509,88 @@ export function ManageEventsScreen({
               "{deleteTarget.title}" will be removed from your dashboard and the public feed. Ticket and payment history is preserved — an admin can restore it if needed.
             </p>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: '#C4C9E0', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={() => setDeleteTarget(null)} style={{ flex: 1, background: C.card, border: `1px solid ${C.line}`, borderRadius: '12px', padding: '12px', color: ventsColors.ink2, fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
               <button onClick={confirmDelete} disabled={deleting} style={{ flex: 1, background: deleting ? 'rgba(239,68,68,0.3)' : 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)', borderRadius: '12px', padding: '12px', color: C.red, fontSize: '14px', fontWeight: 700, cursor: deleting ? 'not-allowed' : 'pointer' }}>
                 {deleting ? 'Deleting…' : 'Delete'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+      {/* Send Announcement */}
+      {announceTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center', animation: 'ventsFadeIn 0.15s ease-out' }}>
+          <div style={{ background: C.card, borderRadius: '20px 20px 0 0', border: `1px solid ${C.line}`, padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))', animation: 'ventsSheetUp 0.25s cubic-bezier(0.16,1,0.3,1)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Megaphone size={18} color={C.purple} />
+                <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: C.text }}>Send Announcement</p>
+              </div>
+              <button onClick={closeAnnounce} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: C.sub }}>
+                <X size={18} />
+              </button>
+            </div>
+
+            {announceRecipients !== null ? (
+              <>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.25)', borderRadius: '12px', padding: '14px 16px', margin: '16px 0' }}>
+                  <CheckCircle size={18} color={C.green} />
+                  <span style={{ color: C.green, fontSize: '13px', lineHeight: 1.5 }}>
+                    {announceRecipients === 0
+                      ? 'Sent — but no ticket holders matched right now.'
+                      : `Sent to ${announceRecipients} ticket holder${announceRecipients === 1 ? '' : 's'}.`}
+                  </span>
+                </div>
+                <button onClick={closeAnnounce} style={{ width: '100%', background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                  Done
+                </button>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '13px', color: C.sub, margin: '0 0 18px', lineHeight: 1.5 }}>
+                  Send a text update to everyone holding a paid ticket for "{announceTarget.title}". This can't be undone, and only once per event every 15 minutes.
+                </p>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <input
+                    placeholder="Announcement title"
+                    value={announceTitle}
+                    onChange={e => setAnnounceTitle(e.target.value.slice(0, ANNOUNCE_TITLE_MAX))}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none' }}
+                  />
+                  <p style={{ margin: '4px 2px 0', textAlign: 'right', fontSize: '11px', color: C.faint }}>{announceTitle.length}/{ANNOUNCE_TITLE_MAX}</p>
+                </div>
+
+                <div style={{ marginBottom: '12px' }}>
+                  <textarea
+                    placeholder="What do you want to tell your ticket holders?"
+                    value={announceBody}
+                    onChange={e => setAnnounceBody(e.target.value.slice(0, ANNOUNCE_BODY_MAX))}
+                    rows={4}
+                    style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: `1px solid ${C.line}`, borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '14px', boxSizing: 'border-box', outline: 'none', resize: 'none', fontFamily: 'Manrope, sans-serif' }}
+                  />
+                  <p style={{ margin: '4px 2px 0', textAlign: 'right', fontSize: '11px', color: C.faint }}>{announceBody.length}/{ANNOUNCE_BODY_MAX}</p>
+                </div>
+
+                {announceError && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
+                    <AlertCircle size={14} color={C.red} />
+                    <span style={{ color: C.red, fontSize: '13px' }}>{announceError}</span>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <button onClick={closeAnnounce} style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: 'none', borderRadius: '12px', padding: '14px', color: C.sub, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+                  <button
+                    onClick={sendAnnouncement}
+                    disabled={announceSending || !announceTitle.trim() || !announceBody.trim()}
+                    style={{ flex: 1, background: 'linear-gradient(135deg,#7C3AED,#A855F7)', border: 'none', borderRadius: '12px', padding: '14px', color: '#fff', fontWeight: 700, cursor: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 'not-allowed' : 'pointer', opacity: (announceSending || !announceTitle.trim() || !announceBody.trim()) ? 0.6 : 1 }}
+                  >
+                    {announceSending ? 'Sending…' : 'Send'}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -403,7 +601,7 @@ export function ManageEventsScreen({
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ background: 'rgba(255,255,255,0.03)', border: `1px solid ${C.line}`, borderRadius: '10px', padding: '8px 6px', textAlign: 'center' }}>
-      <div style={{ color: C.text, fontSize: '13px', fontWeight: 800, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ color: C.text, fontSize: '13px', fontWeight: 800, lineHeight: 1.1, fontVariantNumeric: 'tabular-nums lining-nums' }}>{value}</div>
       <div style={{ color: C.faint, fontSize: '9.5px', fontWeight: 600, marginTop: '2px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
     </div>
   );
