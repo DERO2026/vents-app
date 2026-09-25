@@ -1076,8 +1076,8 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
           check server-side, this just collects the identifier and surfaces
           the RPC's own error message. */}
       {transferTicket && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', boxSizing: 'border-box' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '360px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: ventsColors.ink1 }}>Transfer Ticket</p>
               <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.ink2 }}>

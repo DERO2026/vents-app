@@ -13,6 +13,7 @@ import { shareLink } from '../../lib/shareLink';
 import { Sentry } from '../../lib/sentry';
 import { TOAST_TOP_POSITION } from './shared/toastPosition';
 import { supabase } from '../../lib/supabase';
+import { UserAutocomplete } from './shared/UserAutocomplete';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -509,8 +510,8 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
       </div>
 
       {showTransfer && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }}>
-          <div style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px', boxSizing: 'border-box' }}>
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', padding: '24px', width: '100%', maxWidth: '360px' }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
               <p style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: ventsColors.ink1 }}>Transfer Ticket</p>
               <button onClick={closeTransferModal} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: ventsColors.ink2 }}>
@@ -535,14 +536,15 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                 <p style={{ fontSize: '13px', color: ventsColors.ink2, margin: '0 0 18px', lineHeight: 1.5 }}>
                   Enter the VENTS email or username of the person you're transferring this ticket to. They must already have a VENTS account. The request expires in 48 hours if not accepted.
                 </p>
-                <input
-                  placeholder="Recipient email or username"
-                  value={transferIdentifier}
-                  onChange={e => setTransferIdentifier(e.target.value)}
-                  autoCapitalize="off"
-                  autoCorrect="off"
-                  style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '15px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
-                />
+                <div style={{ marginBottom: '12px' }}>
+                  <UserAutocomplete
+                    label="Recipient"
+                    placeholder="Recipient email or username"
+                    value={transferIdentifier}
+                    onChange={setTransferIdentifier}
+                    onSelect={() => {}}
+                  />
+                </div>
                 {transferError && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '12px' }}>
                     <AlertCircle size={14} color={ventsColors.error} />
