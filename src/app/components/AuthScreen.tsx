@@ -19,6 +19,7 @@ import { Sentry } from '../../lib/sentry';
 import { isConfirmedDuplicateEmailError, isUnconfirmedDuplicateSignupError } from '../../lib/duplicateSignupEmail';
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
+import { DobPicker } from './DobPicker';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -2366,20 +2367,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   <label style={{ display: 'block', color: '#94A3B8', fontSize: '12px', fontWeight: 600, marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
                     DATE OF BIRTH
                   </label>
-                  <input
-                    type="date"
+                  <DobPicker
                     value={dob}
-                    // type="date" is already the right choice for both iOS
-                    // (native wheel picker) and desktop (native calendar) --
-                    // no custom JS date picker needed. max already blocks
-                    // "under 13"/future dates; min bounds the other end so
-                    // the native year field (freely typable on desktop
-                    // browsers) can't be walked back to an absurd date like
-                    // year 1000 -- 120 years covers any real signup.
-                    min={new Date(Date.now() - 120 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    max={new Date(Date.now() - 13 * 365.25 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]}
-                    onChange={(e) => {
-                      const v = e.target.value;
+                    hasError={!!dobError}
+                    background={FIELD_BG}
+                    borderColor={FIELD_BORDER}
+                    radius={FIELD_RADIUS}
+                    onChange={(v) => {
                       setDob(v);
                       if (v) {
                         const age = Math.floor((Date.now() - new Date(v).getTime()) / (365.25 * 24 * 60 * 60 * 1000));
@@ -2387,15 +2381,6 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                       } else {
                         setDobError(null);
                       }
-                    }}
-                    className="auth-input-field"
-                    style={{
-                      width: '100%', maxWidth: '320px', height: '52px', background: FIELD_BG,
-                      border: `1px solid ${dobError ? 'rgba(239,68,68,0.6)' : FIELD_BORDER}`,
-                      borderRadius: FIELD_RADIUS, padding: '0 16px',
-                      color: dob ? '#FFFFFF' : '#94A3B8', fontSize: '15px',
-                      outline: 'none', boxSizing: 'border-box',
-                      colorScheme: 'dark',
                     }}
                   />
                   {dobError && <p style={{ color: '#EF4444', fontSize: '11px', marginTop: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}>{dobError}</p>}
