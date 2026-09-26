@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Search, ChevronDown, Sparkles, Scissors, PartyPopper, Shirt, Wrench, Heart, Camera, UtensilsCrossed, Music, Palette, Car } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Search, ChevronDown, Sparkles, Scissors, PartyPopper, Shirt, Wrench, Heart, Camera, UtensilsCrossed, Music, Palette, Car } from 'lucide-react';
 import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
@@ -76,6 +76,11 @@ export function ServicesHomeScreen({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [providers, setProviders] = useState<ServiceProvider[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  // Bumped by the Retry button to re-run the discovery effect below (GPS or
+  // country-fallback, whichever branch is currently active) without
+  // duplicating its fetch logic. See ServiceCategoryScreen.tsx's identical
+  // pattern for why this also prevents duplicate retry requests for free.
+  const [reloadKey, setReloadKey] = useState(0);
 
   const activeIso = discoveryCountryIso || accountCountryIso;
   const activeCountry = COUNTRY_CODES.find((c) => c.iso === activeIso);
@@ -111,7 +116,9 @@ export function ServicesHomeScreen({
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };
-  }, [activeIso, geo.status, geo.lat, geo.lng]);
+  }, [activeIso, geo.status, geo.lat, geo.lng, reloadKey]);
+
+  const handleRetry = () => setReloadKey((k) => k + 1);
 
   const filteredNearYou = useMemo(() => {
     if (!providers) return [];
@@ -218,9 +225,17 @@ export function ServicesHomeScreen({
             {Array.from({ length: 3 }).map((_, i) => <CardSkeleton key={i} />)}
           </div>
         ) : loadError ? (
-          <p style={{ color: servicesColors.textSecondary, fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>
-            Couldn't load providers right now. Pull down to try again.
-          </p>
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <AlertCircle size={28} color={servicesColors.error} style={{ marginBottom: '8px', marginLeft: 'auto', marginRight: 'auto' }} />
+            <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: '0 0 4px' }}>Couldn't load providers</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 14px' }}>Check your connection and try again.</p>
+            <button
+              onClick={handleRetry}
+              style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '10px 20px', color: servicesColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
         ) : filteredNearYou.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '32px 20px' }}>
             <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>
