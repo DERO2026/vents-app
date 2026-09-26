@@ -330,6 +330,7 @@ export type Screen =
   | 'nigeria-live'
   | 'admin-dashboard'
   | 'checkin-scanner'
+  | 'vents-ai'
   | 'door-manager'
   | 'inbox'
   | 'conversation'
