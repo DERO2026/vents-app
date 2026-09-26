@@ -1226,25 +1226,37 @@ export function AdminDashboardScreen({
   }, [tab, currentUser?.id, isRoot]);
 
 
+  // Routed through admin_decide_organizer_request (Batch 1b) -- one atomic,
+  // audited RPC instead of the old two-step client update + separate
+  // admin_set_user_role call (which silently left a Sub-Admin's "approval"
+  // marked approved with no role ever granted, since admin_set_user_role is
+  // Super-Admin-gated but the raw organizer_requests update wasn't). Routed
+  // through submitOrExecute so a Sub-Admin's decision goes to the
+  // Admin/Root approval queue instead of failing outright.
   const reviewOrgRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
-    const { error } = await supabase
-      .from('organizer_requests')
-      .update({ status, admin_note: adminNote || null, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
-      .eq('id', id);
-    if (!error) {
-      setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      const req = orgRequests.find((r) => r.id === id);
-      // If approved, update user role to organizer
-      if (status === 'approved') {
-        if (req?.user_id) {
-          await supabase.rpc('admin_set_user_role', { p_user_id: req.user_id, p_new_role: 'organizer' });
-        }
-      }
-      // Decision SMS is now sent server-side by notifyByEmail's endpoint
-      // (api/notify/status-email.ts) — it looks up the phone number itself and
-      // sends with the same text, no client-held Sendchamp key required.
-      notifyByEmail('organizer', id, status, adminNote);
-    }
+    const req = orgRequests.find((r) => r.id === id);
+    await submitOrExecute('decide_organizer_request',
+      {
+        target_type: 'user',
+        target_id: req?.user_id ?? null,
+        target_label: req?.users?.full_name || req?.users?.username || req?.users?.email || req?.user_id,
+        payload: { request_id: id, approve: status === 'approved', reason: adminNote || null },
+        previous: { status: 'pending' },
+        changes: { status },
+      },
+      async () => {
+        const { error } = await supabase.rpc('admin_decide_organizer_request', {
+          p_request_id: id,
+          p_approve: status === 'approved',
+          p_reason: adminNote || null,
+        });
+        if (error) throw error;
+        setOrgRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+        // Decision SMS is now sent server-side by notifyByEmail's endpoint
+        // (api/notify/status-email.ts) — it looks up the phone number itself and
+        // sends with the same text, no client-held Sendchamp key required.
+        notifyByEmail('organizer', id, status, adminNote);
+      });
   };
 
   // Service Provider requests -- own fetch effect and review function,
@@ -1283,22 +1295,36 @@ export function AdminDashboardScreen({
     })();
   }, [tab, currentUser?.id, isRoot]);
 
+  // Routed through submitOrExecute (Batch 1b) -- previously this called
+  // admin_decide_service_provider_request directly and unconditionally, so a
+  // Sub-Admin's click failed outright at the RPC's Super-Admin gate with a
+  // raw error instead of going to the approval queue like every other
+  // dual-controlled action here.
   const reviewSpRequest = async (id: string, status: 'approved' | 'rejected', adminNote?: string) => {
     // Single atomic RPC: updates the request, grants/leaves the capability,
     // AND inserts the applicant's notification together -- see
-    // admin_decide_service_provider_request (0044_service_provider_kyc.sql).
+    // admin_decide_service_provider_request (0044_service_provider_kyc.sql,
+    // reconciled atomically in Batch 1b's 0091).
     const req = spRequests.find((r) => r.id === id);
-    const { error } = await supabase.rpc('admin_decide_service_provider_request', {
-      p_request_id: id,
-      p_status: status,
-      p_admin_note: adminNote || null,
-    });
-    if (!error) {
-      setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
-      triggerPushDelivery(req?.user_id);
-    } else {
-      flash(false, error.message || 'Failed to review request.');
-    }
+    await submitOrExecute('decide_service_provider_request',
+      {
+        target_type: 'user',
+        target_id: req?.user_id ?? null,
+        target_label: req?.business_name || req?.owner_name || req?.user_id,
+        payload: { request_id: id, status, admin_note: adminNote || null },
+        previous: { status: 'pending' },
+        changes: { status },
+      },
+      async () => {
+        const { error } = await supabase.rpc('admin_decide_service_provider_request', {
+          p_request_id: id,
+          p_status: status,
+          p_admin_note: adminNote || null,
+        });
+        if (error) throw error;
+        setSpRequests((prev) => prev.map((r) => r.id === id ? { ...r, status, admin_note: adminNote || null } : r));
+        triggerPushDelivery(req?.user_id);
+      });
   };
 
   // ── Services (Admin/Sub-Admin management surface) ──────────────────────
