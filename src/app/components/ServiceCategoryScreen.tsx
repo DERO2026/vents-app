@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Home, Truck, Zap } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Home, Truck, Zap } from 'lucide-react';
 import { ServiceProvider } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
 import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
@@ -37,6 +37,13 @@ function ListSkeleton() {
 export function ServiceCategoryScreen({ category, onBack, onProviderPress }: ServiceCategoryScreenProps) {
   const [providers, setProviders] = useState<ServiceProvider[] | null>(null);
   const [loadError, setLoadError] = useState(false);
+  // Bumped by the Retry button to re-run the effect below without
+  // duplicating its fetch logic. Resetting `providers` to null on every run
+  // (including a retry) means the skeleton loading state above takes over
+  // immediately, which also naturally prevents duplicate retry requests --
+  // the Retry button only renders while `loadError` is true, and that flips
+  // back to false the instant a retry starts.
+  const [reloadKey, setReloadKey] = useState(0);
   const [activeChips, setActiveChips] = useState<Set<'home' | 'delivery' | 'sameDay'>>(new Set());
   const accent = categoryAccents[category] || servicesColors.accentPurple;
 
@@ -48,7 +55,9 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress }: Ser
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };
-  }, [category]);
+  }, [category, reloadKey]);
+
+  const handleRetry = () => setReloadKey((k) => k + 1);
 
   const toggleChip = (key: 'home' | 'delivery' | 'sameDay') => {
     setActiveChips((prev) => {
@@ -112,9 +121,17 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress }: Ser
         {providers === null ? (
           <ListSkeleton />
         ) : loadError ? (
-          <p style={{ color: servicesColors.textSecondary, fontSize: '13px', textAlign: 'center', padding: '40px 0' }}>
-            Couldn't load providers right now. Pull down to try again.
-          </p>
+          <div style={{ textAlign: 'center', padding: '40px 0' }}>
+            <AlertCircle size={32} color={servicesColors.error} style={{ marginBottom: '10px', marginLeft: 'auto', marginRight: 'auto' }} />
+            <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>Couldn't load providers</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 16px' }}>Check your connection and try again.</p>
+            <button
+              onClick={handleRetry}
+              style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '10px 20px', color: servicesColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 20px' }}>
             <p style={{ color: servicesColors.textPrimary, fontSize: '16px', fontWeight: 700, margin: '0 0 6px' }}>
