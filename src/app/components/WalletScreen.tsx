@@ -10,7 +10,7 @@ import { Sentry } from '../../lib/sentry';
 import { AmbientGlow } from './shared/AmbientGlow';
 
 interface WalletScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; is_service_provider?: boolean } | null;
   onBack: () => void;
 }
 
@@ -149,7 +149,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // can actually earn -- a plain attendee has no organizer_wallets row, so
   // showing an always-₦0.00 "Earnings" card and an "Add Bank" action they
   // can never use would be confusing, not just visually redundant.
-  const isEarner = currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin';
+  const isEarner = currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.is_service_provider === true;
   const [wallet, setWallet] = useState<WalletData | null>(null);
   const [txns, setTxns] = useState<Transaction[]>([]);
   const [withdrawalRequests, setWithdrawalRequests] = useState<WithdrawalRequest[]>([]);

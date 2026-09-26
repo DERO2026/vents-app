@@ -5,6 +5,7 @@ import { apiUrl } from '../../lib/apiBase';
 import { openPaystackPopup } from '../../lib/paystack';
 import { Sentry } from '../../lib/sentry';
 import { validateWalletDepositAmountKobo } from '../../lib/walletMath';
+import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface CustomerWalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string } | null;
@@ -43,6 +44,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
   const [balanceKobo, setBalanceKobo] = useState<number | null>(null);
   const [txns, setTxns] = useState<WalletTxn[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [tab, setTab] = useState<'wallet' | 'earnings'>('wallet');
 
   const [showDeposit, setShowDeposit] = useState(false);
@@ -54,17 +56,21 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
   const load = async () => {
     if (!currentUser?.id) return;
     setLoading(true);
+    setLoadError('');
     try {
       const [wRes, tRes] = await Promise.all([
         supabase.rpc('get_my_wallet'),
         supabase.rpc('get_my_wallet_transactions', { p_limit: 50, p_offset: 0 }),
       ]);
+      if (wRes.error) throw wRes.error;
+      if (tRes.error) throw tRes.error;
       const row = Array.isArray(wRes.data) ? wRes.data[0] : wRes.data;
       setBalanceKobo(typeof row?.balance_kobo === 'number' ? row.balance_kobo : 0);
       setTxns((tRes.data as WalletTxn[]) || []);
     } catch (e) {
       console.error('Customer wallet load error:', e);
       Sentry.captureException(e);
+      setLoadError('Failed to load wallet data. Pull to retry.');
     } finally {
       setLoading(false);
     }
@@ -150,10 +156,10 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
   };
 
   return (
-    <div style={{ background: '#020005', height: '100%', display: 'flex', flexDirection: 'column', color: '#F0F0FF', overflow: 'hidden' }}>
+    <div style={{ background: ventsColors.bg, height: '100%', display: 'flex', flexDirection: 'column', color: ventsColors.ink1, overflow: 'hidden' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '16px 20px', paddingTop: 'calc(16px + env(safe-area-inset-top))' }}>
-        <button onClick={onBack} style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
-          <ArrowLeft size={18} color="#F0F0FF" />
+        <button onClick={onBack} style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.08)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+          <ArrowLeft size={18} color={ventsColors.ink1} />
         </button>
         <span style={{ fontSize: '18px', fontWeight: 800 }}>VENTS Wallet</span>
       </div>
@@ -165,8 +171,8 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             style={{
               flex: 1, padding: '10px', borderRadius: '100px', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
               border: tab === 'wallet' ? '1px solid rgba(168,85,247,0.5)' : '1px solid rgba(255,255,255,0.08)',
-              background: tab === 'wallet' ? 'rgba(168,85,247,0.15)' : '#090514',
-              color: tab === 'wallet' ? '#D8B4FE' : '#94A3B8',
+              background: tab === 'wallet' ? 'rgba(168,85,247,0.15)' : ventsColors.surface,
+              color: tab === 'wallet' ? ventsColors.accentSoft : ventsColors.ink2,
             }}
           >
             Wallet Balance
@@ -175,7 +181,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             onClick={() => { setTab('earnings'); onOpenEarnings?.(); }}
             style={{
               flex: 1, padding: '10px', borderRadius: '100px', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-              border: '1px solid rgba(255,255,255,0.08)', background: '#090514', color: '#94A3B8',
+              border: '1px solid rgba(255,255,255,0.08)', background: ventsColors.surface, color: ventsColors.ink2,
             }}
           >
             Earnings
@@ -195,10 +201,10 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
           }}
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-            <WalletIcon size={16} color="#D8B4FE" />
-            <span style={{ color: '#D8B4FE', fontSize: '13px', fontWeight: 700, letterSpacing: '0.02em' }}>WALLET BALANCE</span>
+            <WalletIcon size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 700, letterSpacing: '0.02em' }}>WALLET BALANCE</span>
           </div>
-          <div style={{ fontSize: '34px', fontWeight: 800, color: '#fff', marginBottom: '4px' }}>
+          <div style={{ fontSize: '34px', fontWeight: 800, color: ventsColors.white, marginBottom: '4px' }}>
             {loading ? '···' : fmt(balanceKobo || 0)}
           </div>
           <div style={{ fontSize: '12px', color: 'rgba(240,240,255,0.55)', marginBottom: '20px' }}>
@@ -209,7 +215,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             style={{
               display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
               width: '100%', padding: '14px', borderRadius: '14px', border: 'none', cursor: 'pointer',
-              background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: '#fff', fontWeight: 700, fontSize: '15px',
+              background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: ventsColors.white, fontWeight: 700, fontSize: '15px',
             }}
           >
             <Plus size={18} /> Deposit Funds
@@ -217,16 +223,26 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>Transaction History</span>
-          <button onClick={load} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
+          <span style={{ fontSize: '14px', fontWeight: 700, color: ventsColors.ink1 }}>Transaction History</span>
+          <button onClick={load} style={{ background: 'none', border: 'none', cursor: 'pointer', color: ventsColors.ink2 }}>
             <RefreshCw size={15} />
           </button>
         </div>
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748B' }}>Loading…</div>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: ventsColors.ink3 }}>Loading…</div>
+        ) : loadError ? (
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '10px', padding: '32px 0', color: ventsColors.error, fontSize: '13px', textAlign: 'center' }}>
+            <span>{loadError}</span>
+            <button
+              onClick={load}
+              style={{ background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.1)', borderRadius: '100px', padding: '8px 18px', color: ventsColors.ink1, fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
         ) : txns.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '40px 0', color: '#64748B', fontSize: '13px' }}>
+          <div style={{ textAlign: 'center', padding: '40px 0', color: ventsColors.ink3, fontSize: '13px' }}>
             No wallet activity yet. Your deposits and purchases will show up here.
           </div>
         ) : (
@@ -239,28 +255,28 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
                   onClick={() => setSelectedTxn(t)}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%',
-                    background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px',
+                    background: ventsColors.surface, border: '1px solid rgba(255,255,255,0.06)', borderRadius: '14px',
                     padding: '14px', cursor: 'pointer', textAlign: 'left',
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
                     {isCredit
-                      ? <ArrowDownCircle size={20} color="#22C55E" />
-                      : <ArrowUpCircle size={20} color="#F87171" />}
+                      ? <ArrowDownCircle size={20} color={ventsColors.success} />
+                      : <ArrowUpCircle size={20} color={ventsColors.error} />}
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 700, color: '#F0F0FF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      <div style={{ fontSize: '13px', fontWeight: 700, color: ventsColors.ink1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                         {txnLabel(t)}
                       </div>
-                      <div style={{ fontSize: '11px', color: '#64748B' }}>
+                      <div style={{ fontSize: '11px', color: ventsColors.ink3 }}>
                         {new Date(t.created_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })}
                       </div>
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                    <span style={{ fontSize: '14px', fontWeight: 800, color: isCredit ? '#22C55E' : '#F87171' }}>
+                    <span style={{ fontSize: '14px', fontWeight: 800, color: isCredit ? ventsColors.success : ventsColors.error }}>
                       {isCredit ? '+' : '-'}{fmt(t.amount_kobo)}
                     </span>
-                    <ChevronRight size={14} color="#475569" />
+                    <ChevronRight size={14} color={ventsColors.ink3} />
                   </div>
                 </button>
               );
@@ -271,7 +287,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
 
       {showDeposit && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 9500 }} onClick={() => !depositing && setShowDeposit(false)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '16px' }}>Deposit to VENTS Wallet</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
               {DEPOSIT_PRESETS_NAIRA.map((n) => (
@@ -282,7 +298,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
                     padding: '8px 14px', borderRadius: '100px', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
                     border: depositAmount === String(n) ? '1px solid rgba(168,85,247,0.6)' : '1px solid rgba(255,255,255,0.08)',
                     background: depositAmount === String(n) ? 'rgba(168,85,247,0.15)' : 'transparent',
-                    color: depositAmount === String(n) ? '#D8B4FE' : '#94A3B8',
+                    color: depositAmount === String(n) ? ventsColors.accentSoft : ventsColors.ink2,
                   }}
                 >
                   ₦{n.toLocaleString('en-NG')}
@@ -297,16 +313,16 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
               onChange={(e) => setDepositAmount(e.target.value)}
               style={{
                 width: '100%', padding: '14px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)',
-                background: '#020005', color: '#F0F0FF', fontSize: '15px', marginBottom: '12px', boxSizing: 'border-box',
+                background: ventsColors.bg, color: ventsColors.ink1, fontSize: '15px', marginBottom: '12px', boxSizing: 'border-box',
               }}
             />
-            {depositError && <div style={{ color: '#F87171', fontSize: '12px', marginBottom: '12px' }}>{depositError}</div>}
+            {depositError && <div style={{ color: ventsColors.error, fontSize: '12px', marginBottom: '12px' }}>{depositError}</div>}
             <button
               onClick={handleDeposit}
               disabled={depositing}
               style={{
                 width: '100%', padding: '14px', borderRadius: '12px', border: 'none', cursor: depositing ? 'not-allowed' : 'pointer',
-                background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: '#fff', fontWeight: 700, opacity: depositing ? 0.6 : 1,
+                background: 'linear-gradient(135deg,#7C3AED,#A855F7)', color: ventsColors.white, fontWeight: 700, opacity: depositing ? 0.6 : 1,
               }}
             >
               {depositing ? 'Processing…' : 'Continue to Paystack'}
@@ -317,7 +333,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
 
       {selectedTxn && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', zIndex: 9500 }} onClick={() => setSelectedTxn(null)}>
-          <div onClick={(e) => e.stopPropagation()} style={{ background: '#090514', borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: ventsColors.surface, borderRadius: '20px 20px 0 0', padding: '24px', width: '100%', maxWidth: '390px', paddingBottom: 'calc(24px + env(safe-area-inset-bottom))' }}>
             <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '16px' }}>Transaction Details</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
               <Row label="Type" value={txnLabel(selectedTxn)} />
@@ -335,8 +351,8 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
 function Row({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '8px' }}>
-      <span style={{ color: '#64748B' }}>{label}</span>
-      <span style={{ color: '#F0F0FF', fontWeight: 600, maxWidth: '60%', textAlign: 'right', wordBreak: 'break-all' }}>{value}</span>
+      <span style={{ color: ventsColors.ink3 }}>{label}</span>
+      <span style={{ color: ventsColors.ink1, fontWeight: 600, maxWidth: '60%', textAlign: 'right', wordBreak: 'break-all' }}>{value}</span>
     </div>
   );
 }
