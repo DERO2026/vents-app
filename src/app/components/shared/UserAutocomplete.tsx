@@ -243,6 +243,20 @@ export function UserAutocomplete({ label, placeholder, value, onChange, onSelect
           {!loading && !searchError && results.map((user) => (
             <button
               key={user.id}
+              // onMouseDown (not onClick alone) fires before the input's own
+              // blur -- and, critically, preventDefault() here stops the
+              // browser's default mousedown behavior of shifting focus off
+              // the input in the first place, so the input's onBlur never
+              // fires at all for this tap. Without this, tapping a row on a
+              // touchscreen races the input's onBlur (which closes this
+              // dropdown via a 150ms setTimeout) against the browser's own
+              // click event, which on mobile can be delayed 150-300ms past
+              // touchend -- the dropdown/button can unmount before the click
+              // ever arrives, so the tap silently does nothing. onClick
+              // still does the actual selection (also keeps Enter/Space
+              // activation working for keyboard users), it just never loses
+              // the race to blur anymore.
+              onMouseDown={(e) => e.preventDefault()}
               onClick={() => handleSelect(user)}
               style={{
                 display: 'flex',

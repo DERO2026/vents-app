@@ -11,9 +11,18 @@ import { UserAutocomplete } from './UserAutocomplete';
 // overflow-clipped ancestor it's mounted in -- this test reproduces that
 // exact ancestor shape and asserts the dropdown actually lands outside it.
 vi.mock('../../../lib/userSearch', () => ({
+  // The mock stands in for search_users_for_request (0069_user_search.sql),
+  // which matches server-side against username OR email -- separately
+  // confirmed live against production for both. This mock exercises the
+  // client contract for each: a username-shaped query and an email-shaped
+  // query must each surface a suggestion the user can select.
   searchUsers: vi.fn(async (query: string) => {
-    if (query.toLowerCase().startsWith('dan')) {
+    const q = query.toLowerCase();
+    if (q.startsWith('dan')) {
       return [{ id: 'u1', username: 'daniel', fullName: 'Daniel', avatarUrl: null }];
+    }
+    if (q.startsWith('patricia@')) {
+      return [{ id: 'u2', username: 'tricialisa', fullName: 'Patricia Ene', avatarUrl: null }];
     }
     return [];
   }),
@@ -210,5 +219,141 @@ describe('UserAutocomplete: dropdown survives an overflow-clipping ancestor', ()
     // suggestions would otherwise indistinguishably see as "the feature is
     // broken."
     expect(document.body.textContent || '').toContain('No VENTS users found.');
+  });
+
+  // Regression tests for the Transfer Ticket recipient-lookup report: the
+  // dropdown could render but selecting a suggestion on a touchscreen
+  // silently did nothing, because the input's onBlur (fired when a tap
+  // shifts focus to the suggestion button) raced a 150ms setTimeout that
+  // unmounts the dropdown against the browser's own click event, which on
+  // mobile is commonly delayed 150-300ms past touchend. These prove: (a)
+  // selecting a suggestion found by USERNAME populates the field and fires
+  // onSelect with the right user, (b) same for a suggestion found by EMAIL,
+  // (c) the suggestion row's onMouseDown actually calls preventDefault --
+  // the mechanism that stops the input from blurring on tap in the first
+  // place, so the race can never happen.
+  it('selecting a username-matched suggestion populates the field and fires onSelect with the correct user', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let value = '';
+    const handleChange = vi.fn((v: string) => { value = v; });
+    const handleSelect = vi.fn();
+
+    root = createRoot(container);
+    const render = () => act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={handleSelect} />
+      );
+    });
+    render();
+
+    act(() => {
+      const input = container!.querySelector('input') as HTMLInputElement;
+      input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'dan');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    value = 'dan';
+    render();
+
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const suggestion = Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes('daniel'))!;
+    expect(suggestion).toBeTruthy();
+    act(() => { suggestion.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(handleChange).toHaveBeenLastCalledWith('daniel');
+    expect(handleSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'u1', username: 'daniel' }));
+  });
+
+  it('selecting an email-matched suggestion populates the field with the username and fires onSelect with the correct user', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let value = '';
+    const handleChange = vi.fn((v: string) => { value = v; });
+    const handleSelect = vi.fn();
+
+    root = createRoot(container);
+    const render = () => act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={handleSelect} />
+      );
+    });
+    render();
+
+    act(() => {
+      const input = container!.querySelector('input') as HTMLInputElement;
+      input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'patricia@example.com');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    value = 'patricia@example.com';
+    render();
+
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const suggestion = Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes('tricialisa'))!;
+    expect(suggestion).toBeTruthy();
+    act(() => { suggestion.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    // The field is filled with the resolved USERNAME, not the typed email --
+    // initiate_ticket_transfer/create_pending_purchase match against either,
+    // but the identifier a real suggestion resolves to is always the
+    // username (see UserAutocomplete's handleSelect).
+    expect(handleChange).toHaveBeenLastCalledWith('tricialisa');
+    expect(handleSelect).toHaveBeenCalledWith(expect.objectContaining({ id: 'u2', username: 'tricialisa' }));
+  });
+
+  it('a suggestion row prevents the default mousedown action -- the fix that stops the input blurring (and the dropdown unmounting) before a mobile tap\'s click event arrives', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let value = '';
+    const handleChange = (v: string) => { value = v; };
+
+    root = createRoot(container);
+    const render = () => act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={() => {}} />
+      );
+    });
+    render();
+
+    act(() => {
+      const input = container!.querySelector('input') as HTMLInputElement;
+      input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'dan');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    value = 'dan';
+    render();
+
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const suggestion = Array.from(document.body.querySelectorAll('button')).find((b) => b.textContent?.includes('daniel'))!;
+    const mousedown = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+    act(() => { suggestion.dispatchEvent(mousedown); });
+
+    expect(mousedown.defaultPrevented).toBe(true);
   });
 });
