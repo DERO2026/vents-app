@@ -1,0 +1,11 @@
+-- 0088_default_role_user_and_country.sql changed handle_new_user()'s default
+-- for NEW signups from 'attendee' to 'user', but did nothing for accounts
+-- that already existed at that point -- confirmed by direct inspection
+-- (SELECT role, count(*) FROM public.users GROUP BY role) showing 31 rows
+-- still carrying role='attendee' in production. 'attendee' and 'user' are
+-- functionally identical everywhere in this codebase (src/lib/permissions.ts's
+-- ROLE_CAPABILITIES has no entry for either string -- both already granted
+-- zero extra capabilities), so this is a pure label backfill, not a
+-- permissions change: it just finishes making 'user' the one non-elevated
+-- role string these rows already behaved as.
+UPDATE public.users SET role = 'user' WHERE role = 'attendee';

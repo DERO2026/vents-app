@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MIN_PASSWORD_LENGTH } from './sanitize';
 
 // Generic E.164-shaped check — '+' followed by 7 to 15 digits (ITU E.164's
 // max total length, country code included). This is intentionally
@@ -36,7 +37,7 @@ export const signupSchema = z.object({
   username: z.string().trim().regex(/^[a-zA-Z0-9_]{3,30}$/, 'Username must be 3-30 characters, letters, numbers, and underscores only'),
   email: z.string().trim().email().max(254),
   phone: z.string().trim().regex(E164_PATTERN, 'Please enter a valid phone number.'),
-  password: z.string().min(10).max(128)
+  password: z.string().min(MIN_PASSWORD_LENGTH).max(128)
     .regex(/[a-z]/, 'Password must include a lowercase letter')
     .regex(/[A-Z]/, 'Password must include an uppercase letter')
     .regex(/\d/, 'Password must include a number'),
