@@ -26,6 +26,7 @@ import { Capacitor } from '@capacitor/core';
 import { supabase } from './supabase';
 import { trackEvent } from './analytics';
 import { askPermission, notifyPermissionDenied } from './permissionPrimer';
+import { Sentry } from './sentry';
 
 const isNative = Capacitor.isNativePlatform();
 let registered = false;
@@ -77,9 +78,19 @@ async function persistToken(userId: string, token: string) {
       p_token: token,
       p_platform: Capacitor.getPlatform(), // 'android' | 'ios'
     });
-    if (error) console.warn('[push] token registration failed:', error);
+    if (error) {
+      console.warn('[push] token registration failed:', error);
+      // Was console.warn-only: a user could have permission granted and a
+      // live FCM token, yet silently never actually be reachable (e.g. an
+      // RLS/signature-drift regression in register_push_token) with nothing
+      // in Sentry to catch it -- every other caught error in the push flow
+      // this module is part of (NotificationsScreen.tsx) already reports to
+      // Sentry, this was the one gap.
+      Sentry.captureException(error);
+    }
   } catch (err) {
     console.warn('[push] token registration threw:', err);
+    Sentry.captureException(err);
   }
 }
 
@@ -160,6 +171,13 @@ export async function registerPushNotifications(userId: string): Promise<void> {
     if (token) await persistToken(userId, token);
   } catch (err) {
     console.warn('[push] setup failed:', err);
+    // Not shown to the user: a failure here (permission check, getToken())
+    // means the app never asked for/lost push capability, which is a
+    // silent state the user would otherwise have no way to notice or
+    // report -- worth monitoring, not worth surfacing (no action they can
+    // take beyond what notifyPermissionDenied above already offers for the
+    // one case that IS user-actionable).
+    Sentry.captureException(err);
   }
 }
 
