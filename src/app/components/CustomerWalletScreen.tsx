@@ -4,7 +4,7 @@ import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { openPaystackPopup } from '../../lib/paystack';
 import { Sentry } from '../../lib/sentry';
-import { validateWalletDepositAmountKobo } from '../../lib/walletMath';
+import { validateWalletDepositAmountKobo, isWalletCredit, walletTxnLabel } from '../../lib/walletMath';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface CustomerWalletScreenProps {
@@ -30,14 +30,8 @@ function fmt(kobo: number) {
 
 const DEPOSIT_PRESETS_NAIRA = [1000, 2500, 5000, 10000, 25000];
 
-const TYPE_LABEL: Record<string, string> = {
-  deposit: 'Wallet Deposit',
-  spend: 'Purchase',
-};
-
 function txnLabel(t: WalletTxn): string {
-  if (t.description) return t.description;
-  return TYPE_LABEL[t.type] || 'Wallet Adjustment';
+  return walletTxnLabel(t.type, t.description);
 }
 
 export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, showEarningsTab }: CustomerWalletScreenProps) {
@@ -248,7 +242,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {txns.map((t) => {
-              const isCredit = t.type === 'deposit';
+              const isCredit = isWalletCredit(t.type);
               return (
                 <button
                   key={t.id}
@@ -337,7 +331,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
             <div style={{ fontSize: '16px', fontWeight: 800, marginBottom: '16px' }}>Transaction Details</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '13px' }}>
               <Row label="Type" value={txnLabel(selectedTxn)} />
-              <Row label="Amount" value={(selectedTxn.type === 'deposit' ? '+' : '-') + fmt(selectedTxn.amount_kobo)} />
+              <Row label="Amount" value={(isWalletCredit(selectedTxn.type) ? '+' : '-') + fmt(selectedTxn.amount_kobo)} />
               <Row label="Date" value={new Date(selectedTxn.created_at).toLocaleString('en-NG', { dateStyle: 'medium', timeStyle: 'short' })} />
               {selectedTxn.reference_id && <Row label="Reference" value={maskReference(selectedTxn.reference_id)} />}
             </div>

@@ -3,6 +3,8 @@ import {
   validateWalletDepositAmountKobo,
   computeTicketWalletChargeKobo,
   hasSufficientBalance,
+  isWalletCredit,
+  walletTxnLabel,
   WALLET_DEPOSIT_MIN_KOBO,
   WALLET_DEPOSIT_MAX_KOBO,
 } from './walletMath';
@@ -56,5 +58,52 @@ describe('hasSufficientBalance', () => {
 
   it('accepts a balance above the charge', () => {
     expect(hasSufficientBalance(20_000, 10_000)).toBe(true);
+  });
+});
+
+// Regression tests for the CustomerWalletScreen wallet-refund bug: refunds
+// are a valid, always-positive-amount DB transaction type
+// (user_wallet_transactions_type_check allows 'deposit'|'spend'|'refund',
+// confirmed live) that credits the customer's balance back after a ticket
+// refund -- but the screen only ever treated 'deposit' as a credit, so
+// every refund rendered as "-₦X" in the debit color, looking like a charge
+// instead of money returned.
+describe('isWalletCredit', () => {
+  it('treats a deposit as a credit', () => {
+    expect(isWalletCredit('deposit')).toBe(true);
+  });
+
+  it('treats a refund as a credit', () => {
+    expect(isWalletCredit('refund')).toBe(true);
+  });
+
+  it('treats a spend as a debit', () => {
+    expect(isWalletCredit('spend')).toBe(false);
+  });
+
+  it('treats an unrecognized type as a debit (safe default)', () => {
+    expect(isWalletCredit('something_new')).toBe(false);
+  });
+});
+
+describe('walletTxnLabel', () => {
+  it('labels a refund as "Refund" when there is no description', () => {
+    expect(walletTxnLabel('refund', null)).toBe('Refund');
+  });
+
+  it('labels a deposit as "Wallet Deposit" when there is no description', () => {
+    expect(walletTxnLabel('deposit', null)).toBe('Wallet Deposit');
+  });
+
+  it('labels a spend as "Purchase" when there is no description', () => {
+    expect(walletTxnLabel('spend', undefined)).toBe('Purchase');
+  });
+
+  it('prefers a real description over the type-based label', () => {
+    expect(walletTxnLabel('refund', 'Refund for Ticket #123')).toBe('Refund for Ticket #123');
+  });
+
+  it('falls back to "Wallet Adjustment" for an unrecognized type with no description', () => {
+    expect(walletTxnLabel('something_new', null)).toBe('Wallet Adjustment');
   });
 });
