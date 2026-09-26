@@ -46,7 +46,7 @@ describe('isUnconfirmedDuplicateSignupError', () => {
   });
 
   it('is false for unrelated validation errors', () => {
-    expect(isUnconfirmedDuplicateSignupError(new Error('Password must be at least 10 characters'))).toBe(false);
+    expect(isUnconfirmedDuplicateSignupError(new Error('Password must be at least 6 characters'))).toBe(false);
   });
 
   it('handles null/undefined/non-object/no-message input without throwing', () => {

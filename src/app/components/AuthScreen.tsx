@@ -10,7 +10,7 @@ import { pickImage } from '../../lib/pickImage';
 import { ImageCropperModal } from './ImageCropperModal';
 import { verifyTOTP } from '../../lib/totp';
 import { analytics } from '../../lib/analyticsEvents';
-import { validateUsername, validatePassword } from '../../lib/sanitize';
+import { validateUsername, validatePassword, MIN_PASSWORD_LENGTH } from '../../lib/sanitize';
 import { signupSchema, loginSchema, firstValidationError } from '../../lib/schemas';
 import { REGION } from '../../lib/regionConfig';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, countryByIso, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
@@ -564,7 +564,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   // Single source of truth for password strength, shared by the live checklist
   // and the inline field error so the two can never disagree.
   const passwordRules = [
-    { met: password.length >= 10, label: 'At least 10 characters' },
+    { met: password.length >= MIN_PASSWORD_LENGTH, label: `At least ${MIN_PASSWORD_LENGTH} characters` },
     { met: /[a-z]/.test(password) && /[A-Z]/.test(password), label: 'Upper and lower case letters' },
     { met: /\d/.test(password), label: 'At least one number' },
   ];
@@ -703,8 +703,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         const finalProfile = verifiedProfile || profile;
         // Reflect whatever role actually landed in the DB, not the client's
         // pre-write guess — if set_signup_role failed above, this correctly
-        // shows the trigger-assigned 'attendee' rather than masking it.
-        const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'attendee';
+        // shows the trigger-assigned 'user' rather than masking it.
+        const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'user';
 
         // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): the
         // onSuccess payload below used to fall back to the client's own
@@ -857,7 +857,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           }
         }
         if (!password) throw new Error('Password is required.');
-        if (!validatePassword(password)) throw new Error('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.');
+        if (!validatePassword(password)) throw new Error(`Password must be at least ${MIN_PASSWORD_LENGTH} characters and include an uppercase letter, a lowercase letter, and a number.`);
         if (password !== confirmPassword) throw new Error('Passwords do not match.');
         if (!signupState && !selectedState) throw new Error('State is required.');
         if (!role) throw new Error('Role is required.');
@@ -1284,7 +1284,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           : (msgL.includes('phone') && (msgL.includes('already') || msgL.includes('exists') || msgL.includes('taken')))
           ? 'Phone number already registered. Try logging in instead.'
           : (msgL.includes('password') && (msgL.includes('weak') || msgL.includes('short') || msgL.includes('simple') || msgL.includes('strength')))
-          ? 'Password is too weak. Use at least 10 characters with uppercase, lowercase, and a number.'
+          ? `Password is too weak. Use at least ${MIN_PASSWORD_LENGTH} characters with uppercase, lowercase, and a number.`
           : msgL.includes('rate limit') || msgL.includes('too many')
           ? 'Too many attempts. Please wait a few minutes and try again.'
           : msgL.includes('network') || msgL.includes('fetch')
@@ -1930,7 +1930,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               onClick={async () => {
                 if (!forgotExchangedToken) { setErrorMessage('Your session expired. Please request a new code.'); return; }
                 if (!forgotNewPassword) { setErrorMessage('Password is required.'); return; }
-                if (!validatePassword(forgotNewPassword)) { setErrorMessage('Password must be at least 10 characters and include an uppercase letter, a lowercase letter, and a number.'); return; }
+                if (!validatePassword(forgotNewPassword)) { setErrorMessage(`Password must be at least ${MIN_PASSWORD_LENGTH} characters and include an uppercase letter, a lowercase letter, and a number.`); return; }
                 if (forgotNewPassword !== forgotConfirmPassword) { setErrorMessage('Passwords do not match.'); return; }
                 setLoading(true);
                 setErrorMessage(null);
@@ -1970,7 +1970,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                     : msgL.includes('network') || msgL.includes('fetch')
                     ? 'Network error. Check your connection and try again.'
                     : msgL.includes('password') && (msgL.includes('weak') || msgL.includes('short') || msgL.includes('simple') || msgL.includes('strength'))
-                    ? 'Password is too weak. Use at least 10 characters with uppercase, lowercase, and a number.'
+                    ? `Password is too weak. Use at least ${MIN_PASSWORD_LENGTH} characters with uppercase, lowercase, and a number.`
                     : /constraint|duplicate key|violates|relation "|column "|syntax error|null value in column/i.test(msg)
                     ? 'Could not reset your password. Please try again.'
                     : (msg.trim() || 'Reset failed. Please try again.');
