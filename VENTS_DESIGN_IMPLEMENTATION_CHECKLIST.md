@@ -95,3 +95,5 @@ The export contains exactly 5 desktop/tablet worked examples — no more: **CS1*
 
 ## Environment constraint (applies to every future session)
 This sandbox has no live Supabase credentials — the real `App.tsx` cannot boot end-to-end (`supabaseUrl is required` at import time). All rendering must go through `qa-harness/` (`npx vite --config qa-harness/vite.harness.config.ts --port 5199`, then `node qa-harness/screenshot.mjs <screen-key> <width> <height> <out.png>`), which mounts the real, unmodified screen components with a fixture Supabase shim (`qa-harness/fakeSupabase.ts`). Screens/states needing a real network call the shim doesn't cover will need either a new fixture row or an honest note that they're unverifiable here.
+
+<!-- final-preview-walkthrough trigger commit, no code changes -->
