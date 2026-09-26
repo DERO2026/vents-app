@@ -421,7 +421,7 @@ export function ProfileScreen({
   // account role, while capability GATING (below) uses this.
   const isOrganizerEffective = isOrganizer || orgRequestStatus === 'approved';
   const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
-  const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Attendee';
+  const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Member';
   
   const filteredMenuItems = menuItems.filter(item => {
     if (isOrganizer) {

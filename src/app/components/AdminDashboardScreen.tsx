@@ -1652,7 +1652,7 @@ export function AdminDashboardScreen({
   // ── User actions ─────────────────────────────────────────────────────────────
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (userId === ROOT_UID) { flash(false, 'Root admin role cannot be changed.'); return; }
-    const allowedRoles = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
+    const allowedRoles = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
     if (!allowedRoles.includes(newRole)) { flash(false, 'Invalid role.'); return; }
     const target = users.find(u => u.id === userId);
     if (isSubAdmin && target && ['admin', 'sub-admin'].includes(target.role)) {
@@ -2189,8 +2189,8 @@ export function AdminDashboardScreen({
                           // Root sees Sub-Admin as an assignable option (so a
                           // demoted deputy can be re-promoted).
                           (() => {
-                            const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
-                            const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+                            const roleOptions = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
+                            const roleLabels: Record<string, string> = { user: 'User', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
                             return (
                               <button
                                 type="button"
@@ -2267,8 +2267,8 @@ export function AdminDashboardScreen({
       {rolePickerUserId && (() => {
         const u = users.find(x => x.id === rolePickerUserId);
         if (!u) return null;
-        const roleOptions = isRoot ? ['attendee', 'organizer', 'sub-admin'] : ['attendee', 'organizer'];
-        const roleLabels: Record<string, string> = { attendee: 'Attendee', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+        const roleOptions = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
+        const roleLabels: Record<string, string> = { user: 'User', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
         return (
           <PickerSheet
             title="Change Role"
@@ -3001,13 +3001,13 @@ export function AdminDashboardScreen({
                   onClick={async () => {
                     setBusyId(u.id);
                     await submitOrExecute('set_user_role',
-                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { new_role: 'attendee' }, previous: { role: 'organizer' }, changes: { role: 'attendee' } },
+                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { new_role: 'user' }, previous: { role: 'organizer' }, changes: { role: 'user' } },
                       async () => {
-                        const { error } = await supabase.rpc('admin_set_user_role', { p_user_id: u.id, p_new_role: 'attendee' });
+                        const { error } = await supabase.rpc('admin_set_user_role', { p_user_id: u.id, p_new_role: 'user' });
                         if (error) throw error;
                         await writeAuditLog(currentUser, 'reject_organizer', u.id, { username: u.username });
                         setPendingOrgs(prev => prev.filter(x => x.id !== u.id));
-                        flash(false, `@${u.username} demoted to attendee.`);
+                        flash(false, `@${u.username} demoted to regular user.`);
                       });
                     setBusyId(null);
                   }}

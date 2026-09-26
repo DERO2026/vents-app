@@ -630,7 +630,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         .maybeSingle();
 
       if (profile) {
-        const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
+        const strictRole = role === 'organizer' ? 'organizer' : 'user';
 
         // Role changes must go through this SECURITY DEFINER RPC —
         // check_user_role_update() rejects a plain UPDATE/upsert touching
@@ -901,7 +901,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           }
         }
 
-        const strictRole = role === 'organizer' ? 'organizer' : 'attendee';
+        const strictRole = role === 'organizer' ? 'organizer' : 'user';
         const userMetaPayload = {
           full_name: name.trim(),
           username: username.trim().toLowerCase(),
