@@ -1108,7 +1108,7 @@ export function MyTicketsScreen({ tickets, loading, onBack, onViewTicket, onRefr
                     placeholder="Recipient email or username"
                     value={transferIdentifier}
                     onChange={setTransferIdentifier}
-                    onSelect={() => {}}
+                    onSelect={() => setInitiateError('')}
                   />
                 </div>
                 {initiateError && (
