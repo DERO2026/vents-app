@@ -542,7 +542,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
                     placeholder="Recipient email or username"
                     value={transferIdentifier}
                     onChange={setTransferIdentifier}
-                    onSelect={() => {}}
+                    onSelect={() => setTransferError('')}
                   />
                 </div>
                 {transferError && (
