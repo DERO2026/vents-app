@@ -164,4 +164,51 @@ describe('UserAutocomplete: dropdown survives an overflow-clipping ancestor', ()
     // Height capped to the available space, never the full 260px max.
     expect(parseFloat(dropdown!.style.maxHeight)).toBeLessThanOrEqual(700 - 6);
   });
+
+  it('shows the "No VENTS users found" empty state when the search genuinely returns zero matches -- reproduces the production report of a query that appeared to render nothing', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    let value = '';
+    const handleChange = (v: string) => { value = v; };
+
+    root = createRoot(container);
+    act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={() => {}} />
+      );
+    });
+
+    act(() => {
+      const input = container!.querySelector('input') as HTMLInputElement;
+      input.dispatchEvent(new FocusEvent('focus', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      // A query the mocked searchUsers resolves to zero results for
+      // (anything not prefixed 'dan'), mirroring a real recipient lookup
+      // with no matching account.
+      setter.call(input, 'nomatch');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    value = 'nomatch';
+    act(() => {
+      root!.render(
+        <UserAutocomplete label="Recipient" placeholder="Recipient email or username" value={value} onChange={handleChange} onSelect={() => {}} />
+      );
+    });
+
+    await act(async () => {
+      vi.advanceTimersByTime(350);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    // The dropdown box itself must be present and visibly say so -- not
+    // silently render nothing, which is what a user typing a query with no
+    // suggestions would otherwise indistinguishably see as "the feature is
+    // broken."
+    expect(document.body.textContent || '').toContain('No VENTS users found.');
+  });
 });
