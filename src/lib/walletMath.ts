@@ -31,3 +31,27 @@ export function computeTicketWalletChargeKobo(subtotalNaira: number, discountPct
 export function hasSufficientBalance(balanceKobo: number, chargeKobo: number): boolean {
   return balanceKobo >= chargeKobo;
 }
+
+// Wallet transaction display helpers, shared by CustomerWalletScreen.
+// user_wallet_transactions.type is DB-CHECK-constrained to 'deposit' |
+// 'spend' | 'refund' (0075_wallet_refund_fee_ledger_and_error_hardening.sql)
+// with amount_kobo always stored positive regardless of direction -- the
+// sign/label is purely a display concern, computed from `type` here.
+// 'deposit' and 'refund' both increase the balance (a refund credits money
+// back after a ticket refund); only 'spend' decreases it.
+export type WalletTxnType = 'deposit' | 'spend' | 'refund' | string;
+
+export function isWalletCredit(type: WalletTxnType): boolean {
+  return type === 'deposit' || type === 'refund';
+}
+
+export const WALLET_TXN_TYPE_LABEL: Record<string, string> = {
+  deposit: 'Wallet Deposit',
+  spend: 'Purchase',
+  refund: 'Refund',
+};
+
+export function walletTxnLabel(type: WalletTxnType, description?: string | null): string {
+  if (description) return description;
+  return WALLET_TXN_TYPE_LABEL[type] || 'Wallet Adjustment';
+}
