@@ -56,4 +56,47 @@ export function initSentry() {
   });
 }
 
-export { Sentry };
+// A raw Postgrest/Supabase error (`{ code, details, hint, message }`) is a
+// plain object, never `instanceof Error` -- captureException serializes any
+// non-Error value as "Object captured as exception with keys: ..." with no
+// message or stack, which is exactly the noisy, undiagnosable pattern seen
+// recurring across unrelated call sites in Sentry (every `if (error) throw
+// error` on a Supabase response throws one of these). Rather than touching
+// every one of those ~30 call sites, this wraps captureException itself so
+// every existing call site is fixed for free: a non-Error gets turned into a
+// real Error carrying its original `.message` (so Sentry shows a readable
+// title/stack) with the untouched original object attached as `extra` for
+// full diagnostic detail.
+function toReportableError(exception: unknown): Error {
+  if (exception instanceof Error) return exception;
+  if (exception && typeof exception === 'object') {
+    const anyEx = exception as Record<string, unknown>;
+    const message = typeof anyEx.message === 'string' && anyEx.message ? anyEx.message : 'Non-Error exception captured';
+    const err = new Error(message);
+    if (typeof anyEx.code !== 'undefined') (err as any).code = anyEx.code;
+    return err;
+  }
+  return new Error(typeof exception === 'string' && exception ? exception : 'Unknown non-Error exception captured');
+}
+
+// `Sentry` above is a `import * as` namespace -- its bindings are read-only,
+// so `Sentry.captureException` can't be reassigned in place. Every existing
+// call site in the app does `Sentry.captureException(e)` on this module's
+// own re-export, so patching it here (rather than adding a separately-named
+// export nobody would call) is what actually reaches all ~30 call sites
+// without editing any of them.
+const PatchedSentry = {
+  ...Sentry,
+  captureException(exception: unknown, hint?: Parameters<typeof Sentry.captureException>[1]) {
+    if (exception instanceof Error) {
+      return Sentry.captureException(exception, hint);
+    }
+    const mergedHint: any = {
+      ...hint,
+      extra: { ...(hint as any)?.extra, originalException: exception },
+    };
+    return Sentry.captureException(toReportableError(exception), mergedHint);
+  },
+};
+
+export { PatchedSentry as Sentry };

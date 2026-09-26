@@ -218,6 +218,12 @@ export default function App() {
   const screenStackRef = useRef(screenStack);
   const goBackRef = useRef<() => void>(() => {});
   const [currentUser, setCurrentUser] = useState<{ id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; is_service_provider?: boolean; country?: string } | null>(null);
+  // See handleSignOut / the onAuthStateChange listener below: distinguishes
+  // a sign-out this app itself initiated (handleSignOut already does the
+  // correct, more specific navigation) from a session ended some other way
+  // (revoked elsewhere, password changed on another device), which the
+  // listener alone is responsible for reacting to.
+  const explicitSignOutRef = useRef(false);
   const [showInterests, setShowInterests] = useState(false);
   const [authLoading, setAuthLoading] = useState(true);
   // Set when the 15s hydration safety timeout fires — lets the Splash
@@ -799,6 +805,33 @@ export default function App() {
   }, []);
 
   useEffect(() => { hydrateAuth(); }, [hydrateAuth]);
+
+  // Reactive session-loss handling: previously the app only noticed a
+  // session had become invalid on the next hydrateAuth() call (page reload,
+  // bfcache restore) -- a session revoked server-side in the meantime (e.g.
+  // the account's password changed on another device, or an admin action)
+  // left a signed-out user still looking signed-in until then. This listens
+  // for Supabase's own SIGNED_OUT event, which fires the moment the client
+  // SDK itself determines the session is gone, including from a revoked
+  // refresh token discovered during its background auto-refresh.
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'SIGNED_OUT') return;
+      // handleSignOut already runs this exact cleanup (plus its own, more
+      // specific Welcome-vs-Forgot-Password routing) for a sign-out this
+      // app itself initiated -- skip here to avoid two competing navigations
+      // racing off the same underlying signOut() call.
+      if (explicitSignOutRef.current) return;
+      setCurrentUser(null);
+      setUserRole('attendee');
+      setScreenStack([]);
+      setActiveTab('home');
+      setScreen('welcome');
+      clearTicketTokenCache();
+      invalidateVcBalanceCache();
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   // Lightweight presence for messaging's "online" indicator — bumps
   // users.last_active_at every 30s while a signed-in user has the app
@@ -2449,6 +2482,12 @@ export default function App() {
   const handleSignOut = useCallback(async (toForgotPassword?: boolean) => {
     setAuthLoading(true);
     analytics.loggedOut();
+    // Tells the reactive onAuthStateChange listener below to skip its own
+    // cleanup for this sign-out: this function's own routing (Welcome vs.
+    // Forgot Password) is more specific than the listener's plain "go to
+    // Welcome," and both would otherwise race to set the screen from the
+    // same supabase.auth.signOut() call.
+    explicitSignOutRef.current = true;
     // Drop this device's push token so a signed-out user stops receiving pushes.
     if (currentUser?.id) await unregisterPushNotifications(currentUser.id).catch(() => {});
     try {
@@ -2480,6 +2519,7 @@ export default function App() {
       setScreen('welcome');
     }
     setAuthLoading(false);
+    explicitSignOutRef.current = false;
   }, [currentUser?.id]);
 
   // Screens where the bottom nav is visible for both roles.

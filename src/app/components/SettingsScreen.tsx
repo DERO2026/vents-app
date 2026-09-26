@@ -1501,7 +1501,7 @@ function PasswordField({
   );
 }
 
-function ChangePasswordScreen({ currentUser, onBack, onForgotPassword }: { currentUser: { email: string } | null; onBack: () => void; onForgotPassword?: () => void }) {
+function ChangePasswordScreen({ currentUser, onBack, onForgotPassword, onSignOut }: { currentUser: { email: string } | null; onBack: () => void; onForgotPassword?: () => void; onSignOut: () => void }) {
   const [step, setStep] = useState<'verify' | 'otp'>('verify');
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -1575,6 +1575,15 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword }: { curre
       if (verifyErr) throw verifyErr;
       const { error: updateErr } = await supabase.auth.updateUser({ password: newPassword });
       if (updateErr) throw updateErr;
+      // A password change is a real security event -- without this, a
+      // session an attacker (or the account owner on another device) held
+      // before the password was changed stays valid indefinitely, since
+      // Supabase's updateUser doesn't revoke other sessions on its own.
+      // `scope: 'global'` revokes every refresh token for this user,
+      // including this device's, so the app must sign the user back in with
+      // the new password afterward (via onSignOut below) rather than just
+      // closing this screen.
+      await supabase.auth.signOut({ scope: 'global' }).catch(() => {});
       setSuccess(true);
     } catch (err: any) {
       setError(err?.message || 'Failed to update password. Check your OTP and try again.');
@@ -1612,8 +1621,8 @@ function ChangePasswordScreen({ currentUser, onBack, onForgotPassword }: { curre
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px', gap: '16px' }}>
           <CheckCircle size={48} color="#10B981" />
           <p style={{ color: '#F0F0FF', fontSize: '16px', fontWeight: 700, textAlign: 'center', margin: 0 }}>Password updated!</p>
-          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>Your password has been changed successfully.</p>
-          <button onClick={onBack} style={{ marginTop: '8px', padding: '12px 32px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
+          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', margin: 0 }}>For your security, you've been signed out everywhere. Sign back in with your new password.</p>
+          <button onClick={onSignOut} style={{ marginTop: '8px', padding: '12px 32px', background: 'linear-gradient(135deg, #7B2FBE, #4F46E5)', border: 'none', borderRadius: '12px', color: '#fff', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}>Done</button>
         </div>
       ) : step === 'verify' ? (
         <form onSubmit={handleVerify} style={scrollFormStyle}>
@@ -1798,7 +1807,7 @@ export function SettingsScreen({
 
   if (subScreen === 'profile') return <ProfileDetailsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} onDeleteAccount={() => setSubScreen('delete-account')} onOpenConnectedAccounts={() => setSubScreen('connected-accounts')} />;
   if (subScreen === 'help') return <HelpCenterScreen onBack={() => setSubScreen(null)} />;
-  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} />;
+  if (subScreen === 'change-password') return <ChangePasswordScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onForgotPassword={onForgotPassword || onSignOut} onSignOut={onSignOut} />;
   if (subScreen === 'delete-account') return <DeleteAccountScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onDeleted={onSignOut} />;
   if (subScreen === 'connected-accounts') return <ConnectedAccountsScreen currentUser={currentUser} onBack={() => setSubScreen(null)} onProfileUpdated={onProfileUpdated} />;
 
