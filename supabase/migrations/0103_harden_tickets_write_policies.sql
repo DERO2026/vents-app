@@ -1,0 +1,46 @@
+-- Large-event scalability/security audit finding #8 (MEDIUM): `tickets`
+-- has permissive INSERT and UPDATE RLS policies (insert_tickets,
+-- update_tickets) that are currently UNREACHABLE -- confirmed live via
+-- information_schema.role_table_grants: the `authenticated` role has only
+-- SELECT granted on this table (no INSERT/UPDATE/DELETE grant at all), and
+-- Postgres checks table-level GRANTs before RLS, so a direct client write
+-- is rejected with "permission denied for table tickets" today regardless
+-- of what these policies say.
+--
+-- That makes them fragile, not safe: if any future migration ever runs
+-- `GRANT INSERT, UPDATE ON tickets TO authenticated` (an easy mistake to
+-- make without realizing these policies already exist), update_tickets
+-- would let a ticket's own owner OR the event's organizer flip ANY column
+-- on that row directly -- checked_in, checked_in_at, status,
+-- payment_status, amount, refund_id -- self-admitting at the door or
+-- forging a refund/payment state with no audit trail, atomicity, or
+-- business-rule check. insert_tickets would let any authenticated user
+-- INSERT an arbitrary ticket row for themselves (e.g. payment_status =
+-- 'paid', checked_in = true) for free, bypassing purchase_ticket entirely.
+--
+-- Confirmed live (pg_proc) that EVERY real ticket-mutating code path is a
+-- SECURITY DEFINER function owned by the table owner (postgres), and the
+-- table has relforcerowsecurity = false, so these functions bypass RLS
+-- entirely regardless of what INSERT/UPDATE policies exist:
+--   purchase_ticket, confirm_ticket_payment, confirm_ticket_payment_via_wallet,
+--   refund_ticket, initiate_ticket_transfer, accept_ticket_transfer,
+--   verify_entry_pass, manual_check_in, confirm_service_booking_payment.
+-- Also confirmed via a full grep of src/ and api/ that no client or
+-- server-side code anywhere calls `.from('tickets').insert(...)` or
+-- `.update(...)` directly -- every mutation already goes through one of
+-- the RPCs above. So there is no legitimate direct-write flow these
+-- policies could ever be protecting.
+--
+-- Fix: drop both policies outright, leaving INSERT and UPDATE on `tickets`
+-- with zero policies -- the same default-deny posture DELETE already has
+-- (there has never been a DELETE policy on this table). This removes the
+-- latent forgery vector completely rather than trying to write a "safer"
+-- version of a policy nothing legitimate needs. Every checkout/payment,
+-- refund, transfer, and check-in flow is unaffected (all SECURITY DEFINER,
+-- bypass RLS). SELECT is untouched -- select_tickets (own ticket or own
+-- event as organizer) and tickets_select_own_as_payer (Someone Else Pays)
+-- already correctly scope reads to exactly the parties who need them, with
+-- no broader "read any ticket" policy anywhere on this table.
+
+DROP POLICY IF EXISTS insert_tickets ON public.tickets;
+DROP POLICY IF EXISTS update_tickets ON public.tickets;
