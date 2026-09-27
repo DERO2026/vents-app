@@ -103,6 +103,13 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
   const [selected, setSelected] = useState<Attendee | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [acting, setActing] = useState(false);
+  // Synchronous re-entrancy lock, same pattern as CheckoutScreen.tsx's
+  // payingRef / ServiceProviderProfileScreen.tsx's bookingRef: `acting` is
+  // React state, so it doesn't become true until the next render, leaving
+  // a window where a rapid double-tap on "Confirm Entry" can invoke
+  // doManualCheckIn a second time before the button's disabled state
+  // commits, firing two manual_check_in RPC calls for the same ticket.
+  const actingRef = useRef(false);
   const [localFeed, setLocalFeed] = useState<LocalFeed[]>([]);
   const sentinelRef = useRef<HTMLDivElement>(null);
 
@@ -154,9 +161,11 @@ export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, s
   const pct = dm.stats.attendance_pct;
 
   const doManualCheckIn = async () => {
-    if (!selected) return;
+    if (!selected || actingRef.current) return;
+    actingRef.current = true;
     setActing(true);
     const res = await dm.manualCheckIn(selected.ticket_id);
+    actingRef.current = false;
     setActing(false);
     setConfirming(false);
     const nm = selected.holder_name || 'Attendee';

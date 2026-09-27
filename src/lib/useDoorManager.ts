@@ -155,7 +155,19 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
 
     if (myReq !== reqIdRef.current) return; // a newer search/filter superseded us
     const rows = (!error && Array.isArray(data) ? data : []) as Attendee[];
-    setAttendees((prev) => (reset ? rows : [...prev, ...rows]));
+    setAttendees((prev) => {
+      if (reset) return rows;
+      // De-dup by ticket_id when appending a page. get_event_attendees
+      // orders by checked_in_at DESC NULLS LAST, created_at DESC -- at a
+      // busy door with many simultaneous scanners, a check-in landing
+      // between this page's fetch and the previous one can shift that
+      // ordering just enough that the same ticket appears in both an
+      // already-loaded page and this new one (OFFSET pagination has no
+      // stable cursor). Without this, that ticket would render twice in
+      // the guest list.
+      const seen = new Set(prev.map((a) => a.ticket_id));
+      return [...prev, ...rows.filter((a) => !seen.has(a.ticket_id))];
+    });
     setHasMore(rows.length === PAGE_SIZE);
     offsetRef.current = (reset ? 0 : offsetRef.current) + rows.length;
     setLoadingList(false);
