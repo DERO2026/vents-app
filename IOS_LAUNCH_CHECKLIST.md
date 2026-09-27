@@ -101,18 +101,19 @@ code changes needed for this:
 
 ## 6. Universal Links (deep links) — required for the getvents.com links to open the app
 
-1. The AASA file is now committed at
+1. The AASA file is committed at
    `public/.well-known/apple-app-site-association` (no file extension —
    already the case, matching the same pattern `public/.well-known/
    assetlinks.json` uses for Android App Links; Vercel serves it as a static
-   file, no separate hosting step needed). It currently supports the
-   existing `?event=<id>` and `?user=<id>` deep-link paths:
+   file, no separate hosting step needed). It supports the existing
+   `?event=<id>` and `?user=<id>` deep-link paths, with the real Apple
+   Developer Team ID already in place:
    ```json
    {
      "applinks": {
        "details": [
          {
-           "appIDs": ["REPLACE_WITH_APPLE_TEAM_ID.com.getvents.app"],
+           "appIDs": ["V7774S7GHB.com.getvents.app"],
            "components": [
              { "/": "/", "?": { "event": "*" } },
              { "/": "/", "?": { "user": "*" } }
@@ -122,21 +123,15 @@ code changes needed for this:
      }
    }
    ```
-2. **Before release**, replace `REPLACE_WITH_APPLE_TEAM_ID` in that file with
-   the real Apple Developer Team ID (Apple Developer → Membership, or the
-   top-left of Xcode's Signing & Capabilities pane once a team is selected).
-   This value cannot be guessed or derived from this repo — do not ship with
-   the placeholder still in place, the file will simply fail Apple's
-   verification and Universal Links stay inert (safe failure — see point 4).
-3. This file must be reachable over HTTPS with no redirects at
+2. This file must be reachable over HTTPS with no redirects at
    `https://getvents.com/.well-known/apple-app-site-association` before
    Xcode's Associated Domains capability (step 4) will actually work —
    verify with a plain `curl` after deploying.
-4. Until the real Team ID is in place and verified live, `vents://`
-   custom-scheme links still work (Android already has this; iOS gets it
-   from the `CFBundleURLTypes` entry above) — a `getvents.com` link falls
-   back to opening in the browser rather than failing, so this is a safe,
-   non-blocking gap until closed.
+3. `vents://` custom-scheme links still work regardless (Android already has
+   this; iOS gets it from the `CFBundleURLTypes` entry above) — a
+   `getvents.com` link falls back to opening in the browser if Universal
+   Links verification hasn't completed yet, so this is a safe, non-blocking
+   fallback either way.
 
 ## 7. Google Maps / Places API key — iOS referrer restriction
 
