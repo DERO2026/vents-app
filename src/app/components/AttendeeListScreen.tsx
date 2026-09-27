@@ -3,6 +3,7 @@ import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
+import { downloadBlob } from '../../lib/ticketImage';
 
 interface AttendeeListScreenProps {
   onBack: () => void;
@@ -48,6 +49,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
   const [reloadKey, setReloadKey] = useState(0);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<CheckInStatus | 'all'>('all');
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     if (!eventId) { setLoading(false); return; }
@@ -143,6 +145,34 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
     return matchQ && matchS;
   });
 
+  // Exports exactly what's currently visible (respecting search/status
+  // filter) rather than the full unfiltered roster -- an organizer who's
+  // filtered down to e.g. "checked-in" almost certainly wants that list,
+  // not everyone. All data here is already in memory from the real
+  // get_event_attendees fetch above; no extra network call needed.
+  function csvEscape(value: string) {
+    return /[",\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+  }
+  const handleExport = async () => {
+    if (exporting || filtered.length === 0) return;
+    setExporting(true);
+    try {
+      const headers = ['Name', 'Email', 'Ticket Type', 'Ticket ID', 'Quantity', 'Status', 'Payment Status', 'Checked In At'];
+      const rows = filtered.map((a) => [
+        a.name, a.email, a.ticketType, a.ticketId, String(a.quantity),
+        STATUS_CONFIG[a.status].label, a.paymentStatus, a.checkedInAt || '',
+      ]);
+      const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const safeTitle = (eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      await downloadBlob(blob, `${safeTitle}-attendees.csv`);
+    } catch (err) {
+      Sentry.captureException(err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const [refundingId, setRefundingId] = useState<string | null>(null);
   // Replaces window.prompt (reason) + window.confirm + window.alert(error) —
   // unreliable inside a Capacitor WebView, and jarring where they do work;
@@ -204,9 +234,18 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
             <p style={{ color: '#8B8FA8', fontSize: '12px' }}>{eventTitle || 'Event attendees'}</p>
           </div>
         </div>
-        <button style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+        <button
+          onClick={handleExport}
+          disabled={exporting || filtered.length === 0}
+          style={{
+            background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px',
+            display: 'flex', alignItems: 'center', gap: '5px',
+            cursor: exporting || filtered.length === 0 ? 'not-allowed' : 'pointer',
+            opacity: exporting || filtered.length === 0 ? 0.5 : 1,
+          }}
+        >
           <Download size={14} color="#A78BFA" />
-          <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>Export</span>
+          <span style={{ color: '#A78BFA', fontSize: '12px', fontWeight: 600 }}>{exporting ? 'Exporting…' : 'Export'}</span>
         </button>
       </div>
 
