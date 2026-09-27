@@ -2345,10 +2345,11 @@ export default function App() {
   //     (ios/App/App/App.entitlements, applinks:getvents.com) wired into
   //     ios/App/App.xcodeproj/project.pbxproj via CODE_SIGN_ENTITLEMENTS, and
   //     public/.well-known/apple-app-site-association is checked in with
-  //     event/user link paths. Its appIDs entry still has a literal
-  //     REPLACE_WITH_APPLE_TEAM_ID placeholder -- the real Apple Developer
-  //     Team ID isn't available anywhere in this repo and must never be
-  //     guessed; swap it in before this can work.
+  //     event/user link paths and the real Apple Developer Team ID
+  //     (V7774S7GHB.com.getvents.app). Still needs to be verified reachable
+  //     at https://getvents.com/.well-known/apple-app-site-association in
+  //     production before Apple's own verification/Universal Links will
+  //     actually work end-to-end.
   // Until both are genuinely verified end-to-end (not just present in the
   // repo), a getvents.com link falls back to opening in the browser -- safe,
   // but not yet the native-app experience. vents:// (this listener's other
