@@ -250,61 +250,39 @@ function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { current
           (e.status ?? 'live') !== 'draft' && !hasEventEnded({ event_date: e.event_date, end_date: e.end_date ?? null })
         ).length;
 
-        // Matches the canonical "sold" definition used everywhere else
-        // (get_event_ticket_stats, see Data Consistency migration):
-        // status='active' AND payment_status='paid'. This screen still
-        // needs the raw per-ticket rows for the daily/ticket-type
-        // breakdown below, so it can't just call the aggregate RPC, but it
-        // must apply the same filter or "Total Revenue"/"Tickets Sold"
-        // here would silently include pending/unpaid checkouts that
-        // OrganizerDashboard and AdminDashboard correctly exclude.
-        const { data: tickets, error: ticketsError } = await supabase
-          .from('tickets')
-          .select('*')
-          .in('event_id', eventIds)
-          .eq('status', 'active')
-          .eq('payment_status', 'paid');
+        // Real SQL aggregate (get_portfolio_analytics, 0101) -- replaces a
+        // `.select('*')` over every paid ticket across every one of the
+        // organizer's events with no limit, which didn't scale past a few
+        // thousand combined tickets. Same filter (status='active' AND
+        // payment_status='paid') and same weekday-name bucketing the old
+        // client-side reduce used, computed server-side instead.
+        const { data: portfolio, error: portfolioError } = await supabase.rpc(
+          'get_portfolio_analytics' as any,
+          { p_organizer_id: currentUser.id }
+        );
+        if (portfolioError) throw portfolioError;
 
-        if (ticketsError) throw ticketsError;
+        const totalRev = Number(portfolio?.totalRevenue) || 0;
+        const totalQty = Number(portfolio?.totalSales) || 0;
+        const checkedInQty = Number(portfolio?.checkedInQty) || 0;
 
-        let totalRev = 0;
-        let totalQty = 0;
-        let checkedInQty = 0;
         const dailyRevenue: Record<string, number> = {
           'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
         };
         const dailySales: Record<string, number> = {
           'Mon': 0, 'Tue': 0, 'Wed': 0, 'Thu': 0, 'Fri': 0, 'Sat': 0, 'Sun': 0
         };
+        (portfolio?.byWeekday || []).forEach((w: any) => {
+          if (dailyRevenue[w.day] !== undefined) {
+            dailyRevenue[w.day] = Number(w.revenue) || 0;
+            dailySales[w.day] = Number(w.qty) || 0;
+          }
+        });
+
         const typeCount: Record<string, number> = {};
-
-        if (tickets) {
-          tickets.forEach((t: any) => {
-            const qty = t.quantity || 1;
-            // Use the ticket's own stored amount (the real price actually
-            // paid — accounts for the specific ticket type and any promo
-            // discount applied at purchase time) rather than a flat
-            // event.price lookup, which silently ignored ticket-type pricing
-            // and promo discounts. Matches get_event_ticket_stats' convention
-            // of not re-multiplying by quantity (rows from purchase_ticket
-            // are always qty=1 with amount already being that ticket's price).
-            const rev = Number(t.amount) || 0;
-            totalRev += rev;
-            totalQty += qty;
-            if (t.checked_in) checkedInQty += qty;
-
-            const typeName: string = t.ticket_type || 'Regular';
-            typeCount[typeName] = (typeCount[typeName] || 0) + qty;
-
-            const date = new Date(t.created_at);
-            const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-            const dayName = days[date.getDay()];
-            if (dailyRevenue[dayName] !== undefined) {
-              dailyRevenue[dayName] += rev;
-              dailySales[dayName] += qty;
-            }
-          });
-        }
+        (portfolio?.byTicketType || []).forEach((t: any) => {
+          typeCount[t.name] = Number(t.qty) || 0;
+        });
 
         const TYPE_COLORS = [ventsColors.accent, ventsColors.accent, '#D946EF', '#EC4899', '#6366F1'];
         const computedTypes = Object.keys(typeCount).length > 0
