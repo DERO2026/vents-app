@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check } from 'lucide-react';
 import { ServiceProvider, ProviderService } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
@@ -62,6 +62,13 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   // deselected by tapping it; quantity defaults to 1 once selected.
   const [selection, setSelection] = useState<Record<string, number>>({});
   const [booking, setBooking] = useState(false);
+  // Synchronous re-entrancy lock, same pattern as CheckoutScreen.tsx's
+  // payingRef: `booking` is React state, so it doesn't become true until
+  // the next render, leaving a window where a rapid double-tap (common on
+  // mobile) can invoke handleBookAndPay a second time before the button's
+  // disabled state commits. This ref closes that window; `booking` still
+  // drives the visible disabled/loading UI.
+  const bookingRef = useRef(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
   const [bookingSuccess, setBookingSuccess] = useState(false);
   // Wallet payment option for Services bookings, same shape as
@@ -159,6 +166,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   const canPayCurrency = !mixedCurrency && cartCurrency === 'NGN';
 
   const handleBookAndPay = async () => {
+    if (bookingRef.current) return;
     if (!currentUserId) {
       setBookingError('Please sign in to book a service.');
       return;
@@ -173,6 +181,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
       return;
     }
 
+    bookingRef.current = true;
     setBooking(true);
     setBookingError(null);
     logServiceMarketplaceEvent('booking_initiated', { providerId, metadata: { serviceCount: selectedServices.length } });
@@ -188,6 +197,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
         logServiceMarketplaceEvent('payment_attempted', { providerId, bookingId: result.bookingId });
         const walletResult = await payServiceBookingWithWallet(result.paymentRef);
         if (walletResult.status !== 'success') {
+          bookingRef.current = false;
           setBooking(false);
           setBookingError(
             walletResult.status === 'insufficient_balance'
@@ -197,6 +207,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           return;
         }
         logServiceMarketplaceEvent('payment_completed', { providerId, bookingId: result.bookingId });
+        bookingRef.current = false;
         setBooking(false);
         setBookingSuccess(true);
         setSelection({});
@@ -213,19 +224,22 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           logServiceMarketplaceEvent('payment_attempted', { providerId, bookingId: result.bookingId });
           const verify = await verifyServiceBookingPayment(result.paymentRef);
           if (verify.status === 'error') {
+            bookingRef.current = false;
             setBooking(false);
             setBookingError(verify.error);
             return;
           }
           logServiceMarketplaceEvent('payment_completed', { providerId, bookingId: result.bookingId });
+          bookingRef.current = false;
           setBooking(false);
           setBookingSuccess(true);
           setSelection({});
         },
-        onClose: () => { setBooking(false); },
-        onError: (message) => { setBooking(false); setBookingError(message); },
+        onClose: () => { bookingRef.current = false; setBooking(false); },
+        onError: (message) => { bookingRef.current = false; setBooking(false); setBookingError(message); },
       });
     } catch (err: any) {
+      bookingRef.current = false;
       setBooking(false);
       setBookingError(err?.message || 'Could not start this booking. Please try again.');
     }
