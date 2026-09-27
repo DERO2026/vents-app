@@ -138,6 +138,58 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     if (Array.isArray(f)) setFeed(f as FeedItem[]);
   }, [eventId]);
 
+  // Multiple staff dashboards for the same event, open as separate browser
+  // tabs, each independently ran refreshStats() on every realtime broadcast
+  // -- N open tabs meant N x the get_door_stats/get_recent_checkins calls
+  // per check-in burst, even though every tab watching the same eventId
+  // gets the exact same, unfiltered answer (unlike loadList/loadScanLog,
+  // whose results depend on each tab's own search/filter state and so
+  // still need their own per-tab fetch). A BroadcastChannel lets one tab
+  // per browser do the actual fetch and hand the result to its siblings
+  // directly, with a localStorage timestamp as the cross-tab mutex (no
+  // server round trip needed to decide who fetches). This only coordinates
+  // the burst-triggered refresh below -- the initial-mount and
+  // reconnect-triggered refreshStats() calls always fetch for real, so a
+  // freshly opened tab is never left waiting on another tab's broadcast
+  // for its first paint.
+  const statsChannelRef = useRef<BroadcastChannel | null>(null);
+  useEffect(() => {
+    if (!eventId || typeof BroadcastChannel === 'undefined') return;
+    const bc = new BroadcastChannel(`vents-door-stats:${eventId}`);
+    bc.onmessage = (e) => {
+      const msg = e.data as { stats?: DoorStats; feed?: FeedItem[] };
+      if (msg?.stats) setStats(msg.stats);
+      if (Array.isArray(msg?.feed)) setFeed(msg.feed);
+    };
+    statsChannelRef.current = bc;
+    return () => { bc.close(); statsChannelRef.current = null; };
+  }, [eventId]);
+
+  const coordinatedRefreshStats = useCallback(async () => {
+    if (!eventId) return;
+    const lockKey = `vents_door_stats_lock_${eventId}`;
+    let claimed = true;
+    try {
+      const last = Number(localStorage.getItem(lockKey) || 0);
+      // A sibling tab already fetched (and broadcast) within this window --
+      // just wait for its message instead of also hitting the network.
+      if (Date.now() - last < 1000) claimed = false;
+      else localStorage.setItem(lockKey, String(Date.now()));
+    } catch {
+      // localStorage unavailable (private window, etc.) -- fall back to
+      // every tab fetching for itself, same as before this change.
+    }
+    if (!claimed) return;
+
+    const [{ data: s }, { data: f }] = await Promise.all([
+      supabase.rpc('get_door_stats' as any, { p_event_id: eventId }),
+      supabase.rpc('get_recent_checkins' as any, { p_event_id: eventId, p_limit: 25 }),
+    ]);
+    if (s) setStats(s as DoorStats);
+    if (Array.isArray(f)) setFeed(f as FeedItem[]);
+    try { statsChannelRef.current?.postMessage({ stats: s, feed: f }); } catch {}
+  }, [eventId]);
+
   // ── Guest list (paginated, searched, filtered — single-query server side) ───
   const loadList = useCallback(async (reset: boolean) => {
     if (!eventId) return;
@@ -232,7 +284,11 @@ export function useDoorManager(eventId: string | undefined, actorId: string | un
     let debounce: ReturnType<typeof setTimeout> | null = null;
     const bump = () => {
       if (debounce) clearTimeout(debounce);
-      debounce = setTimeout(() => { refreshStats(); loadList(true); loadScanLog(true); }, 300);
+      // Stats/feed are identical for every tab watching this event, so
+      // only one tab per browser actually fetches them (see
+      // coordinatedRefreshStats); the guest list and scan log stay
+      // per-tab since they depend on this tab's own search/filter state.
+      debounce = setTimeout(() => { coordinatedRefreshStats(); loadList(true); loadScanLog(true); }, 300);
     };
 
     const channel = supabase.channel(`door:${eventId}`, { config: { broadcast: { self: false } } });
