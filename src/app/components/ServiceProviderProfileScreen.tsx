@@ -5,7 +5,7 @@ import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from 
 import { fetchServiceProviderById, withProviderRatings } from '../../lib/serviceProviders';
 import { fetchServiceProviderCategories } from '../../lib/serviceProviderCategories';
 import { fetchActiveServicesForProvider } from '../../lib/providerServices';
-import { createServiceBooking, verifyServiceBookingPayment, logServiceMarketplaceEvent } from '../../lib/serviceBookings';
+import { createServiceBooking, verifyServiceBookingPayment, logServiceMarketplaceEvent, fetchProviderReviews, ProviderReviewRow } from '../../lib/serviceBookings';
 import { openPaystackPopup } from '../../lib/paystack';
 import { fetchMyWalletBalanceKobo, payServiceBookingWithWallet } from '../../lib/userWallet';
 import { formatServiceAmount } from '../../lib/currencies';
@@ -87,6 +87,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   // SV3 handoff: Services/About/Reviews tab strip. Purely a view switch
   // over data this screen already fetches -- no new data source.
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
+  const [reviews, setReviews] = useState<ProviderReviewRow[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +137,18 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
 
   useEffect(() => {
     logServiceMarketplaceEvent('service_provider_viewed', { providerId });
+  }, [providerId]);
+
+  // Real written reviews (provider_reviews_public_select, 0099) -- fetched
+  // once per provider, alongside the existing aggregate rating/count
+  // already fetched via withProviderRatings above. Never fabricated.
+  useEffect(() => {
+    let cancelled = false;
+    setReviews(null);
+    fetchProviderReviews(providerId)
+      .then((rows) => { if (!cancelled) setReviews(rows); })
+      .catch(() => { if (!cancelled) setReviews([]); });
+    return () => { cancelled = true; };
   }, [providerId]);
 
   const toggleService = (svc: ProviderService) => {
@@ -461,12 +474,10 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
 
         {activeTab === 'reviews' && (
           <>
-            {/* Handoff SV3: the export's Reviews tab shows individual named
-                review quotes, but the schema only stores an AGGREGATE
-                (service_provider_ratings: avg_rating, review_count) -- no
-                per-review text/reviewer is fetchable anywhere. Showing the
-                real aggregate honestly, rather than inventing reviewer
-                names and quotes to visually match the mockup. */}
+            {/* Real aggregate (service_provider_ratings view) alongside the
+                real written reviews fetched from provider_reviews
+                (provider_reviews_public_select) below -- never a fabricated
+                rating, count, or quote. */}
             {provider.reviewCount ? (
               <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ color: '#FCD34D', fontSize: '14px', fontWeight: 700 }}>★ {provider.avgRating?.toFixed(1) ?? '—'}</span>
@@ -478,6 +489,20 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.5, margin: 0 }}>
                   No reviews yet for this provider — ratings only appear once real bookings are reviewed.
                 </p>
+              </div>
+            )}
+
+            {reviews && reviews.length > 0 && (
+              <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {reviews.map((r) => (
+                  <div key={r.id} data-review-card style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.lg, padding: '14px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                      <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700 }}>{r.reviewerName || 'VENTS user'}</span>
+                      <span style={{ color: '#FCD34D', fontSize: '12px' }}>{'★'.repeat(r.rating)}{'☆'.repeat(5 - r.rating)}</span>
+                    </div>
+                    <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.5, margin: 0 }}>{r.body}</p>
+                  </div>
+                ))}
               </div>
             )}
           </>

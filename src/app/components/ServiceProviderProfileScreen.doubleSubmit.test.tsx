@@ -17,6 +17,7 @@ vi.mock('../../lib/serviceBookings', () => ({
   createServiceBooking: (...args: any[]) => createServiceBooking(...args),
   verifyServiceBookingPayment: (...args: any[]) => verifyServiceBookingPayment(...args),
   logServiceMarketplaceEvent: (...args: any[]) => logServiceMarketplaceEvent(...args),
+  fetchProviderReviews: vi.fn(async () => []),
 }));
 
 const payServiceBookingWithWallet = vi.fn();
