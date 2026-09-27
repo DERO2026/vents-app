@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
-import { fetchMyServiceBookings, fetchProviderServiceBookings, ServiceBookingRow } from '../../lib/serviceBookings';
+import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, ServiceBookingRow } from '../../lib/serviceBookings';
 import { getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { formatServiceAmount } from '../../lib/currencies';
+import { ConfirmDialog } from './ConfirmDialog';
 
 // Booking history/receipt screen for the Services marketplace
 // (0054_service_bookings_marketplace.sql). Two real, RLS-scoped data
@@ -49,6 +50,9 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
   const [cancelReason, setCancelReason] = useState('');
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+  const [completeTarget, setCompleteTarget] = useState<ServiceBookingRow | null>(null);
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [completeError, setCompleteError] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
@@ -107,6 +111,25 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
       setCancelError(err.message || 'Refund failed');
     } finally {
       setCancellingId(null);
+    }
+  };
+
+  // Provider marks a paid, confirmed booking as delivered. complete_service_
+  // booking (SECURITY DEFINER) does the authorization/state-check
+  // server-side; this only reflects the result.
+  const confirmComplete = async () => {
+    const booking = completeTarget;
+    if (!booking || completingId === booking.id) return;
+    setCompletingId(booking.id);
+    setCompleteError(null);
+    try {
+      await completeServiceBooking(booking.id);
+      setBookings((prev) => (prev || []).map((b) => (b.id === booking.id ? { ...b, status: 'completed' } : b)));
+      setCompleteTarget(null);
+    } catch (err: any) {
+      setCompleteError(err?.message || 'Could not mark this booking complete.');
+    } finally {
+      setCompletingId(null);
     }
   };
 
@@ -229,12 +252,22 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                   </div>
 
                   {mode === 'provider' && b.paymentStatus === 'paid' && (
-                    <button
-                      onClick={() => openCancelDialog(b)}
-                      style={{ marginTop: '10px', width: '100%', background: 'rgba(239,68,68,0.10)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.error, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
-                    >
-                      Cancel & Refund
-                    </button>
+                    <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                      {b.status === 'confirmed' && (
+                        <button
+                          onClick={() => { setCompleteTarget(b); setCompleteError(null); }}
+                          style={{ flex: 1, background: 'rgba(168,85,247,0.10)', border: `1px solid ${servicesColors.accentPurple}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.accentPurple, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                        >
+                          Mark Complete
+                        </button>
+                      )}
+                      <button
+                        onClick={() => openCancelDialog(b)}
+                        style={{ flex: 1, background: 'rgba(239,68,68,0.10)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.error, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Cancel & Refund
+                      </button>
+                    </div>
                   )}
                 </div>
               );
@@ -277,6 +310,16 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={!!completeTarget}
+        title="Mark this booking complete?"
+        message={completeError || 'The customer will be notified and can then leave a review. This cannot be undone.'}
+        confirmLabel={completingId === completeTarget?.id ? 'Marking…' : 'Mark Complete'}
+        cancelLabel="Not yet"
+        onConfirm={confirmComplete}
+        onCancel={() => { setCompleteTarget(null); setCompleteError(null); }}
+      />
     </div>
   );
 }
