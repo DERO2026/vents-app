@@ -6,7 +6,11 @@ import { AttendeeListScreen } from './AttendeeListScreen';
 // Regression test for the confirmed product-audit finding: the "Export"
 // button had no onClick handler at all -- it was a dead stub that did
 // nothing when clicked. This proves a click now actually triggers a real
-// CSV download built from the already-fetched attendee data.
+// CSV download. Export independently re-queries get_event_attendees
+// (rather than exporting only whatever page happens to be loaded on
+// screen) -- see the large-event scalability audit that replaced this
+// screen's old "load everything into one array" approach with real
+// pagination.
 
 const rpcMock = vi.fn();
 vi.mock('../../lib/supabase', () => ({
@@ -32,6 +36,14 @@ const ATTENDEE_ROW = {
   payment_status: 'paid',
 };
 
+function mockRpcRouting(attendeeRows: any[]) {
+  rpcMock.mockImplementation((fn: string) => {
+    if (fn === 'get_door_stats') return Promise.resolve({ data: { total: attendeeRows.length, checked_in: attendeeRows.filter((r) => r.checked_in).length }, error: null });
+    if (fn === 'get_event_attendees') return Promise.resolve({ data: attendeeRows, error: null });
+    return Promise.resolve({ data: null, error: null });
+  });
+}
+
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 
@@ -44,8 +56,8 @@ afterEach(() => {
   downloadBlobMock.mockClear();
 });
 
-async function renderScreen() {
-  rpcMock.mockResolvedValueOnce({ data: [ATTENDEE_ROW], error: null });
+async function renderScreen(attendeeRows: any[]) {
+  mockRpcRouting(attendeeRows);
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -59,7 +71,7 @@ async function renderScreen() {
 
 describe('AttendeeListScreen: Export button', () => {
   it('clicking Export triggers a real CSV download containing the attendee data', async () => {
-    await renderScreen();
+    await renderScreen([ATTENDEE_ROW]);
 
     const exportButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Export');
     expect(exportButton).toBeTruthy();
@@ -67,6 +79,7 @@ describe('AttendeeListScreen: Export button', () => {
 
     await act(async () => {
       exportButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -82,22 +95,42 @@ describe('AttendeeListScreen: Export button', () => {
     expect(csvText).toContain('Checked In');
   });
 
-  it('the Export button is disabled when there are no attendees to export', async () => {
-    rpcMock.mockResolvedValueOnce({ data: [], error: null });
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
+  it('exporting with zero matching attendees does not call downloadBlob', async () => {
+    await renderScreen([]);
+
+    const exportButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Export');
+    expect(exportButton!.hasAttribute('disabled')).toBe(false);
+
     await act(async () => {
-      root!.render(<AttendeeListScreen onBack={() => {}} eventId="event-1" eventTitle="Test Event" />);
-      await Promise.resolve();
+      exportButton!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    const exportButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Export');
-    expect(exportButton!.hasAttribute('disabled')).toBe(true);
-
-    act(() => { exportButton!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(downloadBlobMock).not.toHaveBeenCalled();
+  });
+
+  it('the Export button is disabled while an export is already in flight', async () => {
+    await renderScreen([ATTENDEE_ROW]);
+
+    const exportButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Export')!;
+    let resolveExportRpc: (v: any) => void = () => {};
+    rpcMock.mockImplementationOnce((fn: string) => {
+      if (fn === 'get_event_attendees') return new Promise((resolve) => { resolveExportRpc = resolve; });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    act(() => { exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => { await Promise.resolve(); });
+
+    const midExportButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Exporting…');
+    expect(midExportButton).toBeTruthy();
+    expect(midExportButton!.hasAttribute('disabled')).toBe(true);
+
+    await act(async () => {
+      resolveExportRpc({ data: [], error: null });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
   });
 });

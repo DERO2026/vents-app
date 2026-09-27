@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ArrowLeft, Search, CheckCircle, XCircle, Download, Undo2 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
@@ -28,12 +28,49 @@ interface Attendee {
   checkedInAt: string | null;
 }
 
+// get_event_attendees' own p_filter vocabulary (0004_functions.sql) --
+// AttendeeListScreen only ever needs the 3 that map onto CheckInStatus.
+const STATUS_TO_RPC_FILTER: Record<CheckInStatus | 'all', string> = {
+  all: 'all',
+  'checked-in': 'checked_in',
+  pending: 'pending',
+  cancelled: 'cancelled',
+};
+
+const PAGE_SIZE = 100;
+// Sanity cap for the export loop only -- far beyond the largest event this
+// audit sized for (50,000), just guarding against an infinite loop on a
+// data anomaly. Unlike the old load-everything approach, hitting this
+// during a normal render is no longer possible since rendering is now
+// properly paginated.
+const EXPORT_MAX_ROWS = 100000;
+
 const AVATAR_COLORS = ['#EC4899', '#3B82F6', '#F59E0B', '#22C55E', '#8B5CF6', '#06B6D4', '#F97316', '#EF4444'];
 
 function colorForName(name: string) {
   let hash = 0;
   for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
+
+function mapRow(t: any): Attendee {
+  const name = t.holder_name || t.buyer_name || 'Unknown';
+  const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
+  const status: CheckInStatus = t.status !== 'active' ? 'cancelled' : t.checked_in ? 'checked-in' : 'pending';
+  return {
+    id: t.ticket_id,
+    name,
+    email: t.holder_email || '',
+    ticketType: t.ticket_type || 'Regular',
+    ticketId: t.ticket_id,
+    ticketIdShort: t.ticket_id.slice(0, 8).toUpperCase(),
+    quantity: 1,
+    status,
+    paymentStatus: t.payment_status,
+    initials,
+    avatarColor: colorForName(name),
+    checkedInAt: t.checked_in_at || null,
+  };
 }
 
 const STATUS_CONFIG: Record<CheckInStatus, { color: string; bg: string; label: string; icon: React.ElementType }> = {
@@ -43,131 +80,143 @@ const STATUS_CONFIG: Record<CheckInStatus, { color: string; bg: string; label: s
 };
 
 export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeListScreenProps) {
+  // Real, event-wide totals independent of whatever page of the (now
+  // paginated) list happens to be loaded -- get_door_stats is the same
+  // aggregate RPC the Door Manager dashboard uses (a real SQL aggregate,
+  // not a client-side count over loaded rows).
+  const [doorStats, setDoorStats] = useState<{ total: number; checked_in: number } | null>(null);
+
   const [attendees, setAttendees] = useState<Attendee[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loadingList, setLoadingList] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
-  const [query, setQuery] = useState('');
+  const [queryInput, setQueryInput] = useState('');
+  const [query, setQuery] = useState(''); // debounced
   const [statusFilter, setStatusFilter] = useState<CheckInStatus | 'all'>('all');
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
+  const offsetRef = useRef(0);
+  const reqIdRef = useRef(0); // guards against a stale response clobbering a newer search/filter
+
+  // Debounce the search box the same way useDoorManager does (250ms) before
+  // it drives a real server-side query -- typing shouldn't fire an RPC per
+  // keystroke.
   useEffect(() => {
-    if (!eventId) { setLoading(false); return; }
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setLoadError(null);
-      try {
-        // Uses the same gated, single-query RPC as the Door Manager dashboard
-        // (get_event_attendees — authorized via is_event_door_manager) instead
-        // of a raw `tickets -> users(*)` embed, which depended on an
-        // over-broad `public.users` RLS policy that let ANY authenticated
-        // user read every other user's row (email, phone, DOB, TOTP secret,
-        // ban history) via any table/embed touching `users`. That policy has
-        // been removed; this RPC only ever returns the safe attendee fields
-        // needed here (holder_name/holder_email), scoped to the caller's own
-        // event.
-        //
-        // The RPC itself caps p_limit at 200 per call (LEAST(p_limit, 200)),
-        // so a single call was a hard ceiling on total attendees shown, and
-        // this screen's "N / total" and search/filter all silently only ever
-        // saw that first page. Loop pages of 200 by offset until a partial
-        // page comes back — for a ticketing app, "the attendee list stops
-        // working past 200 people" is a hard failure on the day it matters
-        // most, not an edge case.
-        const PAGE_SIZE = 200;
-        let offset = 0;
-        const allRows: any[] = [];
-        for (;;) {
-          const { data, error } = await supabase.rpc('get_event_attendees' as any, {
-            p_event_id: eventId,
-            p_search: null,
-            p_filter: 'all',
-            p_limit: PAGE_SIZE,
-            p_offset: offset,
-          });
-          if (error) throw error;
-          const rows = Array.isArray(data) ? data : [];
-          allRows.push(...rows);
-          if (rows.length < PAGE_SIZE) break;
-          offset += PAGE_SIZE;
-          // Sanity cap so a data anomaly can't spin this into an infinite
-          // fetch loop — 20,000 attendees is far beyond any real event here.
-          if (offset >= 20000) break;
-        }
+    const t = setTimeout(() => setQuery(queryInput), 250);
+    return () => clearTimeout(t);
+  }, [queryInput]);
 
-        if (cancelled) return;
-        setAttendees(allRows.map((t) => {
-          const name = t.holder_name || t.buyer_name || 'Unknown';
-          const initials = name.split(' ').map((w: string) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-          const status: CheckInStatus =
-            t.status !== 'active' ? 'cancelled' : t.checked_in ? 'checked-in' : 'pending';
-          return {
-            id: t.ticket_id,
-            name,
-            email: t.holder_email || '',
-            ticketType: t.ticket_type || 'Regular',
-            ticketId: t.ticket_id,
-            ticketIdShort: t.ticket_id.slice(0, 8).toUpperCase(),
-            quantity: 1,
-            status,
-            paymentStatus: t.payment_status,
-            initials,
-            avatarColor: colorForName(name),
-            checkedInAt: t.checked_in_at || null,
-          };
-        }));
-      } catch (err: any) {
-        // A failed load previously rendered as an empty attendee list —
-        // indistinguishable from "this event genuinely has no attendees",
-        // with no retry.
-        console.error('AttendeeListScreen load error', err);
-        Sentry.captureException(err);
-        if (!cancelled) setLoadError(err?.message || 'Could not load attendees. Pull to refresh or try again.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  const loadPage = useCallback(async (reset: boolean) => {
+    if (!eventId) return;
+    const myReq = ++reqIdRef.current;
+    if (reset) { offsetRef.current = 0; setLoadingList(true); setLoadError(null); }
+    else setLoadingMore(true);
+
+    try {
+      const { data, error } = await supabase.rpc('get_event_attendees' as any, {
+        p_event_id: eventId,
+        p_search: query.trim() || null,
+        p_filter: STATUS_TO_RPC_FILTER[statusFilter],
+        p_limit: PAGE_SIZE,
+        p_offset: reset ? 0 : offsetRef.current,
+      });
+      if (myReq !== reqIdRef.current) return; // superseded by a newer search/filter/page
+      if (error) throw error;
+      const rows = Array.isArray(data) ? data : [];
+      const mapped = rows.map(mapRow);
+      setAttendees((prev) => {
+        if (reset) return mapped;
+        // De-dup by id -- if the checked_in_at-ordered page boundary shifts
+        // between fetches (a check-in landing mid-scroll at a busy door),
+        // the same ticket could otherwise be appended twice.
+        const seen = new Set(prev.map((a) => a.id));
+        return [...prev, ...mapped.filter((a) => !seen.has(a.id))];
+      });
+      setHasMore(rows.length === PAGE_SIZE);
+      offsetRef.current = (reset ? 0 : offsetRef.current) + rows.length;
+    } catch (err: any) {
+      if (myReq !== reqIdRef.current) return;
+      console.error('AttendeeListScreen load error', err);
+      Sentry.captureException(err);
+      setLoadError(err?.message || 'Could not load attendees. Pull to refresh or try again.');
+    } finally {
+      if (myReq === reqIdRef.current) { setLoadingList(false); setLoadingMore(false); }
     }
-    load();
+  }, [eventId, query, statusFilter]);
+
+  const loadMore = useCallback(() => {
+    if (!loadingList && !loadingMore && hasMore) loadPage(false);
+  }, [loadingList, loadingMore, hasMore, loadPage]);
+
+  // Initial load + whenever the event, debounced search, or filter changes.
+  useEffect(() => {
+    if (!eventId) { setLoadingList(false); return; }
+    loadPage(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId, query, statusFilter]);
+
+  // Real event-wide check-in progress, unaffected by search/filter/pagination.
+  useEffect(() => {
+    if (!eventId) return;
+    let cancelled = false;
+    supabase.rpc('get_door_stats' as any, { p_event_id: eventId }).then(({ data }) => {
+      if (!cancelled && data) setDoorStats({ total: data.total ?? 0, checked_in: data.checked_in ?? 0 });
+    });
     return () => { cancelled = true; };
   }, [eventId, reloadKey]);
 
-  const checkedIn = attendees.filter((a) => a.status === 'checked-in').length;
-  const total = attendees.filter((a) => a.status !== 'cancelled').length;
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 300) loadMore();
+  };
 
-  const filtered = attendees.filter((a) => {
-    const matchQ =
-      !query ||
-      a.name.toLowerCase().includes(query.toLowerCase()) ||
-      a.email.toLowerCase().includes(query.toLowerCase()) ||
-      a.ticketIdShort.toLowerCase().includes(query.toLowerCase());
-    const matchS = statusFilter === 'all' || a.status === statusFilter;
-    return matchQ && matchS;
-  });
-
-  // Exports exactly what's currently visible (respecting search/status
-  // filter) rather than the full unfiltered roster -- an organizer who's
-  // filtered down to e.g. "checked-in" almost certainly wants that list,
-  // not everyone. All data here is already in memory from the real
-  // get_event_attendees fetch above; no extra network call needed.
+  // Exports every attendee matching the current search/status filter, not
+  // just whatever page happens to be loaded on screen -- decoupled from the
+  // (now paginated) render list by re-looping the same server-side-filtered
+  // RPC independently, capped at EXPORT_MAX_ROWS as a sanity guard rather
+  // than the render path's old silent 20,000-row truncation.
   function csvEscape(value: string) {
     return /[",\n]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
   }
   const handleExport = async () => {
-    if (exporting || filtered.length === 0) return;
+    if (exporting || !eventId) return;
     setExporting(true);
+    setExportError(null);
     try {
       const headers = ['Name', 'Email', 'Ticket Type', 'Ticket ID', 'Quantity', 'Status', 'Payment Status', 'Checked In At'];
-      const rows = filtered.map((a) => [
-        a.name, a.email, a.ticketType, a.ticketId, String(a.quantity),
-        STATUS_CONFIG[a.status].label, a.paymentStatus, a.checkedInAt || '',
-      ]);
+      const rows: string[][] = [];
+      let offset = 0;
+      for (;;) {
+        const { data, error } = await supabase.rpc('get_event_attendees' as any, {
+          p_event_id: eventId,
+          p_search: query.trim() || null,
+          p_filter: STATUS_TO_RPC_FILTER[statusFilter],
+          p_limit: 200,
+          p_offset: offset,
+        });
+        if (error) throw error;
+        const page = Array.isArray(data) ? data : [];
+        for (const t of page) {
+          const a = mapRow(t);
+          rows.push([a.name, a.email, a.ticketType, a.ticketId, String(a.quantity), STATUS_CONFIG[a.status].label, a.paymentStatus, a.checkedInAt || '']);
+        }
+        if (page.length < 200) break;
+        offset += 200;
+        if (offset >= EXPORT_MAX_ROWS) {
+          throw new Error(`This event has more than ${EXPORT_MAX_ROWS.toLocaleString()} matching attendees -- narrow the filter/search before exporting.`);
+        }
+      }
+      if (rows.length === 0) { setExporting(false); return; }
       const csv = [headers, ...rows].map((row) => row.map(csvEscape).join(',')).join('\r\n');
       const blob = new Blob([csv], { type: 'text/csv' });
       const safeTitle = (eventTitle || 'event').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
       await downloadBlob(blob, `${safeTitle}-attendees.csv`);
-    } catch (err) {
+    } catch (err: any) {
       Sentry.captureException(err);
+      setExportError(err?.message || 'Export failed. Please try again.');
     } finally {
       setExporting(false);
     }
@@ -219,6 +268,9 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
     }
   };
 
+  const total = doorStats?.total ?? 0;
+  const checkedIn = doorStats?.checked_in ?? 0;
+
   return (
     <div style={{ background: '#020005', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       <style>{`input::placeholder { color: #8B8FA8; }`}</style>
@@ -236,12 +288,12 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         </div>
         <button
           onClick={handleExport}
-          disabled={exporting || filtered.length === 0}
+          disabled={exporting || !eventId}
           style={{
             background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '10px', padding: '8px 12px',
             display: 'flex', alignItems: 'center', gap: '5px',
-            cursor: exporting || filtered.length === 0 ? 'not-allowed' : 'pointer',
-            opacity: exporting || filtered.length === 0 ? 0.5 : 1,
+            cursor: exporting || !eventId ? 'not-allowed' : 'pointer',
+            opacity: exporting || !eventId ? 0.5 : 1,
           }}
         >
           <Download size={14} color="#A78BFA" />
@@ -249,16 +301,16 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         </button>
       </div>
 
-      {loading ? (
+      {loadingList && attendees.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B8FA8', fontSize: '14px' }}>
           Loading attendees…
         </div>
-      ) : loadError ? (
+      ) : loadError && attendees.length === 0 ? (
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', textAlign: 'center', gap: '12px' }}>
           <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600 }}>Couldn't load attendees</p>
           <p style={{ color: '#8B8FA8', fontSize: '13px' }}>{loadError}</p>
           <button
-            onClick={() => setReloadKey((k) => k + 1)}
+            onClick={() => { setReloadKey((k) => k + 1); loadPage(true); }}
             style={{ background: 'rgba(123,47,190,0.15)', border: '1px solid rgba(123,47,190,0.4)', borderRadius: '10px', padding: '8px 16px', color: '#C4B5FD', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
           >
             Retry
@@ -270,7 +322,8 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
         </div>
       ) : (
         <>
-          {/* Check-in progress */}
+          {/* Check-in progress -- real event-wide totals via get_door_stats,
+              not derived from whatever page of the list is currently loaded. */}
           <div style={{ padding: '0 16px 12px' }}>
             <div style={{ background: '#090514', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '16px', padding: '14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -290,7 +343,7 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
           <div style={{ padding: '0 16px 10px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#090514', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '12px', padding: '10px 14px', minWidth: 0 }}>
               <Search size={16} color="#8B8FA8" style={{ flexShrink: 0 }} />
-              <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email or ticket ID..." style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Manrope, sans-serif' }} />
+              <input value={queryInput} onChange={(e) => setQueryInput(e.target.value)} placeholder="Search by name, email or ticket ID..." style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: '#F0F0FF', fontSize: '14px', fontFamily: 'Manrope, sans-serif' }} />
             </div>
           </div>
 
@@ -303,15 +356,25 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
             ))}
           </div>
 
-          {/* Attendee list */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 24px', scrollbarWidth: 'none' }}>
+          {exportError && (
+            <div style={{ margin: '0 16px 10px', padding: '10px 12px', borderRadius: '10px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)' }}>
+              <p style={{ color: '#EF4444', fontSize: '12px', margin: 0 }}>{exportError}</p>
+            </div>
+          )}
+
+          {/* Attendee list -- server-side paginated (100 rows/page), loads
+              the next page automatically as the organizer scrolls near the
+              bottom, same incremental pattern as useDoorManager's guest list. */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 24px', scrollbarWidth: 'none' }} onScroll={handleScroll}>
             {attendees.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '40px 16px', color: '#8B8FA8', fontSize: '14px' }}>No attendees yet.</div>
             ) : (
               <>
-                <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '10px' }}>{filtered.length} attendee{filtered.length !== 1 ? 's' : ''}</p>
+                <p style={{ color: '#8B8FA8', fontSize: '11px', marginBottom: '10px' }}>
+                  {attendees.length} loaded{hasMore ? ' — scroll for more' : ''}
+                </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {filtered.map((attendee) => {
+                  {attendees.map((attendee) => {
                     const sc = STATUS_CONFIG[attendee.status];
                     const StatusIcon = sc.icon;
                     return (
@@ -354,6 +417,9 @@ export function AttendeeListScreen({ onBack, eventId, eventTitle }: AttendeeList
                       </div>
                     );
                   })}
+                  {loadingMore && (
+                    <p style={{ textAlign: 'center', color: '#8B8FA8', fontSize: '12px', padding: '10px 0' }}>Loading more…</p>
+                  )}
                 </div>
               </>
             )}
