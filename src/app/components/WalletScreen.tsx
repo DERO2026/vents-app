@@ -186,6 +186,13 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [withdrawing, setWithdrawing] = useState(false);
   const [withdrawError, setWithdrawError] = useState('');
+  // Synchronous re-entrancy lock, same pattern as CheckoutScreen.tsx's
+  // payingRef: `withdrawing` is React state, so it doesn't become true
+  // until the next render, leaving a window where a rapid double-tap can
+  // invoke handleWithdraw a second time before the button's disabled state
+  // commits. This ref closes that window; `withdrawing` still drives the
+  // visible disabled/loading UI.
+  const withdrawingRef = useRef(false);
 
   // Bank account flow
   const [showAddBank, setShowAddBank] = useState(false);
@@ -481,6 +488,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   const handleWithdraw = async () => {
+    if (withdrawingRef.current) return;
     setWithdrawError('');
     if (!emailVerified) { setWithdrawError('Please verify your email before requesting a withdrawal'); return; }
     const amount = parseFloat(withdrawAmount.replace(/[^0-9.]/g, ''));
@@ -490,6 +498,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     const payoutAccountId = withdrawAccountId || bankAccounts.find(a => a.is_default)?.id || bankAccounts[0]?.id;
     if (!payoutAccountId) { setWithdrawError('Add a bank account first'); return; }
 
+    withdrawingRef.current = true;
     setWithdrawing(true);
     try {
       const { error } = await supabase.rpc('request_organizer_payout', {
@@ -504,6 +513,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     } catch (e: any) {
       setWithdrawError(e.message || 'Withdrawal failed');
     } finally {
+      withdrawingRef.current = false;
       setWithdrawing(false);
     }
   };
