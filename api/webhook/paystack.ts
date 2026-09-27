@@ -38,7 +38,7 @@
 import { sendPayoutDecisionEmail, sendTicketRefundEmail } from '../_lib/mailer.js';
 import { callProjectAdminTableRpc, callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 import { finalizeAndConfirmPurchase, finalizeAndConfirmServiceBooking } from '../_lib/finalizePaystackPayment.js';
-import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { verifyInsforgeSession, enforceRateLimit } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { deliverPendingPushesForUser } from '../_lib/pushDelivery.js';
 import crypto from 'crypto';
@@ -127,6 +127,13 @@ async function handleClientVerifyDeposit(req, res) {
   const session = await verifyInsforgeSession(req.headers.authorization);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
+  // Master security audit (MEDIUM #1): this endpoint calls out to Paystack's
+  // own verify API and an admin-privileged RPC on every request with no
+  // rate limit -- an authenticated caller could hammer it in a loop. Same
+  // enforceRateLimit RPC other endpoints gate paid/privileged calls with.
+  const rateOk = await enforceRateLimit(String(req.headers.authorization), `paystack_verify_deposit:${session.userId}`, 30, 3600);
+  if (!rateOk) return res.status(429).json({ status: 'error', error: 'Too many verification attempts. Please try again in a bit.' });
+
   const { reference } = req.body || {};
   if (!reference || typeof reference !== 'string') {
     return res.status(400).json({ error: 'reference is required' });
@@ -196,6 +203,14 @@ async function handleClientVerify(req, res) {
 
   const session = await verifyInsforgeSession(req.headers.authorization);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+  // Master security audit (MEDIUM #1): this endpoint calls out to Paystack's
+  // own verify API and several admin-privileged RPCs on every request with
+  // no rate limit -- an authenticated caller could hammer it in a loop.
+  // Same enforceRateLimit RPC other endpoints gate paid/privileged calls
+  // with (see api/_lib/verifyAuth.ts).
+  const rateOk = await enforceRateLimit(String(req.headers.authorization), `paystack_verify:${session.userId}`, 30, 3600);
+  if (!rateOk) return res.status(429).json({ status: 'error', error: 'Too many verification attempts. Please try again in a bit.' });
 
   const { reference } = req.body || {};
   if (!reference || typeof reference !== 'string') {
