@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertCircle, ArrowLeft, Calendar, Clock, MapPin, RefreshCw } from 'lucide-react';
 import { servicesColors, servicesRadii, servicesSpacing } from '../../lib/servicesDesignTokens';
-import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, ServiceBookingRow } from '../../lib/serviceBookings';
+import { fetchMyServiceBookings, fetchProviderServiceBookings, completeServiceBooking, submitProviderReview, ServiceBookingRow } from '../../lib/serviceBookings';
 import { getAuthToken } from '../../lib/supabase';
 import { apiUrl } from '../../lib/apiBase';
 import { formatServiceAmount } from '../../lib/currencies';
@@ -53,6 +53,11 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
   const [completeTarget, setCompleteTarget] = useState<ServiceBookingRow | null>(null);
   const [completingId, setCompletingId] = useState<string | null>(null);
   const [completeError, setCompleteError] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<ServiceBookingRow | null>(null);
+  const [reviewRating, setReviewRating] = useState(0);
+  const [reviewBody, setReviewBody] = useState('');
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [submittingReviewId, setSubmittingReviewId] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
@@ -130,6 +135,48 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
       setCompleteError(err?.message || 'Could not mark this booking complete.');
     } finally {
       setCompletingId(null);
+    }
+  };
+
+  const openReviewDialog = (booking: ServiceBookingRow) => {
+    setReviewTarget(booking);
+    setReviewRating(0);
+    setReviewBody('');
+    setReviewError(null);
+  };
+
+  // Customer submits a written review for a completed booking. RLS
+  // (provider_reviews_insert_own, 0099) is the sole enforcement point --
+  // this only reflects the result, same shape as confirmCancel/confirmComplete.
+  const confirmSubmitReview = async () => {
+    const booking = reviewTarget;
+    if (!booking || submittingReviewId === booking.id) return;
+    if (reviewRating < 1 || reviewRating > 5) {
+      setReviewError('Please choose a star rating.');
+      return;
+    }
+    if (reviewBody.trim().length < 10) {
+      setReviewError('Your review must be at least 10 characters.');
+      return;
+    }
+    setSubmittingReviewId(booking.id);
+    setReviewError(null);
+    try {
+      const result = await submitProviderReview(booking.providerId, booking.id, reviewRating, reviewBody);
+      if (result.status === 'error') {
+        setReviewError(result.error || 'Could not submit your review.');
+        return;
+      }
+      setBookings((prev) =>
+        (prev || []).map((b) =>
+          b.id === booking.id ? { ...b, myReview: { id: booking.id, rating: reviewRating, body: reviewBody.trim() } } : b
+        )
+      );
+      setReviewTarget(null);
+    } catch (err: any) {
+      setReviewError(err?.message || 'Could not submit your review.');
+    } finally {
+      setSubmittingReviewId(null);
     }
   };
 
@@ -269,6 +316,22 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                       </button>
                     </div>
                   )}
+
+                  {mode === 'customer' && b.status === 'completed' && (
+                    b.myReview ? (
+                      <div style={{ marginTop: '10px', padding: '10px', borderRadius: servicesRadii.md, background: 'rgba(168,85,247,0.08)', border: `1px solid ${servicesColors.border}` }}>
+                        <span style={{ color: '#FCD34D', fontSize: '12px', fontWeight: 700 }}>{'★'.repeat(b.myReview.rating)}{'☆'.repeat(5 - b.myReview.rating)}</span>
+                        <p style={{ color: servicesColors.textSecondary, fontSize: '12px', margin: '4px 0 0', lineHeight: 1.5 }}>{b.myReview.body}</p>
+                      </div>
+                    ) : b.myReview === null ? (
+                      <button
+                        onClick={() => openReviewDialog(b)}
+                        style={{ marginTop: '10px', width: '100%', background: 'rgba(168,85,247,0.10)', border: `1px solid ${servicesColors.accentPurple}`, borderRadius: servicesRadii.md, padding: '8px', color: servicesColors.accentPurple, fontSize: '12.5px', fontWeight: 700, cursor: 'pointer' }}
+                      >
+                        Leave a Review
+                      </button>
+                    ) : null
+                  )}
                 </div>
               );
             })}
@@ -305,6 +368,54 @@ export function ServiceBookingsScreen({ mode, providerId, onBack }: ServiceBooki
                 style={{ flex: 1, background: servicesColors.error, border: 'none', borderRadius: servicesRadii.md, padding: '11px', color: '#fff', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', opacity: cancellingId === cancelTarget.id ? 0.6 : 1 }}
               >
                 {cancellingId === cancelTarget.id ? 'Refunding…' : 'Cancel & Refund'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {reviewTarget && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2,0,5,0.75)', display: 'flex', alignItems: 'flex-end', zIndex: 9300 }}>
+          <div style={{ background: servicesColors.bg, width: '100%', borderRadius: '20px 20px 0 0', padding: '20px', border: `1px solid ${servicesColors.border}` }}>
+            <p style={{ color: servicesColors.textPrimary, fontSize: '16px', fontWeight: 800, margin: '0 0 6px' }}>Leave a review</p>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '12.5px', margin: '0 0 14px' }}>
+              Share your experience with {reviewTarget.providerBusinessName || 'this provider'}.
+            </p>
+            <div style={{ display: 'flex', gap: '6px', marginBottom: '12px' }}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <button
+                  key={star}
+                  type="button"
+                  aria-label={`${star} star${star === 1 ? '' : 's'}`}
+                  onClick={() => setReviewRating(star)}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, fontSize: '28px', lineHeight: 1, color: star <= reviewRating ? '#FCD34D' : 'rgba(255,255,255,0.2)' }}
+                >
+                  ★
+                </button>
+              ))}
+            </div>
+            <textarea
+              value={reviewBody}
+              onChange={(e) => setReviewBody(e.target.value)}
+              placeholder="What was your experience like? (min. 10 characters)"
+              rows={4}
+              style={{ width: '100%', boxSizing: 'border-box', background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md, padding: '10px', color: servicesColors.textPrimary, fontSize: '13px', resize: 'none', marginBottom: '10px' }}
+            />
+            {reviewError && <p style={{ color: servicesColors.error, fontSize: '12px', margin: '0 0 10px' }}>{reviewError}</p>}
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setReviewTarget(null)}
+                disabled={submittingReviewId === reviewTarget.id}
+                style={{ flex: 1, background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.md, padding: '11px', color: servicesColors.textPrimary, fontSize: '13.5px', fontWeight: 700, cursor: 'pointer' }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={confirmSubmitReview}
+                disabled={submittingReviewId === reviewTarget.id}
+                style={{ flex: 1, background: servicesColors.accentPurple, border: 'none', borderRadius: servicesRadii.md, padding: '11px', color: '#fff', fontSize: '13.5px', fontWeight: 700, cursor: 'pointer', opacity: submittingReviewId === reviewTarget.id ? 0.6 : 1 }}
+              >
+                {submittingReviewId === reviewTarget.id ? 'Submitting…' : 'Submit Review'}
               </button>
             </div>
           </div>

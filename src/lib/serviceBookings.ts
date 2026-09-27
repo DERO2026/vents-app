@@ -114,6 +114,11 @@ export interface ServiceBookingRow {
   total: number;
   createdAt: string;
   items: ServiceBookingItemRow[];
+  // Populated by fetchMyServiceBookings via a second query against
+  // provider_reviews (own reviewer_id, RLS-scoped) -- null until that
+  // query resolves, then either the real review row or undefined if none
+  // exists yet. Never fabricated; absent means "not reviewed".
+  myReview?: { id: string; rating: number; body: string } | null;
 }
 
 function mapBookingRow(row: any): ServiceBookingRow {
@@ -144,14 +149,106 @@ function mapBookingRow(row: any): ServiceBookingRow {
 }
 
 // RLS (service_bookings_select_own_customer, 0054) already restricts this
-// to the caller's own bookings.
+// to the caller's own bookings. myReview is filled in via a second query
+// against provider_reviews (provider_reviews_public_select lets anyone read
+// them, but we only ever ask for the caller's own reviewer_id here) --
+// booking_id has a DB-level UNIQUE constraint, so at most one row per
+// booking can ever come back.
 export async function fetchMyServiceBookings(): Promise<ServiceBookingRow[]> {
   const { data, error } = await supabase
     .from('service_bookings')
     .select('*, service_providers(business_name), service_booking_items(*)')
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data || []).map(mapBookingRow);
+  const rows = (data || []).map(mapBookingRow);
+
+  const completedIds = rows.filter((r) => r.status === 'completed').map((r) => r.id);
+  if (completedIds.length > 0) {
+    const { data: reviews } = await supabase
+      .from('provider_reviews')
+      .select('id, booking_id, rating, body')
+      .in('booking_id', completedIds);
+    const reviewMap = new Map((reviews || []).map((rv: any) => [rv.booking_id, rv]));
+    rows.forEach((r) => {
+      if (r.status === 'completed') {
+        const rv = reviewMap.get(r.id);
+        r.myReview = rv ? { id: rv.id, rating: rv.rating, body: rv.body } : null;
+      }
+    });
+  }
+  return rows;
+}
+
+export interface SubmitProviderReviewResult {
+  status: 'success' | 'error';
+  error?: string;
+}
+
+// Direct client-side insert -- provider_reviews_insert_own (0099) is the
+// sole source of truth: reviewer must be the caller, the booking must be
+// the caller's own, must match the provider being reviewed, and must be
+// payment_status='paid' AND status='completed'. No RPC needed since RLS
+// already enforces every rule a server-side function would otherwise have
+// to re-check.
+export async function submitProviderReview(
+  providerId: string,
+  bookingId: string,
+  rating: number,
+  body: string
+): Promise<SubmitProviderReviewResult> {
+  const { error } = await supabase.from('provider_reviews').insert([
+    { provider_id: providerId, booking_id: bookingId, rating, body: body.trim() },
+  ]);
+  if (error) {
+    const message = error.code === '23505'
+      ? 'You already reviewed this booking.'
+      : error.message || 'Could not submit your review.';
+    return { status: 'error', error: message };
+  }
+  return { status: 'success' };
+}
+
+export interface ProviderReviewRow {
+  id: string;
+  rating: number;
+  body: string;
+  createdAt: string;
+  reviewerName?: string;
+  reviewerAvatarUrl?: string;
+}
+
+// provider_reviews_public_select is fully public -- anyone can read real
+// written reviews for a provider. reviewer_id has no FK PostgREST can embed
+// through (same public_profiles situation as fetchProviderServiceBookings),
+// so names/avatars are resolved with a second query, same two-step pattern.
+export async function fetchProviderReviews(providerId: string): Promise<ProviderReviewRow[]> {
+  const { data, error } = await supabase
+    .from('provider_reviews')
+    .select('id, rating, body, created_at, reviewer_id')
+    .eq('provider_id', providerId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  const rows: ProviderReviewRow[] = (data || []).map((r: any) => ({
+    id: r.id,
+    rating: r.rating,
+    body: r.body,
+    createdAt: r.created_at,
+  }));
+
+  const reviewerIds = [...new Set((data || []).map((r: any) => r.reviewer_id))];
+  if (reviewerIds.length > 0) {
+    const { data: profiles } = await supabase
+      .from('public_profiles')
+      .select('id, full_name, username, avatar_url')
+      .in('id', reviewerIds);
+    const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+    (data || []).forEach((r: any, i: number) => {
+      const p = profileMap.get(r.reviewer_id);
+      rows[i].reviewerName = p?.full_name || p?.username || undefined;
+      rows[i].reviewerAvatarUrl = p?.avatar_url || undefined;
+    });
+  }
+  return rows;
 }
 
 // RLS (service_bookings_select_own_provider, 0054) already restricts this
