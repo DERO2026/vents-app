@@ -78,6 +78,15 @@ export async function verifyServiceBookingPayment(reference: string): Promise<Ve
   return { status: 'success' };
 }
 
+// Provider marks a paid, confirmed booking as complete once the service has
+// been delivered (complete_service_booking, 0098). SECURITY DEFINER does the
+// authorization/idempotency/state-check server-side; this is a thin wrapper.
+export async function completeServiceBooking(bookingId: string): Promise<{ status: string }> {
+  const { data, error } = await supabase.rpc('complete_service_booking' as any, { p_booking_id: bookingId });
+  if (error) throw new Error(error.message);
+  return data as { status: string };
+}
+
 export interface ServiceBookingItemRow {
   id: string;
   serviceName: string;
