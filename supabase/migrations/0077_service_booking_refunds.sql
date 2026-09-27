@@ -34,9 +34,14 @@
 --     project_admin-only for the same enumerable-Paystack-id reason as the
 --     existing ticket/transfer-fee refund finalizers.
 --
--- NOT deployed to Production by this migration file's existence alone --
--- per explicit instruction, this is written and tested locally only and
--- requires separate, explicit approval before being applied.
+-- DEPLOYED to production. This header previously said "NOT deployed to
+-- Production by this migration file's existence alone" -- that claim went
+-- stale: this migration's functions were independently verified live via
+-- pg_get_functiondef against project slrtjxtzhowhwhebjprv during a later
+-- audit pass and confirmed to match this file byte-for-byte, and they are
+-- wired up live from api/wallet/refund-ticket.ts and
+-- api/webhook/paystack.ts. Corrected here so a future reader doesn't rely
+-- on the stale claim -- no SQL below this comment was changed.
 
 -- ── 1. Schema: mirror tickets' refund-tracking columns ──────────────────
 ALTER TABLE public.service_bookings
