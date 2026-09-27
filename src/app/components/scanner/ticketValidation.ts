@@ -34,6 +34,38 @@ function withTimeout<T>(p: PromiseLike<T>, ms: number): Promise<T> {
   ]);
 }
 
+function isTransientFailure(err: any): boolean {
+  const raw = String(err?.message || '');
+  const isTimeout = /verify_timeout/.test(raw);
+  const isNetworkError = /failed to fetch|networkerror|network request failed|load failed|internet|err_network/i.test(raw)
+    || err?.name === 'TypeError';
+  return isTimeout || isNetworkError;
+}
+
+// Congested Wi-Fi/cellular at a busy gate is the single biggest source of a
+// staffer having to manually rescan today -- a dropped request or a slow
+// response surfaces as "offline — retry" even though the ticket itself was
+// never invalid. One automatic retry, after a short backoff, covers exactly
+// that transient case before asking a human to intervene. Never retries a
+// real server response (a denial, an already-scanned duplicate, or a
+// business-rule exception) -- only a timeout or a network-layer failure
+// throws here, so a genuine "ENTRY DENIED"/"ALREADY CHECKED IN" is still
+// shown on the very first attempt, exactly as before. Safe to retry at all
+// because verify_entry_pass/manual_check_in are already idempotent (a
+// request that actually succeeded server-side just before the client gave
+// up cleanly returns "already_scanned" on retry, never a double check-in).
+const RETRY_BACKOFF_MS = 400;
+
+async function withOneRetry<T>(call: () => PromiseLike<T>): Promise<T> {
+  try {
+    return await withTimeout(call(), VERIFY_TIMEOUT_MS);
+  } catch (err: any) {
+    if (!isTransientFailure(err)) throw err;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS));
+    return await withTimeout(call(), VERIFY_TIMEOUT_MS);
+  }
+}
+
 // Map a verify_entry_pass denial reason into an exact, glanceable headline +
 // detail. Server messages/reasons are unchanged; this only presents them.
 function deniedInfo(result: any): { headline: string; detail: string } {
@@ -82,12 +114,11 @@ export async function validateTicket(
 ): Promise<ScanOutcome> {
   const ticketId = rawTicketId.trim();
   try {
-    const { data, error } = (await withTimeout(
+    const { data, error } = (await withOneRetry(() =>
       supabase.rpc('verify_entry_pass' as any, {
         p_ticket_id: ticketId,
         p_actor_id: actorId,
       }),
-      VERIFY_TIMEOUT_MS,
     )) as any;
 
     if (error) throw error;
@@ -164,9 +195,8 @@ export async function validateManualCode(
     return { status: 'denied', headline: 'INVALID CODE', errorMsg: "That code doesn't look right. Double-check it and try again." };
   }
   try {
-    const { data, error } = (await withTimeout(
+    const { data, error } = (await withOneRetry(() =>
       supabase.rpc('manual_check_in' as any, { p_ticket_id: ticketId, p_actor_id: actorId }),
-      VERIFY_TIMEOUT_MS,
     )) as any;
 
     if (error) throw error;
