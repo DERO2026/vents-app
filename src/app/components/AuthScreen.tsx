@@ -21,6 +21,7 @@ import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeout
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { DobPicker } from './DobPicker';
 import { OtpCodeBoxes } from './OtpCodeBoxes';
+import { APP_VERSION } from '../../lib/appVersion';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -322,6 +323,26 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
   // accounts). Drives the "Log in instead" prompt on the signup form
   // instead of the plain dead-end error text it used to show.
   const [duplicateConfirmedEmail, setDuplicateConfirmedEmail] = useState(false);
+
+  // Diagnostics for the live, unreproduced-locally "OTP screen frozen"
+  // report -- see AnalyticsEvent.OtpStepShown's doc comment. Fires once per
+  // mount of the real Step-3 screen (not the isolated OtpCodeBoxes harness),
+  // and once more the first time a keystroke actually reaches
+  // verificationCode's state, with the elapsed time between them. If the
+  // freeze is real, affected sessions will show OtpStepShown with no
+  // matching OtpFirstKeystroke ever recorded.
+  const otpShownAtRef = useRef<number | null>(null);
+  const otpFirstKeystrokeSentRef = useRef(false);
+  useEffect(() => {
+    if (!isVerifying) { otpShownAtRef.current = null; otpFirstKeystrokeSentRef.current = false; return; }
+    otpShownAtRef.current = Date.now();
+    otpFirstKeystrokeSentRef.current = false;
+    analytics.otpStepShown({
+      appVersion: APP_VERSION,
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'unknown',
+      isTouch: typeof window !== 'undefined' && ('ontouchstart' in window || navigator.maxTouchPoints > 0),
+    });
+  }, [isVerifying]);
 
   // Close the state dropdown (the small anchored panel, not a full-screen
   // sheet) when tapping anywhere outside it -- same behavior as PhoneInput's
@@ -2028,12 +2049,28 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                 library (see OtpCodeBoxes.tsx) — replaces a single
                 transparent overlay input that could only ever place the
                 caret at the end of the value, never at a tapped box. */}
-            <div style={{ marginBottom: '24px' }}>
+            {/* touchAction:'manipulation' overrides the screen root's
+                touchAction:'pan-y' (set for vertical-scroll-only gesture
+                handling) specifically over the tappable OTP boxes -- a
+                'pan-y' ancestor is a known cause of a mobile WebView
+                delaying or swallowing a tap that lands on a nested
+                absolutely-positioned input (the real input-otp <input> is
+                exactly that), since the browser has to wait to see if the
+                gesture is a vertical scroll before committing to a tap.
+                'manipulation' tells it immediately that this region is
+                tap/pinch-only, not scrollable, removing that ambiguity. */}
+            <div style={{ marginBottom: '24px', touchAction: 'manipulation' }}>
               <OtpCodeBoxes
                 inputRef={otpInputRef}
                 length={EMAIL_OTP_LENGTH}
                 value={verificationCode}
-                onChange={(val) => setVerificationCode(val.slice(0, EMAIL_OTP_LENGTH))}
+                onChange={(val) => {
+                  if (!otpFirstKeystrokeSentRef.current && val.length > 0) {
+                    otpFirstKeystrokeSentRef.current = true;
+                    analytics.otpFirstKeystroke(otpShownAtRef.current ? Date.now() - otpShownAtRef.current : -1);
+                  }
+                  setVerificationCode(val.slice(0, EMAIL_OTP_LENGTH));
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && verificationCode.length === EMAIL_OTP_LENGTH) handleVerifyOtp();
                 }}
