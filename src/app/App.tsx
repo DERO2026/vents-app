@@ -2733,7 +2733,8 @@ export default function App() {
                 // up front -- every new account starts as 'attendee'.
                 // Existing users can still become an Organizer afterwards
                 // via ProfileScreen's "Become an Organizer" request flow
-                // (onBecomeOrganizer below), which is unaffected by this.
+                // (the organizer_requests application modal), which is
+                // unaffected by this.
                 setUserRole('attendee');
                 navigateTo('country-select');
               }}
@@ -2987,56 +2988,36 @@ export default function App() {
               onNavigate={handleProfileNavigate}
               unreadNotificationsCount={unreadCount}
               refreshSignal={profileTabRefreshSignal}
-              onBecomeOrganizer={async () => {
-                setUserRole('organizer');
-                setOrgTab('home');
-                setActiveTab('home');
-                setScreen('home');
-                setScreenStack([]);
-                if (currentUser?.id && currentUser.role !== 'admin') {
-                  setCurrentUser(prev => prev ? { ...prev, role: 'organizer', isOrganizer: true } : null);
-                  localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                  const { error: promoteErr1 } = await supabase.rpc('promote_to_organizer');
-                  if (!promoteErr1 || promoteErr1?.message?.includes('already been set')) {
-                    const { error: logErr1 } = await supabase.rpc('log_organizer_promotion' as any, {
-                      p_user_id: currentUser.id,
-                      p_email: currentUser.email || '',
-                      p_username: currentUser.username || '',
-                    });
-                    if (logErr1) console.warn('Organizer log failed:', logErr1.message, logErr1.code);
-                  }
-                }
-              }}
-              setActiveView={async (view) => {
+              // "Become an Organizer" is handled entirely inside ProfileScreen
+              // now: it opens the organizer_requests application modal
+              // (submitOrgRequest), reviewed by a Super Admin via
+              // admin_decide_organizer_request, which is the only path that
+              // actually grants the organizer role (via admin_set_user_role).
+              // There is deliberately no onBecomeOrganizer prop / instant
+              // client-side promotion path any more -- the previous
+              // implementation here called the promote_to_organizer RPC
+              // directly and switched the user into the Organizer view with
+              // zero form and zero review, bypassing that whole flow (and the
+              // RPC itself has since had its client EXECUTE grants revoked;
+              // see supabase/migrations/0116_revoke_promote_to_organizer_self_escalation.sql).
+              // setActiveView only needs to support switching an ALREADY-
+              // organizer/admin account into the organizer view (used once the
+              // role sync has already happened) -- it must never itself grant
+              // the role.
+              setActiveView={(view) => {
                 if (view === 'organizer') {
-                  // Always update local nav state; admin skips DB/badge changes
+                  if (currentUser && currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin') {
+                    // Not actually an organizer yet -- do nothing. Reaching
+                    // organizer status only ever happens via admin approval
+                    // of an organizer_requests application.
+                    return;
+                  }
                   setUserRole('organizer');
                   setOrgTab('home');
                   setActiveTab('home');
                   setScreen('home');
                   if (currentUser?.id) {
                     localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                    if (currentUser.role !== 'admin') {
-                      setCurrentUser(prev => prev ? { ...prev, role: 'organizer' } : null);
-                      const { error: promoteErr } = await supabase.rpc('promote_to_organizer');
-                      const alreadyOrganizer = promoteErr?.message?.includes('already been set');
-                      if (promoteErr && !alreadyOrganizer) {
-                        console.error('Failed to promote to organizer:', JSON.stringify(promoteErr));
-                        Sentry.captureException(promoteErr);
-                        setCurrentUser(prev => prev ? { ...prev, role: 'user' } : null);
-                        setUserRole('attendee');
-                        setScreen('profile');
-                      } else {
-                        const { error: logErr2 } = await supabase.rpc('log_organizer_promotion' as any, {
-                          p_user_id: currentUser.id,
-                          p_email: currentUser.email || '',
-                          p_username: currentUser.username || '',
-                        });
-                        if (logErr2) console.warn('Organizer log failed:', logErr2.message, logErr2.code);
-                      }
-                    }
-                    // My Events (ManageEventsScreen) now loads its own data live
-                    // via useOrganizerEvents — nothing to prefetch here.
                   }
                 } else {
                   setUserRole('attendee');

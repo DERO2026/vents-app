@@ -37,7 +37,6 @@ interface ProfileScreenProps {
   onViewTicket: (ticket: PurchasedTicket) => void;
   onNavigate: (screen: string) => void;
   setActiveView: (view: 'attendee' | 'organizer') => void;
-  onBecomeOrganizer?: () => void;
   userRole?: 'attendee' | 'organizer';
   unreadNotificationsCount?: number;
   // Bumped by App.tsx whenever the Profile tab is tapped while already
@@ -57,7 +56,6 @@ export function ProfileScreen({
   onViewTicket,
   onNavigate,
   setActiveView,
-  onBecomeOrganizer,
   userRole,
   unreadNotificationsCount = 0,
   refreshSignal,
