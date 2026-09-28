@@ -434,7 +434,7 @@ export default function App() {
     const syncRole = () => {
       supabase
         .from('users')
-        .select('role, is_service_provider')
+        .select('role, is_service_provider, is_organizer')
         .eq('id', currentUser.id)
         .maybeSingle()
         .then(({ data }) => {
@@ -443,8 +443,9 @@ export default function App() {
             if (!prev) return prev;
             const roleChanged = data.role && data.role !== prev.role;
             const spChanged = data.is_service_provider !== prev.is_service_provider;
-            if (!roleChanged && !spChanged) return prev;
-            return { ...prev, role: data.role || prev.role, is_service_provider: data.is_service_provider === true };
+            const newIsOrganizer = data.is_organizer === true || data.role === 'admin';
+            if (!roleChanged && !spChanged && newIsOrganizer === prev.isOrganizer) return prev;
+            return { ...prev, role: data.role || prev.role, is_service_provider: data.is_service_provider === true, isOrganizer: newIsOrganizer };
           });
         }, () => {});
     };
@@ -806,7 +807,7 @@ export default function App() {
           state: profile?.state,
           avatar_url: profile?.avatar_url,
           cover_url: profile?.cover_url,
-          isOrganizer: (profile?.role === 'organizer' || profile?.role === 'organiser'),
+          isOrganizer: profile?.is_organizer === true || profile?.role === 'admin',
           vc_badge: profile?.vc_badge,
           is_verified: profile?.is_verified === true,
           is_service_provider: profile?.is_service_provider === true,
@@ -917,7 +918,7 @@ export default function App() {
     if (currentUser && !userLoadedRef.current) {
       setUserRole(
         currentUser.role === 'admin' ? 'attendee'
-        : (currentUser.role === 'organizer' || currentUser.isOrganizer) ? 'organizer'
+        : currentUser.isOrganizer ? 'organizer'
         : 'attendee'
       );
       userLoadedRef.current = true;
@@ -948,7 +949,7 @@ export default function App() {
     if (shouldRoute) {
       if (currentUser) {
         setHydrationTimedOut(false);
-        if (currentUser.role !== 'organizer' && currentUser.role !== 'organiser') {
+        if (!currentUser.isOrganizer && currentUser.role !== 'admin') {
           setUserRole('attendee');
           setScreen('home');
           setActiveTab('home');
@@ -2511,7 +2512,7 @@ export default function App() {
     if (profileWarning) setAppToastError(profileWarning);
     const enriched = {
       ...profileFields,
-      isOrganizer: userProfile.role === 'organizer' || userProfile.role === 'organiser' || !!userProfile.isOrganizer
+      isOrganizer: !!userProfile.isOrganizer || userProfile.role === 'admin',
     };
     // Defense in depth for a shared device where a previous session wasn't
     // cleanly signed out first (e.g. the app was killed): never let a NEW
@@ -3029,7 +3030,7 @@ export default function App() {
           )}
           {screen === 'profile' && (
             <ProfileScreen
-              currentUser={currentUser ? { ...currentUser, hasBeenOrganizer: localStorage.getItem(`vents_was_organizer_${currentUser.id}`) === '1' } : null}
+              currentUser={currentUser}
               userRole={userRole}
               onSignOut={handleSignOut}
               tickets={allTickets}
@@ -3059,19 +3060,19 @@ export default function App() {
               // the role.
               setActiveView={(view) => {
                 if (view === 'organizer') {
-                  if (currentUser && currentUser.role !== 'organizer' && currentUser.role !== 'organiser' && currentUser.role !== 'admin') {
+                  if (!currentUser || !(currentUser.isOrganizer || currentUser.role === 'admin')) {
                     // Not actually an organizer yet -- do nothing. Reaching
                     // organizer status only ever happens via admin approval
-                    // of an organizer_requests application.
+                    // of an organizer_requests application (is_organizer,
+                    // 0121_organizer_capability_independent_of_role.sql --
+                    // the DB is the only source of truth here now, no
+                    // localStorage workaround).
                     return;
                   }
                   setUserRole('organizer');
                   setOrgTab('home');
                   setActiveTab('home');
                   setScreen('home');
-                  if (currentUser?.id) {
-                    localStorage.setItem(`vents_was_organizer_${currentUser.id}`, '1');
-                  }
                 } else {
                   setUserRole('attendee');
                   setActiveTab('home');
@@ -3522,7 +3523,7 @@ export default function App() {
               currentUser={currentUser}
               onBack={goBack}
               showEarningsTab={
-                currentUser?.role === 'organizer' || (currentUser as any)?.isOrganizer ||
+                !!currentUser?.isOrganizer ||
                 currentUser?.role === 'admin' || currentUser?.role === 'sub-admin'
               }
               onOpenEarnings={() => navigateTo('wallet')}

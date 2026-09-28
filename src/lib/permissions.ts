@@ -20,14 +20,16 @@ export type Capability =
   | 'promote_events'
   | 'view_sales_analytics';
 
-// Every organizer-tier role gets the full organizer-tool capability set.
-// Attendees get none. Extending a role's access (or adding a new admin tier)
-// means editing this map ONCE — never adding another scattered role check.
+// Full organizer-tool capability set, granted to the independent Organizer
+// capability (is_organizer) and to every staff tier. 'organizer' is no
+// longer a `role` value -- role now represents staff tier only -- so this
+// is keyed by staff tier alone; the Organizer capability is checked
+// separately in hasCapability()/hasAnyOrganizerCapability() below via
+// user.isOrganizer.
+const ALL_ORGANIZER_CAPABILITIES: Capability[] = ['create_event', 'manage_events', 'scan_tickets', 'door_management', 'promote_events', 'view_sales_analytics'];
 const ROLE_CAPABILITIES: Record<string, Capability[]> = {
-  organizer: ['create_event', 'manage_events', 'scan_tickets', 'door_management', 'promote_events', 'view_sales_analytics'],
-  organiser: ['create_event', 'manage_events', 'scan_tickets', 'door_management', 'promote_events', 'view_sales_analytics'],
-  admin: ['create_event', 'manage_events', 'scan_tickets', 'door_management', 'promote_events', 'view_sales_analytics'],
-  'sub-admin': ['create_event', 'manage_events', 'scan_tickets', 'door_management', 'promote_events', 'view_sales_analytics'],
+  admin: ALL_ORGANIZER_CAPABILITIES,
+  'sub-admin': ALL_ORGANIZER_CAPABILITIES,
 };
 
 // The platform root account always has every capability, independent of
@@ -55,11 +57,13 @@ export function isAdminTier(user: PermissionUser | null | undefined): boolean {
 export interface PermissionUser {
   id?: string | null;
   role?: string | null;
+  isOrganizer?: boolean | null;
 }
 
 export function hasCapability(user: PermissionUser | null | undefined, capability: Capability): boolean {
   if (!user) return false;
   if (user.id === ROOT_UID) return true;
+  if (user.isOrganizer && ALL_ORGANIZER_CAPABILITIES.includes(capability)) return true;
   const caps = ROLE_CAPABILITIES[user.role || ''];
   return !!caps?.includes(capability);
 }
@@ -70,6 +74,7 @@ export function hasCapability(user: PermissionUser | null | undefined, capabilit
 export function hasAnyOrganizerCapability(user: PermissionUser | null | undefined): boolean {
   if (!user) return false;
   if (user.id === ROOT_UID) return true;
+  if (user.isOrganizer) return true;
   return (ROLE_CAPABILITIES[user.role || '']?.length ?? 0) > 0;
 }
 

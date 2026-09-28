@@ -46,7 +46,7 @@ export function mapDbUserToUserProfile(dbUser: any): UserProfile {
     avatar_url: dbUser.avatar_url,
     cover_url: dbUser.cover_url,
     role: dbUser.role,
-    isOrganizer: dbUser.role === 'organizer',
+    isOrganizer: dbUser.is_organizer === true || dbUser.role === 'admin',
     isVerified: dbUser.is_verified === true,
     vc_badge: dbUser.vc_badge || undefined,
     instagram_handle: dbUser.instagram_handle || null,
@@ -163,7 +163,7 @@ export function ExploreScreen({
           const [{ data: profiles }, spIds] = await Promise.all([
             supabase
               .from('public_profiles')
-              .select('id, full_name, username, avatar_url, vc_badge, role, last_active_at')
+              .select('id, full_name, username, avatar_url, vc_badge, role, is_organizer, last_active_at')
               .in('id', partnerIds),
             fetchServiceProviderIds(partnerIds),
           ]);
@@ -225,7 +225,7 @@ export function ExploreScreen({
         const like = escapePostgrestOrValue(`%${q.toLowerCase()}%`);
         const { data } = await supabase
           .from('public_profiles')
-          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, interests, bio, vc_badge')
+          .select('id, full_name, username, avatar_url, cover_url, is_verified, state, role, is_organizer, interests, bio, vc_badge')
           .or(`username.ilike.${like},full_name.ilike.${like}`)
           .limit(20);
         const rows = data || [];
@@ -243,9 +243,9 @@ export function ExploreScreen({
   // manual/hardcoded per-row label. A user who is both an organizer and an
   // approved provider shows Organizer first (their account role takes
   // precedence over the secondary capability).
-  const roleBadge = (role?: string, isServiceProvider?: boolean): { label: string; color: string; bg: string } | null => {
-    if (role === 'organizer' || role === 'organiser') return { label: 'Organizer', color: ventsColors.accentSoft, bg: 'rgba(168,85,247,0.16)' };
+  const roleBadge = (role?: string, isServiceProvider?: boolean, isOrganizer?: boolean): { label: string; color: string; bg: string } | null => {
     if (role === 'admin' || role === 'sub-admin') return { label: 'Admin', color: ventsColors.error, bg: 'rgba(239,68,68,0.14)' };
+    if (isOrganizer) return { label: 'Organizer', color: ventsColors.accentSoft, bg: 'rgba(168,85,247,0.16)' };
     if (isServiceProvider) return { label: 'Service Provider', color: '#67E8F9', bg: 'rgba(34,211,238,0.14)' };
     return null;
   };
@@ -278,8 +278,8 @@ export function ExploreScreen({
   // Attendees is everyone left over (no organizer/admin role, no approved
   // provider row).
   const filteredConvos = searchedConvos.filter((c) => {
-    const isOrg = c.profile?.role === 'organizer' || c.profile?.role === 'organiser';
     const isAdmin = c.profile?.role === 'admin' || c.profile?.role === 'sub-admin';
+    const isOrg = c.profile?.is_organizer === true && !isAdmin;
     if (chatFilter === 'unread') return c.unreadCount > 0;
     if (chatFilter === 'organizers') return isOrg;
     if (chatFilter === 'providers') return !!c.isServiceProvider;
@@ -394,7 +394,7 @@ export function ExploreScreen({
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                     {searchedUsers.map(u => {
-                      const badge = roleBadge(u.role, u.isServiceProvider);
+                      const badge = roleBadge(u.role, u.isServiceProvider, u.isOrganizer);
                       return (
                       <div
                         key={u.id}
@@ -475,7 +475,7 @@ export function ExploreScreen({
                     const avatarUrl = profile?.avatar_url;
                     const initial = name[0]?.toUpperCase() || 'U';
                     const isUnread = unreadCount > 0;
-                    const badge = roleBadge(profile?.role, isServiceProvider);
+                    const badge = roleBadge(profile?.role, isServiceProvider, profile?.is_organizer === true || profile?.role === 'admin');
                     return (
                       <div
                         key={partnerId}

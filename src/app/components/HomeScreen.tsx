@@ -49,7 +49,7 @@ interface HomeScreenProps {
   dbEvents: Event[];
   loading: boolean;
   fetchEvents: () => void;
-  currentUser?: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; country?: string } | null;
+  currentUser?: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; avatar_url?: string; country?: string } | null;
   hasMore?: boolean;
   onLoadMore?: () => void;
   unreadNotificationsCount?: number;
@@ -1613,7 +1613,7 @@ export function HomeScreen({
               </span>
             )}
           </button>
-          {(currentUser?.role === 'organizer' || currentUser?.role === 'organiser' || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
+          {(!!currentUser?.isOrganizer || currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' || currentUser?.id === ROOT_UID) && (
             <button
               onClick={onCreatePress}
               style={{ width: '36px', height: '36px', borderRadius: '50%', background: ventsColors.accent, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 3px 10px rgba(0,0,0,0.3)', flexShrink: 0 }}

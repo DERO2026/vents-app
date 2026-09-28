@@ -58,8 +58,7 @@ function GuardScreen({ icon, title, body, onBack }: { icon: React.ReactNode; tit
 
 export function CheckinScannerScreen({ onBack, currentUser, selectedEvent, scanningDisabled = false }: CheckinScannerScreenProps) {
   const isOrganizer =
-    currentUser?.role === 'organizer' ||
-    currentUser?.role === 'organiser' ||
+    !!currentUser?.isOrganizer ||
     currentUser?.role === 'admin' ||
     currentUser?.role === 'sub-admin' ||
     currentUser?.id === ROOT_UID;
