@@ -98,3 +98,36 @@ describe('idempotency: claim-before-send prevents duplicate FCM sends across tri
     expect(sendLoop).toMatch(/if \(resp\.ok\) \{ sent\+\+; toMark\.add\(row\.notification_id\); return; \}/);
   });
 });
+
+describe('killed-app iOS delivery: every FCM send site sets an explicit apns block', () => {
+  // Bug: none of the three places that build an FCM v1 message (the
+  // client-accelerator/webhook/admin-broadcast modes in api/push/send.ts,
+  // the shared deliverPendingPushesForUser in api/_lib/pushDelivery.ts, and
+  // the daily cron sweep in api/cron/run.ts) set an `apns` block. Without
+  // it, FCM forwards the message to APNs at normal priority with no
+  // content-available flag -- delivery to a fully killed (not merely
+  // backgrounded) iOS app is then unreliable/delayed, since iOS
+  // deprioritizes waking a terminated app for a normal-priority push.
+  // Fix: every FCM v1 message now sets apns-priority: '10' and
+  // aps.content-available: 1, mirroring the android high-priority
+  // treatment each site already had.
+  const apnsBlockRe = /apns: \{ headers: \{ 'apns-priority': '10' \}, payload: \{ aps: \{ 'content-available': 1, sound: 'default' \} \} \}/;
+
+  it('api/push/send.ts (client-accelerator/webhook/admin-broadcast modes)', () => {
+    expect(sendSrc).toMatch(apnsBlockRe);
+  });
+
+  it('api/_lib/pushDelivery.ts (deliverPendingPushesForUser, the real-world transactional path)', () => {
+    expect(pushDeliverySrc).toMatch(apnsBlockRe);
+  });
+
+  it('api/cron/run.ts (the daily bulk sweep)', () => {
+    expect(cronRunSrc).toMatch(apnsBlockRe);
+  });
+
+  it('every apns block sits alongside the existing android block, not replacing it', () => {
+    for (const src of [sendSrc, pushDeliverySrc, cronRunSrc]) {
+      expect(src).toMatch(/android: \{ priority: 'high', notification: \{ sound: 'default' \} \},\s*\n[\s\S]{0,600}apns: \{/);
+    }
+  });
+});
