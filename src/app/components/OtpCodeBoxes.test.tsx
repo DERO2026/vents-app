@@ -92,6 +92,22 @@ describe('OtpCodeBoxes', () => {
     expect(slots.length).toBe(6);
   });
 
+  it('actually displays each typed digit in its slot (regression: render-prop path bypassed OTPInputContext.Provider, so every slot silently read the default empty context and never showed a digit or caret, even though the real input kept capturing keystrokes)', () => {
+    const el = render(<OtpCodeBoxes length={6} value="482" onChange={() => {}} hasError={false} />);
+    const text = el.textContent || '';
+    expect(text).toContain('482');
+  });
+
+  it('shows a blinking caret in the active slot, not a permanently absent one', () => {
+    const el = render(<OtpCodeBoxes length={6} value="48" onChange={() => {}} hasError={false} autoFocus />);
+    const input = hiddenInput(el);
+    act(() => { input.focus(); });
+    const caretEl = Array.from(el.querySelectorAll('div')).find((d) =>
+      (d as HTMLElement).style.animation?.includes('vents-otp-caret-blink')
+    );
+    expect(caretEl).toBeTruthy();
+  });
+
   it('applies the error border color to every slot when hasError is true', () => {
     const el = render(<OtpCodeBoxes length={4} value="12" onChange={() => {}} hasError={true} />);
     const slotDivs = Array.from(el.querySelectorAll('div')).filter((d) => (d as HTMLElement).style.height === '64px');

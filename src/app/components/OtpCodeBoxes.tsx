@@ -1,5 +1,4 @@
-import { useContext } from 'react';
-import { OTPInput, OTPInputContext } from 'input-otp';
+import { OTPInput } from 'input-otp';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 
 // Shared OTP entry UI for both the signup-verification and forgot-password
@@ -18,15 +17,24 @@ import { ventsColors } from '../../lib/ventsDesignTokens';
 // Renders its own slot (rather than reusing ./ui/input-otp's InputOTPSlot)
 // because that component's active-state styling depends on a `--ring` CSS
 // variable this app never defines, which would show as an unthemed default
-// ring instead of the app's purple accent -- this reads the same
-// OTPInputContext directly and applies the exact colors the old hand-rolled
-// boxes used, so the visual design is unchanged, only the interaction model
-// is fixed.
-function Slot({ index, hasError }: { index: number; hasError: boolean }) {
-  const ctx = useContext(OTPInputContext);
-  const slot = ctx?.slots?.[index];
-  const isActive = !!slot?.isActive;
-  const char = slot?.char ?? '';
+// ring instead of the app's purple accent -- this applies the exact colors
+// the old hand-rolled boxes used, so the visual design is unchanged, only
+// the interaction model is fixed.
+//
+// Takes its slot data as a prop (from OTPInput's `render` callback), NOT
+// via OTPInputContext -- confirmed root cause of the live "digits/caret
+// never appear" bug: input-otp only wraps its output in
+// OTPInputContext.Provider on the `children` path; passing a `render` prop
+// (as this component does) calls that function directly with the slots
+// data and never mounts the Provider, so a Slot reading
+// useContext(OTPInputContext) always saw the default empty context --
+// char/isActive/hasFakeCaret were permanently falsy. The underlying real
+// <input> kept capturing keystrokes and forwarding them to onChange
+// regardless (verification still succeeded), so this was purely a display
+// bug, invisible to any test that only asserts the resulting value.
+function Slot({ slot, hasError }: { slot: { char: string | null; isActive: boolean; hasFakeCaret: boolean }; hasError: boolean }) {
+  const isActive = slot.isActive;
+  const char = slot.char ?? '';
   const border = hasError
     ? '1px solid rgba(248,113,113,0.6)'
     : isActive
@@ -51,7 +59,7 @@ function Slot({ index, hasError }: { index: number; hasError: boolean }) {
       <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
         {char}
       </span>
-      {slot?.hasFakeCaret && (
+      {slot.hasFakeCaret && (
         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
           <div style={{ width: '1px', height: '28px', background: '#fff', animation: 'vents-otp-caret-blink 1s step-end infinite' }} />
         </div>
@@ -91,8 +99,8 @@ export function OtpCodeBoxes({
         containerClassName="flex gap-2 w-full"
         render={({ slots }) => (
           <>
-            {slots.map((_, i) => (
-              <Slot key={i} index={i} hasError={hasError} />
+            {slots.map((slot, i) => (
+              <Slot key={i} slot={slot} hasError={hasError} />
             ))}
           </>
         )}
