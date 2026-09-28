@@ -99,6 +99,14 @@ export async function deliverPendingPushesForUser(userId: string, limit = 20): P
             notification: { title: row.title, body: row.body || '' },
             data,
             android: { priority: 'high', notification: { sound: 'default' } },
+            // Without an explicit apns block, FCM sends this to APNs at
+            // normal priority with no content-available flag -- delivery
+            // to a fully killed (not just backgrounded) iOS app is then
+            // unreliable/delayed, since iOS deprioritizes waking a
+            // terminated app for a normal-priority push. apns-priority 10
+            // + content-available:1 matches the android high-priority
+            // treatment above.
+            apns: { headers: { 'apns-priority': '10' }, payload: { aps: { 'content-available': 1, sound: 'default' } } },
           },
         }),
       });

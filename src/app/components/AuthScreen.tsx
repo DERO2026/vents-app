@@ -20,6 +20,7 @@ import { isConfirmedDuplicateEmailError, isUnconfirmedDuplicateSignupError } fro
 import { withTimeoutFallback, TimeoutFallbackError } from '../../lib/withTimeoutFallback';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
 import { DobPicker } from './DobPicker';
+import { OtpCodeBoxes } from './OtpCodeBoxes';
 
 // Must match Supabase Auth's mailer_otp_length project setting (currently 8,
 // not the library default of 6) -- confirmed via the Management API before
@@ -1721,49 +1722,16 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               </div>
             )}
 
-            {/* Overlay input at inset:0 over the full box row (same pattern as
-                the signup OTP screen below) rather than a 1px pointer-events:none
-                field relying solely on the wrapper's onClick -- makes every box,
-                including the first, directly tappable/focusable, and lets native
-                typing/paste/backspace work without any manual per-box logic. */}
-            <div style={{ position: 'relative', marginBottom: '24px' }}>
-              <div style={{ display: 'flex', gap: '8px', cursor: 'text' }}>
-                {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
-                  const isActive = i === forgotOtpCode.length;
-                  const border = errorMessage
-                    ? '1px solid rgba(248,113,113,0.6)'
-                    : isActive
-                    ? '1px solid rgba(142,92,247,0.7)'
-                    : '1px solid rgba(255,255,255,0.12)';
-                  const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
-                  return (
-                    <div
-                      key={i}
-                      style={{
-                        flex: 1, height: '64px', background: bg, border,
-                        boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
-                        borderRadius: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      }}
-                    >
-                      <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>{forgotOtpCode[i] ?? ''}</span>
-                    </div>
-                  );
-                })}
-              </div>
-              <input
-                ref={forgotOtpRef}
-                type="text"
-                inputMode="numeric"
-                pattern="\d*"
-                autoComplete="one-time-code"
-                maxLength={EMAIL_OTP_LENGTH}
+            {/* Real per-box tap-to-focus + blinking caret via the input-otp
+                library (see OtpCodeBoxes.tsx) — same fix as the signup OTP
+                screen below. */}
+            <div style={{ marginBottom: '24px' }}>
+              <OtpCodeBoxes
+                inputRef={forgotOtpRef}
+                length={EMAIL_OTP_LENGTH}
                 value={forgotOtpCode}
-                onChange={(e) => setForgotOtpCode(e.target.value.replace(/\D/g, '').slice(0, EMAIL_OTP_LENGTH))}
-                style={{
-                  position: 'absolute', inset: 0, width: '100%', height: '100%',
-                  opacity: 0, background: 'transparent', border: 'none', outline: 'none',
-                  fontSize: '16px', cursor: 'text', caretColor: 'transparent',
-                }}
+                onChange={(val) => setForgotOtpCode(val.slice(0, EMAIL_OTP_LENGTH))}
+                hasError={!!errorMessage}
                 autoFocus
               />
             </div>
@@ -2056,84 +2024,22 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
               </div>
             )}
 
-            {/* The boxes are decoration; the real field is a transparent input
-                laid over them. It used to be a 1px, pointer-events:none element
-                focused only via this onClick — which meant taps never reached
-                it and browsers could refuse focus on a zero-area invisible
-                control, so the keyboard never opened. */}
-            <div
-              style={{ position: 'relative', marginBottom: '24px' }}
-            >
-            <div
-              style={{ display: 'flex', gap: '8px', cursor: 'text' }}
-            >
-              {Array.from({ length: EMAIL_OTP_LENGTH }).map((_, i) => {
-                // Handoff A4/A5: filled/empty boxes are plain neutral --
-                // only the box about to receive the next digit gets the
-                // purple focus glow. An error (wrong code just submitted)
-                // tints every box red instead, per A5.
-                const isActive = i === verificationCode.length;
-                const border = errorMessage
-                  ? '1px solid rgba(248,113,113,0.6)'
-                  : isActive
-                  ? '1px solid rgba(142,92,247,0.7)'
-                  : '1px solid rgba(255,255,255,0.12)';
-                const bg = errorMessage ? 'rgba(248,113,113,0.07)' : FIELD_BG;
-                return (
-                  <div
-                    key={i}
-                    style={{
-                      flex: 1,
-                      height: '64px',
-                      background: bg,
-                      border,
-                      boxShadow: isActive && !errorMessage ? '0 0 0 3px rgba(142,92,247,0.18)' : 'none',
-                      borderRadius: '14px',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}
-                  >
-                    <span style={{ color: '#fff', fontSize: '24px', fontWeight: 800, fontVariantNumeric: 'tabular-nums lining-nums' }}>
-                      {verificationCode[i] ?? ''}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-
-            <input
-              ref={otpInputRef}
-              type="text"
-              inputMode="numeric"
-              pattern="\d*"
-              autoComplete="one-time-code"
-              maxLength={EMAIL_OTP_LENGTH}
-              value={verificationCode}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '');
-                setVerificationCode(val.slice(0, EMAIL_OTP_LENGTH));
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && verificationCode.length === EMAIL_OTP_LENGTH) handleVerifyOtp();
-              }}
-              style={{
-                position: 'absolute',
-                inset: 0,
-                width: '100%',
-                height: '100%',
-                opacity: 0,
-                background: 'transparent',
-                border: 'none',
-                outline: 'none',
-                // 16px keeps iOS from zooming the page when the field focuses.
-                fontSize: '16px',
-                cursor: 'text',
-                // Caret would otherwise show at the far left of the overlay.
-                caretColor: 'transparent',
-              }}
-              autoFocus
-            />
+            {/* Real per-box tap-to-focus + blinking caret via the input-otp
+                library (see OtpCodeBoxes.tsx) — replaces a single
+                transparent overlay input that could only ever place the
+                caret at the end of the value, never at a tapped box. */}
+            <div style={{ marginBottom: '24px' }}>
+              <OtpCodeBoxes
+                inputRef={otpInputRef}
+                length={EMAIL_OTP_LENGTH}
+                value={verificationCode}
+                onChange={(val) => setVerificationCode(val.slice(0, EMAIL_OTP_LENGTH))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && verificationCode.length === EMAIL_OTP_LENGTH) handleVerifyOtp();
+                }}
+                hasError={!!errorMessage}
+                autoFocus
+              />
             </div>
 
             {/* Handoff A4/A5: "Didn't get it? / Resend code" as one row,
