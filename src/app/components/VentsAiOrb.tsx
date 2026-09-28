@@ -11,6 +11,15 @@ import { useEffect, useState } from 'react';
 // backend flag or Context for this kind of one-off UI nicety, so it's a
 // plain localStorage flag, scoped per user id the same way
 // `vents_was_organizer_${id}` already is elsewhere in App.tsx.
+//
+// The tooltip is a brief discovery NUDGE, not a standing banner: it marks
+// itself "seen" the moment it's shown (not only once tapped) so navigating
+// away from an orb-bearing screen and back -- which unmounts/remounts this
+// component -- doesn't resurrect it, and it also auto-hides itself after a
+// few seconds even if the user never taps the orb. Either path is enough to
+// satisfy "shown at least once"; together they stop it from repeatedly
+// interrupting navigation while still giving every user a first look.
+const TOOLTIP_AUTO_HIDE_MS = 4000;
 
 const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
 
@@ -25,7 +34,18 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
     } catch {
       seen = false;
     }
-    if (!seen) setShowTooltip(true);
+    if (seen) return;
+
+    setShowTooltip(true);
+    try {
+      localStorage.setItem(storageKey, '1');
+    } catch {
+      // localStorage unavailable (private window etc.) -- non-fatal, the
+      // tooltip just reappears next mount, which is fine for this nicety.
+    }
+
+    const timer = window.setTimeout(() => setShowTooltip(false), TOOLTIP_AUTO_HIDE_MS);
+    return () => window.clearTimeout(timer);
   }, [storageKey]);
 
   const dismiss = () => {
@@ -40,7 +60,7 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
 
   return (
     <div
-      style={{ position: 'fixed', bottom: 96, right: 16, zIndex: 60 }}
+      style={{ position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))', right: 16, zIndex: 60 }}
       data-testid="vents-ai-orb"
     >
       <style>{`@keyframes ventsAiPulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(163,92,255,.45);}50%{box-shadow:0 0 0 10px rgba(163,92,255,0);}}`}</style>
