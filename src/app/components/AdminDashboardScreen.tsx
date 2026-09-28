@@ -224,6 +224,11 @@ function CopyButton({ text }: { text: string }) {
 function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   const [requests, setRequests] = useState<any[]>([]);
   const [wallets, setWallets] = useState<any[]>([]);
+  // Member (customer spend) wallets -- view-only, no payout controls. These
+  // aren't payout wallets (members don't request withdrawals), so listing
+  // them here is purely for admin visibility, previously missing entirely:
+  // "All Wallets" only ever queried organizer_wallets.
+  const [memberWallets, setMemberWallets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   // Kill switch (app_config.disable_payouts) — the payout RPCs already
   // reject with 'payouts_disabled' server-side; this is purely so the
@@ -235,7 +240,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
   }, []);
   const [statusFilter, setStatusFilter] = useState<'pending' | 'all'>('pending');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<'requests' | 'wallets'>('requests');
+  const [activeSection, setActiveSection] = useState<'requests' | 'wallets' | 'member-wallets'>('requests');
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reconciling, setReconciling] = useState(false);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
@@ -254,7 +259,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
       // admin_list_pending_payouts join) left `loading` true indefinitely
       // with no recovery, same failure mode already fixed once in
       // AuthScreen.tsx but never applied to this tab.
-      const [reqRes, walRes] = await withTimeoutFallback(
+      const [reqRes, walRes, memberWalRes] = await withTimeoutFallback(
         Promise.all([
         // admin_list_pending_payouts is SECURITY DEFINER + is_admin()-gated —
         // it joins organizer + bank metadata server-side in one call, so the
@@ -271,29 +276,39 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
           .select('organizer_id, balance_kobo, pending_kobo, total_earned_kobo, total_withdrawn_kobo')
           .order('balance_kobo', { ascending: false })
           .limit(100),
+        supabase
+          .from('user_wallets')
+          .select('user_id, balance_kobo')
+          .order('balance_kobo', { ascending: false })
+          .limit(100),
         ]),
         { timeoutMs: 15000, timeoutMessage: 'This is taking longer than expected. Please check your connection and try again.' }
       );
       const { data: reqs, error: reqError } = reqRes;
       const { data: walsRaw, error: walError } = walRes;
-      if (reqError || walError) {
-        console.error('PayoutsTab load error:', reqError || walError);
-        Sentry.captureException(reqError || walError);
-        setLoadError((reqError || walError)?.message || 'Failed to load payouts.');
+      const { data: memberWalsRaw, error: memberWalError } = memberWalRes;
+      if (reqError || walError || memberWalError) {
+        console.error('PayoutsTab load error:', reqError || walError || memberWalError);
+        Sentry.captureException(reqError || walError || memberWalError);
+        setLoadError((reqError || walError || memberWalError)?.message || 'Failed to load payouts.');
       }
-      // organizer_wallets FK points to auth.users — PostgREST can't embed it.
-      // Look up usernames from public.users separately.
+      // organizer_wallets/user_wallets both FK to auth.users — PostgREST
+      // can't embed either. Look up usernames from public.users separately,
+      // for both wallet kinds in one query.
       let wals = walsRaw || [];
-      if (wals.length > 0) {
-        const ids = wals.map((w: any) => w.organizer_id);
+      let memberWals = memberWalsRaw || [];
+      const allWalletUserIds = [...wals.map((w: any) => w.organizer_id), ...memberWals.map((w: any) => w.user_id)];
+      if (allWalletUserIds.length > 0) {
         const { data: userRows } = await supabase
           .from('users')
           .select('id, username, full_name')
-          .in('id', ids);
+          .in('id', allWalletUserIds);
         const userMap: Record<string, any> = {};
         (userRows || []).forEach((u: any) => { userMap[u.id] = u; });
         wals = wals.map((w: any) => ({ ...w, users: userMap[w.organizer_id] || null }));
+        memberWals = memberWals.map((w: any) => ({ ...w, users: userMap[w.user_id] || null }));
       }
+      setMemberWallets(memberWals);
       // Normalize both response shapes (RPC returns flat columns; the 'all'
       // fallback query returns nested embeds) into one shape for rendering.
       const normalized = (reqs || []).map((r: any) => {
@@ -464,10 +479,10 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
 
       {/* Section tabs — always visible, never conditionally hidden */}
       <div style={{ display: 'flex', gap: '8px', marginBottom: '4px', flexWrap: 'wrap' }}>
-        {(['requests', 'wallets'] as const).map(s => (
+        {(['requests', 'wallets', 'member-wallets'] as const).map(s => (
           <button key={s} onClick={() => setActiveSection(s)}
             style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: activeSection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: activeSection === s ? '#A855F7' : '#8B8FA8' }}>
-            {s === 'requests' ? 'Requests' : 'All Wallets'}
+            {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : 'Member Wallets'}
           </button>
         ))}
         <div style={{ width: '1px', background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
@@ -494,6 +509,22 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
 
       {loading ? (
         <p style={{ color: '#8B8FA8', fontSize: '13px' }}>Loading…</p>
+      ) : activeSection === 'member-wallets' ? (
+        memberWallets.length === 0 ? (
+          <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No member wallets yet</p>
+        ) : (
+          // View-only -- members don't request payouts, so there's nothing
+          // to Approve/Reject here, unlike the organizer wallets list.
+          memberWallets.map((w: any) => {
+            const u = w.users;
+            return (
+              <div key={w.user_id} style={{ background: 'rgba(255,255,255,0.04)', borderRadius: '14px', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <p style={{ margin: 0, fontSize: '14px', fontWeight: 700, color: '#F0F0FF' }}>{u?.username || u?.full_name || w.user_id.slice(0, 8)}</p>
+                <span style={{ fontSize: '12px', color: '#A78BFA' }}>Balance: <strong>{fmt(w.balance_kobo)}</strong></span>
+              </div>
+            );
+          })
+        )
       ) : activeSection === 'wallets' ? (
         wallets.length === 0 ? (
           <p style={{ color: '#8B8FA8', fontSize: '13px', textAlign: 'center', padding: '24px 0' }}>No organizer wallets yet</p>
