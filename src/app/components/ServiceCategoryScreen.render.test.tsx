@@ -37,7 +37,7 @@ describe('ServiceCategoryScreen: discovery-load Retry', () => {
 
     root = createRoot(container);
     await act(async () => {
-      root!.render(<ServiceCategoryScreen category="Photography" onBack={() => {}} onProviderPress={() => {}} />);
+      root!.render(<ServiceCategoryScreen category="Photography" countryIso="NG" onBack={() => {}} onProviderPress={() => {}} />);
       await Promise.resolve();
       await Promise.resolve();
     });
@@ -77,7 +77,7 @@ describe('ServiceCategoryScreen: discovery-load Retry', () => {
 
     root = createRoot(container);
     await act(async () => {
-      root!.render(<ServiceCategoryScreen category="Photography" onBack={() => {}} onProviderPress={() => {}} />);
+      root!.render(<ServiceCategoryScreen category="Photography" countryIso="NG" onBack={() => {}} onProviderPress={() => {}} />);
       await Promise.resolve();
       await Promise.resolve();
     });

@@ -2784,6 +2784,7 @@ export default function App() {
           {screen === 'services-category' && selectedServiceCategory && (
             <ServiceCategoryScreen
               category={selectedServiceCategory}
+              countryIso={discoveryCountryIso}
               onBack={goBack}
               onProviderPress={(provider) => {
                 setSelectedServiceProvider(provider);

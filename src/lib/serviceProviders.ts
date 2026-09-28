@@ -119,13 +119,14 @@ export interface NearbyServiceProvider extends ServiceProvider {
 export async function fetchNearbyServiceProviders(
   lat: number,
   lng: number,
-  opts: { category?: string; limit?: number } = {}
+  opts: { category?: string; limit?: number; country?: string } = {}
 ): Promise<NearbyServiceProvider[]> {
   const { data, error } = await supabase.rpc('get_nearby_service_providers', {
     p_lat: lat,
     p_lng: lng,
     p_category: opts.category || null,
     p_limit: opts.limit || 20,
+    p_country: opts.country || null,
   });
   if (error) throw error;
   return (data || []).map((row: any) => ({

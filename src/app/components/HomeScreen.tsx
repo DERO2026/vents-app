@@ -865,7 +865,11 @@ export function HomeScreen({
     let cancelled = false;
     if (homeGeo.status === 'requesting' || homeGeo.status === 'idle') return;
     if (homeGeo.status === 'granted' && homeGeo.lat != null && homeGeo.lng != null) {
-      fetchNearbyServiceProviders(homeGeo.lat, homeGeo.lng, { limit: 10 })
+      // Country-scoped even in the GPS branch -- see ServicesHomeScreen's
+      // identical fix. countryFilter is the country the user explicitly
+      // selected (or their account default); GPS proximity must never
+      // override that with another country's providers.
+      fetchNearbyServiceProviders(homeGeo.lat, homeGeo.lng, { limit: 10, country: countryFilter })
         .then((rows) => withProviderRatings(rows))
         .then((rows) => { if (!cancelled) setNearbyProviders(rows); })
         .catch(() => { if (!cancelled) setNearbyProviders([]); });
