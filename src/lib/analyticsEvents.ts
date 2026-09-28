@@ -39,6 +39,15 @@ export const AnalyticsEvent = {
   // Push (mirrored from pushNotifications listeners)
   PushReceived: 'push_received',
   PushOpened: 'push_opened',
+  // Diagnostics for the live "OTP screen frozen" report (release blocker,
+  // unreproducible locally) -- see AuthScreen.tsx's isVerifying step. These
+  // exist purely to tell us, from a real affected session, which of the
+  // suspected causes (stale bundle, input never receiving keystrokes,
+  // WebView-specific tap handling) actually applies, without needing to
+  // reproduce it ourselves. Remove once the real root cause is confirmed
+  // and fixed.
+  OtpStepShown: 'otp_step_shown',
+  OtpFirstKeystroke: 'otp_first_keystroke',
 } as const;
 
 const clean = (o: Record<string, unknown>) => {
@@ -86,4 +95,10 @@ export const analytics = {
   // Profile & engagement
   profileUpdated: () => trackEvent(AnalyticsEvent.ProfileUpdated),
   notificationOpened: (type?: string) => trackEvent(AnalyticsEvent.NotificationOpened, clean({ type })),
+
+  // OTP freeze diagnostics (temporary -- see AnalyticsEvent.OtpStepShown doc comment).
+  otpStepShown: (p: { appVersion: string; userAgent: string; isTouch: boolean }) =>
+    trackEvent(AnalyticsEvent.OtpStepShown, { app_version: p.appVersion, user_agent: p.userAgent, is_touch: p.isTouch }),
+  otpFirstKeystroke: (msSinceShown: number) =>
+    trackEvent(AnalyticsEvent.OtpFirstKeystroke, { ms_since_shown: msSinceShown }),
 };
