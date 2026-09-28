@@ -89,6 +89,29 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
   const [reviews, setReviews] = useState<ProviderReviewRow[] | null>(null);
 
+  // The sticky bottom CTA bar's real height varies a lot on this screen --
+  // it can grow from a single "Book this provider" button up to a stacked
+  // success/error banner + selection summary + date/time inputs + payment
+  // method row + Book & Pay + Contact Provider once services are selected.
+  // A hardcoded scroll-content padding-bottom would either clip content
+  // under a taller bar or waste space under a shorter one, so the content
+  // pane's bottom padding is measured from the actual rendered bar height
+  // (same root-cause fix the "no content hidden under sticky bar" bullet
+  // asks for) instead of a fixed guess.
+  const ctaBarRef = useRef<HTMLDivElement>(null);
+  const [ctaBarHeight, setCtaBarHeight] = useState(0);
+
+  useEffect(() => {
+    const el = ctaBarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) setCtaBarHeight(entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     setWalletBalanceLoading(true);
@@ -99,20 +122,34 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
     return () => { cancelled = true; };
   }, []);
 
+  // Always refetch the provider (and its real rating aggregate) on mount,
+  // even when an initialProvider was handed in from a list screen. That
+  // initialProvider is only ever a snapshot taken whenever the list was
+  // last loaded -- it can be stale (the provider edited their listing
+  // since, or their avgRating/reviewCount moved), so it's used purely as
+  // an instant-paint placeholder here (avoids a skeleton flash) and is
+  // always superseded by a fresh fetch. On a failed fetch we keep
+  // showing that placeholder rather than blanking the screen, only
+  // falling back to the not-found state when there's nothing to show.
   useEffect(() => {
-    if (initialProvider && initialProvider.id === providerId) return;
     let cancelled = false;
-    setProvider(undefined);
-    setNotFound(false);
     fetchServiceProviderById(providerId)
       .then(async (p) => {
-        if (cancelled || !p) { if (!cancelled) { setProvider(p); setNotFound(!p); } return; }
+        if (cancelled) return;
+        if (!p) { setProvider(p); setNotFound(true); return; }
         const [rated] = await withProviderRatings([p]);
         if (!cancelled) setProvider(rated);
       })
-      .catch(() => { if (!cancelled) { setProvider(null); setNotFound(true); } });
+      .catch(() => {
+        if (cancelled) return;
+        if (!(initialProvider && initialProvider.id === providerId)) {
+          setProvider(null);
+          setNotFound(true);
+        }
+      });
     return () => { cancelled = true; };
-  }, [providerId, initialProvider]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [providerId]);
 
   // Real priced offerings (0048_provider_services.sql) -- RLS already
   // restricts this to active services under an approved listing, so no
@@ -296,7 +333,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           .sp-profile-content { max-width: 640px; margin-left: auto; margin-right: auto; }
         }
       `}</style>
-      <div className="sp-profile-content" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: '110px' }}>
+      <div className="sp-profile-content" style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', paddingBottom: `calc(${ctaBarHeight || 110}px + 16px)` }}>
         {/* SV3 hero -- shorter cover band (200px, was 260px) with a
             floating profile card overlapping it, rather than the name
             baked into the photo itself. Real cover photo (photoUrls[0])
@@ -515,7 +552,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
           Contact Provider kept underneath for anything that isn't a
           straightforward purchase (availability questions, custom
           requests). */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 75%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div ref={ctaBarRef} style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 75%, transparent)', display: 'flex', flexDirection: 'column', gap: '10px' }}>
         {bookingSuccess && (
           <div style={{ background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.4)', borderRadius: servicesRadii.md, padding: '12px 14px' }}>
             <p style={{ color: servicesColors.success, fontSize: '13px', fontWeight: 700, margin: 0 }}>Booking confirmed! Check My Bookings for details.</p>

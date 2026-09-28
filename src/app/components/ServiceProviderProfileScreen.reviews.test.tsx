@@ -22,8 +22,26 @@ vi.mock('../../lib/userWallet', () => ({
 }));
 vi.mock('../../lib/paystack', () => ({ openPaystackPopup: vi.fn() }));
 vi.mock('../../lib/serviceProviders', () => ({
-  fetchServiceProviderById: vi.fn(async () => null),
-  withProviderRatings: vi.fn(async (rows: any[]) => rows),
+  // The screen now always refetches on mount (never relies solely on the
+  // possibly-stale initialProvider snapshot -- see the "stale cached
+  // provider data" fix), so this must resolve the same provider rather
+  // than null, or the screen would flip to the not-found state.
+  fetchServiceProviderById: vi.fn(async () => ({
+    id: 'prov-1',
+    userId: 'owner-1',
+    businessName: 'Glow Studio',
+    category: 'Photography',
+    country: 'NG',
+    photoUrls: [],
+    servicesOffered: [],
+    offersHomeService: false,
+    offersDelivery: false,
+    offersSameDay: false,
+    status: 'approved',
+    createdAt: '',
+    updatedAt: '',
+  })),
+  withProviderRatings: vi.fn(async (rows: any[]) => rows.map((r) => ({ ...r, avgRating: 4.5, reviewCount: 2 }))),
 }));
 vi.mock('../../lib/serviceProviderCategories', () => ({
   fetchServiceProviderCategories: vi.fn(async () => []),
