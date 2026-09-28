@@ -329,6 +329,7 @@ export type Screen =
   | 'promote-event'
   | 'nigeria-live'
   | 'admin-dashboard'
+  | 'admin-console'
   | 'checkin-scanner'
   | 'vents-ai'
   | 'door-manager'

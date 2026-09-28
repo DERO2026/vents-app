@@ -19,6 +19,7 @@ const FIXTURES: Record<string, Row[]> = {
       created_at: new Date().toISOString(), category: 'Music', country: 'NG', is_featured: true,
       is_18_plus: false, capacity: 2000, ticket_types: [{ id: 't1', name: 'Regular', price: 15000, description: 'General Admission', available: 500 }],
       users: { username: 'lagosfest', full_name: 'Lagos Fest Org', vc_badge: null },
+      'users!events_organizer_id_fkey': { username: 'test.organizer', full_name: 'Test Organizer', is_verified: true },
     },
     {
       id: 'evt-2', organizer_id: 'org-1', title: 'Comedy Night Abuja',
@@ -28,6 +29,7 @@ const FIXTURES: Record<string, Row[]> = {
       created_at: new Date().toISOString(), category: 'Comedy', country: 'NG',
       is_18_plus: false, capacity: 500, ticket_types: [{ id: 't1', name: 'Regular', price: 5000, description: 'General Admission', available: 200 }],
       users: { username: 'comedyabj', full_name: 'Comedy Abuja', vc_badge: null },
+      'users!events_organizer_id_fkey': { username: 'test.organizer', full_name: 'Test Organizer', is_verified: true },
     },
     {
       id: 'evt-adaeze-1', organizer_id: 'user-2', title: 'Golden Hour Portraits Pop-Up',
@@ -137,15 +139,86 @@ const FIXTURES: Record<string, Row[]> = {
   conversation_requests: [
     { requester_id: 'user-4', recipient_id: 'org-1', status: 'pending', created_at: new Date(Date.now() - 86400000).toISOString() },
   ],
+  // ── Admin Console fixtures ──────────────────────────────────────────────
+  reports: [
+    { id: 'rep-1', status: 'pending' },
+  ],
+  organizer_verification_requests: [],
+  organizer_withdrawal_requests: [
+    { id: 'wd-1', organizer_id: 'org-1', amount_kobo: 5000000, status: 'pending', created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
+  ],
+  organizer_wallets: [
+    { organizer_id: 'org-1', balance_kobo: 32500000, pending_kobo: 5000000, total_earned_kobo: 172000000, total_withdrawn_kobo: 134500000 },
+  ],
+  service_provider_requests: [
+    {
+      id: 'spr-1', user_id: 'org-1', status: 'pending', business_name: 'Ada Photography', cac_number: null,
+      owner_name: 'Test Organizer', business_email: 'organizer@example.com', business_phone: '+2348010000001',
+      business_address: 'Victoria Island, Lagos', document_url: null, admin_note: null,
+      created_at: new Date(Date.now() - 3 * 86400000).toISOString(), reviewed_at: null,
+    },
+  ],
+  admin_logs: [
+    { id: 'log-1', action: 'toggle_user_verified', details: { verified: true }, created_at: new Date(Date.now() - 5 * 86400000).toISOString(), admin_id: 'admin-1', actor_role: 'admin', target_user_id: 'org-1' },
+    { id: 'log-2', action: 'suspend_user', details: { banned_until: null, ban_days: 7 }, created_at: new Date(Date.now() - 2 * 86400000).toISOString(), admin_id: 'admin-1', actor_role: 'admin', target_user_id: 'user-suspended-1' },
+  ],
   // Drives App.tsx's own session-hydration `.from('users').select('*')`
   // when mounting the real, unmodified App (the 'full-app' harness route)
   // to verify real in-app navigation end-to-end, not just source reading.
   users: [
     {
       id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', username: 'test.organizer',
-      role: 'organizer', avatar_url: null, cover_url: null, is_verified: true, state: 'Lagos',
+      // Organizer is the independent is_organizer capability, not role
+      // (0121_organizer_capability_independent_of_role.sql) -- role stays
+      // 'user' here, matching every real organizer account in production.
+      role: 'user', is_organizer: true, is_service_provider: false,
+      avatar_url: null, cover_url: null, is_verified: true, state: 'Lagos',
+      phone_number: '+2348010000001', status: 'active', banned_until: null, deleted_at: null,
       interests: [], bio: '', vc_badge: null, instagram_handle: null, x_handle: null, tiktok_handle: null,
       country: 'NG', created_at: new Date().toISOString(),
+    },
+    // ── Admin Console fixture rows ──────────────────────────────────────────
+    // Deliberately cover every independent combination the multi-role
+    // architecture allows, plus edge cases the visual checklist asks for
+    // (long name/email overflow, multiple capability badges at once,
+    // suspended status, unverified).
+    {
+      id: 'admin-1', email: 'admin@example.com', full_name: 'Admin Operator', username: 'admin.operator',
+      role: 'admin', is_organizer: false, is_service_provider: false,
+      state: 'Lagos', status: 'active', is_verified: true, created_at: new Date(Date.now() - 200 * 86400000).toISOString(),
+      banned_until: null, deleted_at: null, phone_number: '+2348010000002',
+    },
+    {
+      id: 'subadmin-1', email: 'subadmin@example.com', full_name: 'Sub Admin Reviewer', username: 'sub.reviewer',
+      // Proves independence: a Sub-Admin who is ALSO an Organizer -- the
+      // exact case the old conflated-role model could never represent.
+      role: 'sub-admin', is_organizer: true, is_service_provider: false,
+      state: 'Abuja', status: 'active', is_verified: true, created_at: new Date(Date.now() - 150 * 86400000).toISOString(),
+      banned_until: null, deleted_at: null, phone_number: '+2348010000003',
+    },
+    {
+      id: 'user-plain-1', email: 'chidinma.eze@example.com', full_name: 'Chidinma Eze', username: 'chidinma.eze',
+      role: 'user', is_organizer: false, is_service_provider: false,
+      state: 'Rivers', status: 'active', is_verified: false, created_at: new Date(Date.now() - 40 * 86400000).toISOString(),
+      banned_until: null, deleted_at: null, phone_number: '+2348010000004',
+    },
+    {
+      id: 'user-both-caps-1',
+      email: 'oluwaseun.adebayo-photography-and-events@example.com',
+      full_name: 'Oluwaseun Adebayo-Photography-And-Events-Extremely-Long-Display-Name',
+      username: 'oluwaseun.the.everything.organizer.and.provider',
+      // Both capabilities at once -- User + Organizer + Service Provider --
+      // the primary scenario the multi-role fix exists to represent, plus
+      // the long-name/email overflow check the visual checklist asks for.
+      role: 'user', is_organizer: true, is_service_provider: true,
+      state: 'Lagos', status: 'active', is_verified: true, created_at: new Date(Date.now() - 90 * 86400000).toISOString(),
+      banned_until: null, deleted_at: null, phone_number: '+2348010000005',
+    },
+    {
+      id: 'user-suspended-1', email: 'suspended.user@example.com', full_name: 'Suspended Example', username: 'suspended.example',
+      role: 'user', is_organizer: false, is_service_provider: true,
+      state: 'Kano', status: 'suspended', is_verified: false, created_at: new Date(Date.now() - 20 * 86400000).toISOString(),
+      banned_until: new Date(Date.now() + 5 * 86400000).toISOString(), deleted_at: null, phone_number: '+2348010000006',
     },
   ],
 };
@@ -234,6 +307,16 @@ const RPC_FIXTURES: Record<string, any> = {
     { event_id: 'evt-2', sold_count: 142, sold_quantity: 142, revenue_kobo: 213000000, checked_in_count: 0 },
     { event_id: 'evt-3', sold_count: 64, sold_quantity: 64, revenue_kobo: 96000000, checked_in_count: 0 },
   ],
+  // ── Admin Console dashboard/event-detail RPCs ───────────────────────────
+  admin_get_vc_aggregates: [{ circulation: 128400 }],
+  // Real shape: a bare scalar (Number(data)), not an array/object.
+  admin_pending_request_count: 3,
+  admin_get_verification_stats: [{ pending_count: 2 }],
+  admin_list_organizer_verifications: [],
+  get_event_analytics: {
+    overview: { soldCount: 86, soldQuantity: 86, grossKobo: 172000000, pendingCount: 0, cancelledCount: 2, refundedCount: 1 },
+    attendance: { checkedInCount: 61, soldQuantity: 86, attendancePct: 70.9 },
+  },
   get_payment_request_details: {
     event_title: 'Lagos Music Festival', event_image_url: null, ticket_type: 'Regular',
     attendee_count: 2, amount_kobo: 4200000, recipient_name: 'Ada Okonkwo',

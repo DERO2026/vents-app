@@ -62,6 +62,7 @@ import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
 import { AdminDashboardScreen } from './components/AdminDashboardScreen';
+import { AdminConsoleShell } from './components/admin/AdminConsoleShell';
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
@@ -3088,6 +3089,19 @@ export default function App() {
             <AdminDashboardScreen
               onBack={goBack}
               currentUser={currentUser}
+              onOpenAdminConsole={() => navigateTo('admin-console')}
+            />
+          )}
+
+          {/* Claude-Design Admin Console (reconciled against the current
+              multi-role architecture and current production RPCs/RLS) --
+              additive, coexists with the legacy AdminDashboardScreen above,
+              which is not replaced or removed. */}
+          {screen === 'admin-console' && (
+            <AdminConsoleShell
+              onBack={goBack}
+              currentUser={currentUser}
+              onOpenLegacyTab={() => navigateTo('admin-dashboard')}
             />
           )}
 
