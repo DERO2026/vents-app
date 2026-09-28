@@ -101,7 +101,11 @@ export function ServicesHomeScreen({
 
     if (geo.status === 'granted' && geo.lat != null && geo.lng != null) {
       setUsingGps(true);
-      fetchNearbyServiceProviders(geo.lat, geo.lng, { limit: 20 })
+      // Country-scoped even in the GPS branch -- activeIso is the country
+      // the user explicitly selected (or their account default), and GPS
+      // proximity must never override that by surfacing another country's
+      // providers just because the device happens to be physically there.
+      fetchNearbyServiceProviders(geo.lat, geo.lng, { limit: 20, country: activeIso })
         .then((rows) => withProviderRatings(rows))
         .then((rows) => { if (!cancelled) setProviders(rows); })
         .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });

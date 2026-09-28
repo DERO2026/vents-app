@@ -9,6 +9,11 @@ interface ServiceCategoryScreenProps {
   category: string;
   onBack: () => void;
   onProviderPress: (provider: ServiceProvider) => void;
+  // The active Services discovery country (App.tsx's discoveryCountryIso,
+  // the same value ServicesHomeScreen uses) -- without this, browsing by
+  // category showed providers from every country regardless of the
+  // country the user had selected on the Services home screen.
+  countryIso: string;
 }
 
 const FILTER_CHIPS: { key: 'home' | 'delivery' | 'sameDay'; label: string; icon: React.ElementType }[] = [
@@ -34,7 +39,7 @@ function ListSkeleton() {
   );
 }
 
-export function ServiceCategoryScreen({ category, onBack, onProviderPress }: ServiceCategoryScreenProps) {
+export function ServiceCategoryScreen({ category, onBack, onProviderPress, countryIso }: ServiceCategoryScreenProps) {
   const [providers, setProviders] = useState<ServiceProvider[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   // Bumped by the Retry button to re-run the effect below without
@@ -51,11 +56,11 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress }: Ser
     let cancelled = false;
     setProviders(null);
     setLoadError(false);
-    fetchApprovedServiceProviders({ category })
+    fetchApprovedServiceProviders({ category, country: countryIso })
       .then((rows) => { if (!cancelled) setProviders(rows); })
       .catch(() => { if (!cancelled) { setProviders([]); setLoadError(true); } });
     return () => { cancelled = true; };
-  }, [category, reloadKey]);
+  }, [category, countryIso, reloadKey]);
 
   const handleRetry = () => setReloadKey((k) => k + 1);
 
