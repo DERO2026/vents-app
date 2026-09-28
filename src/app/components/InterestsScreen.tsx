@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { CATEGORIES } from './categories';
@@ -15,6 +15,24 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
   const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Measures the real rendered height of the fixed bottom bar instead of
+  // relying on a guessed scroll-content padding (was a hardcoded 140px) --
+  // same fix as ServiceProviderProfileScreen's sticky CTA bar. The bar's
+  // height varies with content (the error message adds a line), so a fixed
+  // padding either wastes space or, worse, lets the gradient's opaque top
+  // band cover the last row of category cards, as reported live.
+  const ctaBarRef = useRef<HTMLDivElement>(null);
+  const [ctaBarHeight, setCtaBarHeight] = useState(0);
+  useEffect(() => {
+    const el = ctaBarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) setCtaBarHeight(entry.contentRect.height);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [error]);
 
   function toggle(id: string) {
     setSelected(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -70,7 +88,7 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
       </div>
 
       {/* Interest cards */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '10px 20px 140px', scrollbarWidth: 'none' }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: `10px 20px calc(${ctaBarHeight || 140}px + 16px)`, scrollbarWidth: 'none' }}>
         <div
           style={{
             display: 'grid',
@@ -153,12 +171,13 @@ export function InterestsScreen({ userId, onDone }: InterestsScreenProps) {
 
       {/* CTA */}
       <div
+        ref={ctaBarRef}
         style={{
           position: 'absolute',
           bottom: 0,
           left: 0,
           right: 0,
-          padding: '14px 20px 32px',
+          padding: '14px 20px calc(24px + env(safe-area-inset-bottom))',
           background: `linear-gradient(to top, ${ventsColors.bg} 60%, transparent)`,
         }}
       >
