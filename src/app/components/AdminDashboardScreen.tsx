@@ -28,6 +28,7 @@ import {
   ProviderServiceInput,
 } from '../../lib/providerServices';
 import { ProviderService } from './types';
+import { fetchAdminServiceBookings, AdminServiceBookingRow } from '../../lib/serviceBookings';
 
 // ─── Constants ─────────────────────────────────────────────────────────────────
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
@@ -58,7 +59,7 @@ interface AuditLog {
   actor_role?: string | null;
 }
 
-type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'deleted';
+type Tab = 'admin-actions' | 'users' | 'events' | 'logs' | 'reports' | 'vc' | 'stats' | 'verify' | 'payouts' | 'system' | 'org-requests' | 'sp-requests' | 'services-admin' | 'service-bookings' | 'deleted';
 
 interface EventRow {
   id: string;
@@ -810,6 +811,48 @@ export function AdminDashboardScreen({
   const [svcServiceSaving, setSvcServiceSaving] = useState(false);
   const [svcServiceBusyId, setSvcServiceBusyId] = useState<string | null>(null);
 
+  // Service Bookings tab -- wraps admin_list_service_bookings (already
+  // existed in the DB, granted+gated correctly, but had zero callers
+  // anywhere in the codebase per the Admin Console functional audit).
+  // View-only: no admin mutation RPC exists for booking status, so this
+  // stays a read/investigate view rather than inventing a privileged write.
+  const [svcBookings, setSvcBookings] = useState<AdminServiceBookingRow[] | null>(null);
+  const [svcBookingsLoading, setSvcBookingsLoading] = useState(false);
+  const [svcBookingsError, setSvcBookingsError] = useState<string | null>(null);
+  const [svcBookingStatusFilter, setSvcBookingStatusFilter] = useState<'all' | 'pending_payment' | 'confirmed' | 'completed' | 'cancelled'>('all');
+  const [showSvcBookingStatusPicker, setShowSvcBookingStatusPicker] = useState(false);
+  const [svcBookingOffset, setSvcBookingOffset] = useState(0);
+  const [svcBookingHasMore, setSvcBookingHasMore] = useState(false);
+  const [svcSelectedBooking, setSvcSelectedBooking] = useState<AdminServiceBookingRow | null>(null);
+  const SVC_BOOKINGS_PAGE_SIZE = 50;
+
+  const loadSvcBookings = useCallback(async (offset: number) => {
+    if (!isAdminOrSubAdmin) return;
+    setSvcBookingsLoading(true);
+    setSvcBookingsError(null);
+    try {
+      const rows = await fetchAdminServiceBookings({
+        status: svcBookingStatusFilter === 'all' ? undefined : svcBookingStatusFilter,
+        limit: SVC_BOOKINGS_PAGE_SIZE,
+        offset,
+      });
+      setSvcBookings((prev) => (offset === 0 ? rows : [...(prev || []), ...rows]));
+      setSvcBookingHasMore(rows.length === SVC_BOOKINGS_PAGE_SIZE);
+      setSvcBookingOffset(offset);
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setSvcBookingsError(err?.message || 'Failed to load service bookings.');
+      if (offset === 0) setSvcBookings([]);
+    } finally {
+      setSvcBookingsLoading(false);
+    }
+  }, [isAdminOrSubAdmin, svcBookingStatusFilter]);
+
+  useEffect(() => {
+    if (tab !== 'service-bookings') return;
+    loadSvcBookings(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, svcBookingStatusFilter]);
 
   useEffect(() => {
     if (tab !== 'vc') return;
@@ -2055,6 +2098,7 @@ export function AdminDashboardScreen({
     { key: 'org-requests' as Tab, label: 'Org Reqs', icon: <Megaphone size={14} /> },
     { key: 'sp-requests' as Tab, label: 'SP Reqs', icon: <Briefcase size={14} /> },
     { key: 'services-admin' as Tab, label: 'Services', icon: <Wrench size={14} /> },
+    { key: 'service-bookings' as Tab, label: 'Bookings', icon: <Ticket size={14} /> },
     ...(isRoot ? [{ key: 'system' as Tab, label: 'System', icon: <Settings size={14} /> }] : []),
   ];
 
@@ -3477,6 +3521,178 @@ export function AdminDashboardScreen({
           onClose={() => setShowSvcServiceCurrencyPicker(false)}
           zIndex={9999}
         />
+      )}
+
+      {/* ════════════════ SERVICE BOOKINGS TAB (view-only) ═══════════════ */}
+      {tab === 'service-bookings' && !svcSelectedBooking && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <p style={{ color: '#8B8FA8', fontSize: '12px', marginBottom: '12px' }}>
+            Service Bookings — view-only (no mutation actions exist for booking state; investigate here, act via the customer/provider flows)
+          </p>
+
+          {(() => {
+            const chipStyle: React.CSSProperties = { height: '32px', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', color: '#C4C9E0', fontSize: '12px', padding: '0 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'nowrap' };
+            const statusLabels: Record<string, string> = { all: 'All statuses', pending_payment: 'Pending payment', confirmed: 'Confirmed', completed: 'Completed', cancelled: 'Cancelled' };
+            return (
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                <div style={chipStyle} onClick={() => setShowSvcBookingStatusPicker(true)}>{statusLabels[svcBookingStatusFilter]}</div>
+              </div>
+            );
+          })()}
+
+          {showSvcBookingStatusPicker && (
+            <PickerSheet
+              title="Filter by Status"
+              searchable={false}
+              options={[
+                { value: 'all', label: 'All statuses' },
+                { value: 'pending_payment', label: 'Pending payment' },
+                { value: 'confirmed', label: 'Confirmed' },
+                { value: 'completed', label: 'Completed' },
+                { value: 'cancelled', label: 'Cancelled' },
+              ]}
+              value={svcBookingStatusFilter}
+              onSelect={(v) => { setSvcBookingStatusFilter(v as any); setShowSvcBookingStatusPicker(false); }}
+              onClose={() => setShowSvcBookingStatusPicker(false)}
+            />
+          )}
+
+          {svcBookingsError && <p style={{ color: '#EF4444', fontSize: '13px', marginBottom: '12px' }}>{svcBookingsError}</p>}
+
+          {svcBookingsLoading && (svcBookings === null || svcBookings.length === 0) ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>Loading...</p>
+          ) : !svcBookings || svcBookings.length === 0 ? (
+            <p style={{ color: '#8B8FA8', textAlign: 'center', marginTop: '40px' }}>No service bookings match this filter.</p>
+          ) : (
+            <>
+              {svcBookings.map((b) => {
+                const statusColors: Record<string, { text: string; bg: string }> = {
+                  pending_payment: { text: '#94A3B8', bg: 'rgba(148,163,184,0.15)' },
+                  confirmed: { text: '#60A5FA', bg: 'rgba(96,165,250,0.15)' },
+                  completed: { text: '#10B981', bg: 'rgba(16,185,129,0.15)' },
+                  cancelled: { text: '#EF4444', bg: 'rgba(239,68,68,0.15)' },
+                };
+                const paymentColors: Record<string, { text: string; bg: string }> = {
+                  pending: { text: '#F59E0B', bg: 'rgba(245,158,11,0.15)' },
+                  paid: { text: '#10B981', bg: 'rgba(16,185,129,0.15)' },
+                  failed: { text: '#EF4444', bg: 'rgba(239,68,68,0.15)' },
+                  refund_pending: { text: '#F59E0B', bg: 'rgba(245,158,11,0.15)' },
+                  refunded: { text: '#94A3B8', bg: 'rgba(148,163,184,0.15)' },
+                };
+                const sc = statusColors[b.status] || { text: '#94A3B8', bg: 'rgba(148,163,184,0.15)' };
+                const pc = paymentColors[b.paymentStatus] || { text: '#94A3B8', bg: 'rgba(148,163,184,0.15)' };
+                return (
+                  <div
+                    key={b.bookingId}
+                    onClick={() => setSvcSelectedBooking(b)}
+                    style={{ background: '#090514', borderRadius: '14px', padding: '14px', marginBottom: '10px', border: '1px solid rgba(255,255,255,0.06)', cursor: 'pointer' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', gap: '8px', flexWrap: 'wrap' }}>
+                      <span style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 600, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {b.providerBusinessName || b.providerId.slice(0, 8)}
+                      </span>
+                      <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                        <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: sc.bg, color: sc.text, textTransform: 'uppercase' as const }}>{b.status.replace('_', ' ')}</span>
+                        <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '8px', background: pc.bg, color: pc.text, textTransform: 'uppercase' as const }}>{b.paymentStatus.replace('_', ' ')}</span>
+                      </div>
+                    </div>
+                    <p style={{ color: '#8B8FA8', fontSize: '12px', margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {b.customerName || b.customerEmail || b.customerId.slice(0, 8)}
+                    </p>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <p style={{ color: '#6B7280', fontSize: '11px', margin: 0 }}>
+                        {b.scheduledDate ? new Date(b.scheduledDate).toLocaleDateString('en-NG') : new Date(b.createdAt).toLocaleDateString('en-NG')}
+                      </p>
+                      <p style={{ color: '#A855F7', fontSize: '13px', fontWeight: 700, margin: 0 }}>
+                        {b.currency} {(b.totalKobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+              {svcBookingHasMore && (
+                <button
+                  onClick={() => loadSvcBookings(svcBookingOffset + SVC_BOOKINGS_PAGE_SIZE)}
+                  disabled={svcBookingsLoading}
+                  style={{ width: '100%', height: '40px', borderRadius: '10px', background: 'rgba(123,47,247,0.12)', border: '1px solid rgba(123,47,247,0.3)', color: '#B794F6', fontSize: '13px', fontWeight: 600, cursor: svcBookingsLoading ? 'wait' : 'pointer', marginTop: '4px' }}
+                >
+                  {svcBookingsLoading ? 'Loading…' : 'Load more'}
+                </button>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {tab === 'service-bookings' && svcSelectedBooking && (
+        <div style={{ padding: '16px', overflowY: 'auto', flex: 1 }}>
+          <button
+            onClick={() => setSvcSelectedBooking(null)}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'none', border: 'none', color: '#B794F6', fontSize: '13px', fontWeight: 600, cursor: 'pointer', padding: 0, marginBottom: '16px' }}
+          >
+            <ArrowLeft size={14} /> Back to Bookings
+          </button>
+
+          <div style={{ background: '#090514', borderRadius: '16px', padding: '18px', border: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <div>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const, letterSpacing: '0.04em' }}>Booking ID</p>
+              <p style={{ color: '#F0F0FF', fontSize: '13px', fontFamily: 'monospace', margin: 0, wordBreak: 'break-all' }}>{svcSelectedBooking.bookingId}</p>
+            </div>
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Status</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, textTransform: 'capitalize' as const }}>{svcSelectedBooking.status.replace('_', ' ')}</p>
+              </div>
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Payment Status</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', fontWeight: 700, margin: 0, textTransform: 'capitalize' as const }}>{svcSelectedBooking.paymentStatus.replace('_', ' ')}</p>
+              </div>
+            </div>
+            <div>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Provider</p>
+              <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0 }}>{svcSelectedBooking.providerBusinessName || '—'}</p>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '2px 0 0', fontFamily: 'monospace' }}>{svcSelectedBooking.providerId}</p>
+            </div>
+            <div>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Customer</p>
+              <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0 }}>{svcSelectedBooking.customerName || '—'}</p>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '2px 0 0' }}>{svcSelectedBooking.customerEmail || '—'}</p>
+              <p style={{ color: '#6B7280', fontSize: '11px', margin: '2px 0 0', fontFamily: 'monospace' }}>{svcSelectedBooking.customerId}</p>
+            </div>
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Subtotal</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0 }}>{svcSelectedBooking.currency} {(svcSelectedBooking.subtotalKobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Fee</p>
+                <p style={{ color: '#F0F0FF', fontSize: '14px', margin: 0 }}>{svcSelectedBooking.currency} {(svcSelectedBooking.feeKobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+              </div>
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Total</p>
+                <p style={{ color: '#A855F7', fontSize: '16px', fontWeight: 800, margin: 0 }}>{svcSelectedBooking.currency} {(svcSelectedBooking.totalKobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</p>
+              </div>
+            </div>
+            {svcSelectedBooking.paymentRef && (
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Payment Reference</p>
+                <p style={{ color: '#F0F0FF', fontSize: '13px', fontFamily: 'monospace', margin: 0, wordBreak: 'break-all' }}>{svcSelectedBooking.paymentRef}</p>
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+              {svcSelectedBooking.scheduledDate && (
+                <div>
+                  <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Scheduled</p>
+                  <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{new Date(svcSelectedBooking.scheduledDate).toLocaleDateString('en-NG')}</p>
+                </div>
+              )}
+              <div>
+                <p style={{ color: '#6B7280', fontSize: '11px', margin: '0 0 2px', textTransform: 'uppercase' as const }}>Created</p>
+                <p style={{ color: '#F0F0FF', fontSize: '13px', margin: 0 }}>{new Date(svcSelectedBooking.createdAt).toLocaleString('en-NG')}</p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ════════════════ SYSTEM CONTROLLER TAB (ROOT ONLY) ═══════════════ */}
