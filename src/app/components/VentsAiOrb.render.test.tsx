@@ -29,7 +29,7 @@ describe('VentsAiOrb', () => {
 
     expect(container.textContent).toContain('Ask VENTS AI anything');
 
-    const button = container.querySelector('button') as HTMLButtonElement;
+    const button = container.querySelector('button[aria-label="Open VENTS AI"]') as HTMLButtonElement;
     act(() => {
       button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
@@ -92,7 +92,7 @@ describe('VentsAiOrb', () => {
 
       // The orb button itself must still be present and functional --
       // this is a nudge disappearing, not the launcher itself.
-      const button = container.querySelector('button') as HTMLButtonElement;
+      const button = container.querySelector('button[aria-label="Open VENTS AI"]') as HTMLButtonElement;
       expect(button).toBeTruthy();
       act(() => {
         button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -101,5 +101,32 @@ describe('VentsAiOrb', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('has a dedicated X button that dismisses the tooltip without opening VENTS AI', () => {
+    const onOpen = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root!.render(<VentsAiOrb onOpen={onOpen} userId="u4" />);
+    });
+
+    expect(container.textContent).toContain('Ask VENTS AI anything');
+    const dismissButton = container.querySelector('button[aria-label="Dismiss"]') as HTMLButtonElement;
+    expect(dismissButton).toBeTruthy();
+
+    act(() => {
+      dismissButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    // Dismissed, not opened -- and the orb itself remains usable afterward.
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('Ask VENTS AI anything');
+    const openButton = container.querySelector('button[aria-label="Open VENTS AI"]') as HTMLButtonElement;
+    act(() => {
+      openButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+    expect(onOpen).toHaveBeenCalledTimes(1);
   });
 });
