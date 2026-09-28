@@ -35,12 +35,38 @@ import { ServiceProviderSetupScreen } from '../src/app/components/ServiceProvide
 import { ServiceProviderVerificationScreen } from '../src/app/components/ServiceProviderVerificationScreen';
 import { SettingsScreen } from '../src/app/components/SettingsScreen';
 import { UserProfileScreen } from '../src/app/components/UserProfileScreen';
-import { UserWalletScreen } from '../src/app/components/UserWalletScreen';
+import { CustomerWalletScreen } from '../src/app/components/CustomerWalletScreen';
 import { ExploreScreen } from '../src/app/components/ExploreScreen';
 import { ReferralScreen } from '../src/app/components/ReferralScreen';
+import { AdminConsoleShell } from '../src/app/components/admin/AdminConsoleShell';
+import { AdminDashboard } from '../src/app/components/admin/AdminDashboard';
+import { AdminUsersList } from '../src/app/components/admin/AdminUsersList';
+import { AdminUserDetail } from '../src/app/components/admin/AdminUserDetail';
+import { AdminEventsList } from '../src/app/components/admin/AdminEventsList';
+import { AdminEventDetail } from '../src/app/components/admin/AdminEventDetail';
+import { AdminOrganizersList } from '../src/app/components/admin/AdminOrganizersList';
+import { AdminOrganizerDetail } from '../src/app/components/admin/AdminOrganizerDetail';
+import { AdminProvidersList } from '../src/app/components/admin/AdminProvidersList';
+import { AdminProviderDetail } from '../src/app/components/admin/AdminProviderDetail';
 import App from '../src/app/App';
 
-const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' };
+// Shared fixture admin identity for every Admin Console harness route below
+// -- a full Admin (Root+Admin tier), matching the "Full admin view" the
+// design export's dashboard header shows.
+const ADMIN_FIXTURE_USER = { id: 'admin-1', email: 'admin@example.com', full_name: 'Admin Operator', role: 'admin' };
+
+// The direct-mount List/Detail harness routes below (bypassing
+// AdminConsoleShell's own responsive state) need to reflect whatever real
+// viewport the screenshot tool actually launched at, not a hardcoded
+// desktop assumption -- otherwise every "mobile" screenshot of these routes
+// would silently render the desktop table layout squeezed into a phone
+// width instead of the real mobile card layout.
+const ADMIN_IS_MOBILE = typeof window !== 'undefined' && window.innerWidth < 768;
+
+// Organizer is the independent is_organizer capability, not role
+// (0121_organizer_capability_independent_of_role.sql) -- role is 'user'
+// here, matching every real organizer account in production.
+const FIXTURE_USER = { id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true };
 
 const FIXTURE_EVENTS = [
   {
@@ -179,14 +205,14 @@ const SCREENS: Record<string, () => JSX.Element> = {
   scanner: () => (
     <CheckinScannerScreen
       onBack={() => {}}
-      currentUser={{ id: 'org-1', role: 'organizer' }}
+      currentUser={{ id: 'org-1', role: 'user', isOrganizer: true }}
       selectedEvent={{ id: 'evt-1', title: 'Lagos Music Festival' } as any}
     />
   ),
   'door-manager': () => (
     <DoorManagerScreen
       event={{ id: 'evt-1', title: 'Lagos Music Festival', organizer_id: 'org-1' } as any}
-      currentUser={{ id: 'org-1', role: 'organizer' }}
+      currentUser={{ id: 'org-1', role: 'user', isOrganizer: true }}
       onBack={() => {}}
       onOpenScanner={() => {}}
     />
@@ -194,7 +220,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'checkin-scanner': () => (
     <CheckinScannerScreen
       onBack={() => {}}
-      currentUser={{ id: 'org-1', role: 'organizer' }}
+      currentUser={{ id: 'org-1', role: 'user', isOrganizer: true }}
       selectedEvent={{ id: 'evt-1', title: 'Lagos Music Festival' } as any}
     />
   ),
@@ -253,7 +279,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   profile: () => (
     <ProfileScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', is_verified: true }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, is_verified: true }}
       onSignOut={() => {}}
       tickets={[]}
       savedCount={2}
@@ -280,7 +306,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   settings: () => (
     <SettingsScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, username: 'test.organizer' }}
       onBack={() => {}}
       onSignOut={() => {}}
       isDark
@@ -289,7 +315,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   settings: () => (
     <SettingsScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, username: 'test.organizer' }}
       onBack={() => {}}
       onSignOut={() => {}}
       isDark
@@ -298,7 +324,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   'settings-profile-details': () => (
     <SettingsScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, username: 'test.organizer' }}
       onBack={() => {}}
       onSignOut={() => {}}
       isDark
@@ -308,7 +334,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   'connected-accounts': () => (
     <SettingsScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer', username: 'test.organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true, username: 'test.organizer' }}
       onBack={() => {}}
       onSignOut={() => {}}
       isDark
@@ -330,7 +356,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
     />
   ),
   'user-wallet': () => (
-    <UserWalletScreen currentUser={{ id: 'org-1', email: 'organizer@example.com' }} onBack={() => {}} />
+    <CustomerWalletScreen currentUser={{ id: 'org-1', email: 'organizer@example.com' }} onBack={() => {}} />
   ),
   home: () => (
     <HomeScreen
@@ -348,7 +374,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   ),
   profile: () => (
     <ProfileScreen
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true }}
       onSignOut={() => {}}
       tickets={[]}
       savedCount={3}
@@ -373,7 +399,7 @@ const SCREENS: Record<string, () => JSX.Element> = {
   referral: () => (
     <ReferralScreen
       onBack={() => {}}
-      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'organizer' }}
+      currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true }}
     />
   ),
   explore: () => (
@@ -390,6 +416,33 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'full-app': () => <App />,
   referrals: () => (
     <ReferralScreen onBack={() => {}} currentUser={{ id: 'org-1', email: 'organizer@example.com', full_name: 'Test Organizer' }} />
+  ),
+
+  // ── Claude-Design Admin Console (reconciled against the current
+  // multi-role architecture and current production RPCs/RLS) ──────────────
+  // Shell renders the full nav + default Dashboard view; the individual
+  // List/Detail keys below mount each screen directly (bypassing the
+  // Shell's internal view state) so every one of the 10 required screens
+  // has its own stable, directly-linkable screenshot target.
+  'admin-console': () => <AdminConsoleShell onBack={() => {}} currentUser={ADMIN_FIXTURE_USER} />,
+  'admin-console-dashboard': () => (
+    <AdminDashboard currentUser={ADMIN_FIXTURE_USER} isRoot={false} isSuperAdmin isMobile={ADMIN_IS_MOBILE} isTablet={false} onNavigate={() => {}} />
+  ),
+  'admin-console-users': () => <AdminUsersList isMobile={ADMIN_IS_MOBILE} onSelectUser={() => {}} />,
+  'admin-console-user-detail': () => (
+    <AdminUserDetail userId="user-both-caps-1" currentUser={ADMIN_FIXTURE_USER} isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
+  ),
+  'admin-console-events': () => <AdminEventsList isMobile={ADMIN_IS_MOBILE} currentUser={ADMIN_FIXTURE_USER} onSelectEvent={() => {}} />,
+  'admin-console-event-detail': () => (
+    <AdminEventDetail eventId="evt-1" currentUser={ADMIN_FIXTURE_USER} isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
+  ),
+  'admin-console-organizers': () => <AdminOrganizersList isMobile={ADMIN_IS_MOBILE} onSelectOrganizer={() => {}} />,
+  'admin-console-organizer-detail': () => (
+    <AdminOrganizerDetail organizerId="org-1" isSuperAdmin isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
+  ),
+  'admin-console-providers': () => <AdminProvidersList isMobile={ADMIN_IS_MOBILE} onSelectProvider={() => {}} />,
+  'admin-console-provider-detail': () => (
+    <AdminProviderDetail providerId="prov-1" isSuperAdmin isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
   ),
 };
 

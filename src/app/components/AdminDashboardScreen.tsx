@@ -658,9 +658,14 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
 export function AdminDashboardScreen({
   onBack,
   currentUser,
+  onOpenAdminConsole,
 }: {
   onBack: () => void;
   currentUser: any;
+  // Optional link to the new Claude-Design Admin Console (reconciled
+  // against the current architecture) — additive, does not replace this
+  // screen or any of its functionality.
+  onOpenAdminConsole?: () => void;
 }) {
   // Authorization tiers come from the shared single-source-of-truth helpers
   // (src/lib/permissions.ts), which mirror the backend is_root/is_super_admin/
@@ -2159,7 +2164,18 @@ export function AdminDashboardScreen({
           </h1>
           <p style={{ color: '#8B8FA8', fontSize: '11px', margin: '2px 0 0' }}>Secure user management &amp; audit trail</p>
         </div>
-        <Shield size={20} color={isRoot ? '#A855F7' : '#6B7280'} style={{ filter: isRoot ? 'drop-shadow(0 0 8px rgba(168,85,247,0.6))' : 'none', flexShrink: 0, position: 'relative', zIndex: 1, marginLeft: 'auto' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto', position: 'relative', zIndex: 1 }}>
+          {onOpenAdminConsole && (
+            <button
+              onClick={onOpenAdminConsole}
+              title="Open the new Admin Console (Users/Events/Organizers/Providers)"
+              style={{ fontSize: '11px', fontWeight: 700, color: '#d3b8ff', background: 'rgba(163,92,255,.14)', border: '1px solid rgba(163,92,255,.32)', borderRadius: '8px', padding: '6px 10px', cursor: 'pointer' }}
+            >
+              New Console
+            </button>
+          )}
+          <Shield size={20} color={isRoot ? '#A855F7' : '#6B7280'} style={{ filter: isRoot ? 'drop-shadow(0 0 8px rgba(168,85,247,0.6))' : 'none', flexShrink: 0 }} />
+        </div>
       </div>
 
       {/* ── Tabs ───────────────────────────────────────────────────────────── */}
