@@ -542,7 +542,7 @@ export function VentsAiScreen({
   const inConversation = !!active;
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 900, background: '#0a0810', color: '#f2eff6', fontFamily: "'Inter',system-ui,sans-serif", display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 900, background: '#0a0810', color: '#f2eff6', fontFamily: "'Inter',system-ui,sans-serif", display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingTop: 'env(safe-area-inset-top, 0px)' }}>
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, display: 'flex', minWidth: 0, position: 'relative' }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
@@ -760,7 +760,7 @@ function ConversationView({
           )}
         </div>
       </div>
-      <div style={{ flexShrink: 0, padding: '10px 16px 16px', background: '#0b0812', borderTop: '1px solid #1c1726' }}>
+      <div style={{ flexShrink: 0, padding: '10px 16px calc(16px + env(safe-area-inset-bottom, 0px))', background: '#0b0812', borderTop: '1px solid #1c1726' }}>
         <div style={{ maxWidth: 640, margin: '0 auto', position: 'relative' }}>
           <input
             value={inputText}

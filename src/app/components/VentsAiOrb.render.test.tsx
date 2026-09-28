@@ -45,4 +45,61 @@ describe('VentsAiOrb', () => {
     });
     expect(container.textContent).not.toContain('Ask VENTS AI anything');
   });
+
+  it('marks the tooltip "seen" as soon as it is shown, so remounting before any tap does not resurrect it', () => {
+    // This is the actual reported "keeps appearing" defect: navigating away
+    // from an orb-bearing screen and back unmounts/remounts VentsAiOrb. The
+    // old implementation only wrote the "seen" flag on tap, so a user who
+    // hadn't tapped yet would see the full tooltip every single remount.
+    const onOpen = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => {
+      root!.render(<VentsAiOrb onOpen={onOpen} userId="u2" />);
+    });
+
+    expect(container.textContent).toContain('Ask VENTS AI anything');
+    expect(localStorage.getItem('vents_ai_orb_seen_u2')).toBe('1');
+
+    // Remount WITHOUT tapping the orb -- simulates navigating away and back.
+    act(() => root!.unmount());
+    root = createRoot(container);
+    act(() => {
+      root!.render(<VentsAiOrb onOpen={onOpen} userId="u2" />);
+    });
+    expect(container.textContent).not.toContain('Ask VENTS AI anything');
+    expect(onOpen).not.toHaveBeenCalled();
+  });
+
+  it('auto-hides the tooltip after a few seconds even if the user never taps the orb', () => {
+    vi.useFakeTimers();
+    try {
+      const onOpen = vi.fn();
+      container = document.createElement('div');
+      document.body.appendChild(container);
+      root = createRoot(container);
+      act(() => {
+        root!.render(<VentsAiOrb onOpen={onOpen} userId="u3" />);
+      });
+
+      expect(container.textContent).toContain('Ask VENTS AI anything');
+
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(container.textContent).not.toContain('Ask VENTS AI anything');
+
+      // The orb button itself must still be present and functional --
+      // this is a nudge disappearing, not the launcher itself.
+      const button = container.querySelector('button') as HTMLButtonElement;
+      expect(button).toBeTruthy();
+      act(() => {
+        button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      });
+      expect(onOpen).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
