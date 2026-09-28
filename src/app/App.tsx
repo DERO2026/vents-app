@@ -6,6 +6,7 @@ import { registerPushNotifications, unregisterPushNotifications, setPushActionHa
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification, clearPendingVerification } from '../lib/pendingVerification';
+import { fetchSavedServiceProviderIds, saveServiceProvider, unsaveServiceProvider } from '../lib/serviceProviders';
 import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
@@ -1080,6 +1081,7 @@ export default function App() {
   const [paymentFailure, setPaymentFailure] = useState<{ eventTitle: string; reference: string; message: string } | null>(null);
 
   const [savedEvents, setSavedEvents] = useState<string[]>([]);
+  const [savedServiceProviderIds, setSavedServiceProviderIds] = useState<string[]>([]);
 
   const [blockedIds, setBlockedIds] = useState<Set<string>>(new Set());
   // Stable array identity for HomeScreen's blockedUserIds prop -- passing
@@ -1155,6 +1157,25 @@ export default function App() {
       }
     }
     fetchSavedEvents();
+  }, [currentUser]);
+
+  // Fetch user's saved service providers -- same pattern as saved events
+  // above, mirroring saved_events' shape (0118_saved_service_providers.sql).
+  useEffect(() => {
+    async function fetchSavedProviders() {
+      if (!currentUser?.id) {
+        setSavedServiceProviderIds([]);
+        return;
+      }
+      try {
+        const ids = await fetchSavedServiceProviderIds(currentUser.id);
+        setSavedServiceProviderIds(ids);
+      } catch (err) {
+        console.error('Failed to fetch saved service providers:', err);
+        Sentry.captureException(err);
+      }
+    }
+    fetchSavedProviders();
   }, [currentUser]);
   const [allTickets, setAllTickets] = useState<PurchasedTicket[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(false);
@@ -2092,6 +2113,31 @@ export default function App() {
     }
   }, [currentUser, savedEvents]);
 
+  const handleToggleSaveServiceProvider = useCallback(async (providerId: string) => {
+    if (!currentUser) {
+      navigateTo('auth');
+      return;
+    }
+    const isSaved = savedServiceProviderIds.includes(providerId);
+    setSavedServiceProviderIds((prev) =>
+      isSaved ? prev.filter((id) => id !== providerId) : [...prev, providerId]
+    );
+    try {
+      if (isSaved) {
+        await unsaveServiceProvider(currentUser.id, providerId);
+      } else {
+        await saveServiceProvider(currentUser.id, providerId);
+      }
+    } catch (err) {
+      console.error('Failed to toggle save service provider:', err);
+      Sentry.captureException(err);
+      setSavedServiceProviderIds((prev) =>
+        isSaved ? [...prev, providerId] : prev.filter((id) => id !== providerId)
+      );
+      setAppToastError(isSaved ? "Couldn't remove from saved. Please try again." : "Couldn't save provider. Please try again.");
+    }
+  }, [currentUser, savedServiceProviderIds]);
+
   const handleProfileNavigate = useCallback((target: string) => {
     if (target === 'welcome') {
       setScreen('welcome');
@@ -2799,6 +2845,8 @@ export default function App() {
               initialProvider={selectedServiceProvider}
               currentUserId={currentUser?.id}
               currentUserEmail={currentUser?.email}
+              isSaved={savedServiceProviderIds.includes(selectedServiceProvider.id)}
+              onToggleSave={handleToggleSaveServiceProvider}
               onBack={goBack}
               onContactProvider={currentUser ? async (provider) => {
                 try {
@@ -2972,6 +3020,11 @@ export default function App() {
               onToggleSave={handleToggleSave}
               dbEvents={dbEvents}
               onBack={screenStack.length > 0 ? goBack : undefined}
+              savedProviderIds={savedServiceProviderIds}
+              onProviderPress={(provider) => {
+                setSelectedServiceProvider(provider);
+                navigateTo('service-provider-profile');
+              }}
             />
           )}
           {screen === 'profile' && (

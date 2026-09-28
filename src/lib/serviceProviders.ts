@@ -212,3 +212,46 @@ export async function saveAndPublishServiceProvider(userId: string, input: Servi
   if (error) throw error;
   return mapDbServiceProviderToFrontend(data);
 }
+
+// "Saved" providers (saved_service_providers, 0118) -- same shape/RLS as
+// saved_events, so the client-side pattern (fetch ids, batch-fetch the
+// providers themselves, optimistic toggle) mirrors App.tsx's existing
+// handleToggleSave for events exactly.
+export async function fetchSavedServiceProviderIds(userId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from('saved_service_providers')
+    .select('provider_id')
+    .eq('user_id', userId);
+  if (error) throw error;
+  return (data || []).map((row: any) => row.provider_id);
+}
+
+export async function saveServiceProvider(userId: string, providerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('saved_service_providers')
+    .insert([{ user_id: userId, provider_id: providerId }]);
+  if (error) throw error;
+}
+
+export async function unsaveServiceProvider(userId: string, providerId: string): Promise<void> {
+  const { error } = await supabase
+    .from('saved_service_providers')
+    .delete()
+    .eq('user_id', userId)
+    .eq('provider_id', providerId);
+  if (error) throw error;
+}
+
+// Batch-fetch the actual provider rows for SavedScreen's Services tab --
+// same reasoning as SavedScreen's existing saved-events fetch (a saved
+// provider's discovery-list card may no longer be loaded client-side, so
+// this can't just filter an already-fetched list).
+export async function fetchServiceProvidersByIds(ids: string[]): Promise<ServiceProvider[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await supabase
+    .from('service_providers')
+    .select(SERVICE_PROVIDER_COLUMNS)
+    .in('id', ids);
+  if (error) throw error;
+  return (data || []).map(mapDbServiceProviderToFrontend);
+}

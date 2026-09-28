@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check } from 'lucide-react';
+import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check, Bookmark } from 'lucide-react';
 import { ServiceProvider, ProviderService } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
 import { fetchServiceProviderById, withProviderRatings } from '../../lib/serviceProviders';
@@ -22,6 +22,11 @@ interface ServiceProviderProfileScreenProps {
   // unchanged. Left optional (button renders disabled without it) so
   // this screen degrades gracefully if ever rendered without a handler.
   onContactProvider?: (provider: ServiceProvider) => void;
+  // Optional so this screen still renders (just without a save button) if
+  // ever mounted without them, same graceful-degradation reasoning as
+  // onContactProvider above.
+  isSaved?: boolean;
+  onToggleSave?: (providerId: string) => void;
 }
 
 function StatTile({ icon: Icon, label, value }: { icon: React.ElementType; label: string; value: string }) {
@@ -52,7 +57,7 @@ function ProfileSkeleton({ onBack }: { onBack: () => void }) {
   );
 }
 
-export function ServiceProviderProfileScreen({ providerId, initialProvider, onBack, currentUserId, currentUserEmail, onContactProvider }: ServiceProviderProfileScreenProps) {
+export function ServiceProviderProfileScreen({ providerId, initialProvider, onBack, currentUserId, currentUserEmail, onContactProvider, isSaved, onToggleSave }: ServiceProviderProfileScreenProps) {
   const [provider, setProvider] = useState<ServiceProvider | null | undefined>(initialProvider);
   const [notFound, setNotFound] = useState(false);
   const [services, setServices] = useState<ProviderService[] | null>(null);
@@ -346,14 +351,22 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             <div style={{ position: 'absolute', top: '-80px', left: '50%', transform: 'translateX(-50%)', width: '420px', height: '300px', background: `radial-gradient(ellipse at center, ${accent}66, transparent 65%)` }} />
           )}
           <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, rgba(2,0,5,0.1) 0%, rgba(2,0,5,0.85) 100%)' }} />
-          <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '20px' }}>
+          <div style={{ position: 'absolute', top: 'calc(16px + env(safe-area-inset-top))', left: '20px', right: '20px', display: 'flex', justifyContent: 'space-between' }}>
             <button onClick={onBack} style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <ArrowLeft size={16} color="#fff" />
             </button>
+            {/* saved_service_providers (0118) -- the backend gap the
+                previous comment here described is now closed. */}
+            {onToggleSave && (
+              <button
+                onClick={() => onToggleSave(provider.id)}
+                aria-label={isSaved ? 'Remove from saved' : 'Save this provider'}
+                style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <Bookmark size={16} color={isSaved ? accent : '#fff'} fill={isSaved ? accent : 'none'} />
+              </button>
+            )}
           </div>
-          {/* No real "save/favorite provider" capability exists in the
-              backend -- the export's heart icon isn't reproduced here
-              rather than wiring it to nothing. */}
         </div>
 
         {/* Floating profile card -- real business name, category, rating

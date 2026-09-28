@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { X } from 'lucide-react';
 
 // Persistent floating orb entry point for VENTS AI, per design-export/
 // "VENTS AI.dc.html"'s ENTRY view (bottom:96px;right:16px so it sits above
@@ -70,18 +71,38 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
             position: 'absolute',
             bottom: 64,
             right: 0,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
             whiteSpace: 'nowrap',
             background: '#161020',
             border: '1px solid #2a2438',
             borderRadius: 10,
-            padding: '8px 12px',
+            padding: '8px 8px 8px 12px',
             fontSize: 12,
             fontWeight: 600,
             color: '#e4d4ff',
             boxShadow: '0 8px 20px rgba(0,0,0,.4)',
           }}
         >
-          Ask VENTS AI anything
+          <span>Ask VENTS AI anything</span>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={(e) => {
+              // Dismiss only -- must not also open VENTS AI, since it sits
+              // inside the same tappable region as the orb below it.
+              e.stopPropagation();
+              dismiss();
+            }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer', padding: 4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#8B8FA8', flexShrink: 0,
+            }}
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
       <button
