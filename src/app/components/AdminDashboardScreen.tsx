@@ -39,6 +39,8 @@ interface UserRow {
   email: string;
   full_name: string | null;
   role: string;
+  is_organizer?: boolean;
+  is_service_provider?: boolean;
   username: string | null;
   phone_number: string | null;
   state: string | null;
@@ -483,7 +485,7 @@ function PayoutsTab({ flash }: { flash: (ok: boolean, msg: string) => void }) {
         {(['requests', 'wallets', 'member-wallets'] as const).map(s => (
           <button key={s} onClick={() => setActiveSection(s)}
             style={{ padding: '6px 14px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: '12px', background: activeSection === s ? 'rgba(168,85,247,0.2)' : 'rgba(255,255,255,0.05)', color: activeSection === s ? '#A855F7' : '#8B8FA8' }}>
-            {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : 'Member Wallets'}
+            {s === 'requests' ? 'Requests' : s === 'wallets' ? 'Organizer Wallets' : 'User Wallets'}
           </button>
         ))}
         <div style={{ width: '1px', background: 'rgba(255,255,255,0.08)', margin: '2px 2px' }} />
@@ -949,7 +951,7 @@ export function AdminDashboardScreen({
     supabase
       .from('users')
       .select('id, full_name, username, email, state, created_at, is_verified')
-      .eq('role', 'organizer')
+      .eq('is_organizer', true)
       .eq('is_verified', false)
       .order('created_at', { ascending: false })
       .limit(50)
@@ -1181,7 +1183,7 @@ export function AdminDashboardScreen({
     try {
       let q = supabase
         .from('users')
-        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
+        .select('id, email, full_name, role, is_organizer, is_service_provider, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
         .neq('status', 'deleted')
         .order('created_at', { ascending: false });
 
@@ -1206,7 +1208,7 @@ export function AdminDashboardScreen({
     try {
       const { data, error } = await supabase
         .from('users')
-        .select('id, email, full_name, role, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
+        .select('id, email, full_name, role, is_organizer, is_service_provider, username, phone_number, state, status, is_verified, created_at, banned_until, deleted_at')
         .not('deleted_at', 'is', null)
         .order('deleted_at', { ascending: false });
       if (error) throw error;
@@ -1752,7 +1754,7 @@ export function AdminDashboardScreen({
   // ── User actions ─────────────────────────────────────────────────────────────
   const handleRoleChange = async (userId: string, newRole: string) => {
     if (userId === ROOT_UID) { flash(false, 'Root admin role cannot be changed.'); return; }
-    const allowedRoles = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
+    const allowedRoles = isRoot ? ['user', 'sub-admin'] : ['user'];
     if (!allowedRoles.includes(newRole)) { flash(false, 'Invalid role.'); return; }
     const target = users.find(u => u.id === userId);
     if (isSubAdmin && target && ['admin', 'sub-admin'].includes(target.role)) {
@@ -1766,6 +1768,24 @@ export function AdminDashboardScreen({
         if (error) throw error;
         setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
         flash(true, 'Role updated.');
+      });
+    setBusyId(null);
+  };
+
+  // Organizer is an independent capability, not a staff tier -- routed
+  // through admin_set_organizer_capability() so it never touches `role`
+  // and can never clobber (or be clobbered by) a Sub-Admin/Admin change,
+  // and vice versa.
+  const handleOrganizerCapabilityToggle = async (userId: string, enabled: boolean) => {
+    const target = users.find(u => u.id === userId);
+    setBusyId(userId);
+    await submitOrExecute('set_organizer_capability',
+      { target_type: 'user', target_id: userId, target_label: target?.username || target?.email || userId, payload: { is_organizer: enabled }, previous: { is_organizer: target?.is_organizer }, changes: { is_organizer: enabled } },
+      async () => {
+        const { error } = await supabase.rpc('admin_set_organizer_capability' as any, { p_user_id: userId, p_enabled: enabled });
+        if (error) throw error;
+        setUsers(prev => prev.map(u => u.id === userId ? { ...u, is_organizer: enabled } : u));
+        flash(true, enabled ? 'Organizer capability granted.' : 'Organizer capability removed.');
       });
     setBusyId(null);
   };
@@ -2290,8 +2310,17 @@ export function AdminDashboardScreen({
                           // Root sees Sub-Admin as an assignable option (so a
                           // demoted deputy can be re-promoted).
                           (() => {
-                            const roleOptions = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
-                            const roleLabels: Record<string, string> = { user: 'User', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+                            // Staff tier (role) and the Organizer/Service Provider
+                            // capabilities are independent, so this button shows
+                            // both -- e.g. "User · Organizer" -- instead of just
+                            // the staff tier, which alone would hide a real
+                            // Organizer whose role is (correctly) 'user'.
+                            const staffLabel = u.role === 'admin' ? 'Admin' : u.role === 'sub-admin' ? 'Sub-Admin' : 'User';
+                            const capabilityLabels = [
+                              u.is_organizer ? 'Organizer' : null,
+                              u.is_service_provider ? 'Service Provider' : null,
+                            ].filter(Boolean);
+                            const displayLabel = [staffLabel, ...capabilityLabels].join(' · ');
                             return (
                               <button
                                 type="button"
@@ -2299,7 +2328,7 @@ export function AdminDashboardScreen({
                                 disabled={isBusy}
                                 style={{ background: '#060A12', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#F0F0FF', fontSize: '11px', padding: '4px 8px', cursor: isBusy ? 'not-allowed' : 'pointer', opacity: isBusy ? 0.6 : 1 }}
                               >
-                                {roleLabels[u.role] || u.role}
+                                {displayLabel}
                               </button>
                             );
                           })()
@@ -2368,15 +2397,31 @@ export function AdminDashboardScreen({
       {rolePickerUserId && (() => {
         const u = users.find(x => x.id === rolePickerUserId);
         if (!u) return null;
-        const roleOptions = isRoot ? ['user', 'organizer', 'sub-admin'] : ['user', 'organizer'];
-        const roleLabels: Record<string, string> = { user: 'User', organizer: 'Organizer', 'sub-admin': 'Sub-Admin' };
+        // Staff tier (mutually exclusive) plus the independent Organizer
+        // capability, shown as one more option that toggles on/off -- this
+        // is the underlying-data-correctness fix (Organizer is no longer a
+        // `role` value); the full Admin Users visual redesign (separate
+        // toggles for each capability) is deferred.
+        const staffOptions = isRoot ? ['user', 'sub-admin'] : ['user'];
+        const staffLabels: Record<string, string> = { user: 'User', 'sub-admin': 'Sub-Admin' };
+        const options = [
+          ...staffOptions.map(r => ({ value: r, label: staffLabels[r] })),
+          { value: 'organizer', label: u.is_organizer ? 'Organizer ✓ (tap to remove)' : 'Organizer (tap to grant)' },
+        ];
         return (
           <PickerSheet
-            title="Change Role"
+            title="Change Role / Capability"
             searchable={false}
-            options={roleOptions.map(r => ({ value: r, label: roleLabels[r] }))}
-            value={u.role}
-            onSelect={(v) => { handleRoleChange(u.id, v); setRolePickerUserId(null); }}
+            options={options}
+            value={u.role === 'admin' || u.role === 'sub-admin' ? u.role : 'user'}
+            onSelect={(v) => {
+              if (v === 'organizer') {
+                handleOrganizerCapabilityToggle(u.id, !u.is_organizer);
+              } else {
+                handleRoleChange(u.id, v);
+              }
+              setRolePickerUserId(null);
+            }}
             onClose={() => setRolePickerUserId(null)}
           />
         );
@@ -3101,10 +3146,10 @@ export function AdminDashboardScreen({
                 <button
                   onClick={async () => {
                     setBusyId(u.id);
-                    await submitOrExecute('set_user_role',
-                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { new_role: 'user' }, previous: { role: 'organizer' }, changes: { role: 'user' } },
+                    await submitOrExecute('set_organizer_capability',
+                      { target_type: 'user', target_id: u.id, target_label: u.username || u.email, payload: { is_organizer: false }, previous: { is_organizer: true }, changes: { is_organizer: false } },
                       async () => {
-                        const { error } = await supabase.rpc('admin_set_user_role', { p_user_id: u.id, p_new_role: 'user' });
+                        const { error } = await supabase.rpc('admin_set_organizer_capability' as any, { p_user_id: u.id, p_enabled: false });
                         if (error) throw error;
                         await writeAuditLog(currentUser, 'reject_organizer', u.id, { username: u.username });
                         setPendingOrgs(prev => prev.filter(x => x.id !== u.id));

@@ -71,7 +71,7 @@ async function renderScreen() {
   await act(async () => {
     root!.render(
       <WalletScreen
-        currentUser={{ id: 'org-1', email: 'org@example.com', full_name: 'Test Organizer', role: 'organizer' }}
+        currentUser={{ id: 'org-1', email: 'org@example.com', full_name: 'Test Organizer', role: 'user', isOrganizer: true }}
         onBack={() => {}}
       />
     );

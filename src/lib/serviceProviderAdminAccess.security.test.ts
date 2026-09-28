@@ -68,7 +68,7 @@ describe('Profile screen: single, non-duplicated Service Provider entry point', 
 describe('App.tsx: is_service_provider is kept in sync without re-login', () => {
   it('the periodic user-state sync also re-selects is_service_provider', () => {
     const syncBlock = appSrc.match(/const syncRole = \(\) => \{[\s\S]*?\n {4}\};/)?.[0] ?? '';
-    expect(syncBlock).toMatch(/select\('role, is_service_provider'\)/);
+    expect(syncBlock).toMatch(/select\('role, is_service_provider, is_organizer'\)/);
     expect(syncBlock).toMatch(/is_service_provider: data\.is_service_provider === true/);
   });
 

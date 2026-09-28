@@ -46,9 +46,10 @@ describe('Become an Organizer: no instant self-promotion path', () => {
   it('setActiveView passed to ProfileScreen never grants the organizer role itself -- it only switches nav state for an account that already has it', () => {
     const wiring = appTsxSrc.match(/setActiveView=\{\(view\) => \{[\s\S]*?\n              \}\}/)?.[0] ?? '';
     expect(wiring).not.toMatch(/promote_to_organizer/);
-    // Guards against promoting a non-organizer, non-admin account when
-    // switching the view to 'organizer'.
-    expect(wiring).toMatch(/currentUser\.role !== 'organizer'[\s\S]*?return;/);
+    // Guards against switching the view to 'organizer' for an account that
+    // holds neither the independent Organizer capability (isOrganizer) nor
+    // the admin role.
+    expect(wiring).toMatch(/currentUser\.isOrganizer[\s\S]*?return;/);
   });
 
   it('"Become an Organizer" in ProfileScreen submits an application to organizer_requests, reviewed elsewhere', () => {

@@ -726,7 +726,8 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
         // Reflect whatever role actually landed in the DB, not the client's
         // pre-write guess — if set_signup_role failed above, this correctly
         // shows the trigger-assigned 'user' rather than masking it.
-        const verifiedRole = (finalProfile.role === 'organizer' || finalProfile.role === 'organiser') ? 'organizer' : 'user';
+        const verifiedRole = finalProfile.role;
+        const verifiedIsOrganizer = finalProfile.is_organizer === true || finalProfile.role === 'admin';
 
         // ROOT-CAUSE FIX (Admin Console "incomplete users" follow-up): the
         // onSuccess payload below used to fall back to the client's own
@@ -782,7 +783,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
           state: finalProfile.state || payload.state,
           avatar_url: finalProfile.avatar_url || payload.avatar_url,
           cover_url: finalProfile.cover_url,
-          isOrganizer: verifiedRole === 'organizer',
+          isOrganizer: verifiedIsOrganizer,
           is_verified: finalProfile.is_verified === true,
           vc_badge: finalProfile.vc_badge,
           is_service_provider: finalProfile.is_service_provider === true,
@@ -1198,7 +1199,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             Promise.resolve(
               supabase
                 .from('users')
-                .select('status, banned_until, full_name, username, phone_number, state, avatar_url, cover_url, role, is_verified, vc_badge')
+                .select('status, banned_until, full_name, username, phone_number, state, avatar_url, cover_url, role, is_organizer, is_verified, vc_badge')
                 .eq('id', data.user.id)
                 .maybeSingle()
             ),
@@ -1232,7 +1233,7 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             state: profile?.state || data.user.user_metadata?.state,
             avatar_url: profile?.avatar_url || data.user.user_metadata?.avatar_url,
             cover_url: profile?.cover_url,
-            isOrganizer: dbRole === 'organizer' || dbRole === 'organiser',
+            isOrganizer: profile?.is_organizer === true || dbRole === 'admin',
             is_verified: profile?.is_verified === true,
             vc_badge: profile?.vc_badge,
           };

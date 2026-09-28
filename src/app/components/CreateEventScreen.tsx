@@ -24,7 +24,7 @@ import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
 
 interface CreateEventScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; country?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
   onBack: () => void;
   onCreated: (event: OrganizerEvent) => void;
   /** When set, the screen loads this event's data and edits it in place instead of creating a new one. */

@@ -60,7 +60,7 @@ export function UserProfileScreen({
   // Local-only visual Follow/Following toggle -- see the Follow/Contact row
   // comment below for why this is intentionally not backed by any RPC.
   const [localFollowing, setLocalFollowing] = useState(false);
-  const isOrganizerProfile = user.role === 'organizer' || (user.role as any) === 'organiser';
+  const isOrganizerProfile = !!(user as any).isOrganizer || user.role === 'admin';
   // Real event list -- the "Public User/Organizer Profile" exports both
   // show an actual event list (Upcoming/Past tabs for a regular user,
   // "Upcoming events" for an organizer), which this screen never fetched

@@ -30,7 +30,7 @@ import { CACVerificationScreen } from './SettingsScreen';
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 interface ProfileScreenProps {
-  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; hasBeenOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean; country?: string } | null;
+  currentUser: { id: string; email: string; full_name: string | null; role: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; vc_badge?: string; is_verified?: boolean; state?: string; is_service_provider?: boolean; country?: string } | null;
   onSignOut: () => void;
   tickets: PurchasedTicket[];
   savedCount: number;
@@ -407,19 +407,28 @@ export function ProfileScreen({
 
   const initial = (currentUser?.full_name || currentUser?.email || 'A').trim().charAt(0).toUpperCase();
   const displayName = currentUser?.full_name || currentUser?.email || 'Guest User';
-  const isOrganizer = currentUser?.role === 'organizer' || currentUser?.role === 'organiser';
+  // is_organizer (0121_organizer_capability_independent_of_role.sql) is an
+  // independent capability, not a role value -- an account can be
+  // Organizer + Service Provider + any staff tier simultaneously. Admins
+  // implicitly get organizer capability too (matches the DB's is_organizer()
+  // helper), same as before.
+  const isOrganizer = !!currentUser?.isOrganizer || currentUser?.role === 'admin';
+  const isServiceProvider = currentUser?.is_service_provider === true;
   const isAdmin = currentUser?.role === 'admin' || currentUser?.id === ROOT_UID;
   const isSubAdmin = currentUser?.role === 'sub-admin';
   // Trusts an 'approved' organizer_requests row immediately, rather than
-  // only currentUser.role -- which is only refreshed by App.tsx's 15s
+  // only currentUser.isOrganizer -- which is only refreshed by App.tsx's 15s
   // syncRole poll -- so approval doesn't leave a stale window where this
   // screen still renders the application CTA. Independent of, and does not
   // replace, isOrganizer: roleLabel/badge/menu filtering below intentionally
-  // keep using the role-derived isOrganizer since those reflect the actual
-  // account role, while capability GATING (below) uses this.
+  // keep using the same isOrganizer since it reflects the actual account
+  // capability, while capability GATING (below) uses this.
   const isOrganizerEffective = isOrganizer || orgRequestStatus === 'approved';
   const isVerified = currentUser?.is_verified === true || currentUser?.id === ROOT_UID;
-  const roleLabel = isOrganizer ? 'Organizer' : isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'Member';
+  // Staff-tier badge only -- Organizer/Service Provider are shown as their
+  // own separate capability chips (below), not folded into one mutually-
+  // exclusive label. A plain account is a "User," never "Member".
+  const roleLabel = isAdmin ? 'Admin' : isSubAdmin ? 'Sub-Admin' : 'User';
   
   const filteredMenuItems = menuItems.filter(item => {
     if (isOrganizer) {
@@ -428,10 +437,14 @@ export function ProfileScreen({
     return true;
   });
 
-  const badgeGradient = isOrganizer
-    ? 'linear-gradient(135deg, #C084FC, #7C3AED)'
-    : isAdmin
+  // Reflects the staff-tier chip only now that Organizer/Service Provider
+  // render as their own separate chips above -- a plain User (even one who
+  // is also an Organizer) gets the neutral gradient, not the purple one,
+  // since that's now the dedicated Organizer chip's color.
+  const badgeGradient = isAdmin
     ? 'linear-gradient(135deg, #F87171, #EF4444)'
+    : isSubAdmin
+    ? 'linear-gradient(135deg, #FBBF24, #F59E0B)'
     : 'linear-gradient(135deg, #FFB830, #F59E0B)';
 
   const badgeTextColor = isAdmin ? '#fff' : '#000';
@@ -573,6 +586,20 @@ export function ProfileScreen({
                 <Star size={10} color={starColor} fill={starColor} />
                 <span style={{ color: badgeTextColor, fontSize: '10px', fontWeight: 700 }}>{roleLabel}</span>
               </div>
+              {/* Organizer and Service Provider are independent capabilities
+                  (0121_organizer_capability_independent_of_role.sql), not
+                  alternatives to the account/staff-tier chip above -- both
+                  can show at once alongside it. */}
+              {isOrganizer && (
+                <div style={{ background: 'linear-gradient(135deg, #C084FC, #7C3AED)', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                  <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Organizer</span>
+                </div>
+              )}
+              {isServiceProvider && (
+                <div style={{ background: 'linear-gradient(135deg, #22D3EE, #0891B2)', borderRadius: '5px', padding: '2px 7px', display: 'flex', alignItems: 'center' }}>
+                  <span style={{ color: '#fff', fontSize: '10px', fontWeight: 700 }}>Service Provider</span>
+                </div>
+              )}
               <BadgeChip tier={currentUser?.vc_badge} />
             </div>
           </div>

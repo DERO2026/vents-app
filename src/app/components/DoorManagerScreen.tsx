@@ -95,7 +95,7 @@ interface LocalFeed { id: string; kind: 'manual' | 'rejected'; name: string; det
 export function DoorManagerScreen({ event, currentUser, onBack, onOpenScanner, scanningDisabled = false }: DoorManagerScreenProps) {
   useDesktopWideShell();
   const isAuthorized =
-    currentUser?.role === 'organizer' || currentUser?.role === 'organiser' ||
+    !!currentUser?.isOrganizer ||
     currentUser?.role === 'admin' || currentUser?.role === 'sub-admin' ||
     currentUser?.id === ROOT_UID || currentUser?.id === event.organizer_id;
 
