@@ -282,6 +282,66 @@ export async function fetchProviderServiceBookings(providerId: string): Promise<
   return rows;
 }
 
+// Admin Console: Service Bookings view. Wraps admin_list_service_bookings
+// (already existed in the DB, granted to authenticated, internally gated on
+// is_admin_or_root() -- this was previously a dead RPC with no caller
+// anywhere in the codebase). View-only: the RPC itself only reads, and no
+// admin mutation RPC exists for booking status, so this stays read-only
+// rather than inventing a privileged write path.
+export interface AdminServiceBookingRow {
+  bookingId: string;
+  status: string;
+  paymentStatus: string;
+  customerId: string;
+  customerName: string | null;
+  customerEmail: string | null;
+  providerId: string;
+  providerBusinessName: string | null;
+  currency: string;
+  subtotalKobo: number;
+  feeKobo: number;
+  totalKobo: number;
+  paymentRef: string | null;
+  scheduledDate: string | null;
+  createdAt: string;
+}
+
+export async function fetchAdminServiceBookings(opts: {
+  status?: string;
+  providerId?: string;
+  from?: string;
+  to?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<AdminServiceBookingRow[]> {
+  const { data, error } = await supabase.rpc('admin_list_service_bookings', {
+    p_status: opts.status || null,
+    p_provider_id: opts.providerId || null,
+    p_from: opts.from || null,
+    p_to: opts.to || null,
+    p_limit: opts.limit ?? 50,
+    p_offset: opts.offset ?? 0,
+  });
+  if (error) throw error;
+  return (data || []).map((row: any) => ({
+    bookingId: row.booking_id,
+    status: row.status,
+    paymentStatus: row.payment_status,
+    customerId: row.customer_id,
+    customerName: row.customer_name,
+    customerEmail: row.customer_email,
+    providerId: row.provider_id,
+    providerBusinessName: row.provider_business_name,
+    currency: row.currency,
+    subtotalKobo: row.subtotal_kobo,
+    feeKobo: row.fee_kobo,
+    totalKobo: row.total_kobo,
+    paymentRef: row.payment_ref,
+    scheduledDate: row.scheduled_date,
+    createdAt: row.created_at,
+  }));
+}
+
 export async function logServiceMarketplaceEvent(
   eventType: string,
   opts: { providerId?: string; serviceId?: string; bookingId?: string; metadata?: Record<string, any> } = {}
