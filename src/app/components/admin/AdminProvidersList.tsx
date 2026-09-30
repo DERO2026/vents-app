@@ -27,6 +27,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { escapePostgrestOrValue } from '../../../lib/sanitize';
 import { adminTheme } from './adminConsoleTheme';
+import { AdminProviderRequestsScreen } from './AdminProviderRequestsScreen';
 
 export interface AdminProviderRow {
   id: string;
@@ -56,7 +57,8 @@ const chipStyle = (active: boolean): React.CSSProperties => ({
   border: `1px solid ${active ? adminTheme.accentSoftBorder : adminTheme.border}`,
 });
 
-export function AdminProvidersList({ isMobile, onSelectProvider }: { isMobile: boolean; onSelectProvider: (id: string) => void }) {
+export function AdminProvidersList({ isMobile, isSuperAdmin, onSelectProvider }: { isMobile: boolean; isSuperAdmin: boolean; onSelectProvider: (id: string) => void }) {
+  const [section, setSection] = useState<'providers' | 'requests'>('providers');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<typeof STATUS_FILTERS[number]>('all');
   const [providers, setProviders] = useState<AdminProviderRow[]>([]);
@@ -119,6 +121,14 @@ export function AdminProvidersList({ isMobile, onSelectProvider }: { isMobile: b
 
   return (
     <div data-testid="admin-providers-list">
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <div onClick={() => setSection('providers')} style={chipStyle(section === 'providers')}>Providers</div>
+        <div onClick={() => setSection('requests')} style={chipStyle(section === 'requests')}>Requests</div>
+      </div>
+      {section === 'requests' ? (
+        <AdminProviderRequestsScreen isSuperAdmin={isSuperAdmin} />
+      ) : (
+      <>
       <div style={{ display: 'flex', gap: 10, marginBottom: 16, overflowX: 'auto', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
         <input
           value={search}
@@ -189,6 +199,8 @@ export function AdminProvidersList({ isMobile, onSelectProvider }: { isMobile: b
             );
           })}
         </div>
+      )}
+      </>
       )}
     </div>
   );

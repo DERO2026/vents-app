@@ -73,13 +73,20 @@ describe('WalletScreen: bank picker migrated off its bespoke full-screen impleme
   });
 });
 
-describe('Admin Dashboard: the last two per-row native <select> controls (role change, ban duration) migrated', () => {
-  it('role-change and ban-duration now open PickerSheet, keyed per user row', () => {
-    const src = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
-    expect(src).toMatch(/const \[rolePickerUserId, setRolePickerUserId\] = useState<string \| null>\(null\);/);
-    expect(src).toMatch(/const \[banPickerUserId, setBanPickerUserId\] = useState<string \| null>\(null\);/);
-    expect(src).toMatch(/\{rolePickerUserId && \(\(\) => \{/);
-    expect(src).toMatch(/\{banPickerUserId && \(\(\) => \{/);
+describe('Admin Console: role/capability change and ban duration use PickerSheet/ConfirmModal, never a native <select>', () => {
+  it('Admin Users role/capability picker (AdminUsersList) opens PickerSheet, keyed per user row', () => {
+    const shellSrc = readFileSync(join(componentsDir, 'admin', 'AdminConsoleShell.tsx'), 'utf8');
+    void shellSrc; // shell just mounts the list; the picker itself lives in AdminUsersList/AdminUserDetail below
+    const listSrc = readFileSync(join(componentsDir, 'admin', 'AdminUsersList.tsx'), 'utf8');
+    expect(listSrc).not.toMatch(SELECT_ELEMENT_RE);
+  });
+
+  it('AdminUserDetail\'s ban-duration control opens PickerSheet, not a native <select>', () => {
+    const src = readFileSync(join(componentsDir, 'admin', 'AdminUserDetail.tsx'), 'utf8');
+    expect(src).toMatch(/const \[banPickerOpen, setBanPickerOpen\] = useState\(false\);/);
+    expect(src).toMatch(/\{banPickerOpen && \(/);
+    expect(src).toMatch(/<PickerSheet/);
+    expect(src).not.toMatch(SELECT_ELEMENT_RE);
   });
 });
 

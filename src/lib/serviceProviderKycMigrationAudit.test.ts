@@ -19,11 +19,13 @@ import { join } from 'node:path';
 // applying that migration to Preview (see the report for the exact SQL).
 
 let migration0044: string;
-let adminDashboardSrc: string;
+let adminProviderRequestsSrc: string;
 
 beforeAll(() => {
   migration0044 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0044_service_provider_kyc.sql'), 'utf8');
-  adminDashboardSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'AdminDashboardScreen.tsx'), 'utf8');
+  // This query now lives in the Admin Console's Service Provider Requests
+  // screen (the legacy AdminDashboardScreen.tsx has been fully retired).
+  adminProviderRequestsSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'admin', 'AdminProviderRequestsScreen.tsx'), 'utf8');
 });
 
 describe('service_provider_requests KYC columns (0044) match what Admin Console queries', () => {
@@ -39,7 +41,7 @@ describe('service_provider_requests KYC columns (0044) match what Admin Console 
   });
 
   it('the Admin Console query selects exactly the columns 0044 adds', () => {
-    const selectLine = adminDashboardSrc.match(/\.select\('id, user_id, reason, status, admin_note, created_at, provider_type, country, owner_name, business_name, cac_number, identity_id_type, identity_id_number, document_url'\)/);
+    const selectLine = adminProviderRequestsSrc.match(/\.select\('id, user_id, reason, status, admin_note, created_at, provider_type, country, owner_name, business_name, cac_number, identity_id_type, identity_id_number, document_url'\)/);
     expect(selectLine).not.toBeNull();
   });
 

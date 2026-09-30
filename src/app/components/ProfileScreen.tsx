@@ -763,7 +763,7 @@ export function ProfileScreen({
         {(isAdmin || isSubAdmin) && (
           <div className="px-4 mb-3">
             <button
-              onClick={() => onNavigate('admin-dashboard')}
+              onClick={() => onNavigate('admin-console')}
               className="w-full flex items-center justify-center gap-2 p-4"
               style={{
                 background: 'linear-gradient(135deg, rgba(239,68,68,0.15), rgba(185,28,28,0.1))',

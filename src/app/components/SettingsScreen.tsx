@@ -219,7 +219,7 @@ function validateCacFile(file: File): string | null {
 // bucket-relative object key (not a full URL) — matching the format
 // document_url already stores for previously-migrated rows, since this
 // private bucket is read back via a signed URL generated from that key
-// (see handlePreviewCacDocument in AdminDashboardScreen.tsx), not a
+// (see the Admin Console's Verification screen), not a
 // directly-fetchable public URL.
 function uploadVerificationCertificate(file: File, token: string, onProgress: (pct: number) => void): Promise<string> {
   return new Promise((resolve, reject) => {

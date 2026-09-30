@@ -2,9 +2,12 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Regression tests for the Admin/Sub-Admin Services management surface
-// (Services Stage 3). Static-analysis style, matching this repo's existing
-// test approach -- no live app/DB harness available.
+// Regression tests for the Admin/Sub-Admin Services management surface,
+// migrated from the legacy AdminDashboardScreen.tsx (now fully retired)
+// into the Admin Console's AdminProvidersList (list) and AdminProviderDetail
+// (per-provider Services tab: add/edit/activate/delete). Static-analysis
+// style, matching this repo's existing test approach -- no live app/DB
+// harness available.
 //
 // Security note this suite exists to enforce: this tab introduces ZERO new
 // server-side surface. Every read/write it performs goes through RLS
@@ -15,43 +18,39 @@ import { join } from 'node:path';
 // alone should be handling, and it doesn't introduce a differently-scoped
 // query a normal user's session could also reach.
 
-let adminDashboardSrc: string;
+let adminProvidersListSrc: string;
+let adminProviderDetailSrc: string;
 let m0034: string;
 let m0045: string;
 let m0048: string;
 
 beforeAll(() => {
-  const componentsDir = join(__dirname, '..', 'app', 'components');
-  adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
+  const componentsDir = join(__dirname, '..', 'app', 'components', 'admin');
+  adminProvidersListSrc = readFileSync(join(componentsDir, 'AdminProvidersList.tsx'), 'utf8');
+  adminProviderDetailSrc = readFileSync(join(componentsDir, 'AdminProviderDetail.tsx'), 'utf8');
   const migrationsDir = join(__dirname, '..', '..', 'supabase', 'migrations');
   m0034 = readFileSync(join(migrationsDir, '0034_service_providers.sql'), 'utf8');
   m0045 = readFileSync(join(migrationsDir, '0045_service_provider_admin_access.sql'), 'utf8');
   m0048 = readFileSync(join(migrationsDir, '0048_provider_services.sql'), 'utf8');
 });
 
-describe('Admin Services tab: routes and reachability', () => {
-  it('is a real tab, gated behind the same admin dashboard every other privileged tab uses', () => {
-    expect(adminDashboardSrc).toMatch(/key: 'services-admin' as Tab/);
-    expect(adminDashboardSrc).toMatch(/tab === 'services-admin'/);
-  });
-
-  it('the provider-list query only runs when the caller is admin/sub-admin (defense in depth, not the real gate)', () => {
-    const fn = adminDashboardSrc.match(/const loadSvcProviders = useCallback\(async \(\) => \{[\s\S]*?\n {2}\}, \[/)?.[0] ?? '';
-    expect(fn).toMatch(/if \(!isAdminOrSubAdmin\) return;/);
+describe('Admin Providers screen: routes and reachability', () => {
+  it('is a real Admin Console screen, reachable from the Providers nav item', () => {
+    expect(adminProvidersListSrc).toMatch(/export function AdminProvidersList/);
   });
 });
 
-describe('Admin Services tab: no new server-side surface -- relies entirely on pre-existing RLS', () => {
+describe('Admin Providers screen: no new server-side surface -- relies entirely on pre-existing RLS', () => {
   it('reads service_providers directly (no admin-only RPC introduced for listing)', () => {
-    expect(adminDashboardSrc).toMatch(/\.from\('service_providers'\)\s*\n\s*\.select\('id, user_id, business_name, category, country, status, created_at, updated_at'\)/);
+    expect(adminProvidersListSrc).toMatch(/\.from\('service_providers'\)\s*\n\s*\.select\('id, user_id, business_name, category, country, status, created_at, updated_at'\)/);
   });
 
   it('reads/writes provider_services via the same helpers the provider-facing screen uses (fetchOwnServicesForProvider, create/update/delete/setActive)', () => {
-    expect(adminDashboardSrc).toMatch(/fetchOwnServicesForProvider as fetchServicesForProviderId/);
-    expect(adminDashboardSrc).toMatch(/createProviderService/);
-    expect(adminDashboardSrc).toMatch(/updateProviderService/);
-    expect(adminDashboardSrc).toMatch(/setProviderServiceActive/);
-    expect(adminDashboardSrc).toMatch(/deleteProviderService/);
+    expect(adminProviderDetailSrc).toMatch(/fetchOwnServicesForProvider/);
+    expect(adminProviderDetailSrc).toMatch(/createProviderService/);
+    expect(adminProviderDetailSrc).toMatch(/updateProviderService/);
+    expect(adminProviderDetailSrc).toMatch(/setProviderServiceActive/);
+    expect(adminProviderDetailSrc).toMatch(/deleteProviderService/);
   });
 
   it('service_providers has an admin SELECT policy gated on is_admin() -- the actual server-side authority for the provider list', () => {
@@ -71,7 +70,7 @@ describe('Admin Services tab: no new server-side surface -- relies entirely on p
   });
 });
 
-describe('Admin Services tab: provider self-management and cross-provider isolation are untouched', () => {
+describe('Admin Providers screen: provider self-management and cross-provider isolation are untouched', () => {
   it('does not modify or weaken the owner-only policies', () => {
     expect(m0048).toMatch(/CREATE POLICY provider_services_insert_own ON public\.provider_services/);
     expect(m0048).toMatch(/CREATE POLICY provider_services_update_own ON public\.provider_services/);
@@ -86,26 +85,26 @@ describe('Admin Services tab: provider self-management and cross-provider isolat
   });
 });
 
-describe('Admin Services tab: destructive action is clearly separated', () => {
-  it('delete goes through the shared ConfirmModal (typed confirmation UI), not an inline click-to-delete', () => {
-    expect(adminDashboardSrc).toMatch(/const handleSvcDeleteService = \(svc: ProviderService\) => \{\s*\n\s*setConfirmModal\(\{/);
-    expect(adminDashboardSrc).toMatch(/title: 'Delete this service\?'/);
+describe('Admin Providers screen: destructive action is clearly separated', () => {
+  it('delete goes through the shared ConfirmModal, not an inline click-to-delete', () => {
+    expect(adminProviderDetailSrc).toMatch(/import \{ ConfirmModal \} from '\.\/adminShared';/);
+    expect(adminProviderDetailSrc).toMatch(/setConfirmDeleteService\(sv\)/);
+    expect(adminProviderDetailSrc).toMatch(/title="Delete this service\?"/);
   });
 
   it('activate/deactivate and edit are visually distinct from delete (different icon/border color)', () => {
-    const deleteButton = adminDashboardSrc.match(/onClick=\{\(\) => handleSvcDeleteService\(svc\)\}[\s\S]*?<\/button>/)?.[0] ?? '';
-    expect(deleteButton).toMatch(/rgba\(239,68,68/); // red border, matches this file's existing danger-action convention
+    const deleteButton = adminProviderDetailSrc.match(/onClick=\{\(\) => setConfirmDeleteService\(sv\)\}[\s\S]*?<\/button>/)?.[0] ?? '';
+    expect(deleteButton).toMatch(/rgba\(248,113,113/); // red border, matches this file's existing danger-action convention
   });
 });
 
-describe('Admin Services tab: no phone/WhatsApp, no booking/payment introduced', () => {
+describe('Admin Providers screen: no phone/WhatsApp, no booking/payment introduced into the Services CRUD form', () => {
   it('has no phone/WhatsApp controls', () => {
-    const svcSection = adminDashboardSrc.match(/SERVICES \(ADMIN\) TAB[\s\S]*?IMPORT EVENTS TAB/)?.[0] ?? '';
-    expect(svcSection).not.toMatch(/whatsapp|wa\.me|tel:/i);
+    expect(adminProviderDetailSrc).not.toMatch(/whatsapp|wa\.me|tel:/i);
   });
 
-  it('has no booking/payment/Paystack code', () => {
-    const svcSection = adminDashboardSrc.match(/SERVICES \(ADMIN\) TAB[\s\S]*?IMPORT EVENTS TAB/)?.[0] ?? '';
-    expect(svcSection).not.toMatch(/paystack|booking.?request/i);
+  it('the Services tab form has no Paystack/payment code (bookings/payments are read-only, sourced separately from admin_list_service_bookings)', () => {
+    const serviceFormBlock = adminProviderDetailSrc.match(/\{serviceForm && \([\s\S]*?<\/div>\s*\)\}/)?.[0] ?? '';
+    expect(serviceFormBlock).not.toMatch(/paystack/i);
   });
 });

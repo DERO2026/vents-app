@@ -46,11 +46,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
+import { Plus, Pencil, Trash2 } from 'lucide-react';
 import { withProviderRatings } from '../../../lib/serviceProviders';
-import { fetchOwnServicesForProvider } from '../../../lib/providerServices';
+import { fetchOwnServicesForProvider, createProviderService, updateProviderService, setProviderServiceActive, deleteProviderService, ProviderServiceInput } from '../../../lib/providerServices';
+import { fetchAdminServiceBookings, AdminServiceBookingRow } from '../../../lib/serviceBookings';
+import { CURRENCIES } from '../../../lib/currencies';
 import type { ServiceProvider, ProviderService } from '../types';
 import { providerStatusColors } from './AdminProvidersList';
 import { submitOrExecute } from './adminUserEventActions';
+import { ConfirmModal } from './adminShared';
+import { PickerSheet } from '../shared/PickerSheet';
 
 interface OwnerRow { id: string; username: string | null; full_name: string | null; email: string; }
 interface ProviderRequestRow {
@@ -97,6 +102,16 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [servicesLoading, setServicesLoading] = useState(false);
   const [servicesError, setServicesError] = useState<string | null>(null);
+  const [serviceForm, setServiceForm] = useState<{ editing: ProviderService | null; input: ProviderServiceInput } | null>(null);
+  const [serviceFormError, setServiceFormError] = useState('');
+  const [serviceSaving, setServiceSaving] = useState(false);
+  const [serviceBusyId, setServiceBusyId] = useState<string | null>(null);
+  const [confirmDeleteService, setConfirmDeleteService] = useState<ProviderService | null>(null);
+  const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
+
+  const [bookings, setBookings] = useState<AdminServiceBookingRow[] | null>(null);
+  const [bookingsLoading, setBookingsLoading] = useState(false);
+  const [bookingsError, setBookingsError] = useState<string | null>(null);
 
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
@@ -147,15 +162,75 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
       .finally(() => { setRequestLoading(false); setRequestFetched(true); });
   }, [tab, provider?.userId, requestFetched]);
 
-  useEffect(() => {
-    if (!providerId) { setServices(null); return; }
-    if (tab !== 'services') return;
+  const loadServices = useCallback(() => {
     setServicesLoading(true); setServicesError(null);
-    fetchOwnServicesForProvider(providerId)
+    return fetchOwnServicesForProvider(providerId)
       .then((rows) => setServices(rows))
       .catch((e: any) => setServicesError(e?.message || 'Failed to load services for this provider.'))
       .finally(() => setServicesLoading(false));
+  }, [providerId]);
+
+  useEffect(() => {
+    if (!providerId) { setServices(null); return; }
+    if (tab !== 'services') return;
+    loadServices();
+  }, [tab, providerId, loadServices]);
+
+  useEffect(() => {
+    if (tab !== 'bookings') return;
+    setBookingsLoading(true); setBookingsError(null);
+    fetchAdminServiceBookings({ providerId, limit: 50, offset: 0 })
+      .then((rows) => setBookings(rows))
+      .catch((e: any) => setBookingsError(e?.message || 'Failed to load bookings for this provider.'))
+      .finally(() => setBookingsLoading(false));
   }, [tab, providerId]);
+
+  const openServiceForm = (existing: ProviderService | null) => {
+    setServiceFormError('');
+    setServiceForm({
+      editing: existing,
+      input: existing
+        ? { name: existing.name, description: existing.description || '', price: existing.price, currency: existing.currency, durationMinutes: existing.durationMinutes ?? null, category: existing.category || provider?.category || '', isActive: existing.isActive }
+        : { name: '', description: '', price: 0, currency: CURRENCIES[0]?.code || 'NGN', durationMinutes: null, category: provider?.category || '', isActive: true },
+    });
+  };
+
+  const submitServiceForm = async () => {
+    if (!serviceForm) return;
+    const { editing, input } = serviceForm;
+    if (!input.name.trim()) { setServiceFormError('Service name is required.'); return; }
+    if (!(input.price >= 0)) { setServiceFormError('A valid price is required.'); return; }
+    if (!/^[A-Z]{3}$/.test(input.currency)) { setServiceFormError('A valid currency is required.'); return; }
+    setServiceSaving(true); setServiceFormError('');
+    try {
+      if (editing) await updateProviderService(editing.id, input);
+      else await createProviderService(providerId, input);
+      setServiceForm(null);
+      await loadServices();
+      flash(true, editing ? 'Service updated.' : 'Service added.');
+    } catch (e: any) {
+      setServiceFormError(e?.message || 'Failed to save this service.');
+    } finally { setServiceSaving(false); }
+  };
+
+  const toggleServiceActive = async (svc: ProviderService) => {
+    setServiceBusyId(svc.id);
+    try {
+      await setProviderServiceActive(svc.id, !svc.isActive);
+      await loadServices();
+      flash(true, svc.isActive ? 'Service deactivated.' : 'Service activated.');
+    } catch (e: any) { flash(false, e?.message || 'Failed to update service.'); } finally { setServiceBusyId(null); }
+  };
+
+  const confirmedDeleteService = async (svc: ProviderService) => {
+    setConfirmDeleteService(null);
+    setServiceBusyId(svc.id);
+    try {
+      const result = await deleteProviderService(svc.id);
+      await loadServices();
+      flash(true, result === 'deleted' ? 'Service deleted.' : 'Service archived (it has existing bookings).');
+    } catch (e: any) { flash(false, e?.message || 'Failed to delete service.'); } finally { setServiceBusyId(null); }
+  };
 
   useEffect(() => {
     if (tab !== 'audit' || !provider?.userId) return;
@@ -300,23 +375,70 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
       )}
 
       {tab === 'services' && (
-        servicesLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading services…</div>
-        : servicesError ? <NotAvailable reason={servicesError} />
-        : !services || services.length === 0 ? (
-          <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No services listed.</div>
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+            <button onClick={() => openServiceForm(null)} style={{ display: 'flex', alignItems: 'center', gap: 6, background: adminTheme.accentSoftBg, border: `1px solid ${adminTheme.accentSoftBorder}`, borderRadius: 8, padding: '8px 14px', color: adminTheme.accentText, fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>
+              <Plus size={13} /> Add Service
+            </button>
+          </div>
+          {servicesLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading services…</div>
+          : servicesError ? <NotAvailable reason={servicesError} />
+          : !services || services.length === 0 ? (
+            <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No services listed.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {services.map((sv) => (
+                <div key={sv.id} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 14, opacity: sv.isActive ? 1 : 0.65 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ color: adminTheme.textStrong, fontSize: 14, fontWeight: 700, margin: 0 }}>{sv.name}</p>
+                      {sv.category && <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: '2px 0 0' }}>{sv.category}</p>}
+                    </div>
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 8px', borderRadius: 8, background: sv.isActive ? 'rgba(52,211,153,.15)' : adminTheme.borderChip, color: sv.isActive ? adminTheme.green : adminTheme.textMuted, flexShrink: 0 }}>{sv.isActive ? 'ACTIVE' : 'INACTIVE'}</span>
+                  </div>
+                  {sv.description && <p style={{ color: adminTheme.textMuted, fontSize: 12, margin: '8px 0 0', lineHeight: 1.4 }}>{sv.description}</p>}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 10 }}>
+                    <span style={{ color: adminTheme.textStrong, fontSize: 14, fontWeight: 700 }}>
+                      {sv.currency} {sv.price.toLocaleString('en-NG')}{sv.durationMinutes ? <span style={{ color: adminTheme.textMuted, fontWeight: 500 }}> · {sv.durationMinutes} min</span> : null}
+                    </span>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => toggleServiceActive(sv)} disabled={serviceBusyId === sv.id} style={{ background: 'none', border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '6px 10px', color: adminTheme.text, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                        {sv.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button onClick={() => openServiceForm(sv)} style={{ background: 'none', border: `1px solid ${adminTheme.border}`, borderRadius: 8, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Pencil size={12} color={adminTheme.text} />
+                      </button>
+                      <button onClick={() => setConfirmDeleteService(sv)} disabled={serviceBusyId === sv.id} style={{ background: 'none', border: '1px solid rgba(248,113,113,.3)', borderRadius: 8, width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                        <Trash2 size={12} color={adminTheme.red} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === 'bookings' && (
+        bookingsLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading bookings…</div>
+        : bookingsError ? <NotAvailable reason={bookingsError} />
+        : !bookings || bookings.length === 0 ? (
+          <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No bookings for this provider yet.</div>
         ) : (
-          <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>
-            {services.map((sv) => (
-              <div key={sv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 16px', borderBottom: `1px solid ${adminTheme.borderSoft}`, fontSize: 12.5 }}>
-                <div style={{ color: adminTheme.text, fontWeight: 600 }}>{sv.name}{!sv.isActive && <span style={{ color: adminTheme.textFaint, fontWeight: 400 }}> (inactive)</span>}</div>
-                <div style={{ color: adminTheme.text }}>{sv.currency} {sv.price.toLocaleString('en-NG')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {bookings.map((b) => (
+              <div key={b.bookingId} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <span style={{ color: adminTheme.textStrong, fontSize: 13, fontWeight: 600 }}>{b.customerName || b.customerEmail || b.customerId.slice(0, 8)}</span>
+                  <span style={{ color: adminTheme.accentFrom, fontSize: 13, fontWeight: 700 }}>{b.currency} {(b.totalKobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</span>
+                </div>
+                <div style={{ fontSize: 11, color: adminTheme.textMuted }}>{b.status.replace('_', ' ')} · {b.paymentStatus.replace('_', ' ')} · {new Date(b.createdAt).toLocaleDateString('en-NG')}</div>
               </div>
             ))}
           </div>
         )
       )}
-
-      {tab === 'bookings' && <NotAvailable reason="no booking/appointment table exists for service providers today (grepped supabase/migrations and migrations for booking_requests/provider_bookings — neither exists), so no admin-accessible client-booking list can be shown." />}
 
       {tab === 'earnings' && <NotAvailable reason="no provider earnings/payout table exists (provider_services only stores listed prices, not transactions) — this is a missing backend source, not fabricated data." />}
 
@@ -334,6 +456,59 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
             ))}
           </div>
         )
+      )}
+
+      {serviceForm && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9998, display: 'flex', alignItems: 'flex-end', justifyContent: 'center' }} onClick={() => !serviceSaving && setServiceForm(null)}>
+          <div style={{ background: adminTheme.panel, borderRadius: '20px 20px 0 0', padding: 20, width: '100%', maxWidth: 460, maxHeight: '85vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ color: adminTheme.textStrong, fontSize: 16, fontWeight: 700, margin: '0 0 4px' }}>{serviceForm.editing ? 'Edit Service' : 'Add Service'}</h3>
+            <input value={serviceForm.input.name} onChange={(e) => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, name: e.target.value } })} placeholder="Service name" style={{ height: 38, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '0 12px', color: adminTheme.text, fontSize: 13, outline: 'none' }} />
+            <textarea value={serviceForm.input.description} onChange={(e) => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, description: e.target.value } })} placeholder="Description (optional)" rows={3} style={{ background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '10px 12px', color: adminTheme.text, fontSize: 13, outline: 'none', resize: 'none' }} />
+            <input value={serviceForm.input.category || ''} onChange={(e) => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, category: e.target.value } })} placeholder="Category (optional)" style={{ height: 38, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '0 12px', color: adminTheme.text, fontSize: 13, outline: 'none' }} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input type="number" min={0} value={serviceForm.input.price || ''} onChange={(e) => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, price: Number(e.target.value) } })} placeholder="Price" style={{ flex: 1, height: 38, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '0 12px', color: adminTheme.text, fontSize: 13, outline: 'none' }} />
+              <button type="button" onClick={() => setShowCurrencyPicker(true)} style={{ width: 100, height: 38, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '0 8px', color: adminTheme.text, fontSize: 13, cursor: 'pointer', textAlign: 'left' }}>
+                {serviceForm.input.currency}
+              </button>
+            </div>
+            <input type="number" min={1} value={serviceForm.input.durationMinutes ?? ''} onChange={(e) => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, durationMinutes: e.target.value ? Number(e.target.value) : null } })} placeholder="Duration in minutes (optional)" style={{ height: 38, background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '0 12px', color: adminTheme.text, fontSize: 13, outline: 'none' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10 }}>
+              <span style={{ color: adminTheme.text, fontSize: 12, fontWeight: 600 }}>Published (visible to customers)</span>
+              <div onClick={() => setServiceForm({ ...serviceForm, input: { ...serviceForm.input, isActive: !serviceForm.input.isActive } })} style={{ width: 38, height: 22, borderRadius: 11, background: serviceForm.input.isActive ? adminTheme.accentFrom : adminTheme.borderChip, cursor: 'pointer', position: 'relative' }}>
+                <div style={{ position: 'absolute', top: 2, left: serviceForm.input.isActive ? 18 : 2, width: 18, height: 18, borderRadius: '50%', background: '#fff', transition: 'left 0.2s ease' }} />
+              </div>
+            </div>
+            {serviceFormError && <p style={{ color: adminTheme.red, fontSize: 12, margin: 0 }}>{serviceFormError}</p>}
+            <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+              <button onClick={() => setServiceForm(null)} disabled={serviceSaving} style={{ flex: 1, height: 42, borderRadius: 10, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Cancel</button>
+              <button onClick={submitServiceForm} disabled={serviceSaving} style={{ flex: 1, height: 42, borderRadius: 10, background: 'linear-gradient(135deg,#7B2FBE,#4F46E5)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: serviceSaving ? 'wait' : 'pointer', opacity: serviceSaving ? 0.7 : 1 }}>
+                {serviceSaving ? 'Saving...' : serviceForm.editing ? 'Save Changes' : 'Add Service'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {serviceForm && showCurrencyPicker && (
+        <PickerSheet
+          title="Select Currency"
+          options={CURRENCIES.map((c) => ({ value: c.code, label: c.code }))}
+          value={serviceForm.input.currency}
+          onSelect={(v) => { setServiceForm({ ...serviceForm, input: { ...serviceForm.input, currency: v } }); setShowCurrencyPicker(false); }}
+          onClose={() => setShowCurrencyPicker(false)}
+          zIndex={9999}
+        />
+      )}
+
+      {confirmDeleteService && (
+        <ConfirmModal
+          title="Delete this service?"
+          message={`"${confirmDeleteService.name}" will be removed from this provider's listing. If it has existing bookings, it is archived (hidden, not deleted) instead.`}
+          confirmLabel="Delete"
+          danger
+          onConfirm={() => confirmedDeleteService(confirmDeleteService)}
+          onCancel={() => setConfirmDeleteService(null)}
+        />
       )}
     </div>
   );

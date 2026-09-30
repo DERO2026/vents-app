@@ -88,14 +88,14 @@ async function flush() {
 
 describe('AdminProvidersList', () => {
   it('renders desktop table with real provider data', async () => {
-    await act(async () => { root!.render(<AdminProvidersList isMobile={false} onSelectProvider={() => {}} />); });
+    await act(async () => { root!.render(<AdminProvidersList isMobile={false} isSuperAdmin onSelectProvider={() => {}} />); });
     await flush();
     expect(container!.querySelector('[data-testid="admin-providers-list"]')!.textContent).toContain('Glow Makeup Studio');
     expect(container!.textContent).toContain('PROVIDER');
   });
 
   it('renders mobile card list instead of a table', async () => {
-    await act(async () => { root!.render(<AdminProvidersList isMobile={true} onSelectProvider={() => {}} />); });
+    await act(async () => { root!.render(<AdminProvidersList isMobile={true} isSuperAdmin onSelectProvider={() => {}} />); });
     await flush();
     expect(container!.textContent).not.toContain('PROVIDER');
     expect(container!.textContent).toContain('Glow Makeup Studio');
@@ -103,7 +103,12 @@ describe('AdminProvidersList', () => {
 });
 
 describe('AdminProviderDetail', () => {
-  it('renders real profile/rating data and flags bookings/earnings as not available', async () => {
+  // The Bookings tab used to claim "no booking/appointment table exists for
+  // service providers today" -- that was stale/false: service_bookings and
+  // admin_list_service_bookings already existed and are used elsewhere in
+  // this same console, so it's now wired to real (fixture-empty) data
+  // instead of a hardcoded "Not available".
+  it('renders real profile/rating data and shows real (empty) bookings data, not a stale "Not available" placeholder', async () => {
     await act(async () => { root!.render(<AdminProviderDetail providerId="p1" isSuperAdmin={true} isMobile={false} onBack={() => {}} />); });
     await flush();
     const el = container!.querySelector('[data-testid="admin-provider-detail"]')!;
@@ -111,20 +116,21 @@ describe('AdminProviderDetail', () => {
     expect(el.textContent).toContain('4.5');
     const bookingsTab = Array.from(el.querySelectorAll('div')).find((d) => d.textContent === 'Bookings') as HTMLElement;
     await act(async () => { bookingsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(el.textContent).toContain('Not available');
+    expect(el.textContent).not.toContain('Not available');
+    expect(el.textContent).toContain('No bookings for this provider yet.');
   });
 });
 
 describe('AdminOrganizersList', () => {
   it('renders desktop table with real organizer data', async () => {
-    await act(async () => { root!.render(<AdminOrganizersList isMobile={false} onSelectOrganizer={() => {}} />); });
+    await act(async () => { root!.render(<AdminOrganizersList isMobile={false} isSuperAdmin onSelectOrganizer={() => {}} />); });
     await flush();
     expect(container!.textContent).toContain('Promoter Co');
     expect(container!.textContent).toContain('ORGANIZER');
   });
 
   it('renders mobile card list instead of a table', async () => {
-    await act(async () => { root!.render(<AdminOrganizersList isMobile={true} onSelectOrganizer={() => {}} />); });
+    await act(async () => { root!.render(<AdminOrganizersList isMobile={true} isSuperAdmin onSelectOrganizer={() => {}} />); });
     await flush();
     expect(container!.textContent).not.toContain('ORGANIZER');
     expect(container!.textContent).toContain('Promoter Co');

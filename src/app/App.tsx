@@ -61,7 +61,6 @@ import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
-import { AdminDashboardScreen } from './components/AdminDashboardScreen';
 import { AdminConsoleShell } from './components/admin/AdminConsoleShell';
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
@@ -1018,7 +1017,7 @@ export default function App() {
   // Post-auth redirection when currentUser session is fully loaded in state
   useEffect(() => {
     if (currentUser && screen === 'auth') {
-      if (currentUser.role === 'organizer' || currentUser.isOrganizer) {
+      if (currentUser.isOrganizer) {
         setUserRole('organizer');
         setOrgTab('home');
         setScreen('home');
@@ -3085,23 +3084,13 @@ export default function App() {
               }}
             />
           )}
-          {screen === 'admin-dashboard' && (
-            <AdminDashboardScreen
-              onBack={goBack}
-              currentUser={currentUser}
-              onOpenAdminConsole={() => navigateTo('admin-console')}
-            />
-          )}
-
-          {/* Claude-Design Admin Console (reconciled against the current
-              multi-role architecture and current production RPCs/RLS) --
-              additive, coexists with the legacy AdminDashboardScreen above,
-              which is not replaced or removed. */}
+          {/* The Admin Console. AdminDashboardScreen (the legacy console)
+              has been fully retired -- every function it exposed now lives
+              here (see the migration's reconciliation report). */}
           {screen === 'admin-console' && (
             <AdminConsoleShell
               onBack={goBack}
               currentUser={currentUser}
-              onOpenLegacyTab={() => navigateTo('admin-dashboard')}
             />
           )}
 

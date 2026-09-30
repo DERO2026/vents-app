@@ -8,7 +8,8 @@ import { join } from 'node:path';
 // every other *.test.ts in this repo -- no live app/DB harness available.
 
 let m0050: string;
-let adminDashboardSrc: string;
+let adminShellSrc: string;
+let adminPayoutsSrc: string;
 let adminActionsTabSrc: string;
 let authScreenSrc: string;
 let appSrc: string;
@@ -16,7 +17,11 @@ let appSrc: string;
 beforeAll(() => {
   m0050 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0050_fix_signup_profile_data_loss.sql'), 'utf8');
   const componentsDir = join(__dirname, '..', 'app', 'components');
-  adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
+  // The legacy AdminDashboardScreen.tsx has been fully retired -- both the
+  // top-level flash/pending-count polling and PayoutsTab it used to own now
+  // live in the Admin Console shell and AdminPayoutsScreen respectively.
+  adminShellSrc = readFileSync(join(componentsDir, 'admin', 'AdminConsoleShell.tsx'), 'utf8');
+  adminPayoutsSrc = readFileSync(join(componentsDir, 'admin', 'AdminPayoutsScreen.tsx'), 'utf8');
   adminActionsTabSrc = readFileSync(join(componentsDir, 'AdminActionsTab.tsx'), 'utf8');
   authScreenSrc = readFileSync(join(componentsDir, 'AuthScreen.tsx'), 'utf8');
   appSrc = readFileSync(join(__dirname, '..', 'app', 'App.tsx'), 'utf8');
@@ -63,16 +68,16 @@ describe('Issue 1: new-user signup no longer loses the whole profile on one fiel
 
 describe('Issue 2: Admin Actions no longer re-fetches on every unrelated parent re-render', () => {
   it('flash is memoized with useCallback (stable identity), not a plain inline function', () => {
-    expect(adminDashboardSrc).toMatch(/const flash = useCallback\(\(ok: boolean, msg: string\) => \{/);
+    expect(adminShellSrc).toMatch(/const flash = useCallback\(\(ok: boolean, msg: string\) => \{/);
     // Empty dependency array -- flash only calls React state setters, which
     // are themselves guaranteed stable, so this identity never changes.
-    const flashBlock = adminDashboardSrc.match(/const flash = useCallback\(\(ok: boolean, msg: string\) => \{[\s\S]*?\}, \[\]\);/)?.[0] ?? '';
-    expect(flashBlock).toMatch(/setSuccessMessage/);
+    const flashBlock = adminShellSrc.match(/const flash = useCallback\(\(ok: boolean, msg: string\) => \{[\s\S]*?\}, \[\]\);/)?.[0] ?? '';
+    expect(flashBlock).toMatch(/setToast/);
     expect(flashBlock).toMatch(/\}, \[\]\);$/);
   });
 
   it('the 20s pending-count poll still exists (confirms the render-cascade trigger this fix neutralizes)', () => {
-    expect(adminDashboardSrc).toMatch(/setInterval\(refreshPendingCount, 20000\)/);
+    expect(adminShellSrc).toMatch(/setInterval\(refreshPendingCount, 20000\)/);
   });
 });
 
@@ -84,9 +89,9 @@ describe('Issue 2: both Admin Actions and Payouts now have timeout protection on
     expect(loadFn).toMatch(/timeoutMs: 15000/);
   });
 
-  it('PayoutsTab wraps its Promise.all in withTimeoutFallback', () => {
-    expect(adminDashboardSrc).toMatch(/import \{ withTimeoutFallback \} from '\.\.\/\.\.\/lib\/withTimeoutFallback';/);
-    const payoutsLoad = adminDashboardSrc.match(/function PayoutsTab\(\{ flash \}[\s\S]*?const load = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? '';
+  it('AdminPayoutsScreen wraps its Promise.all in withTimeoutFallback', () => {
+    expect(adminPayoutsSrc).toMatch(/import \{ withTimeoutFallback \} from '\.\.\/\.\.\/\.\.\/lib\/withTimeoutFallback';/);
+    const payoutsLoad = adminPayoutsSrc.match(/const load = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? '';
     expect(payoutsLoad).toMatch(/withTimeoutFallback\(\s*\n\s*Promise\.all\(/);
     expect(payoutsLoad).toMatch(/timeoutMs: 15000/);
   });
@@ -94,8 +99,8 @@ describe('Issue 2: both Admin Actions and Payouts now have timeout protection on
   it('a timeout on either load resolves loading=false via the existing finally block (no new stuck state introduced)', () => {
     const loadFn = adminActionsTabSrc.match(/const load = useCallback\(async \(\) => \{[\s\S]*?\n {2}\}, \[/)?.[0] ?? '';
     expect(loadFn).toMatch(/\} finally \{\s*\n\s*setLoading\(false\);/);
-    const payoutsLoad = adminDashboardSrc.match(/function PayoutsTab\(\{ flash \}[\s\S]*?const load = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? '';
-    expect(payoutsLoad).toMatch(/\} finally \{\s*\n\s*setLoading\(false\);/);
+    const payoutsLoad = adminPayoutsSrc.match(/const load = async \(\) => \{[\s\S]*?\n {2}\};/)?.[0] ?? '';
+    expect(payoutsLoad).toMatch(/\} finally \{ setLoading\(false\); \}/);
   });
 });
 

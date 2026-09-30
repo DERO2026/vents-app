@@ -22,7 +22,7 @@ let sendSrc: string;
 let paystackWebhookSrc: string;
 let pushNotificationsSrc: string;
 let myTicketsSrc: string;
-let adminDashboardSrc: string;
+let adminProviderRequestsSrc: string;
 
 beforeAll(() => {
   vercelJson = JSON.parse(readFileSync(join(__dirname, '..', '..', 'vercel.json'), 'utf8'));
@@ -33,7 +33,9 @@ beforeAll(() => {
   pushNotificationsSrc = readFileSync(join(__dirname, 'pushNotifications.ts'), 'utf8');
   const componentsDir = join(__dirname, '..', 'app', 'components');
   myTicketsSrc = readFileSync(join(componentsDir, 'MyTicketsScreen.tsx'), 'utf8');
-  adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
+  // The service-provider admin decision now lives in the Admin Console
+  // (legacy AdminDashboardScreen.tsx has been fully retired).
+  adminProviderRequestsSrc = readFileSync(join(componentsDir, 'admin', 'AdminProviderRequestsScreen.tsx'), 'utf8');
 });
 
 describe('notification cron cadence: daily, not hourly (Vercel Hobby plan)', () => {
@@ -78,6 +80,6 @@ describe('event-driven push delivery: request-triggered, not cron-dependent', ()
   it('ticket-transfer initiate/decline and the service-provider admin decision call the trigger', () => {
     expect(myTicketsSrc).toMatch(/triggerPushDelivery\(notifyUserId\)/);
     expect(myTicketsSrc).toMatch(/triggerPushDelivery\(data\?\.to_user_id\)/);
-    expect(adminDashboardSrc).toMatch(/triggerPushDelivery\(req\?\.user_id\)/);
+    expect(adminProviderRequestsSrc).toMatch(/triggerPushDelivery\(req\?\.user_id\)/);
   });
 });
