@@ -7,6 +7,7 @@
 
 import { supabase, getAuthToken } from './supabase';
 import { apiUrl } from './apiBase';
+import { friendlyOperationalError } from './operationalStatus';
 
 export interface ServiceBookingItemInput {
   serviceId: string;
@@ -39,7 +40,7 @@ export async function createServiceBooking(
     p_location: opts.location || null,
     p_notes: opts.notes || null,
   });
-  if (error) throw error;
+  if (error) throw new Error(friendlyOperationalError(error.message) || error.message);
   const row = Array.isArray(data) ? data[0] : data;
   if (!row?.payment_ref) throw new Error('Could not prepare this booking.');
   return {

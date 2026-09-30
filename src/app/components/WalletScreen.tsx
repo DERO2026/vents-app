@@ -8,6 +8,7 @@ import { analytics } from '../../lib/analyticsEvents';
 import { apiUrl } from '../../lib/apiBase';
 import { Sentry } from '../../lib/sentry';
 import { AmbientGlow } from './shared/AmbientGlow';
+import { friendlyOperationalError } from '../../lib/operationalStatus';
 
 interface WalletScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; is_service_provider?: boolean } | null;
@@ -525,7 +526,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
       setWithdrawAmount('');
       await load();
     } catch (e: any) {
-      setWithdrawError(e.message || 'Withdrawal failed');
+      setWithdrawError(friendlyOperationalError(e?.message) || e.message || 'Withdrawal failed');
     } finally {
       withdrawingRef.current = false;
       setWithdrawing(false);
