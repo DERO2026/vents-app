@@ -27,7 +27,9 @@ import { supabase } from '../../../lib/supabase';
 import { adminTheme, accentGradient } from './adminConsoleTheme';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
 import { statusColors, verifColors, initials, staffLabel } from './AdminUsersList';
-import { suspendOrUnban, toggleVerifyUser, setOrganizerCapability, setServiceProviderCapability } from './adminUserEventActions';
+import { suspendOrUnban, toggleVerifyUser, setOrganizerCapability, setServiceProviderCapability, softDeleteUser, reinstateUser } from './adminUserEventActions';
+import { ConfirmModal } from './adminShared';
+import { PickerSheet } from '../shared/PickerSheet';
 
 interface FullUserRow {
   id: string; email: string; full_name: string | null; role: string; is_organizer: boolean; is_service_provider: boolean; username: string | null;
@@ -70,6 +72,8 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
   const [auditLoading, setAuditLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [banPickerOpen, setBanPickerOpen] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; confirmLabel: string; danger: boolean; requireReason?: boolean; optionalReason?: boolean; onConfirm: (reason?: string) => void } | null>(null);
 
   const loadUser = useCallback(async () => {
     setLoading(true); setError(null);
@@ -149,27 +153,65 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
         </div>
         {!locked && (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button disabled={busy} onClick={() => run(() => toggleVerifyUser(isSuperAdmin, user.id, user.username || user.email, user.is_verified))}
+            <button disabled={busy} onClick={() => setConfirmAction({
+              title: user.is_verified ? 'Remove verification?' : 'Verify this account?',
+              message: user.is_verified ? `@${user.username || user.email} will lose their verified badge.` : `@${user.username || user.email} will be marked verified.`,
+              confirmLabel: user.is_verified ? 'Unverify' : 'Verify', danger: user.is_verified,
+              onConfirm: () => { setConfirmAction(null); run(() => toggleVerifyUser(isSuperAdmin, user.id, user.username || user.email, user.is_verified)); },
+            })}
               style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
               {user.is_verified ? 'Unverify' : 'Verify'}
             </button>
-            <button disabled={busy} onClick={() => run(() => setOrganizerCapability(isSuperAdmin, user.id, user.username || user.email, user.is_organizer, !user.is_organizer))}
+            <button disabled={busy} onClick={() => setConfirmAction({
+              title: user.is_organizer ? 'Remove Organizer capability?' : 'Grant Organizer capability?',
+              message: user.is_organizer ? `@${user.username || user.email} loses the independent Organizer capability. Their account, staff tier, and Service Provider capability (if any) are unaffected.` : `@${user.username || user.email} will be granted the independent Organizer capability.`,
+              confirmLabel: user.is_organizer ? 'Remove Organizer' : 'Grant Organizer', danger: user.is_organizer,
+              onConfirm: () => { setConfirmAction(null); run(() => setOrganizerCapability(isSuperAdmin, user.id, user.username || user.email, user.is_organizer, !user.is_organizer)); },
+            })}
               style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: user.is_organizer ? 'rgba(163,92,255,.14)' : adminTheme.borderChip, border: `1px solid ${user.is_organizer ? 'rgba(163,92,255,.32)' : adminTheme.border}`, color: user.is_organizer ? adminTheme.accentText : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
               {user.is_organizer ? 'Remove Organizer' : 'Grant Organizer'}
             </button>
-            <button disabled={busy} onClick={() => run(() => setServiceProviderCapability(isSuperAdmin, user.id, user.username || user.email, user.is_service_provider, !user.is_service_provider))}
+            <button disabled={busy} onClick={() => setConfirmAction({
+              title: user.is_service_provider ? 'Remove Service Provider capability?' : 'Grant Service Provider capability?',
+              message: user.is_service_provider ? `@${user.username || user.email} loses the independent Service Provider capability. Their account, staff tier, and Organizer capability (if any) are unaffected.` : `@${user.username || user.email} will be granted the independent Service Provider capability.`,
+              confirmLabel: user.is_service_provider ? 'Remove Provider' : 'Grant Provider', danger: user.is_service_provider,
+              onConfirm: () => { setConfirmAction(null); run(() => setServiceProviderCapability(isSuperAdmin, user.id, user.username || user.email, user.is_service_provider, !user.is_service_provider)); },
+            })}
               style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: user.is_service_provider ? 'rgba(96,165,250,.14)' : adminTheme.borderChip, border: `1px solid ${user.is_service_provider ? 'rgba(96,165,250,.32)' : adminTheme.border}`, color: user.is_service_provider ? adminTheme.blue : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
               {user.is_service_provider ? 'Remove Provider' : 'Grant Provider'}
             </button>
             {user.status === 'suspended' ? (
-              <button disabled={busy} onClick={() => run(() => suspendOrUnban(isSuperAdmin, user.id, user.username || user.email, user.status, null))}
+              <button disabled={busy} onClick={() => setConfirmAction({
+                title: 'Reactivate this account?', message: `@${user.username || user.email} will regain normal access immediately.`,
+                confirmLabel: 'Reactivate', danger: false,
+                onConfirm: () => { setConfirmAction(null); run(() => suspendOrUnban(isSuperAdmin, user.id, user.username || user.email, user.status, null)); },
+              })}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.3)', color: adminTheme.green, cursor: busy ? 'not-allowed' : 'pointer' }}>
                 Reactivate
               </button>
-            ) : (
-              <button disabled={busy} onClick={() => run(() => suspendOrUnban(isSuperAdmin, user.id, user.username || user.email, user.status, 7))}
+            ) : user.status !== 'deleted' && (
+              <button disabled={busy} onClick={() => setBanPickerOpen(true)}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: 'rgba(248,113,113,.1)', border: '1px solid rgba(248,113,113,.3)', color: adminTheme.red, cursor: busy ? 'not-allowed' : 'pointer' }}>
-                Suspend (7d)
+                Suspend…
+              </button>
+            )}
+            {user.status === 'deleted' ? (
+              <button disabled={busy} onClick={() => setConfirmAction({
+                title: 'Reinstate this account?', message: `@${user.username || user.email} regains login and visibility immediately.`,
+                confirmLabel: 'Reinstate', danger: false,
+                onConfirm: () => { setConfirmAction(null); run(() => reinstateUser(isSuperAdmin, user.id, user.username || user.email, user.status)); },
+              })}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.3)', color: adminTheme.green, cursor: busy ? 'not-allowed' : 'pointer' }}>
+                Reinstate
+              </button>
+            ) : (
+              <button disabled={busy} onClick={() => setConfirmAction({
+                title: 'Delete this account?', message: `Soft-delete @${user.username || user.email}? They will be blocked from login. You can reinstate them later.`,
+                confirmLabel: 'Delete', danger: true, optionalReason: true,
+                onConfirm: (reason) => { setConfirmAction(null); run(() => softDeleteUser(isSuperAdmin, user.id, user.username || user.email, user.status, reason?.trim() || null)); },
+              })}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.2)', color: adminTheme.red, cursor: busy ? 'not-allowed' : 'pointer' }}>
+                Delete
               </button>
             )}
           </div>
@@ -229,6 +271,44 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
             ))}
           </div>
         )
+      )}
+
+      {banPickerOpen && (
+        <PickerSheet
+          title="Suspend User"
+          searchable={false}
+          options={[
+            { value: '1', label: '1 day' },
+            { value: '7', label: '7 days' },
+            { value: '30', label: '30 days' },
+            { value: 'permanent', label: 'Permanent' },
+          ]}
+          value=""
+          onSelect={(v) => {
+            setBanPickerOpen(false);
+            const days = v === 'permanent' ? null : Number(v);
+            setConfirmAction({
+              title: 'Suspend this account?',
+              message: `@${user.username || user.email} will be suspended ${v === 'permanent' ? 'permanently' : `for ${v} day(s)`}.`,
+              confirmLabel: 'Suspend', danger: true,
+              onConfirm: () => { setConfirmAction(null); run(() => suspendOrUnban(isSuperAdmin, user.id, user.username || user.email, user.status, days)); },
+            });
+          }}
+          onClose={() => setBanPickerOpen(false)}
+        />
+      )}
+
+      {confirmAction && (
+        <ConfirmModal
+          title={confirmAction.title}
+          message={confirmAction.message}
+          confirmLabel={confirmAction.confirmLabel}
+          danger={confirmAction.danger}
+          requireReason={confirmAction.requireReason}
+          optionalReason={confirmAction.optionalReason}
+          onConfirm={confirmAction.onConfirm}
+          onCancel={() => setConfirmAction(null)}
+        />
       )}
     </div>
   );

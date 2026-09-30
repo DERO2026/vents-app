@@ -73,7 +73,7 @@ interface EventDetailsScreenProps {
   purchasesDisabled?: boolean;
 }
 
-// Root admin account — same convention used in App.tsx / AdminDashboardScreen.tsx.
+// Root admin account — same convention used in App.tsx / the Admin Console.
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
 function parseEventDate(eventDate?: string, dateStr?: string, timeStr?: string): number {

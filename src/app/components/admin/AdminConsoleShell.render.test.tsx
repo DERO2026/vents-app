@@ -42,7 +42,13 @@ const adminUser = { id: 'admin-1', role: 'admin' };
 const rootUser = { id: 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832', role: 'admin' };
 
 describe('AdminConsoleShell', () => {
-  it('renders the desktop sidebar with nav items and hides Communication for sub-admin', async () => {
+  // Communication was a nav item in the legacy AdminDashboardScreen.tsx with
+  // no distinct backend feature of its own -- its one real capability
+  // (Global Broadcast, the admin_broadcast RPC) is root-only and now lives
+  // inside System Config (a root-only nav item), so a separate Communication
+  // entry was intentionally not migrated. See adminConsoleTheme.ts's removal
+  // rationale comment.
+  it('renders the desktop sidebar with nav items, with no separate Communication item', async () => {
     setWidth(1440);
     await act(async () => {
       root!.render(<AdminConsoleShell currentUser={subAdminUser} onBack={() => {}} />);
@@ -53,13 +59,14 @@ describe('AdminConsoleShell', () => {
     expect(sidebar!.textContent).not.toContain('Communication');
   });
 
-  it('shows Communication for a full admin', async () => {
+  it('still has no separate Communication item for a full admin (its one real capability, broadcast, lives in root-only System Config)', async () => {
     setWidth(1440);
     await act(async () => {
       root!.render(<AdminConsoleShell currentUser={adminUser} onBack={() => {}} />);
     });
     const sidebar = container!.querySelector('[data-testid="admin-sidebar"]');
-    expect(sidebar!.textContent).toContain('Communication');
+    expect(sidebar!.textContent).not.toContain('Communication');
+    expect(sidebar!.textContent).toContain('System Config');
   });
 
   it('shows a ROOT lock badge on root-only items for a non-root admin', async () => {

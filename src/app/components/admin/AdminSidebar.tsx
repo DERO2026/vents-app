@@ -9,12 +9,13 @@ interface AdminSidebarProps {
   isSuperAdmin: boolean;
   roleLabel: string;
   roleName: string;
+  pendingActionCount?: number;
 }
 
 // Desktop (full, labeled) / tablet (icon-only, collapsed) persistent sidebar.
 // Structure mirrors design-export/"VENTS Admin Console.dc.html" lines ~24-71:
 // logo row -> role card (desktop only) -> nav list -> footer (desktop only).
-export function AdminSidebar({ activeView, onNavigate, isTablet, isRoot, isSuperAdmin, roleLabel, roleName }: AdminSidebarProps) {
+export function AdminSidebar({ activeView, onNavigate, isTablet, isRoot, isSuperAdmin, roleLabel, roleName, pendingActionCount = 0 }: AdminSidebarProps) {
   const items = visibleNavItems(isRoot, isSuperAdmin);
   const width = isTablet ? 76 : 252;
 
@@ -117,6 +118,11 @@ export function AdminSidebar({ activeView, onNavigate, isTablet, isRoot, isSuper
               {!isTablet && (
                 <>
                   <span style={{ flex: 1 }}>{item.label}</span>
+                  {item.key === 'adminActions' && pendingActionCount > 0 && (
+                    <span style={{ fontSize: 9.5, fontWeight: 700, color: '#fff', background: adminTheme.red, borderRadius: 8, padding: '1px 6px', marginRight: locked ? 6 : 0 }}>
+                      {pendingActionCount}
+                    </span>
+                  )}
                   {locked && (
                     <span
                       style={{

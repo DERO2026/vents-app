@@ -21,7 +21,9 @@ const componentsDir = join(__dirname, '..', 'app', 'components');
 let settingsSrc: string;
 let spVerifySrc: string;
 let manageProviderServicesSrc: string;
-let adminDashboardSrc: string;
+let adminProvidersListSrc: string;
+let adminProviderDetailSrc: string;
+let adminUserDetailSrc: string;
 let pickerSheetSrc: string;
 let phoneInputSrc: string;
 
@@ -29,7 +31,14 @@ beforeAll(() => {
   settingsSrc = readFileSync(join(componentsDir, 'SettingsScreen.tsx'), 'utf8');
   spVerifySrc = readFileSync(join(componentsDir, 'ServiceProviderVerificationScreen.tsx'), 'utf8');
   manageProviderServicesSrc = readFileSync(join(componentsDir, 'ManageProviderServicesScreen.tsx'), 'utf8');
-  adminDashboardSrc = readFileSync(join(componentsDir, 'AdminDashboardScreen.tsx'), 'utf8');
+  // The Admin Dashboard's services filters/service-form/role/ban selectors
+  // now live in the Admin Console (legacy AdminDashboardScreen.tsx retired):
+  // list+filters in AdminProvidersList.tsx, the service form in
+  // AdminProviderDetail.tsx, and the ban-duration picker in AdminUserDetail.tsx.
+  const adminDir = join(componentsDir, 'admin');
+  adminProvidersListSrc = readFileSync(join(adminDir, 'AdminProvidersList.tsx'), 'utf8');
+  adminProviderDetailSrc = readFileSync(join(adminDir, 'AdminProviderDetail.tsx'), 'utf8');
+  adminUserDetailSrc = readFileSync(join(adminDir, 'AdminUserDetail.tsx'), 'utf8');
   pickerSheetSrc = readFileSync(join(componentsDir, 'shared', 'PickerSheet.tsx'), 'utf8');
   phoneInputSrc = readFileSync(join(componentsDir, 'PhoneInput.tsx'), 'utf8');
 });
@@ -86,24 +95,22 @@ describe('Manage Provider Services: Category and Currency selectors migrated', (
   });
 });
 
-describe('Admin Dashboard: Services filters and service-form selectors migrated', () => {
-  it('the country/category/status/service-status filter chips no longer use native <select>', () => {
-    expect(adminDashboardSrc).toMatch(/import \{ PickerField, PickerSheet \} from '\.\/shared\/PickerSheet';/);
-    expect(adminDashboardSrc).not.toMatch(/<select value=\{svcCountryFilter\}/);
-    expect(adminDashboardSrc).not.toMatch(/<select value=\{svcCategoryFilter\}/);
-    expect(adminDashboardSrc).not.toMatch(/<select value=\{svcStatusFilter\}/);
-    expect(adminDashboardSrc).not.toMatch(/<select value=\{svcServiceStatusFilter\}/);
+describe('Admin Console: Providers filters and service-form selectors have no native <select> (post-retirement of AdminDashboardScreen.tsx)', () => {
+  it('AdminProvidersList status filter is chip-based, not a native <select>', () => {
+    expect(adminProvidersListSrc).not.toMatch(/<select/);
+    expect(adminProvidersListSrc).toMatch(/setStatusFilter/);
   });
 
-  it('the admin service-form Category/Currency selectors no longer use native <select>, and nest above the form modal via zIndex', () => {
-    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*value=\{svcServiceForm\.input\.category/);
-    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*value=\{svcServiceForm\.input\.currency/);
-    expect(adminDashboardSrc).toMatch(/zIndex=\{9999\}/);
+  it('the admin service-form Currency selector uses the shared PickerSheet, not a native <select>', () => {
+    expect(adminProviderDetailSrc).toMatch(/import \{ PickerSheet \} from '\.\.\/shared\/PickerSheet';/);
+    expect(adminProviderDetailSrc).not.toMatch(/<select/);
+    expect(adminProviderDetailSrc).toMatch(/<PickerSheet/);
   });
 
-  it('the two per-row admin actions (role change, ban duration) are also migrated now, per the "literally every" requirement -- see selectorAuditComplete.test.ts for the full assertion', () => {
-    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*value=\{roleOptions\.includes/);
-    expect(adminDashboardSrc).not.toMatch(/<select\s*\n\s*disabled=\{isBusy \|\| isRootUser\}\s*\n\s*defaultValue=""/);
+  it('AdminUserDetail\'s ban-duration picker uses the shared PickerSheet, not a native <select>', () => {
+    expect(adminUserDetailSrc).toMatch(/import \{ PickerSheet \} from '\.\.\/shared\/PickerSheet';/);
+    expect(adminUserDetailSrc).not.toMatch(/<select/);
+    expect(adminUserDetailSrc).toMatch(/banPickerOpen/);
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Regression test confirming AI Import is fully removed from the Admin
@@ -10,22 +10,32 @@ import { join } from 'node:path';
 // (an unrelated, still-active feature that reuses the same endpoint's
 // imageBase64 branch to work around Vercel Hobby's serverless-function
 // cap), so removing it would break something still in use.
+//
+// The legacy AdminDashboardScreen.tsx (where this was originally checked)
+// has been fully retired and replaced by the Admin Console
+// (src/app/components/admin/) -- this now scans that entire directory
+// (every file the full migration moved/created), which is a stronger check
+// than reading one file by name.
 
-let adminDashboardSrc: string;
+const adminDir = join(__dirname, '..', 'app', 'components', 'admin');
+let adminConsoleSrc: string;
 
 beforeAll(() => {
-  adminDashboardSrc = readFileSync(join(__dirname, '..', 'app', 'components', 'AdminDashboardScreen.tsx'), 'utf8');
+  adminConsoleSrc = readdirSync(adminDir)
+    .filter((f) => f.endsWith('.ts') || f.endsWith('.tsx'))
+    .map((f) => readFileSync(join(adminDir, f), 'utf8'))
+    .join('\n');
 });
 
 describe('AI Import removed from Admin Console', () => {
-  it('the Import tab entry and its Tab type value are gone', () => {
-    expect(adminDashboardSrc).not.toMatch(/'import-events'/);
-    expect(adminDashboardSrc).not.toMatch(/label: 'Import'/);
+  it('the Import tab entry is gone', () => {
+    expect(adminConsoleSrc).not.toMatch(/'import-events'/);
+    expect(adminConsoleSrc).not.toMatch(/label: 'Import'/);
   });
 
   it('the Import Events render block and its dedicated state/handlers are gone', () => {
-    expect(adminDashboardSrc).not.toMatch(/IMPORT EVENTS TAB/);
-    expect(adminDashboardSrc).not.toMatch(/importText|importResults|importFlyers|extractEventsFromText|isEventExtractionConfigured|publishEvents\(/);
+    expect(adminConsoleSrc).not.toMatch(/IMPORT EVENTS TAB/);
+    expect(adminConsoleSrc).not.toMatch(/importText|importResults|importFlyers|extractEventsFromText|isEventExtractionConfigured|publishEvents\(/);
   });
 
   it('the now-fully-unused eventImporter client helper is deleted', () => {
@@ -37,5 +47,9 @@ describe('AI Import removed from Admin Console', () => {
     expect(existsSync(join(apiDir, 'extract-events.ts'))).toBe(true);
     const visionCrop = readFileSync(join(__dirname, 'visionCrop.ts'), 'utf8');
     expect(visionCrop).toMatch(/\/api\/extract-events/);
+  });
+
+  it('the legacy AdminDashboardScreen.tsx (the original home of this tab) no longer exists', () => {
+    expect(existsSync(join(__dirname, '..', 'app', 'components', 'AdminDashboardScreen.tsx'))).toBe(false);
   });
 });

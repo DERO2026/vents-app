@@ -141,9 +141,24 @@ const FIXTURES: Record<string, Row[]> = {
   ],
   // ── Admin Console fixtures ──────────────────────────────────────────────
   reports: [
-    { id: 'rep-1', status: 'pending' },
+    {
+      id: 'rep-1', reporter_id: 'user-4', target_type: 'user', target_id: 'user-3',
+      reason: 'Harassment', details: 'Sent repeated unsolicited messages after being asked to stop.',
+      status: 'pending', created_at: new Date(Date.now() - 3600000).toISOString(),
+    },
+    {
+      id: 'rep-2', reporter_id: 'user-2', target_type: 'event', target_id: 'evt-1',
+      reason: 'Misleading listing', details: 'Event page shows a different venue than what was advertised.',
+      status: 'pending', created_at: new Date(Date.now() - 7200000).toISOString(),
+    },
   ],
   organizer_verification_requests: [],
+  organizer_requests: [
+    {
+      id: 'orgreq-1', user_id: 'user-plain-1', reason: 'I run monthly food festivals in Lagos and want to list them on VENTS.',
+      status: 'pending', admin_note: null, created_at: new Date(Date.now() - 86400000).toISOString(),
+    },
+  ],
   organizer_withdrawal_requests: [
     { id: 'wd-1', organizer_id: 'org-1', amount_kobo: 5000000, status: 'pending', created_at: new Date(Date.now() - 2 * 86400000).toISOString() },
   ],
@@ -152,9 +167,10 @@ const FIXTURES: Record<string, Row[]> = {
   ],
   service_provider_requests: [
     {
-      id: 'spr-1', user_id: 'org-1', status: 'pending', business_name: 'Ada Photography', cac_number: null,
-      owner_name: 'Test Organizer', business_email: 'organizer@example.com', business_phone: '+2348010000001',
-      business_address: 'Victoria Island, Lagos', document_url: null, admin_note: null,
+      id: 'spr-1', user_id: 'org-1', status: 'pending', reason: 'I offer event photography and want to list my services.',
+      business_name: 'Ada Photography', cac_number: null, owner_name: 'Test Organizer',
+      provider_type: 'individual', country: 'NG', identity_id_type: 'NIN', identity_id_number: '12345678901',
+      document_url: null, admin_note: null,
       created_at: new Date(Date.now() - 3 * 86400000).toISOString(), reviewed_at: null,
     },
   ],

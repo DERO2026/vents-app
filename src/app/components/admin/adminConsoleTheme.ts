@@ -1,8 +1,8 @@
-// Palette + shared tokens for the VENTS Admin Console shell.
-// Source of truth: design-export/"VENTS Admin Console.dc.html" — values are
-// copied verbatim from that export, not reinterpreted. This console is
-// intentionally visually distinct from the legacy AdminDashboardScreen
-// (which still uses #A855F7 / #090514) per the Batch 1 spec.
+// Palette + shared tokens for the VENTS Admin Console — now the sole Admin
+// Console (AdminDashboardScreen has been fully retired; every function it
+// exposed lives here). Source of truth: design-export/
+// "VENTS Admin Console.dc.html" — values are copied verbatim from that
+// export, not reinterpreted.
 export const adminTheme = {
   bg: '#0a0810',
   panelSidebar: '#0d0a15',
@@ -37,20 +37,14 @@ export type AdminConsoleViewKey =
   | 'organizers'
   | 'providers'
   | 'finance'
-  | 'wallet'
-  | 'payments'
-  | 'refunds'
   | 'vcents'
-  | 'referrals'
-  | 'promotions'
   | 'reports'
-  | 'communication'
   | 'analytics'
   | 'adminActions'
   | 'verification'
   | 'system'
-  | 'adminManagement'
-  | 'auditLogs';
+  | 'auditLogs'
+  | 'serviceBookings';
 
 export interface AdminNavItemDef {
   key: AdminConsoleViewKey;
@@ -58,40 +52,46 @@ export interface AdminNavItemDef {
   mono: string;
 }
 
-// Mirrors the export's `navDefs` (line ~1168 of the .dc.html), extended with
-// the additional nav areas the Batch-1 spec asks for links to (Wallet,
-// Payments, Refunds, Audit Logs) which the export folds into "Finance" /
-// leaves out of its own mock but the task explicitly lists as top-level.
+// One nav item per REAL backend feature the legacy AdminDashboardScreen
+// exposed -- no placeholder entries. The design export's mock IA had
+// separate Wallet/Payments/Refunds/Communication/Referrals/Promotions/Admin
+// Management entries; those were removed here because either (a) exactly
+// one real feature (Payouts) backs all of Finance/Wallet/Payments/Refunds,
+// so splitting them would mean three fake screens pointing at the same
+// data, (b) Communication (Global Broadcast) is root-only in production --
+// exposing it as a separate Admin+ nav item would widen access beyond what
+// has ever been granted, so it stays inside System, or (c) no such feature
+// exists anywhere in the codebase to migrate (Referrals, Promotions beyond
+// event Featuring which already lives in Events, Admin Management beyond
+// the Sub-Admin picker which already lives in Users) -- see the migration's
+// reconciliation report for the full accounting.
 export const ADMIN_NAV_ITEMS: AdminNavItemDef[] = [
   { key: 'overview', label: 'Dashboard', mono: 'OV' },
   { key: 'users', label: 'Users', mono: 'US' },
   { key: 'events', label: 'Events', mono: 'EV' },
   { key: 'organizers', label: 'Organizers', mono: 'OR' },
   { key: 'providers', label: 'Service Providers', mono: 'SP' },
-  { key: 'finance', label: 'Finance', mono: 'FN' },
-  { key: 'wallet', label: 'VENTS Wallet', mono: 'WL' },
-  { key: 'payments', label: 'Payments', mono: 'PY' },
-  { key: 'refunds', label: 'Refunds', mono: 'RF' },
+  { key: 'serviceBookings', label: 'Bookings', mono: 'BK' },
+  { key: 'finance', label: 'Payouts', mono: 'FN' },
   { key: 'vcents', label: 'VENTS Cents', mono: 'VC' },
-  { key: 'referrals', label: 'Referrals', mono: 'RL' },
-  { key: 'promotions', label: 'Promotions', mono: 'PR' },
   { key: 'reports', label: 'Reports & Safety', mono: 'RS' },
-  { key: 'communication', label: 'Communication', mono: 'CM' },
   { key: 'analytics', label: 'Analytics', mono: 'AN' },
   { key: 'adminActions', label: 'Admin Actions', mono: 'AA' },
   { key: 'verification', label: 'Verification', mono: 'VF' },
-  { key: 'system', label: 'System Config', mono: 'SY' },
-  { key: 'adminManagement', label: 'Admin Management', mono: 'AM' },
   { key: 'auditLogs', label: 'Audit Logs', mono: 'AL' },
+  { key: 'system', label: 'System Config', mono: 'SY' },
 ];
 
 // Root-only areas — shown to every admin tier (never silently hidden) but
 // visibly locked (dimmed + "ROOT" badge) for non-root admins, matching the
-// export's own `lockedKeys` treatment.
-export const ROOT_ONLY_KEYS: AdminConsoleViewKey[] = ['system', 'adminManagement'];
+// export's own `lockedKeys` treatment. System includes Global Broadcast,
+// which has always been root-only in production.
+export const ROOT_ONLY_KEYS: AdminConsoleViewKey[] = ['system'];
 
-// ADMIN+ only area (excluded entirely for sub-admins, per the Batch-1 spec).
-export const ADMIN_TIER_ONLY_KEYS: AdminConsoleViewKey[] = ['communication'];
+// No areas are currently Admin+-only-but-excluded-for-Sub-Admin at the nav
+// level; Sub-Admin restrictions are enforced inside each screen/RPC
+// (maker-checker, Super-Admin-gated RPCs) instead.
+export const ADMIN_TIER_ONLY_KEYS: AdminConsoleViewKey[] = [];
 
 // The export's mobile bottom-tab primary items.
 export const MOBILE_PRIMARY_KEYS: AdminConsoleViewKey[] = ['overview', 'users', 'events', 'adminActions'];

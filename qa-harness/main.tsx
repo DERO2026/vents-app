@@ -48,6 +48,16 @@ import { AdminOrganizersList } from '../src/app/components/admin/AdminOrganizers
 import { AdminOrganizerDetail } from '../src/app/components/admin/AdminOrganizerDetail';
 import { AdminProvidersList } from '../src/app/components/admin/AdminProvidersList';
 import { AdminProviderDetail } from '../src/app/components/admin/AdminProviderDetail';
+import { AdminReportsScreen } from '../src/app/components/admin/AdminReportsScreen';
+import { AdminAuditLogScreen } from '../src/app/components/admin/AdminAuditLogScreen';
+import { AdminVCScreen } from '../src/app/components/admin/AdminVCScreen';
+import { AdminVerificationScreen } from '../src/app/components/admin/AdminVerificationScreen';
+import { AdminPayoutsScreen } from '../src/app/components/admin/AdminPayoutsScreen';
+import { AdminSystemScreen } from '../src/app/components/admin/AdminSystemScreen';
+import { AdminAnalyticsScreen } from '../src/app/components/admin/AdminAnalyticsScreen';
+import { AdminServiceBookingsScreen } from '../src/app/components/admin/AdminServiceBookingsScreen';
+import { AdminOrganizerRequestsScreen } from '../src/app/components/admin/AdminOrganizerRequestsScreen';
+import { AdminProviderRequestsScreen } from '../src/app/components/admin/AdminProviderRequestsScreen';
 import App from '../src/app/App';
 
 // Shared fixture admin identity for every Admin Console harness route below
@@ -436,14 +446,27 @@ const SCREENS: Record<string, () => JSX.Element> = {
   'admin-console-event-detail': () => (
     <AdminEventDetail eventId="evt-1" currentUser={ADMIN_FIXTURE_USER} isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
   ),
-  'admin-console-organizers': () => <AdminOrganizersList isMobile={ADMIN_IS_MOBILE} onSelectOrganizer={() => {}} />,
+  'admin-console-organizers': () => <AdminOrganizersList isMobile={ADMIN_IS_MOBILE} isSuperAdmin onSelectOrganizer={() => {}} />,
   'admin-console-organizer-detail': () => (
     <AdminOrganizerDetail organizerId="org-1" isSuperAdmin isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
   ),
-  'admin-console-providers': () => <AdminProvidersList isMobile={ADMIN_IS_MOBILE} onSelectProvider={() => {}} />,
+  'admin-console-providers': () => <AdminProvidersList isMobile={ADMIN_IS_MOBILE} isSuperAdmin onSelectProvider={() => {}} />,
   'admin-console-provider-detail': () => (
     <AdminProviderDetail providerId="prov-1" isSuperAdmin isMobile={ADMIN_IS_MOBILE} onBack={() => {}} />
   ),
+
+  // ── Full admin-console rebuild: the screens added to fully retire
+  // AdminDashboardScreen.tsx (no legacy console left) ──────────────────────
+  'admin-console-reports': () => <AdminReportsScreen />,
+  'admin-console-audit-log': () => <AdminAuditLogScreen />,
+  'admin-console-vcents': () => <AdminVCScreen />,
+  'admin-console-verification': () => <AdminVerificationScreen />,
+  'admin-console-payouts': () => <AdminPayoutsScreen />,
+  'admin-console-system': () => <AdminSystemScreen currentUser={ADMIN_FIXTURE_USER} />,
+  'admin-console-analytics': () => <AdminAnalyticsScreen />,
+  'admin-console-service-bookings': () => <AdminServiceBookingsScreen />,
+  'admin-console-organizer-requests': () => <AdminOrganizerRequestsScreen isSuperAdmin />,
+  'admin-console-provider-requests': () => <AdminProviderRequestsScreen isSuperAdmin />,
 };
 
 const params = new URLSearchParams(window.location.search);
