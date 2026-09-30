@@ -51,8 +51,10 @@ vi.mock('../../../lib/supabase', () => {
     const q: any = {
       select: () => q,
       eq: () => q,
+      or: () => q,
       order: () => q,
       limit: () => q,
+      maybeSingle: () => Promise.resolve({ data: null, error: null }),
       then: (resolve: any) => resolve({ data: [], error: null }),
     };
     return q;
@@ -116,14 +118,24 @@ describe('AdminUsersList', () => {
 });
 
 describe('AdminUserDetail', () => {
-  it('renders profile fields and shows honest not-available states for wallet/VC/tickets', async () => {
+  it('renders profile fields and shows real (empty) wallet data and an honest not-available state for tickets', async () => {
     await act(async () => { root!.render(<AdminUserDetail userId="u1" currentUser={admin} isMobile={false} onBack={() => {}} />); });
     await flush();
     const el = container!.querySelector('[data-testid="admin-user-detail"]')!;
     expect(el.textContent).toContain('Ada Lovelace');
-    // switch to Wallet tab
+    // Wallet/VC/Reports are now admin-readable (user_wallets/vc_transactions/
+    // vents_wallets/reports all carry an is_admin() SELECT policy) — the
+    // Wallet tab shows a real (fixture-empty) balance card, not a stale
+    // "Not available" placeholder.
     const walletTab = Array.from(el.querySelectorAll('div')).find((d) => d.textContent === 'Wallet') as HTMLElement;
     await act(async () => { walletTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(el.textContent).toContain('VENTS WALLET BALANCE');
+    expect(el.textContent).not.toContain('no admin-accessible query');
+    // Tickets has no admin-wide RLS policy (only the ticket owner or the
+    // event's organizer can read it) -- that one honest "Not available" is
+    // still correct.
+    const ticketsTab = Array.from(el.querySelectorAll('div')).find((d) => d.textContent === 'Tickets') as HTMLElement;
+    await act(async () => { ticketsTab.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(el.textContent).toContain('Not available');
   });
 
