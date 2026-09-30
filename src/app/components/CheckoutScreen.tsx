@@ -12,6 +12,7 @@ import { haptics } from '../../lib/haptics';
 import { PhoneInput } from './PhoneInput';
 import { COUNTRY_CODES, DEFAULT_COUNTRY, isPlausibleNationalNumber, buildE164 } from '../../lib/countries';
 import { computeTicketWalletChargeKobo, hasSufficientBalance } from '../../lib/walletMath';
+import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { UserAutocomplete } from './shared/UserAutocomplete';
 
 function fmtNgn(kobo: number) {
@@ -407,7 +408,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
     } catch (err: any) {
       payingRef.current = false;
       setPaymentLoading(false);
-      setPayError(err?.message || 'Could not start checkout. Please try again.');
+      setPayError(friendlyOperationalError(err?.message) || err?.message || 'Could not start checkout. Please try again.');
       return;
     }
 

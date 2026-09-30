@@ -5,6 +5,7 @@ import { apiUrl } from '../../lib/apiBase';
 import { openPaystackPopup } from '../../lib/paystack';
 import { Sentry } from '../../lib/sentry';
 import { validateWalletDepositAmountKobo, isWalletCredit, walletTxnLabel } from '../../lib/walletMath';
+import { friendlyOperationalError } from '../../lib/operationalStatus';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 
 interface CustomerWalletScreenProps {
@@ -144,7 +145,7 @@ export function CustomerWalletScreen({ currentUser, onBack, onOpenEarnings, show
         onError: (message) => { setDepositError(message); setDepositing(false); },
       });
     } catch (e: any) {
-      setDepositError(e?.message || 'Could not start this deposit. Please try again.');
+      setDepositError(friendlyOperationalError(e?.message) || e?.message || 'Could not start this deposit. Please try again.');
       setDepositing(false);
     }
   };

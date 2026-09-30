@@ -17,13 +17,20 @@ import { appVersionLabel } from '../../../lib/appVersion';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
-interface KillSwitchDef { key: 'disable_purchases' | 'disable_scanning' | 'disable_signups' | 'disable_payouts' | 'disable_location_sharing'; label: string; desc: (v: boolean) => string; icon: React.ReactNode; }
+interface KillSwitchDef { key: 'disable_purchases' | 'disable_bookings' | 'disable_deposits' | 'disable_scanning' | 'disable_signups' | 'disable_payouts' | 'disable_location_sharing'; label: string; desc: (v: boolean) => string; icon: React.ReactNode; financial?: boolean; }
 
+// Financial switches (financial: true) are enforced server-side at the
+// pre-payment entry point for that operation (create_pending_purchase/
+// purchase_ticket, create_service_booking, request_organizer_payout,
+// initiate_wallet_deposit — see 0124_emergency_kill_switches.sql) and fail
+// CLOSED (blocked) if app_config can't be read at all, never fail open.
 const KILL_SWITCHES: KillSwitchDef[] = [
-  { key: 'disable_purchases', label: 'Ticket Purchases', icon: <Ticket size={17} />, desc: (v) => v ? 'Paused — "Buy Ticket" is blocked for every user' : 'Enabled — purchases are open' },
+  { key: 'disable_purchases', label: 'Ticket Purchases', icon: <Ticket size={17} />, financial: true, desc: (v) => v ? 'Paused — "Buy Ticket" is blocked for every user' : 'Enabled — purchases are open' },
+  { key: 'disable_bookings', label: 'Service Bookings', icon: <Ticket size={17} />, financial: true, desc: (v) => v ? 'Paused — new service bookings are blocked for every user' : 'Enabled — service bookings are open' },
+  { key: 'disable_deposits', label: 'Wallet Deposits', icon: <Banknote size={17} />, financial: true, desc: (v) => v ? 'Paused — new VENTS Wallet top-ups are blocked' : 'Enabled — wallet deposits are open' },
+  { key: 'disable_payouts', label: 'Organizer/Provider Payouts', icon: <Banknote size={17} />, financial: true, desc: (v) => v ? 'Paused — new withdrawal requests and approve/cancel/reject payout actions are blocked' : 'Enabled — payout actions are open' },
   { key: 'disable_scanning', label: 'QR Scanning', icon: <ScanLine size={17} />, desc: (v) => v ? 'Paused — check-in scanners are blocked for every organizer' : 'Enabled — check-in scanning is open' },
   { key: 'disable_signups', label: 'New Sign-ups', icon: <UserPlus size={17} />, desc: (v) => v ? 'Paused — new account creation is blocked' : 'Enabled — sign-ups are open' },
-  { key: 'disable_payouts', label: 'Organizer Payouts', icon: <Banknote size={17} />, desc: (v) => v ? 'Paused — approve/cancel/refund payout actions are blocked' : 'Enabled — payout actions are open' },
   { key: 'disable_location_sharing', label: 'Location Sharing', icon: <MapPin size={17} />, desc: (v) => v ? 'Paused — sharing your location in chat is blocked' : 'Enabled — location sharing is open' },
 ];
 
@@ -38,33 +45,42 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   const [isPinging, setIsPinging] = useState(false);
   const [healthResult, setHealthResult] = useState<{ ok: boolean; latencyMs: number; detail: string } | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
-  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; confirmLabel: string; danger: boolean; onConfirm: () => void } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ title: string; message: string; confirmLabel: string; danger: boolean; optionalReason?: boolean; onConfirm: (reason?: string) => void } | null>(null);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
   useEffect(() => {
-    supabase.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').maybeSingle()
+    supabase.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_bookings, disable_deposits, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').maybeSingle()
       .then(({ data }) => {
         if (!data) return;
         setMaintenanceMode(!!data.maintenance_mode);
         setVoiceNotesEnabled(data.voice_notes_enabled !== false);
         setImageSharingEnabled(data.image_sharing_enabled !== false);
         setKillSwitches({
-          disable_purchases: !!data.disable_purchases, disable_scanning: !!data.disable_scanning,
+          disable_purchases: !!data.disable_purchases, disable_bookings: !!data.disable_bookings,
+          disable_deposits: !!data.disable_deposits, disable_scanning: !!data.disable_scanning,
           disable_signups: !!data.disable_signups, disable_payouts: !!data.disable_payouts,
           disable_location_sharing: !!data.disable_location_sharing,
         });
       });
   }, []);
 
-  const toggleAppConfig = (column: string, next: boolean, auditAction: string, title: string, message: string, danger: boolean, onSuccess: () => void) => {
+  // Every app_config write goes through admin_update_app_config (0083;
+  // extended in 0124 for the new switches + an optional reason) -- the one
+  // Root-gated, whitelisted, server-side-audited path. There is no direct
+  // table write here: `authenticated` has no UPDATE grant on app_config at
+  // all, so a raw .update() call fails outright (this replaced exactly
+  // that bug -- the previous version of this screen called
+  // supabase.from('app_config').update(...) directly, which could never
+  // have worked and would have failed every single toggle in production).
+  const toggleAppConfig = (column: string, next: boolean, title: string, message: string, danger: boolean, onSuccess: () => void, optionalReason = false) => {
     setConfirmModal({
-      title, message, confirmLabel: next ? 'Enable' : 'Disable', danger,
-      onConfirm: async () => {
+      title, message, confirmLabel: next ? 'Enable' : 'Disable', danger, optionalReason,
+      onConfirm: async (reason) => {
         setConfirmModal(null);
         try {
-          await supabase.from('app_config').update({ [column]: next, updated_by: currentUser.id }).eq('id', true);
-          await writeAuditLog(currentUser, auditAction, null, {});
+          const { error } = await supabase.rpc('admin_update_app_config', { p_field: column, p_value: String(next), p_reason: reason || null });
+          if (error) throw error;
           onSuccess();
           flash(true, `${title} ${next ? 'enabled' : 'disabled'}.`);
         } catch (err: any) { flash(false, err?.message || `Failed to update ${title}.`); }
@@ -75,10 +91,13 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   const handleToggleKillSwitch = (def: KillSwitchDef) => {
     const currentlyDisabled = !!killSwitches[def.key];
     const next = !currentlyDisabled;
-    toggleAppConfig(def.key, next, next ? `ROOT_${def.key}_on` : `ROOT_${def.key}_off`,
+    toggleAppConfig(def.key, next,
       next ? `Disable ${def.label}` : `Enable ${def.label}`,
-      next ? `This will block ${def.label} for every user. Continue?` : `This will restore ${def.label} for every user.`,
-      next, () => setKillSwitches((prev) => ({ ...prev, [def.key]: next })));
+      next
+        ? `This will immediately block ${def.label} for every user, on every app version — old installed clients cannot bypass this. Continue?`
+        : `This will restore ${def.label} for every user.`,
+      next, () => setKillSwitches((prev) => ({ ...prev, [def.key]: next })),
+      /* optionalReason */ next && !!def.financial);
   };
 
   const handleOrphanCleanup = () => {
@@ -180,22 +199,27 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
       {msg && <div style={{ fontSize: 12.5, color: adminTheme.text }}>{msg}</div>}
 
       {toggleRow(<Wrench size={17} />, 'Maintenance Mode', maintenanceMode, maintenanceMode ? '⚠️ ACTIVE — users see maintenance notice' : 'Platform running normally',
-        () => toggleAppConfig('maintenance_mode', !maintenanceMode, !maintenanceMode ? 'ROOT_maintenance_on' : 'ROOT_maintenance_off',
+        () => toggleAppConfig('maintenance_mode', !maintenanceMode,
           !maintenanceMode ? 'Enable Maintenance Mode' : 'Disable Maintenance Mode',
           !maintenanceMode ? 'This will display a maintenance notice to all users. Continue?' : 'This will restore normal access to all users.',
           !maintenanceMode, () => setMaintenanceMode(!maintenanceMode)), adminTheme.amber)}
 
       {toggleRow(<Mic size={17} />, 'Voice Notes', voiceNotesEnabled, voiceNotesEnabled ? 'Enabled — users can record voice notes' : 'Disabled for MVP launch stability',
-        () => toggleAppConfig('voice_notes_enabled', !voiceNotesEnabled, !voiceNotesEnabled ? 'ROOT_voice_notes_on' : 'ROOT_voice_notes_off',
+        () => toggleAppConfig('voice_notes_enabled', !voiceNotesEnabled,
           !voiceNotesEnabled ? 'Enable Voice Notes' : 'Disable Voice Notes',
           !voiceNotesEnabled ? 'This will let all users record and send voice notes in chat again. Continue?' : 'This will hide the voice-note button and block recording for all users.',
           voiceNotesEnabled, () => setVoiceNotesEnabled(!voiceNotesEnabled)))}
 
       {toggleRow(<ImageIcon size={17} />, 'Image Sharing', imageSharingEnabled, imageSharingEnabled ? 'Enabled — users can send images in chat' : 'Disabled',
-        () => toggleAppConfig('image_sharing_enabled', !imageSharingEnabled, !imageSharingEnabled ? 'ROOT_image_sharing_on' : 'ROOT_image_sharing_off',
+        () => toggleAppConfig('image_sharing_enabled', !imageSharingEnabled,
           !imageSharingEnabled ? 'Enable Image Sharing' : 'Disable Image Sharing',
           !imageSharingEnabled ? 'This will let all users send images in chat again. Continue?' : 'This will hide the image button and block sending images for all users.',
           imageSharingEnabled, () => setImageSharingEnabled(!imageSharingEnabled)))}
+
+      <div>
+        <p style={{ color: adminTheme.textStrong, fontSize: 13, fontWeight: 700, margin: '4px 0 8px' }}>Emergency Controls</p>
+        <p style={{ color: adminTheme.textFaint, fontSize: 11, margin: '0 0 10px' }}>Enforced server-side — an old app version or a direct API/RPC call cannot bypass these. Disabling a financial operation only blocks NEW attempts; a payout or purchase already in progress is never corrupted.</p>
+      </div>
 
       {KILL_SWITCHES.map((def) => {
         const disabled = !!killSwitches[def.key];
@@ -264,7 +288,7 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
       <p style={{ color: adminTheme.textFainter, fontSize: 10, textAlign: 'center', marginTop: 4 }}>{appVersionLabel()} · All root actions are immutably logged.</p>
 
       {confirmModal && (
-        <ConfirmModal title={confirmModal.title} message={confirmModal.message} confirmLabel={confirmModal.confirmLabel} danger={confirmModal.danger} onConfirm={confirmModal.onConfirm} onCancel={() => setConfirmModal(null)} />
+        <ConfirmModal title={confirmModal.title} message={confirmModal.message} confirmLabel={confirmModal.confirmLabel} danger={confirmModal.danger} optionalReason={confirmModal.optionalReason} reasonPlaceholder="Optional: reason for this change (visible in the audit log)" onConfirm={confirmModal.onConfirm} onCancel={() => setConfirmModal(null)} />
       )}
     </div>
   );
