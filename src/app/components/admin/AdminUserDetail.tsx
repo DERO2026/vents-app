@@ -8,26 +8,27 @@
 //  - Profile: the `users` row itself (admin-readable).
 //  - Audit: `admin_logs` filtered by target_user_id — same table/pattern
 //    AdminDashboardScreen's Audit Log tab and writeAuditLog() already use.
+//  - Wallet: `user_wallets`/`user_wallet_transactions` both carry an
+//    is_admin() SELECT policy — admin-readable directly.
+//  - VC: `vc_transactions` carries an is_admin() SELECT policy; the balance
+//    itself lives in `vents_wallets`, which gained the matching
+//    admin-select policy in 0125 (it was the one table of the four missing
+//    it — user_wallets/user_wallet_transactions/vc_transactions already had
+//    theirs).
 // Explicit "not available" sources (see report — no admin-accessible
 // per-user backend exists for these today, so they are NOT fabricated):
-//  - Wallet: `vents_wallets` RLS only allows a user to read their own row
-//    (see migrations/20260713110000_admin-vc-aggregates-rpc.sql's own
-//    comment on this exact limitation); no admin_get_user_wallet RPC exists.
-//  - VC: same RLS story for `vc_transactions`; admin_get_vc_aggregates()
-//    is platform-wide only, not per-user.
 //  - Tickets: `tickets` RLS (select_tickets) only allows the ticket's owner
 //    or the event's organizer to read it — no admin bypass and no admin
 //    RPC to list a specific user's tickets exists.
-//  - Reports: filed-by/against this specific user — no query exists that
-//    both an admin can run and is scoped to one user's reports without a
-//    dedicated RPC; left as "not available" rather than approximating.
+//  - Reports: `reports_admin_all` (is_admin()) already covers this —
+//    queried directly, filtered client-side by reporter_id/target_id.
 import React, { useState, useEffect, useCallback } from 'react';
 import { Shield } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme, accentGradient } from './adminConsoleTheme';
 import { isRoot as permIsRoot, isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
 import { statusColors, verifColors, initials, staffLabel } from './AdminUsersList';
-import { suspendOrUnban, toggleVerifyUser, setOrganizerCapability, setServiceProviderCapability, softDeleteUser, reinstateUser } from './adminUserEventActions';
+import { suspendOrUnban, toggleVerifyUser, setOrganizerCapability, setServiceProviderCapability, softDeleteUser, reinstateUser, roleChange } from './adminUserEventActions';
 import { ConfirmModal } from './adminShared';
 import { PickerSheet } from '../shared/PickerSheet';
 
@@ -70,9 +71,18 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
   const [tab, setTab] = useState<Tab>('profile');
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
+  const [walletTxns, setWalletTxns] = useState<{ id: string; type: string; amount_kobo: number; description: string | null; created_at: string }[]>([]);
+  const [walletLoading, setWalletLoading] = useState(false);
+  const [vcBalance, setVcBalance] = useState<number | null>(null);
+  const [vcTxns, setVcTxns] = useState<{ id: string; amount: number; type: string; status: string; created_at: string }[]>([]);
+  const [vcLoading, setVcLoading] = useState(false);
+  const [reports, setReports] = useState<{ id: string; reporter_id: string; target_type: string; target_id: string; reason: string; status: string; created_at: string }[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [banPickerOpen, setBanPickerOpen] = useState(false);
+  const [rolePickerOpen, setRolePickerOpen] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ title: string; message: string; confirmLabel: string; danger: boolean; requireReason?: boolean; optionalReason?: boolean; onConfirm: (reason?: string) => void } | null>(null);
 
   const loadUser = useCallback(async () => {
@@ -102,6 +112,46 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
     )
       .then(({ data }: any) => setAudit(data || []))
       .finally(() => setAuditLoading(false));
+  }, [tab, userId]);
+
+  useEffect(() => {
+    if (tab !== 'wallet') return;
+    setWalletLoading(true);
+    Promise.all([
+      supabase.from('user_wallets').select('balance_kobo').eq('user_id', userId).maybeSingle(),
+      supabase.from('user_wallet_transactions').select('id, type, amount_kobo, description, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+    ])
+      .then(([w, txns]: any) => {
+        setWalletBalanceKobo(w.data?.balance_kobo ?? 0);
+        setWalletTxns(txns.data || []);
+      })
+      .finally(() => setWalletLoading(false));
+  }, [tab, userId]);
+
+  useEffect(() => {
+    if (tab !== 'vc') return;
+    setVcLoading(true);
+    Promise.all([
+      supabase.from('vents_wallets').select('balance').eq('user_id', userId).maybeSingle(),
+      supabase.from('vc_transactions').select('id, amount, type, status, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+    ])
+      .then(([w, txns]: any) => {
+        setVcBalance(w.data?.balance ?? 0);
+        setVcTxns(txns.data || []);
+      })
+      .finally(() => setVcLoading(false));
+  }, [tab, userId]);
+
+  useEffect(() => {
+    if (tab !== 'reports') return;
+    setReportsLoading(true);
+    Promise.resolve(
+      supabase.from('reports').select('id, reporter_id, target_type, target_id, reason, status, created_at')
+        .or(`reporter_id.eq.${userId},and(target_type.eq.user,target_id.eq.${userId})`)
+        .order('created_at', { ascending: false }).limit(50),
+    )
+      .then(({ data }: any) => setReports(data || []))
+      .finally(() => setReportsLoading(false));
   }, [tab, userId]);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
@@ -162,6 +212,12 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
               style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
               {user.is_verified ? 'Unverify' : 'Verify'}
             </button>
+            {!isRootUser && (isRoot || user.role === 'sub-admin') && (
+              <button disabled={busy} onClick={() => setRolePickerOpen(true)}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: user.role === 'sub-admin' ? 'rgba(168,85,247,.14)' : adminTheme.borderChip, border: `1px solid ${user.role === 'sub-admin' ? 'rgba(168,85,247,.32)' : adminTheme.border}`, color: user.role === 'sub-admin' ? '#A855F7' : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
+                Staff Tier…
+              </button>
+            )}
             <button disabled={busy} onClick={() => setConfirmAction({
               title: user.is_organizer ? 'Remove Organizer capability?' : 'Grant Organizer capability?',
               message: user.is_organizer ? `@${user.username || user.email} loses the independent Organizer capability. Their account, staff tier, and Service Provider capability (if any) are unaffected.` : `@${user.username || user.email} will be granted the independent Organizer capability.`,
@@ -250,10 +306,62 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
         </div>
       )}
 
-      {tab === 'wallet' && <NotAvailable reason="no admin-accessible query or RPC exists for a specific user's VENTS Wallet — vents_wallets RLS only allows a user to read their own row, and no admin_get_user_wallet-style RPC exists." />}
-      {tab === 'vc' && <NotAvailable reason="admin_get_vc_aggregates() only returns platform-wide totals, and vc_transactions RLS does not allow an admin to read another user's rows." />}
+      {tab === 'wallet' && (
+        walletLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> : (
+          <div>
+            <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: adminTheme.textFainter, fontWeight: 600, marginBottom: 8 }}>VENTS WALLET BALANCE</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: adminTheme.textStrong }}>₦{((walletBalanceKobo ?? 0) / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}</div>
+            </div>
+            {walletTxns.length === 0 ? <NotAvailable reason="no wallet transactions yet." /> : walletTxns.map((t) => (
+              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${adminTheme.borderSoft}` }}>
+                <div>
+                  <div style={{ fontSize: 13, color: adminTheme.text, fontWeight: 600 }}>{t.description || t.type}</div>
+                  <div style={{ fontSize: 11, color: adminTheme.textFainter }}>{new Date(t.created_at).toLocaleString('en-NG')}</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: ['deposit', 'refund'].includes(t.type) ? adminTheme.green : adminTheme.text }}>
+                  {['deposit', 'refund'].includes(t.type) ? '+' : '-'}₦{(t.amount_kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+      {tab === 'vc' && (
+        vcLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> : (
+          <div>
+            <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: adminTheme.textFainter, fontWeight: 600, marginBottom: 8 }}>VENTS CENTS BALANCE</div>
+              <div style={{ fontSize: 20, fontWeight: 800, color: adminTheme.textStrong }}>{(vcBalance ?? 0).toLocaleString('en-NG')} VC</div>
+            </div>
+            {vcTxns.length === 0 ? <NotAvailable reason="no VENTS Cents transactions yet." /> : vcTxns.map((t) => (
+              <div key={t.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${adminTheme.borderSoft}` }}>
+                <div>
+                  <div style={{ fontSize: 13, color: adminTheme.text, fontWeight: 600, textTransform: 'capitalize' }}>{t.type}</div>
+                  <div style={{ fontSize: 11, color: adminTheme.textFainter }}>{new Date(t.created_at).toLocaleString('en-NG')} · {t.status}</div>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: t.amount >= 0 ? adminTheme.green : adminTheme.red }}>{t.amount >= 0 ? '+' : ''}{t.amount} VC</div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
       {tab === 'tickets' && <NotAvailable reason="tickets RLS (select_tickets) only allows the ticket owner or the event's organizer to read it — there is no admin bypass or admin RPC to list a specific user's tickets." />}
-      {tab === 'reports' && <NotAvailable reason="no RPC or admin-readable query scopes the reports table to one user's filed/received reports today." />}
+      {tab === 'reports' && (
+        reportsLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> :
+        reports.length === 0 ? <NotAvailable reason="no reports filed by or against this user." /> : reports.map((r) => (
+          <div key={r.id} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: adminTheme.text }}>
+                {r.reporter_id === userId ? 'Filed by this user' : `Filed against this user (${r.target_type})`}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 8, color: adminTheme.textMuted }}>{r.status}</span>
+            </div>
+            <div style={{ fontSize: 13, color: adminTheme.text, marginBottom: 4 }}>{r.reason}</div>
+            <div style={{ fontSize: 11, color: adminTheme.textFainter }}>{new Date(r.created_at).toLocaleString('en-NG')}</div>
+          </div>
+        ))
+      )}
 
       {tab === 'audit' && (
         auditLoading ? (
@@ -295,6 +403,31 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
             });
           }}
           onClose={() => setBanPickerOpen(false)}
+        />
+      )}
+
+      {rolePickerOpen && (
+        <PickerSheet
+          title="Staff Tier"
+          searchable={false}
+          options={[
+            ...(user.role !== 'user' ? [{ value: 'user', label: 'User (no admin access)' }] : []),
+            ...(isRoot && user.role !== 'sub-admin' ? [{ value: 'sub-admin', label: 'Sub-Admin' }] : []),
+          ]}
+          value=""
+          onSelect={(newRole) => {
+            setRolePickerOpen(false);
+            const label = newRole === 'sub-admin' ? 'Sub-Admin' : 'User';
+            setConfirmAction({
+              title: `Set staff tier to ${label}?`,
+              message: newRole === 'sub-admin'
+                ? `@${user.username || user.email} will gain Sub-Admin access (maker-checker: their actions require Super Admin approval). This does not affect their Organizer/Service Provider capabilities.`
+                : `@${user.username || user.email} will lose all administrative access. This does not affect their Organizer/Service Provider capabilities.`,
+              confirmLabel: 'Confirm', danger: newRole === 'user' && user.role !== 'user',
+              onConfirm: () => { setConfirmAction(null); run(() => roleChange(isSuperAdmin, user.id, user.role, newRole, user.username || user.email)); },
+            });
+          }}
+          onClose={() => setRolePickerOpen(false)}
         />
       )}
 
