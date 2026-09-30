@@ -193,6 +193,12 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // commits. This ref closes that window; `withdrawing` still drives the
   // visible disabled/loading UI.
   const withdrawingRef = useRef(false);
+  // A fresh key per withdrawal attempt, reused across retries of that same
+  // attempt (e.g. a network timeout) so the server-side idempotency check
+  // in request_organizer_payout recognizes a resubmit as the same logical
+  // withdrawal instead of creating a second one. Cleared on success/close
+  // so the next withdrawal gets its own key.
+  const withdrawIdempotencyKeyRef = useRef<string | null>(null);
 
   // Bank account flow
   const [showAddBank, setShowAddBank] = useState(false);
@@ -498,15 +504,23 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     const payoutAccountId = withdrawAccountId || bankAccounts.find(a => a.is_default)?.id || bankAccounts[0]?.id;
     if (!payoutAccountId) { setWithdrawError('Add a bank account first'); return; }
 
+    if (!withdrawIdempotencyKeyRef.current) {
+      withdrawIdempotencyKeyRef.current = (crypto as any)?.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    }
+
     withdrawingRef.current = true;
     setWithdrawing(true);
     try {
       const { error } = await supabase.rpc('request_organizer_payout', {
         p_amount_kobo: kobo,
         p_bank_account_id: payoutAccountId,
+        p_idempotency_key: withdrawIdempotencyKeyRef.current,
       });
       if (error) throw new Error(error.message);
       analytics.withdrawalRequested(kobo);
+      withdrawIdempotencyKeyRef.current = null;
       setShowWithdraw(false);
       setWithdrawAmount('');
       await load();
@@ -613,7 +627,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
                   )}
                 </div>
                 <button
-                  onClick={() => setShowWithdraw(true)}
+                  onClick={() => { withdrawIdempotencyKeyRef.current = null; setShowWithdraw(true); }}
                   style={{ flexShrink: 0, height: '42px', padding: '0 16px', borderRadius: '12px', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.14)', cursor: balance > 0 && emailVerified !== false ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: '6px', opacity: balance > 0 && emailVerified !== false ? 1 : 0.5 }}
                   disabled={balance === 0 || emailVerified === false}
                   title={emailVerified === false ? 'Verify your email to withdraw funds' : undefined}
@@ -773,7 +787,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
               type="number"
               placeholder="Amount in ₦ (e.g. 5000)"
               value={withdrawAmount}
-              onChange={e => setWithdrawAmount(e.target.value)}
+              onChange={e => { withdrawIdempotencyKeyRef.current = null; setWithdrawAmount(e.target.value); }}
               style={{ width: '100%', background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '12px', padding: '14px', color: '#fff', fontSize: '16px', boxSizing: 'border-box', outline: 'none', marginBottom: '12px' }}
             />
             {bankAccounts.length > 0 && (
