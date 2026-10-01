@@ -3500,7 +3500,7 @@ export default function App() {
 
           {/* ── REFERRAL ── */}
           {screen === 'referral' && (
-            <ReferralScreen onBack={goBack} currentUser={currentUser} />
+            <ReferralScreen onBack={goBack} currentUser={currentUser} onGoToWallet={() => navigateTo('customer-wallet')} />
           )}
 
           {/* ── INBOX ── */}
