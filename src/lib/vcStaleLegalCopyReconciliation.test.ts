@@ -54,6 +54,17 @@ describe('no obsolete 14-day pending-referral wording remains reachable', () => 
   });
 });
 
+describe('Check-in VC copy reflects the ₦20,000 qualification rule (Prompt 2)', () => {
+  it('HelpPage no longer implies any check-in earns VC unconditionally', () => {
+    expect(helpPage).toMatch(/₦20,000\+ ticket/);
+  });
+
+  it('HelpSupportScreen states the ₦20,000 threshold and that free/cheaper check-ins earn 0 VC', () => {
+    expect(helpSupport).toMatch(/₦20,000/);
+    expect(helpSupport).toMatch(/earn 0 VC/i);
+  });
+});
+
 describe('HelpSupportScreen no longer makes claims that contradict live, unrelated features', () => {
   it('does not claim VC cannot be used to pay for tickets (ticket redemption is a real feature)', () => {
     expect(helpSupport).not.toMatch(/cannot be used to pay for tickets/i);

@@ -20,7 +20,7 @@ const SECTIONS: Section[] = [
       { q: 'What payment methods are accepted?', a: 'Debit/credit cards (Visa, Mastercard, Verve), bank transfer, and USSD. All payments are processed by Paystack — we never store your card details.' },
       { q: 'Is my payment secure?', a: 'Yes. All card processing is handled by Paystack, a PCI-DSS compliant payment provider. Vents never sees or stores raw card numbers. All data is encrypted in transit using HTTPS/TLS.' },
       { q: 'What are Vents Cents?', a: 'Vents Cents are in-app reward points. They can be used for discounts on ticket purchases, and, once you reach Gold loyalty tier or higher, converted into your VENTS Wallet balance (10 Vents Cents = ₦1, minimum 10,000 Vents Cents). They are not transferable between accounts and have no cash value outside the Vents platform.' },
-      { q: 'How do I earn Vents Cents?', a: 'Go to Profile → Vents Cents to see your referral link and all the ways to earn — completing your profile, checking in to events, and referring friends. Referral rewards are credited as soon as they are earned, with no pending period.' },
+      { q: 'How do I earn Vents Cents?', a: 'Go to Profile → Vents Cents to see your referral link, your current reward amounts, and the ? info screen for full details. In short: complete your profile, check in to an event with a ₦20,000+ ticket (free events and cheaper tickets don\'t qualify), or refer friends.' },
     ],
   },
   {
