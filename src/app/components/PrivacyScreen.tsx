@@ -127,7 +127,7 @@ export function PrivacyScreen() {
           title: '7. Vents Cents',
           body: (
             <>
-              Vents Cents are in-app loyalty points. They are <B>not real money, not withdrawable, and not convertible to cash or any currency</B>. They may only be used for in-app discounts on ticket purchases and hold no monetary value outside the Vents platform.
+              Vents Cents are in-app loyalty points earned by referring friends, completing your profile, and checking in to events. They may be used for in-app discounts on ticket purchases, and have no monetary value outside the Vents platform. Users who reach Gold loyalty tier or higher may convert eligible Vents Cents into their VENTS Wallet balance (10 Vents Cents = ₦1, minimum 10,000 Vents Cents); this credits the in-app Wallet only and is not a direct cash payout. Vents Cents cannot be transferred between accounts or redeemed for cash directly.
             </>
           ),
         },
