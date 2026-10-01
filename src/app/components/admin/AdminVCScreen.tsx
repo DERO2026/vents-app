@@ -75,6 +75,7 @@ export function AdminVCScreen() {
 
   const [creditAmount, setCreditAmount] = useState('');
   const [creditReason, setCreditReason] = useState('');
+  const [creditCountsTowardLifetime, setCreditCountsTowardLifetime] = useState(false);
   const [creditBusy, setCreditBusy] = useState(false);
   const [creditMsg, setCreditMsg] = useState<string | null>(null);
   const [confirmCredit, setConfirmCredit] = useState(false);
@@ -84,6 +85,32 @@ export function AdminVCScreen() {
   const [debitBusy, setDebitBusy] = useState(false);
   const [debitMsg, setDebitMsg] = useState<string | null>(null);
   const [confirmDebit, setConfirmDebit] = useState(false);
+
+  // Server-authoritative balance for the selected user -- never derived from
+  // anything the client already had lying around. Refetched whenever the
+  // selected user changes and after every credit/debit, so "Current" and
+  // "Projected" are both grounded in a value the server just computed.
+  const [userVcSummary, setUserVcSummary] = useState<{ balance: number; lifetime_earned: number; tier: string | null; multiplier: number } | null>(null);
+  const [userVcSummaryLoading, setUserVcSummaryLoading] = useState(false);
+  const [poolStatus, setPoolStatus] = useState<{ total_supply: number; pool_balance: number; total_user_vc_outstanding: number } | null>(null);
+
+  const loadUserVcSummary = useCallback((userId: string) => {
+    setUserVcSummaryLoading(true);
+    supabase.rpc('admin_get_user_vc_summary' as any, { p_user_id: userId }).then(({ data }: any) => {
+      setUserVcSummary(data || null);
+      setUserVcSummaryLoading(false);
+    }, () => setUserVcSummaryLoading(false));
+  }, []);
+
+  const loadPoolStatus = useCallback(() => {
+    supabase.rpc('admin_get_vc_pool_status' as any).then(({ data }: any) => setPoolStatus(data || null), () => {});
+  }, []);
+
+  useEffect(() => { loadPoolStatus(); }, [loadPoolStatus]);
+  useEffect(() => {
+    if (selectedUser) loadUserVcSummary(selectedUser.id);
+    else setUserVcSummary(null);
+  }, [selectedUser, loadUserVcSummary]);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -121,11 +148,18 @@ export function AdminVCScreen() {
     if (!selectedUser || !creditAmount || Number(creditAmount) <= 0 || !creditReason.trim()) return;
     setCreditBusy(true); setCreditMsg(null);
     try {
-      const { error } = await supabase.rpc('admin_credit_vents_cents' as any, { p_user_id: selectedUser.id, p_amount: Number(creditAmount), p_reason: creditReason.trim() });
+      const { data, error } = await supabase.rpc('admin_credit_vents_cents' as any, {
+        p_user_id: selectedUser.id,
+        p_amount: Number(creditAmount),
+        p_reason: creditReason.trim(),
+        p_counts_toward_lifetime: creditCountsTowardLifetime,
+        p_idempotency_key: crypto.randomUUID(),
+      });
       if (error) throw error;
-      setCreditMsg(`✓ ${creditAmount} VC credited to ${selectedUser.username || selectedUser.full_name}`);
-      setCreditAmount(''); setCreditReason('');
-      load();
+      const newBalance = (data as any)?.new_balance;
+      setCreditMsg(`✓ ${creditAmount} VC credited to ${selectedUser.username || selectedUser.full_name}${typeof newBalance === 'number' ? ` — new balance: ${newBalance.toLocaleString()} VC` : ''}`);
+      setCreditAmount(''); setCreditReason(''); setCreditCountsTowardLifetime(false);
+      load(); loadPoolStatus(); loadUserVcSummary(selectedUser.id);
     } catch (e: any) {
       setCreditMsg(e?.message || 'Credit failed.');
     } finally { setCreditBusy(false); }
@@ -135,15 +169,31 @@ export function AdminVCScreen() {
     if (!selectedUser || !debitAmount || Number(debitAmount) <= 0 || !debitReason.trim()) return;
     setDebitBusy(true); setDebitMsg(null);
     try {
-      const { error } = await supabase.rpc('admin_debit_vents_cents' as any, { p_user_id: selectedUser.id, p_amount: Number(debitAmount), p_reason: debitReason.trim() });
+      const { data, error } = await supabase.rpc('admin_debit_vents_cents' as any, {
+        p_user_id: selectedUser.id,
+        p_amount: Number(debitAmount),
+        p_reason: debitReason.trim(),
+        p_idempotency_key: crypto.randomUUID(),
+      });
       if (error) throw error;
-      setDebitMsg(`✓ ${debitAmount} VC debited from ${selectedUser.username || selectedUser.full_name}`);
+      const newBalance = (data as any)?.target_balance;
+      setDebitMsg(`✓ ${debitAmount} VC debited from ${selectedUser.username || selectedUser.full_name}${typeof newBalance === 'number' ? ` — new balance: ${newBalance.toLocaleString()} VC` : ''}`);
       setDebitAmount(''); setDebitReason('');
-      load();
+      load(); loadPoolStatus(); loadUserVcSummary(selectedUser.id);
     } catch (e: any) {
       setDebitMsg(e?.message || 'Debit failed.');
     } finally { setDebitBusy(false); }
   };
+
+  // Display-only projections -- the server independently recomputes and
+  // enforces the real resulting balance inside the RPC; these numbers never
+  // get sent back to the server.
+  const projectedCreditBalance = userVcSummary && creditAmount && Number(creditAmount) > 0
+    ? userVcSummary.balance + Number(creditAmount)
+    : null;
+  const projectedDebitBalance = userVcSummary && debitAmount && Number(debitAmount) > 0
+    ? userVcSummary.balance - Number(debitAmount)
+    : null;
 
   const inputStyle: React.CSSProperties = { width: '100%', background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 10, padding: '10px 12px', color: adminTheme.text, fontSize: 13, outline: 'none', boxSizing: 'border-box' };
 
@@ -159,6 +209,19 @@ export function AdminVCScreen() {
           <div key={c.label} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 14, padding: 16 }}>
             <div style={{ color: adminTheme.textFaint, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>{c.label}</div>
             <div style={{ color: adminTheme.textStrong, fontSize: 22, fontWeight: 800 }}>{loading ? '…' : c.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+        {[
+          { label: 'Total VC Supply', value: poolStatus ? poolStatus.total_supply.toLocaleString() : '…' },
+          { label: 'System Pool Remaining', value: poolStatus ? poolStatus.pool_balance.toLocaleString() : '…' },
+          { label: 'Total VC Outstanding (Users)', value: poolStatus ? poolStatus.total_user_vc_outstanding.toLocaleString() : '…' },
+        ].map((c) => (
+          <div key={c.label} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 14, padding: 16 }}>
+            <div style={{ color: adminTheme.textFaint, fontSize: 11, fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>{c.label}</div>
+            <div style={{ color: adminTheme.textStrong, fontSize: 18, fontWeight: 800 }}>{c.value}</div>
           </div>
         ))}
       </div>
@@ -268,11 +331,50 @@ export function AdminVCScreen() {
         )}
       </div>
 
+      {selectedUser && (
+        <div data-testid="admin-vc-user-summary" style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 16, padding: 16, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <div style={{ color: adminTheme.textFaint, fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Current Available VC</div>
+            <div data-testid="admin-vc-current-balance" style={{ color: adminTheme.textStrong, fontSize: 20, fontWeight: 800 }}>
+              {userVcSummaryLoading ? '…' : `${(userVcSummary?.balance ?? 0).toLocaleString()} VC`}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: adminTheme.textFaint, fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Lifetime VC</div>
+            <div style={{ color: adminTheme.text, fontSize: 20, fontWeight: 800 }}>
+              {userVcSummaryLoading ? '…' : `${(userVcSummary?.lifetime_earned ?? 0).toLocaleString()} VC`}
+            </div>
+          </div>
+          <div>
+            <div style={{ color: adminTheme.textFaint, fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Tier / Multiplier</div>
+            <div style={{ color: adminTheme.text, fontSize: 20, fontWeight: 800 }}>
+              {userVcSummaryLoading ? '…' : (userVcSummary?.tier ? `${userVcSummary.tier} · ${userVcSummary.multiplier}×` : 'None')}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
         <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ color: adminTheme.textStrong, fontSize: 13, fontWeight: 700 }}>Admin Transfer (Credit)</div>
           <input placeholder="Amount (VC)" type="number" min="1" value={creditAmount} onChange={(e) => setCreditAmount(e.target.value)} style={inputStyle} />
           <input placeholder="Reason (required)" value={creditReason} onChange={(e) => setCreditReason(e.target.value)} style={inputStyle} />
+          {projectedCreditBalance !== null && (
+            <div data-testid="admin-vc-credit-projected" style={{ color: adminTheme.green, fontSize: 13, fontWeight: 700 }}>
+              Projected balance: {projectedCreditBalance.toLocaleString()} VC
+            </div>
+          )}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: adminTheme.textMuted, cursor: 'pointer' }}>
+            <input
+              type="checkbox"
+              checked={creditCountsTowardLifetime}
+              onChange={(e) => setCreditCountsTowardLifetime(e.target.checked)}
+            />
+            This credit compensates a missed/replacement qualifying reward (counts toward Lifetime VC / tier)
+          </label>
+          <div style={{ fontSize: 11, color: creditCountsTowardLifetime ? adminTheme.green : adminTheme.textFaint, fontWeight: 600 }}>
+            {creditCountsTowardLifetime ? '✓ Will increase Lifetime VC and may change tier/multiplier.' : 'Will NOT affect Lifetime VC, tier, or multiplier (ordinary balance adjustment).'}
+          </div>
           {creditMsg && <div style={{ color: creditMsg.startsWith('✓') ? adminTheme.green : adminTheme.red, fontSize: 12 }}>{creditMsg}</div>}
           <button onClick={() => setConfirmCredit(true)} disabled={creditBusy || !selectedUser || !creditAmount || !creditReason.trim()} style={{ background: 'linear-gradient(135deg, #7C3AED, #4F46E5)', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !creditAmount || !creditReason.trim()) ? 0.5 : 1 }}>
             {creditBusy ? 'Crediting…' : 'Credit VC to User'}
@@ -280,9 +382,15 @@ export function AdminVCScreen() {
         </div>
         <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 16, padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ color: adminTheme.textStrong, fontSize: 13, fontWeight: 700 }}>Admin Debit / Claw-back</div>
-          <div style={{ color: adminTheme.textFaint, fontSize: 11 }}>Uses the user selected above. Fails if their balance is insufficient.</div>
+          <div style={{ color: adminTheme.textFaint, fontSize: 11 }}>Uses the user selected above. Fails if their balance is insufficient. Never affects Lifetime VC or tier.</div>
           <input placeholder="Amount (VC)" type="number" min="1" value={debitAmount} onChange={(e) => setDebitAmount(e.target.value)} style={inputStyle} />
           <input placeholder="Reason (required)" value={debitReason} onChange={(e) => setDebitReason(e.target.value)} style={inputStyle} />
+          {projectedDebitBalance !== null && (
+            <div data-testid="admin-vc-debit-projected" style={{ color: projectedDebitBalance < 0 ? adminTheme.red : adminTheme.red, fontSize: 13, fontWeight: 700 }}>
+              Projected balance: {projectedDebitBalance.toLocaleString()} VC
+              {projectedDebitBalance < 0 && ' — insufficient balance, this will fail'}
+            </div>
+          )}
           {debitMsg && <div style={{ color: debitMsg.startsWith('✓') ? adminTheme.green : adminTheme.red, fontSize: 12 }}>{debitMsg}</div>}
           <button onClick={() => setConfirmDebit(true)} disabled={debitBusy || !selectedUser || !debitAmount || !debitReason.trim()} style={{ background: 'linear-gradient(135deg, #DC2626, #B91C1C)', border: 'none', borderRadius: 12, padding: 12, color: '#fff', fontWeight: 700, cursor: 'pointer', opacity: (!selectedUser || !debitAmount || !debitReason.trim()) ? 0.5 : 1 }}>
             {debitBusy ? 'Debiting…' : 'Debit VC from User'}
@@ -293,7 +401,7 @@ export function AdminVCScreen() {
       {confirmCredit && selectedUser && (
         <ConfirmModal
           title="Credit VENTS Cents?"
-          message={`Credit ${creditAmount} VC to ${selectedUser.username || selectedUser.full_name}? Reason: "${creditReason.trim()}"`}
+          message={`Credit ${creditAmount} VC to ${selectedUser.username || selectedUser.full_name}? Current: ${(userVcSummary?.balance ?? 0).toLocaleString()} VC → After: ${(projectedCreditBalance ?? 0).toLocaleString()} VC. ${creditCountsTowardLifetime ? 'This WILL count toward Lifetime VC and tier.' : 'This will NOT affect Lifetime VC or tier.'} Reason: "${creditReason.trim()}"`}
           confirmLabel="Credit"
           danger={false}
           onConfirm={() => { setConfirmCredit(false); doCredit(); }}
@@ -313,7 +421,7 @@ export function AdminVCScreen() {
       {confirmDebit && selectedUser && (
         <ConfirmModal
           title="Debit VENTS Cents?"
-          message={`Debit ${debitAmount} VC from ${selectedUser.username || selectedUser.full_name}? Reason: "${debitReason.trim()}"`}
+          message={`Debit ${debitAmount} VC from ${selectedUser.username || selectedUser.full_name}? Current: ${(userVcSummary?.balance ?? 0).toLocaleString()} VC → After: ${(projectedDebitBalance ?? 0).toLocaleString()} VC. This will NOT affect Lifetime VC or tier. Reason: "${debitReason.trim()}"`}
           confirmLabel="Debit"
           danger
           onConfirm={() => { setConfirmDebit(false); doDebit(); }}
