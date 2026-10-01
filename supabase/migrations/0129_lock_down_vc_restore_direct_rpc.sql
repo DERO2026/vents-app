@@ -1,0 +1,30 @@
+-- CRITICAL finding from the financial/security reconciliation audit:
+-- public._vc_restore(p_user_id uuid, p_amount integer, p_reason text) is
+-- SECURITY DEFINER, performs NO internal authorization check (no is_admin(),
+-- no ownership check, no caller verification of any kind), takes an
+-- arbitrary target user_id and an arbitrary (not even positive-checked)
+-- integer amount, and unconditionally credits that user's vents_wallets
+-- balance -- yet it was left reachable via the normal PostgREST RPC surface
+-- by both `anon` and `authenticated` (its sibling _vc_deduct correctly has
+-- no such grant). Any signed-in user -- or an unauthenticated caller, since
+-- anon could call it too -- could mint arbitrary VENTS Cents into any
+-- wallet (including their own) via:
+--   supabase.rpc('_vc_restore', { p_user_id: '<any-uuid>', p_amount: 999999999 })
+-- and then cash it out through the already-correct request_vc_cashout path.
+-- This is the exact class of bug the 0123 audit found and fixed for
+-- credit_provider_wallet_for_booking: a function meant to be reachable only
+-- as a nested PERFORM from another SECURITY DEFINER function (here:
+-- admin_cancel_processing_vc_payout, admin_reject_vc_payout) that never had
+-- its own EXECUTE grant locked down. Every real call site already runs as
+-- the calling function's owner (postgres), so the authenticated/anon grant
+-- was never needed for any legitimate code path.
+--
+-- Fixed by revoking EXECUTE from PUBLIC/anon/authenticated and granting
+-- only to postgres/project_admin, matching _vc_deduct's existing (correct)
+-- grant shape exactly. No signature or behavior change. Live-verified: a
+-- direct `SET ROLE authenticated; SELECT _vc_restore(...)` now fails with
+-- "permission denied for function _vc_restore", and the legitimate nested
+-- call from admin_cancel_processing_vc_payout/admin_reject_vc_payout (which
+-- runs as the owning function's owner, postgres) is unaffected.
+REVOKE ALL ON FUNCTION public._vc_restore(uuid, integer, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public._vc_restore(uuid, integer, text) TO postgres, project_admin;
