@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
+import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 
 type Plan = 'spotlight' | 'featured' | 'trending';
 type Duration = 3 | 7 | 14 | 30;
@@ -25,6 +26,15 @@ const PLAN_TYPE: Record<Plan, string> = { spotlight: 'boosted', featured: 'featu
 // with zero payment at all). This endpoint is the only path left that can
 // set those columns; the DB-side trigger + activate_event_promotion() RPC
 // enforce that server-side.
+//
+// activate_event_promotion is project_admin-only (see migration
+// fix_activate_event_promotion_payment_bypass) -- it used to be callable
+// with the client's own forwarded session token, which meant any
+// organizer could call it directly from the browser with a fabricated
+// payment_ref and skip this route's Paystack verification entirely. It
+// now takes an explicit p_organizer_id (this route's own
+// session-verified user id) instead of reading auth.uid(), and is only
+// reachable over the project_admin connection below.
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res);
 
@@ -50,9 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const secret = process.env.PAYSTACK_SECRET_KEY;
-  const baseUrl = process.env.VITE_SUPABASE_URL;
-  const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
-  if (!secret || !baseUrl || !anonKey) {
+  if (!secret) {
     return res.status(500).json({ error: 'Not configured' });
   }
 
@@ -74,27 +82,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(402).json({ error: 'Payment amount does not match the selected plan' });
     }
 
-    // activate_event_promotion() re-verifies ownership via the forwarded
-    // token's auth.uid() and is idempotent on payment_ref (ON CONFLICT DO
-    // NOTHING), so a retry with the same reference is a safe no-op.
-    const rpcRes = await fetch(`${baseUrl}/rest/v1/rpc/activate_event_promotion`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: authHeader as string,
-        apikey: anonKey,
-      },
-      body: JSON.stringify({
-        p_event_id: event_id,
-        p_plan_type: PLAN_TYPE[plan as Plan],
-        p_duration_days: duration_days,
-        p_payment_ref: reference,
-      }),
-    });
-    if (!rpcRes.ok) {
-      const errJson = await rpcRes.json().catch(() => null);
-      return res.status(rpcRes.status).json({ error: errJson?.message || 'Could not activate promotion' });
-    }
+    // activate_event_promotion() re-verifies ownership against this
+    // session's own user id and is idempotent on payment_ref (ON CONFLICT
+    // DO NOTHING), so a retry with the same reference is a safe no-op.
+    await callProjectAdminRpc('activate_event_promotion', [
+      event_id,
+      PLAN_TYPE[plan as Plan],
+      duration_days,
+      reference,
+      session.userId,
+    ]);
 
     return res.status(200).json({ status: 'active' });
   } catch (err: any) {
