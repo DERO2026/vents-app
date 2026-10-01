@@ -14,11 +14,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 //     extraction fields.
 //   - GET/OPTIONS behavior is untouched by the discriminator.
 
-const { mockHandleAiAssistant, mockVerifyInsforgeSession } = vi.hoisted(() => ({
+const { mockHandleAiAssistant, mockVerifyInsforgeSession, mockEnforceRateLimit } = vi.hoisted(() => ({
   mockHandleAiAssistant: vi.fn(async (_req: any, res: any) => {
     res.status(200).json({ type: 'message', text: 'ai handled', cards: [] });
   }),
   mockVerifyInsforgeSession: vi.fn(async () => ({ userId: 'u1', email: 'u1@example.com' })),
+  // Scalability/cost audit: the text/vision branches now call
+  // enforceRateLimit too (see extractEventsRateLimit.security.test.ts) --
+  // always allow here so these routing-focused tests keep exercising the
+  // mode-discriminator logic they were written for, not the rate limit.
+  mockEnforceRateLimit: vi.fn(async () => true),
 }));
 
 vi.mock('../../api/_lib/aiAssistantHandler', () => ({
@@ -26,6 +31,7 @@ vi.mock('../../api/_lib/aiAssistantHandler', () => ({
 }));
 vi.mock('../../api/_lib/verifyAuth', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
+  enforceRateLimit: mockEnforceRateLimit,
 }));
 vi.mock('../../api/_lib/cors', () => ({
   applyCors: vi.fn(),

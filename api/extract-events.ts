@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession } from './_lib/verifyAuth.js';
+import { verifyInsforgeSession, enforceRateLimit } from './_lib/verifyAuth.js';
 import { applyCors } from './_lib/cors.js';
 import { handleAiAssistant } from './_lib/aiAssistantHandler.js';
 
@@ -40,8 +40,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // This endpoint spends a paid Anthropic API call per request — must be a
   // live, validated VENTS session, not just any non-empty header.
-  const session = await verifyInsforgeSession(req.headers.authorization);
+  const authHeader = req.headers.authorization;
+  const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+  // Scalability/cost audit finding: unlike the ai_assistant branch above
+  // (which has always called enforceRateLimit), neither this text-extraction
+  // path nor the vision-crop branch below ever capped per-user request
+  // volume -- a session-holding client could script unlimited calls, each
+  // one a billed Anthropic request, with no backend limit at all. Same
+  // RPC/convention every other paid-call endpoint in this codebase already
+  // gates on (see api/_lib/verifyAuth.ts), keyed per user so one user's
+  // usage can't exhaust another's allowance.
+  const rateOk = await enforceRateLimit(String(authHeader), `extract_events:${session.userId}`, 20, 3600);
+  if (!rateOk) return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
 
   // Vision branch: focus-aware flyer cropping. Folded into this (the existing
   // AI/Anthropic endpoint) to stay within the serverless-function limit — the
