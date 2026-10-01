@@ -7,6 +7,7 @@ import { Sentry } from '../../lib/sentry';
 import { VentsCentsInfoModal } from './VentsCentsInfoModal';
 
 const MAX_REFERRALS = 5;
+const FEATURE_IN_PEOPLE_COST_VC = 1500;
 
 interface ReferralScreenProps {
   onBack: () => void;
@@ -91,7 +92,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
   // automatically instead of silently drifting out of sync.
   const [campaignAmounts, setCampaignAmounts] = useState<Record<string, number>>({});
 
-  // Featured in People state (unrelated VC-spend feature, unchanged)
+  // Featured in People state (unrelated VC-spend feature; cost raised 150 -> 1,500 VC)
   const [featuredBusy, setFeaturedBusy] = useState(false);
   const [featuredMsg, setFeaturedMsg] = useState<string | null>(null);
   const [featuredUntil, setFeaturedUntil] = useState<string | null>(null);
@@ -220,7 +221,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
       const { error } = await supabase.rpc('feature_in_people_vc' as any);
       if (error) throw error;
       invalidateVcBalanceCache();
-      setBalance((prev) => prev - 150);
+      setBalance((prev) => prev - FEATURE_IN_PEOPLE_COST_VC);
       const newUntil = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000).toISOString();
       setFeaturedUntil(newUntil);
       setFeaturedMsg('You are now featured in People for 3 days!');
@@ -413,10 +414,10 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           {featuredMsg && <p style={{ color: featuredMsg.includes('now') ? '#10B981' : '#EF4444', fontSize: '12px', marginBottom: '8px' }}>{featuredMsg}</p>}
           <button
             onClick={handleFeaturedInPeople}
-            disabled={featuredBusy || balance < 150}
-            style={{ width: '100%', background: balance >= 150 ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= 150 ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= 150 && !featuredBusy ? 'pointer' : 'not-allowed' }}
+            disabled={featuredBusy || balance < FEATURE_IN_PEOPLE_COST_VC}
+            style={{ width: '100%', background: balance >= FEATURE_IN_PEOPLE_COST_VC ? 'linear-gradient(135deg, #1E40AF, #3B82F6)' : 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '12px', padding: '12px', color: balance >= FEATURE_IN_PEOPLE_COST_VC ? '#fff' : '#555C7A', fontSize: '14px', fontWeight: 700, cursor: balance >= FEATURE_IN_PEOPLE_COST_VC && !featuredBusy ? 'pointer' : 'not-allowed' }}
           >
-            {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · 150 VC`}
+            {featuredBusy ? 'Processing…' : `${isFeaturedActive ? 'Extend 3 days' : 'Feature me'} · ${FEATURE_IN_PEOPLE_COST_VC.toLocaleString()} VC`}
           </button>
         </div>
 
