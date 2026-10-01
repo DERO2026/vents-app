@@ -38,7 +38,7 @@ const FAQS = [
   },
   {
     q: 'What are Vents Cents?',
-    a: 'Vents Cents (VC) are in-app loyalty points — not money. You cannot withdraw, convert, or transfer them to cash or any external account.\n\nHow to EARN VC:\n• 300 VC when a friend you refer signs up (they get 150 VC too)\n• 100 VC for completing your profile\n• 50 VC per ticket you purchase\n\nHow to SPEND VC:\n• Unlock exclusive badges and profile features\n• Boost event visibility (organizers)\n\nVC expires 12 months after they are earned. They hold no cash value and cannot be used to pay for tickets.',
+    a: 'Vents Cents (VC) are in-app loyalty points. You cannot withdraw or transfer them directly to cash or any external account.\n\nHow to EARN VC:\n• Complete your profile\n• Buy a ticket\n• Refer a friend — they get VC for joining, and you get a bonus (scaled by your loyalty tier) once they check in to their first event\n• Check in to events (scaled by your loyalty tier)\n\nHow to SPEND VC:\n• Get a discount on ticket purchases\n• At Gold loyalty tier or higher, convert VC into your VENTS Wallet balance (10 VC = ₦1, minimum 10,000 VC) — this credits your in-app Wallet, not a direct bank payout\n\nSee Profile → Vents Cents for your exact balance, tier, and the current reward amounts.',
   },
   {
     q: 'How do organisers withdraw their earnings?',
