@@ -9,11 +9,64 @@ import { ConfirmModal } from './adminShared';
 import { escapePostgrestOrValue } from '../../../lib/sanitize';
 
 interface VcUser { id: string; full_name: string | null; username: string | null; email: string; avatar_url: string | null; }
+interface VcCampaign {
+  key: string; label: string; description: string | null; amount_vc: number;
+  cap_per_user: number | null; cap_total: number | null; total_awarded: number;
+  enabled: boolean; starts_at: string | null; ends_at: string | null;
+}
 
 export function AdminVCScreen() {
   const [aggregates, setAggregates] = useState({ circulation: 0, totalTxns: 0, credits: 0, debits: 0 });
   const [txns, setTxns] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  const [campaigns, setCampaigns] = useState<VcCampaign[]>([]);
+  const [campaignsLoading, setCampaignsLoading] = useState(true);
+  const [editingCampaign, setEditingCampaign] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState('');
+  const [editReason, setEditReason] = useState('');
+  const [campaignBusy, setCampaignBusy] = useState(false);
+  const [campaignMsg, setCampaignMsg] = useState<string | null>(null);
+  const [confirmCampaignChange, setConfirmCampaignChange] = useState<{ key: string; enabled: boolean } | null>(null);
+
+  const loadCampaigns = useCallback(() => {
+    setCampaignsLoading(true);
+    supabase.from('vc_reward_campaigns').select('*').order('key')
+      .then(({ data }) => { setCampaigns((data as any) || []); setCampaignsLoading(false); }, () => setCampaignsLoading(false));
+  }, []);
+
+  useEffect(() => { loadCampaigns(); }, [loadCampaigns]);
+
+  const toggleCampaignEnabled = async (key: string, nextEnabled: boolean) => {
+    setCampaignBusy(true); setCampaignMsg(null);
+    try {
+      const { error } = await supabase.rpc('admin_update_vc_campaign' as any, {
+        p_key: key, p_enabled: nextEnabled, p_reason: `${nextEnabled ? 'Enabled' : 'Disabled'} via Admin Console`,
+      });
+      if (error) throw error;
+      setCampaignMsg(`✓ ${key} ${nextEnabled ? 'enabled' : 'disabled'}`);
+      loadCampaigns();
+    } catch (e: any) {
+      setCampaignMsg(e?.message || 'Update failed.');
+    } finally { setCampaignBusy(false); }
+  };
+
+  const saveCampaignAmount = async (key: string) => {
+    const amount = Number(editAmount);
+    if (!amount || amount <= 0 || !editReason.trim()) return;
+    setCampaignBusy(true); setCampaignMsg(null);
+    try {
+      const { error } = await supabase.rpc('admin_update_vc_campaign' as any, {
+        p_key: key, p_amount_vc: amount, p_reason: editReason.trim(),
+      });
+      if (error) throw error;
+      setCampaignMsg(`✓ ${key} amount updated to ${amount} VC`);
+      setEditingCampaign(null); setEditAmount(''); setEditReason('');
+      loadCampaigns();
+    } catch (e: any) {
+      setCampaignMsg(e?.message || 'Update failed.');
+    } finally { setCampaignBusy(false); }
+  };
 
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
@@ -111,6 +164,59 @@ export function AdminVCScreen() {
       </div>
 
       <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 16, overflow: 'hidden' }}>
+        <div style={{ padding: 14, borderBottom: `1px solid ${adminTheme.borderSoft}`, color: adminTheme.textStrong, fontSize: 13, fontWeight: 700 }}>Reward Campaigns</div>
+        {campaignMsg && <div style={{ padding: '8px 14px', color: campaignMsg.startsWith('✓') ? adminTheme.green : adminTheme.red, fontSize: 12 }}>{campaignMsg}</div>}
+        {campaignsLoading ? (
+          <div style={{ padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 13 }}>Loading…</div>
+        ) : campaigns.length === 0 ? (
+          <div style={{ padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 13 }}>No campaigns.</div>
+        ) : (
+          <div>
+            {campaigns.map((c) => (
+              <div key={c.key} style={{ padding: '12px 14px', borderBottom: `1px solid ${adminTheme.borderSoft}` }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ color: adminTheme.textStrong, fontSize: 13, fontWeight: 700 }}>{c.label} <span style={{ color: adminTheme.textFaint, fontWeight: 400 }}>({c.key})</span></div>
+                    <div style={{ color: adminTheme.textMuted, fontSize: 11, marginTop: 2 }}>
+                      {c.amount_vc} VC · cap/user: {c.cap_per_user ?? '∞'} · cap total: {c.cap_total ?? '∞'} · awarded: {c.total_awarded}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <button
+                      onClick={() => setEditingCampaign(editingCampaign === c.key ? null : c.key)}
+                      style={{ background: adminTheme.panelAlt, border: `1px solid ${adminTheme.border}`, borderRadius: 8, padding: '6px 10px', color: adminTheme.text, fontSize: 12, cursor: 'pointer' }}
+                    >
+                      Edit amount
+                    </button>
+                    <button
+                      onClick={() => setConfirmCampaignChange({ key: c.key, enabled: !c.enabled })}
+                      disabled={campaignBusy}
+                      style={{
+                        background: c.enabled ? 'rgba(52,211,153,.12)' : 'rgba(248,113,113,.12)',
+                        border: `1px solid ${c.enabled ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'}`,
+                        borderRadius: 8, padding: '6px 10px',
+                        color: c.enabled ? adminTheme.green : adminTheme.red,
+                        fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                      }}
+                    >
+                      {c.enabled ? 'Enabled' : 'Disabled'}
+                    </button>
+                  </div>
+                </div>
+                {editingCampaign === c.key && (
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                    <input placeholder={`New amount (currently ${c.amount_vc})`} type="number" min="1" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                    <input placeholder="Reason (required)" value={editReason} onChange={(e) => setEditReason(e.target.value)} style={{ ...inputStyle, flex: 2 }} />
+                    <button onClick={() => saveCampaignAmount(c.key)} disabled={campaignBusy || !editAmount || !editReason.trim()} style={{ background: adminTheme.accentSoftBg, border: `1px solid ${adminTheme.accentSoftBorder}`, borderRadius: 8, padding: '0 14px', color: adminTheme.accentText, fontWeight: 600, cursor: 'pointer' }}>Save</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 16, overflow: 'hidden' }}>
         <div style={{ padding: 14, borderBottom: `1px solid ${adminTheme.borderSoft}`, color: adminTheme.textStrong, fontSize: 13, fontWeight: 700 }}>VC Transactions (last 100)</div>
         {loading ? (
           <div style={{ padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 13 }}>Loading…</div>
@@ -192,6 +298,16 @@ export function AdminVCScreen() {
           danger={false}
           onConfirm={() => { setConfirmCredit(false); doCredit(); }}
           onCancel={() => setConfirmCredit(false)}
+        />
+      )}
+      {confirmCampaignChange && (
+        <ConfirmModal
+          title={`${confirmCampaignChange.enabled ? 'Enable' : 'Disable'} campaign?`}
+          message={`${confirmCampaignChange.enabled ? 'Enable' : 'Disable'} the "${confirmCampaignChange.key}" reward campaign?`}
+          confirmLabel={confirmCampaignChange.enabled ? 'Enable' : 'Disable'}
+          danger={!confirmCampaignChange.enabled}
+          onConfirm={() => { const target = confirmCampaignChange; setConfirmCampaignChange(null); if (target) toggleCampaignEnabled(target.key, target.enabled); }}
+          onCancel={() => setConfirmCampaignChange(null)}
         />
       )}
       {confirmDebit && selectedUser && (
