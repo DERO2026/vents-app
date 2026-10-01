@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { getVcBalance, invalidateVcBalanceCache } from '../../lib/vcBalanceCache';
 import { haptics } from '../../lib/haptics';
 import { Sentry } from '../../lib/sentry';
+import { VentsCentsInfoModal } from './VentsCentsInfoModal';
 
 const MAX_REFERRALS = 5;
 
@@ -108,6 +109,7 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
   const [ngnPer1000Vc, setNgnPer1000Vc] = useState(500);
 
   const [convertOpen, setConvertOpen] = useState(false);
+  const [infoOpen, setInfoOpen] = useState(false);
 
   const tierRef = useRef<HTMLDivElement | null>(null);
   const referralSectionRef = useRef<HTMLDivElement | null>(null);
@@ -261,7 +263,14 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
           <ArrowLeft size={16} color="#f6f4f9" />
         </button>
         <span style={{ fontSize: '12px', letterSpacing: '2px', color: '#9a93a8', fontWeight: 700 }}>VENTS CENTS</span>
-        <div style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f6f4f9', fontSize: '15px', fontWeight: 700 }}>?</div>
+        <button
+          data-testid="vc-info-button"
+          onClick={() => setInfoOpen(true)}
+          aria-label="About VENTS Cents"
+          style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#f6f4f9', fontSize: '15px', fontWeight: 700, cursor: 'pointer' }}
+        >
+          ?
+        </button>
       </div>
 
       <div className="vc-scroll" style={{ position: 'relative', flex: 1, overflowY: 'auto', padding: '0 16px', maxWidth: '720px', margin: '0 auto', width: '100%', paddingBottom: 'calc(32px + env(safe-area-inset-bottom))', scrollbarWidth: 'none', boxSizing: 'border-box' }}>
@@ -352,8 +361,8 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
         <p style={{ color: '#9a93a8', fontSize: '13px', letterSpacing: '1.5px', fontWeight: 700, margin: '4px 0 12px' }}>HOW IT WORKS</p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px' }}>
           {[
-            { n: 1, title: 'Attend events', desc: 'Earn cents automatically every time you check in with a ticket.' },
-            { n: 2, title: 'Refer friends', desc: 'Share your code — earn a bonus once they check in to their first event.' },
+            { n: 1, title: 'Attend events', desc: 'Earn cents when you check in to an event with a ₦20,000+ ticket. Free events and cheaper tickets don\'t qualify.' },
+            { n: 2, title: 'Refer friends', desc: 'Share your code — earn a bonus once they make their first qualifying (₦20,000+) check-in.' },
             { n: 3, title: 'Redeem for tickets', desc: 'Use cents as credit toward any ticket purchase, no minimum.' },
           ].map((st) => (
             <div key={st.n} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '14px', padding: '13px' }}>
@@ -553,6 +562,21 @@ export function ReferralScreen({ onBack, currentUser, onGoToWallet }: ReferralSc
             loadActivity();
           }}
           onGoToWallet={onGoToWallet}
+        />
+      )}
+
+      {infoOpen && (
+        <VentsCentsInfoModal
+          onClose={() => setInfoOpen(false)}
+          profileAward={profileAward}
+          referredAward={referredAward}
+          checkinAward={checkinAward}
+          referrerCheckinAward={referrerCheckinAward}
+          tierLadder={tierLadder}
+          ngnPer1000Vc={ngnPer1000Vc}
+          tierLabels={TIER_LABELS}
+          tierColors={TIER_COLORS}
+          fmtMultiplier={fmtMultiplier}
         />
       )}
     </div>

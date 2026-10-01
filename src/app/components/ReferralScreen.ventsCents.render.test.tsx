@@ -312,6 +312,41 @@ describe('Stale/retired UI is absent', () => {
   });
 });
 
+describe('VENTS Cents "?" info experience (Prompt 2)', () => {
+  it('opens the info modal when the ? button is tapped, and closes it again', async () => {
+    setupMocks({ lifetimeEarned: 5000, tier: 'gold', multiplier: '1.25', spendable: 1000 });
+    await renderScreen();
+    expect(byTestId('vc-info-modal')).toBeNull();
+    await act(async () => { (byTestId('vc-info-button') as HTMLButtonElement).click(); });
+    const modal = byTestId('vc-info-modal');
+    expect(modal).not.toBeNull();
+    expect(modal!.textContent).toContain('What are VENTS Cents?');
+    await act(async () => { (modal!.querySelector('button[aria-label="Close"]') as HTMLButtonElement).click(); });
+    expect(byTestId('vc-info-modal')).toBeNull();
+  });
+
+  it('passes the real campaign amounts and tier ladder into the info modal, not hardcoded copy', async () => {
+    setupMocks({ lifetimeEarned: 5000, tier: 'gold', multiplier: '1.25', spendable: 1000 });
+    await renderScreen();
+    await act(async () => { (byTestId('vc-info-button') as HTMLButtonElement).click(); });
+    const modal = byTestId('vc-info-modal')!.textContent!;
+    expect(modal).toContain('+100 VC'); // profile_complete from CAMPAIGNS fixture
+    expect(modal).toContain('+500 VC'); // referral_referred
+    expect(modal).toContain('+250 VC'); // event_checkin
+    expect(modal).toContain('+1000 VC'); // referral_referrer_checkin
+    expect(modal).toContain('4,000 lifetime VC'); // gold threshold from TIER_LADDER fixture
+  });
+});
+
+describe('Stale check-in copy is fixed to reflect the ₦20,000 qualification rule', () => {
+  it('"How it works" no longer claims every check-in earns VC unconditionally', async () => {
+    setupMocks({ lifetimeEarned: 5000, tier: 'gold', multiplier: '1.25', spendable: 1000 });
+    await renderScreen();
+    expect(text()).not.toMatch(/earn cents automatically every time you check in with a ticket/i);
+    expect(text()).toMatch(/₦20,000\+ ticket/);
+  });
+});
+
 describe('Layout is responsive, not a fixed mobile-only width', () => {
   it('the scroll container caps width for desktop rather than forcing a phone-sized layout', async () => {
     setupMocks({ lifetimeEarned: 5000, tier: 'gold', multiplier: '1.25', spendable: 1000 });
