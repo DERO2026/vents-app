@@ -1,0 +1,36 @@
+-- CRITICAL finding from the Notifications/Push end-to-end reconciliation
+-- audit: public.get_pending_push_notifications_for_user(p_user_id uuid,
+-- p_limit integer) is SECURITY DEFINER with NO internal authorization
+-- check whatsoever (no auth.uid() check, no admin check, nothing) -- yet it
+-- was GRANTed EXECUTE to both anon and authenticated. Its only legitimate
+-- caller (api/_lib/pushDelivery.ts) invokes it via the direct project_admin
+-- Postgres connection (callProjectAdminTableRpc), never through the normal
+-- client/PostgREST RPC surface, so the anon/authenticated grants served no
+-- purpose and exposed a live, directly exploitable vulnerability:
+--
+--   supabase.rpc('get_pending_push_notifications_for_user', { p_user_id: '<any uuid>' })
+--
+-- called by ANY caller -- including a fully unauthenticated one, since anon
+-- had the grant -- returned that user's pending notification titles,
+-- bodies, and push_data (which can contain event/ticket/payment
+-- identifiers), PLUS their device push token (a device-identifying
+-- credential), for an arbitrary user id supplied by the caller. The call
+-- also has a side effect: it claims the returned notifications for
+-- delivery (push_claim_expires_at), so repeated hostile calls against
+-- arbitrary user ids could also disrupt real push delivery to those users
+-- for up to 2 minutes per call (a push-availability denial, not just an
+-- information leak).
+--
+-- Live-verified: `SET ROLE authenticated; SELECT * FROM
+-- get_pending_push_notifications_for_user(<any uuid>, 5);` succeeded and
+-- returned another user's notification content and push token before this
+-- fix; the identical call now fails with "permission denied for function
+-- get_pending_push_notifications_for_user".
+--
+-- Fixed by revoking EXECUTE from PUBLIC/anon/authenticated and granting
+-- only to project_admin -- matching the already-correct grant shape of its
+-- sibling get_pending_push_notifications() (the no-argument, all-users
+-- variant), which was never exposed this way. No signature or behavior
+-- change for the one legitimate server-side caller.
+REVOKE ALL ON FUNCTION public.get_pending_push_notifications_for_user(uuid, integer) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.get_pending_push_notifications_for_user(uuid, integer) TO project_admin;
