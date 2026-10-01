@@ -1,0 +1,41 @@
+-- Organizer end-to-end reconciliation audit: duplicate event-submission
+-- protection. CreateEventScreen.tsx's own comment already documents the
+-- intended behavior -- "There's no payment_ref-style idempotency key here
+-- ... so instead check for an event this organizer just created with this
+-- exact title/date/venue in the last 2 minutes ... treat it as the
+-- successful publish rather than inserting again" -- but the enforcement is
+-- a client-side SELECT-then-insert check, a classic time-of-check/time-of-
+-- use race: two concurrent requests (a double-tap, or two direct/stale-
+-- client calls) can both pass the SELECT before either commits its INSERT,
+-- and a direct/malicious caller can skip the SELECT entirely. Neither is
+-- hypothetical -- this is exactly the scenario the existing comment
+-- describes trying to prevent.
+--
+-- Live-verified before this fix: two identical direct inserts (same
+-- organizer_id/title/location/event_date) both succeeded, producing two
+-- live, independently ticket-sellable event rows (rolled back, no
+-- production residue).
+--
+-- This is not a new business rule -- it narrowly enforces the exact
+-- behavior the client already intends (same organizer + same title + same
+-- location + same event_date = the same submission), while explicitly
+-- preserving the ability to create any number of genuinely distinct events
+-- (different title, different venue, or different date/time all remain
+-- unrestricted, with no limit). Soft-deleted/cancelled events are excluded
+-- from the uniqueness check so an organizer can recreate an event they
+-- previously removed. No existing production rows violate this constraint
+-- (verified via GROUP BY ... HAVING count(*) > 1 before applying).
+--
+-- Live-verified after this fix (all rolled back, no residue):
+--   - the identical duplicate insert now fails with
+--     "duplicate key value violates unique constraint events_organizer_dedup_idx"
+--   - a different title, same organizer/location/date -- still succeeds
+--   - the same title/location, a different event_date (a recurring event)
+--     -- still succeeds
+--   - recreating an event identical to one that was soft-deleted
+--     (deleted_at set) -- still succeeds
+--   - a different organizer creating the identical title/location/date --
+--     still succeeds (isolation preserved, the index includes organizer_id)
+CREATE UNIQUE INDEX events_organizer_dedup_idx
+  ON public.events (organizer_id, title, location, event_date)
+  WHERE (deleted_at IS NULL);

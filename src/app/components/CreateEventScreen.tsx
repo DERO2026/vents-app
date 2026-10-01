@@ -572,7 +572,7 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
 
       // Failsafe: a hung insert (flaky connection) must never leave the
       // user stuck on the publish button forever.
-      const { data, error } = await withTimeoutFallback(
+      const { data: insertedData, error } = await withTimeoutFallback(
         Promise.resolve(
           supabase
             .from('events')
@@ -614,7 +614,31 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         { timeoutMs: 8000, timeoutMessage: 'Publishing is taking too long. Please check your connection and try again.' }
       );
 
-      if (error) throw error;
+      // events_organizer_dedup_idx (organizer_id, title, location, event_date)
+      // is the server-side backstop for the recentDupe check above -- it
+      // closes the race where two concurrent/retried submissions both pass
+      // that SELECT before either commits. A genuine double-tap landing
+      // here must still succeed from the user's perspective exactly like
+      // the recentDupe branch does, not surface a raw DB error.
+      let data = insertedData;
+      if (error?.code === '23505' && error.message?.includes('events_organizer_dedup_idx')) {
+        const { data: existing } = await supabase
+          .from('events')
+          .select('id')
+          .eq('organizer_id', currentUser.id)
+          .eq('title', sanitize(title))
+          .eq('location', locationString)
+          .eq('event_date', eventTimestamp)
+          .is('deleted_at', null)
+          .limit(1);
+        if (existing?.[0]?.id) {
+          data = [{ id: existing[0].id }] as typeof insertedData;
+        } else {
+          throw error;
+        }
+      } else if (error) {
+        throw error;
+      }
 
       const createdEvent: OrganizerEvent = {
         id: data?.[0]?.id || (() => { throw new Error('Event created but no ID returned from DB'); })(),
