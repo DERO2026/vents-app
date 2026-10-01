@@ -1,5 +1,11 @@
+import type { ReactNode } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { VentsLogo } from './VentsLogo';
 import { ventsColors, ventsTypography } from '../../lib/ventsDesignTokens';
+
+// Official, live VENTS store listings -- never fabricate or alter these.
+const APP_STORE_URL = 'https://apps.apple.com/ng/app/vents-events/id6802584284';
+const PLAY_STORE_URL = 'https://play.google.com/store/apps/details?id=com.getvents.app';
 
 interface WelcomeScreenProps {
   onGetStarted: () => void;
@@ -175,7 +181,78 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
             Browse as guest
           </span>
         )}
+
+        {/* Download CTA -- web only. Inside the native app shell the person
+            already has VENTS installed, so this would be redundant noise. */}
+        {!Capacitor.isNativePlatform() && (
+          <div style={{ width: '100%', marginTop: '4px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+            <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div style={{ flex: 1, height: '1px', background: ventsColors.divider }} />
+              <span style={{ fontFamily: ventsTypography.fontMono, fontSize: '10px', fontWeight: 600, letterSpacing: '0.14em', textTransform: 'uppercase', color: ventsColors.ink3, whiteSpace: 'nowrap' }}>
+                Get the app
+              </span>
+              <div style={{ flex: 1, height: '1px', background: ventsColors.divider }} />
+            </div>
+            <div style={{ display: 'flex', gap: '10px', width: '100%' }}>
+              <StoreBadge href={APP_STORE_URL} label="Download on the" store="App Store" icon={<AppleIcon />} />
+              <StoreBadge href={PLAY_STORE_URL} label="GET IT ON" store="Google Play" icon={<PlayIcon />} />
+            </div>
+          </div>
+        )}
       </div>
     </div>
+  );
+}
+
+function StoreBadge({ href, label, store, icon }: { href: string; label: string; store: string; icon: ReactNode }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      style={{
+        flex: 1,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '8px',
+        height: '48px',
+        borderRadius: '12px',
+        background: ventsColors.glassBg,
+        border: `1px solid ${ventsColors.glassBorder}`,
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        color: ventsColors.white,
+        textDecoration: 'none',
+      }}
+    >
+      {icon}
+      <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.1 }}>
+        <span style={{ fontSize: '8px', fontWeight: 500, color: ventsColors.ink3, letterSpacing: '0.02em' }}>{label}</span>
+        <span style={{ fontSize: '13px', fontWeight: 700, fontFamily: ventsTypography.fontBody }}>{store}</span>
+      </span>
+    </a>
+  );
+}
+
+function AppleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path
+        fill={ventsColors.white}
+        d="M16.365 1.43c0 1.14-.468 2.217-1.17 3.012-.792.903-2.094 1.602-3.189 1.512-.144-1.098.414-2.25 1.116-2.97.792-.837 2.142-1.473 3.243-1.554Zm3.858 16.302c-.468 1.08-.693 1.566-1.296 2.52-.84 1.332-2.025 2.994-3.492 3.012-1.302.018-1.638-.846-3.402-.837-1.764.009-2.133.855-3.438.837-1.467-.018-2.589-1.512-3.429-2.844C2.985 17.235 2.532 13.212 3.822 11.07c.903-1.512 2.331-2.394 3.675-2.394 1.368 0 2.229.837 3.357.837 1.095 0 1.764-.837 3.357-.837 1.197 0 2.466.654 3.369 1.782-2.961 1.62-2.481 5.841.643 7.272Z"
+      />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fill="#00D9FF" d="M3.6 2.5 14.5 12 3.6 21.5c-.3-.2-.5-.5-.5-1V3.5c0-.5.2-.8.5-1Z" />
+      <path fill="#FFCA28" d="M14.5 12 3.6 2.5c.2-.1.5-.1.8.1l9.5 5.5-0.4 1 1-1Z" />
+      <path fill="#FF3D57" d="M18.8 9.4 14.5 12l4.3 2.6c.9-.5 1.5-1.1 1.5-1.8v-1.6c0-.7-.6-1.3-1.5-1.8Z" />
+      <path fill="#4CAF50" d="M3.6 21.5c.2.1.5.1.8-.1l9.5-5.5-4.3-2.6-6 7.2c0 .4.2.8.5 1Z" />
+    </svg>
   );
 }
