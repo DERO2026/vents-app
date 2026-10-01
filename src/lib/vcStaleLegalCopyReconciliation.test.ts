@@ -65,6 +65,13 @@ describe('Check-in VC copy reflects the ₦20,000 qualification rule (Prompt 2)'
   });
 });
 
+describe('No copy claims VC is earned merely by purchasing a ticket (ticket_purchase/first_ticket_purchase retired)', () => {
+  it('HelpSupportScreen no longer lists "Buy a ticket" as a way to earn VC', () => {
+    expect(helpSupport).not.toMatch(/Buy a ticket \(some purchase bonuses apply\)/i);
+    expect(helpSupport).toMatch(/Buying a ticket on its own does not earn VC/i);
+  });
+});
+
 describe('HelpSupportScreen no longer makes claims that contradict live, unrelated features', () => {
   it('does not claim VC cannot be used to pay for tickets (ticket redemption is a real feature)', () => {
     expect(helpSupport).not.toMatch(/cannot be used to pay for tickets/i);
