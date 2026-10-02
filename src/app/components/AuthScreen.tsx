@@ -58,6 +58,17 @@ interface AuthScreenProps {
   selectedCountryIso?: string;
   onBack: () => void;
   onSuccess: (userProfile: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; avatar_url?: string; cover_url?: string; isOrganizer?: boolean; is_verified?: boolean; vc_badge?: string; is_service_provider?: boolean; country?: string; profileWarning?: string }) => void;
+  // Used instead of calling supabase.auth.signOut() directly when a
+  // suspended/deleted account is caught right after a successful
+  // signInWithPassword. A direct signOut() call here fires Supabase's own
+  // SIGNED_OUT event, which App.tsx's global onAuthStateChange listener
+  // reacts to by forcing setScreen('welcome') -- unmounting this screen
+  // (and wiping its local banInfo state) and sending the user to the
+  // landing page instead of leaving them here to see the ban message.
+  // silentSignOut (App.tsx) sets the same explicitSignOutRef that
+  // handleSignOut uses to suppress that listener, so this screen stays
+  // mounted and in control of its own navigation.
+  silentSignOut: () => Promise<void>;
   resetToken?: string;
   // Set when the user arrived via the "Verify Account" link in the
   // verification email (?verify_email=) or is resuming a signup that was
@@ -261,7 +272,7 @@ function LabeledField({
   );
 }
 
-export function AuthScreen({ initialMode, userRole, selectedState, selectedCountryIso, onBack, onSuccess, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
+export function AuthScreen({ initialMode, userRole, selectedState, selectedCountryIso, onBack, onSuccess, silentSignOut, resetToken, pendingVerificationEmail, onPendingVerificationConsumed, pendingResetEmail, onPendingResetConsumed, signupsDisabled = false }: AuthScreenProps) {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const otpInputRef = useRef<HTMLInputElement>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -1234,9 +1245,13 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
             }
           );
 
-          // 3.5: Block banned / deleted accounts immediately after auth
+          // 3.5: Block banned / deleted accounts immediately after auth.
+          // Uses silentSignOut (not supabase.auth.signOut() directly) so
+          // App.tsx's global SIGNED_OUT listener doesn't force the user to
+          // the welcome/landing screen out from under this ban message --
+          // see silentSignOut's own doc comment in AuthScreenProps.
           if (profile?.status === 'suspended' || profile?.status === 'deleted') {
-            await supabase.auth.signOut().catch(() => {});
+            await silentSignOut().catch(() => {});
             setBanInfo({ status: profile.status, until: profile.banned_until ?? null });
             setLoading(false);
             return;

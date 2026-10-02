@@ -2600,6 +2600,31 @@ export default function App() {
     explicitSignOutRef.current = false;
   }, [currentUser?.id]);
 
+  // Passed to AuthScreen for the one case where it needs to revoke a
+  // session it JUST established (a suspended/deleted account caught right
+  // after a successful signInWithPassword) without leaving the Login
+  // screen: calling supabase.auth.signOut() directly fires the SIGNED_OUT
+  // event the reactive listener above reacts to by forcing
+  // setScreen('welcome') -- unmounting AuthScreen (and its local banInfo
+  // state) out from under the ban message the user is supposed to see.
+  // This sets the same explicitSignOutRef that listener already respects
+  // for handleSignOut, so AuthScreen stays mounted and in control of its
+  // own screen/state for this case. Deliberately does NOT touch
+  // currentUser/screen/screenStack itself -- at this point in AuthScreen's
+  // flow, login never succeeded from the app's point of view (onSuccess
+  // was never called), so there is no authenticated state to tear down.
+  const silentSignOut = useCallback(async () => {
+    explicitSignOutRef.current = true;
+    try {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.error('Silent sign-out error:', err);
+      Sentry.captureException(err);
+    } finally {
+      explicitSignOutRef.current = false;
+    }
+  }, []);
+
   // Screens where the bottom nav is visible for both roles.
   // Guests browse these screens too (home-first flow) — the nav must stay
   // visible for them; individual screens handle their own auth prompts.
@@ -2935,6 +2960,7 @@ export default function App() {
               selectedCountryIso={selectedCountryIso}
               onBack={goBack}
               onSuccess={handleAuthSuccess}
+              silentSignOut={silentSignOut}
               resetToken={resetToken}
               pendingVerificationEmail={pendingVerificationEmail}
               onPendingVerificationConsumed={() => setPendingVerificationEmail(undefined)}
