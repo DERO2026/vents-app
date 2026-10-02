@@ -198,7 +198,9 @@ route through an in-app browser (`@capacitor/browser`), every `100vh`
 replaced with `100dvh`, push notifications switched to
 `@capacitor-firebase/messaging` so `getToken()` returns a real FCM token on
 iOS (was raw APNs — see §5), Capacitor toolchain aligned to 8.5.0 with
-`cap sync` verified clean, dead dependencies removed, app name set to
-"VENTS" everywhere. None of that needs to be redone — this checklist is the
+`cap sync` verified clean, dead dependencies removed, app display name set
+to "VENTS APP" everywhere (capacitor.config.ts's `appName`, which both
+platforms' native display name derives from at `cap add`/`cap sync` time —
+updated for the store release; previously "VENTS"). None of that needs to be redone — this checklist is the
 native-config-only remainder (Firebase console, Info.plist, Xcode
 signing/capabilities, Google Maps referrer restriction).

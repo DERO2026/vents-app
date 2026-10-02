@@ -2,7 +2,13 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.getvents.app',
-  appName: 'VENTS',
+  // Store display name, per explicit release requirement -- exactly
+  // "VENTS APP" (not "VENTS"), the device home-screen/App Store/Play
+  // Store listing name. Capacitor derives both platforms' native display
+  // name from this value at `cap add`/`cap sync` time (iOS's
+  // CFBundleDisplayName, Android's app_name string) -- see strings.xml
+  // for the native copy already checked into this repo, kept in sync here.
+  appName: 'VENTS APP',
   webDir: 'dist',
   // Explicit instead of relying on Capacitor's implicit default (which is
   // already 'https'/'localhost', not the file:// scheme a plain WebView or
