@@ -744,18 +744,31 @@ export default function App() {
           return;
         }
 
-        // Item 20: reject suspended users immediately on session restore
-        if (profile?.status === 'suspended') {
+        // Item 20: reject suspended/deleted users immediately on session
+        // restore. hydrateAuth is the one code path that always runs on
+        // session restore regardless of how the session was established
+        // (see the magic-link comment above) -- this used to only check
+        // 'suspended', not 'deleted', so a deleted account's existing
+        // session (or a deleted account reached via a magic link, which
+        // skips AuthScreen's own suspended/deleted checks entirely) was
+        // never signed out here: it kept full access on every app
+        // relaunch/page reload until the user happened to log out and back
+        // in through AuthScreen's own login flow.
+        if (profile?.status === 'suspended' || profile?.status === 'deleted') {
           await supabase.auth.signOut().catch(() => {});
           // Same as the normal sign-out path below — without this the
-          // suspended user's device keeps its push token registered (and
-          // its registration listener bound to their id), so it keeps
+          // suspended/deleted user's device keeps its push token registered
+          // (and its registration listener bound to their id), so it keeps
           // receiving pushes, and a different user logging in on the same
-          // device could have their token misattributed to the suspended
-          // account (see pushNotifications.ts's currentUserId fix).
+          // device could have their token misattributed to the suspended/
+          // deleted account (see pushNotifications.ts's currentUserId fix).
           if (sessionUserId) await unregisterPushNotifications(sessionUserId).catch(() => {});
           setCurrentUser(null);
-          setAuthError('Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.');
+          setAuthError(
+            profile.status === 'suspended'
+              ? 'Your account has been suspended. To appeal, contact support@getvents.com or WhatsApp +234 9030737368.'
+              : 'This VENTS account is no longer active. Please contact support@getvents.com or WhatsApp +234 9030737368 if you need assistance.'
+          );
           setAuthLoading(false);
           return;
         }
