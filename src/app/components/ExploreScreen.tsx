@@ -160,13 +160,23 @@ export function ExploreScreen({
           }
           const partnerIds = [...new Set([...seen.keys(), ...pendingIncoming.map((r: any) => r.requester_id)])];
           if (partnerIds.length === 0) { setConversations([]); setRequests([]); return; }
-          const [{ data: profiles }, spIds] = await Promise.all([
+          const [{ data: profiles, error: profilesError }, spIds] = await Promise.all([
             supabase
               .from('public_profiles')
               .select('id, full_name, username, avatar_url, vc_badge, role, is_organizer, last_active_at')
               .in('id', partnerIds),
             fetchServiceProviderIds(partnerIds),
           ]);
+          // supabase-js returns { data: null, error } rather than throwing on
+          // a query-level failure (bad RLS, a 4xx/5xx from PostgREST).
+          // Destructuring only `data` here previously let a broken query
+          // silently resolve to an empty profile map, forcing every
+          // conversation to the generic 'User' fallback -- see migration
+          // 0153 for the schema-drift bug this surfaced.
+          if (profilesError) {
+            console.error('Failed to load conversation partner profiles:', profilesError);
+            Sentry.captureException(profilesError);
+          }
           const profileMap = new Map((profiles || []).map((p: any) => [p.id, p]));
           const isOnline = (id: string) => {
             const t = profileMap.get(id)?.last_active_at;
