@@ -44,6 +44,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   const [reactions, setReactions] = useState<Record<string, { emoji: string; user_id: string }[]>>({});
   const [body, setBody] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [requestStatus, setRequestStatus] = useState<RequestStatus>('loading');
   const [respondingRequest, setRespondingRequest] = useState(false);
   const [actionMsg, setActionMsg] = useState<DM | null>(null); // long-press context menu target
@@ -153,6 +154,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
   }
 
   async function load() {
+    setLoadError(false);
     try {
       const { data: clearRow } = await supabase
         .from('conversation_clears')
@@ -169,7 +171,14 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
         );
       if ((clearRow as any)?.cleared_at) query = query.gt('created_at', (clearRow as any).cleared_at);
 
-      const { data } = await query.order('created_at', { ascending: true }).limit(100);
+      const { data, error } = await query.order('created_at', { ascending: true }).limit(100);
+      // supabase-js returns { data: null, error } rather than throwing on a
+      // query-level failure. This used to go unchecked, so a failed load
+      // rendered identically to a genuinely empty "No messages yet" thread
+      // -- indistinguishable from the user's message history having
+      // silently vanished. Now surfaced as a distinct error+retry state,
+      // matching InboxScreen.tsx's existing correct pattern.
+      if (error) throw error;
       const rows = (data as DM[]) || [];
       setMessages(rows);
       loadReactions(rows.map((m) => m.id));
@@ -184,6 +193,7 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     } catch (e) {
       console.error('ConversationScreen load error', e);
       Sentry.captureException(e);
+      setLoadError(true);
     } finally {
       setLoading(false);
     }
@@ -562,6 +572,16 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '10px', scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch', overscrollBehavior: 'contain' }}>
         {loading ? (
           <p style={{ color: ventsColors.ink2, textAlign: 'center', padding: '20px' }}>Loading…</p>
+        ) : loadError ? (
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            <p style={{ color: ventsColors.error, fontSize: '13px', margin: '0 0 10px' }}>Couldn't load your messages.</p>
+            <button
+              onClick={() => { setLoading(true); load(); }}
+              style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '10px', padding: '8px 16px', color: ventsColors.white, fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
+            >
+              Retry
+            </button>
+          </div>
         ) : messages.length === 0 && pendingMessages.length === 0 ? (
           <p style={{ color: ventsColors.ink2, textAlign: 'center', padding: '20px', fontSize: '13px' }}>No messages yet. Say hello!</p>
         ) : [...messages, ...pendingMessages].map((m) => {

@@ -107,7 +107,7 @@ export function PrivacyScreen() {
                   <B>Legal authorities:</B> when required by Nigerian law or a valid court order
                 </Li>
                 <Li>
-                  <B>Service providers:</B> our cloud hosting/database provider (InsForge), Google Maps/Places for location search, PostHog for anonymised product analytics, Sentry for crash/error reporting, and Firebase Cloud Messaging for push notifications — all under agreements that prohibit them from using your data for their own purposes
+                  <B>Service providers:</B> our cloud hosting/database provider (Supabase), Google Maps/Places for location search, PostHog for anonymised product analytics, Sentry for crash/error reporting, and Firebase Cloud Messaging for push notifications — all under agreements that prohibit them from using your data for their own purposes
                 </Li>
               </Ul>
             </>

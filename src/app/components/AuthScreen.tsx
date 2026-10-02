@@ -633,6 +633,30 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
       : (email.length > 0 && password.length > 0)
   );
 
+  // Signup's Create Account button is disabled behind ~10 combined
+  // conditions, but only the email-format and password-mismatch cases ever
+  // got a visible inline error -- every other unmet condition (missing
+  // name/username/phone/state/role/dob, or an unchecked ToS box) just left
+  // the button permanently greyed out with no indication which field was
+  // the blocker. This computes the first such unexplained reason so it can
+  // be shown as a small hint near the button; it deliberately excludes
+  // conditions that already render their own message elsewhere (emailError,
+  // password mismatch, dobError, the signupsDisabled banner).
+  const signupMissingFieldHint = mode === 'signup' && !signupsDisabled && !emailError
+    ? (email.length === 0 ? null
+      : password.length === 0 ? null
+      : confirmPassword.length === 0 || password !== confirmPassword ? null
+      : name.trim().length === 0 ? 'Enter your full name to continue.'
+      : username.trim().length === 0 ? 'Choose a username to continue.'
+      : phone.trim().length === 0 ? 'Enter your phone number to continue.'
+      : !signupState ? 'Select your state to continue.'
+      : !role ? 'Choose whether you\'re attending or organizing events to continue.'
+      : !dob ? 'Enter your date of birth to continue.'
+      : dobError ? null
+      : !tosAccepted ? 'Accept the Terms & Privacy Policy to continue.'
+      : null)
+    : null;
+
   const handleEmailBlur = () => setEmailTouched(true);
 
   // Pressing Enter in any auth field should do exactly what tapping the primary
@@ -2548,6 +2572,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
                   Forgot password?
                 </button>
               </div>
+            )}
+
+            {signupMissingFieldHint && (
+              <p style={{ color: 'rgba(237,234,245,0.5)', fontSize: '12px', textAlign: 'center', margin: '-8px 0 12px' }}>
+                {signupMissingFieldHint}
+              </p>
             )}
 
             <button

@@ -43,6 +43,8 @@ export function OrganizerDashboard({
   const [activeTab, setActiveTab] = useState<'live' | 'drafts' | 'past'>('live');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
+  const [publishErrorId, setPublishErrorId] = useState<string | null>(null);
   const [revenue, setRevenue] = useState(0);
   const [ticketsSold, setTicketsSold] = useState(0);
   const [orgEvents, setOrgEvents] = useState<any[]>([]);
@@ -821,31 +823,51 @@ export function OrganizerDashboard({
                           </button>
                         )}
                         {activeTab === 'drafts' && (
-                          <button
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              await supabase
-                                .from('events')
-                                .update({ status: 'live' })
-                                .eq('id', event.id);
-                              setOrgEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, status: 'live' } : ev));
-                            }}
-                            style={{
-                              background: 'rgba(16,185,129,0.12)',
-                              border: '1px solid rgba(16,185,129,0.3)',
-                              borderRadius: '8px',
-                              padding: '5px 10px',
-                              color: ventsColors.success,
-                              fontSize: '10px',
-                              fontWeight: 700,
-                              cursor: 'pointer',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                            }}
-                          >
-                            ✓ Publish
-                          </button>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                            <button
+                              disabled={publishingId === event.id}
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setPublishingId(event.id);
+                                setPublishErrorId(null);
+                                try {
+                                  const { error } = await supabase
+                                    .from('events')
+                                    .update({ status: 'live' })
+                                    .eq('id', event.id);
+                                  if (error) throw error;
+                                  setOrgEvents(prev => prev.map(ev => ev.id === event.id ? { ...ev, status: 'live' } : ev));
+                                } catch (err) {
+                                  console.error('Failed to publish event:', err);
+                                  Sentry.captureException(err);
+                                  setPublishErrorId(event.id);
+                                } finally {
+                                  setPublishingId(null);
+                                }
+                              }}
+                              style={{
+                                background: 'rgba(16,185,129,0.12)',
+                                border: '1px solid rgba(16,185,129,0.3)',
+                                borderRadius: '8px',
+                                padding: '5px 10px',
+                                color: ventsColors.success,
+                                fontSize: '10px',
+                                fontWeight: 700,
+                                cursor: publishingId === event.id ? 'not-allowed' : 'pointer',
+                                opacity: publishingId === event.id ? 0.6 : 1,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                              }}
+                            >
+                              {publishingId === event.id ? 'Publishing...' : '✓ Publish'}
+                            </button>
+                            {publishErrorId === event.id && (
+                              <p style={{ color: ventsColors.error, fontSize: '10px', margin: 0 }}>
+                                Couldn't publish — try again.
+                              </p>
+                            )}
+                          </div>
                         )}
                       </div>
 
