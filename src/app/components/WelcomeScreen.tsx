@@ -62,15 +62,25 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
     >
       <div style={{ position: 'absolute', inset: 0, background: ventsColors.ambientGradient, opacity: 0.5, pointerEvents: 'none' }} />
 
-      {/* Header */}
-      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(48px + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
+      {/* Header.
+          Top padding is a dvh-scaled clamp, not a fixed 48px, so the whole
+          composition below it compresses together on a short viewport
+          (Safari's address/tab bar chrome eats into 100dvh) instead of
+          pushing the bottom actions (login/guest/store-badges) out of view
+          or into .phone-frame's overflow:hidden clip. On a tall viewport
+          the clamp settles at its upper bound, visually unchanged from the
+          original fixed value -- desktop/tablet (routed through the same
+          component at a taller effective height) are unaffected. */}
+      <div style={{ position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'calc(clamp(16px, 5dvh, 40px) + env(safe-area-inset-top)) 24px 0', flexShrink: 0 }}>
         <VentsLogo size={86} />
       </div>
 
       {/* Handoff A1: single-color headline directly under the logo (no
           mono eyebrow line above it, no accent-colored second line) and one
-          subtitle line, matching the design's exact copy. */}
-      <div style={{ position: 'relative', padding: '34px 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          subtitle line, matching the design's exact copy.
+          Top padding scaled the same way as the header above, for the same
+          reason -- see that comment. */}
+      <div style={{ position: 'relative', padding: 'clamp(16px, 3dvh, 28px) 24px 0', flexShrink: 0, textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <h1 style={{ margin: 0, color: ventsColors.white, fontSize: '34px', fontWeight: 800, fontFamily: ventsTypography.fontBody, lineHeight: 1.12, letterSpacing: '-0.035em', maxWidth: '310px' }}>
           More Than Events.
           <br />
@@ -84,7 +94,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
       {/* Phone stack visual -- handoff A1: 172x224 side cards (rotated
           ±10deg) behind a 196x262 center card, mono uppercase captions
           instead of title+subtitle pairs. */}
-      <div style={{ position: 'relative', flex: 1, minHeight: '236px', maxHeight: '260px', margin: '24px 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <div style={{ position: 'relative', flex: 1, minHeight: 'clamp(160px, 24dvh, 236px)', maxHeight: '260px', margin: 'clamp(10px, 2.5dvh, 20px) 0 0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
         {STACK_CARDS.map(card => (
           <div
             key={card.caption ?? 'center'}
@@ -151,7 +161,7 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
           pagination dots, no version footer). Guest browsing has no design
           slot here either, but the entry point stays reachable as a small
           understated link rather than being dropped outright. */}
-      <div style={{ position: 'relative', padding: '24px 24px calc(24px + env(safe-area-inset-bottom))', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+      <div style={{ position: 'relative', padding: 'clamp(12px, 2.5dvh, 24px) 24px calc(clamp(12px, 2.5dvh, 24px) + env(safe-area-inset-bottom))', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'clamp(10px, 2dvh, 16px)' }}>
         <button
           onClick={onGetStarted}
           style={{
