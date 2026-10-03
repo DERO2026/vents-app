@@ -10,7 +10,7 @@ import {
   ChevronRight, Globe, Star, Plus, Trash2, CheckCircle,
   Smartphone, X, ExternalLink, Copy, ThumbsUp,
   Eye, EyeOff, Check, Clock, MessageSquare, User, Link2,
-  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info, ShieldCheck,
+  Mail, ArrowLeftRight, Moon, Wallet, Gift, Receipt, Info, ShieldCheck, Sparkles,
 } from 'lucide-react';
 import { SiInstagram, SiX, SiTiktok } from 'react-icons/si';
 import { compressImage } from '../../lib/compressImage';
@@ -36,6 +36,13 @@ interface SettingsScreenProps {
   onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
+  // Device-local show/hide switch for the VENTS AI floating orb (see
+  // src/lib/ventsAiPreference.ts and App.tsx's shouldShowVentsAiOrb gate).
+  // Both optional with safe fallbacks so this screen still renders (minus
+  // the row) for any caller -- e.g. the QA harness -- that hasn't wired
+  // them up.
+  ventsAiEnabled?: boolean;
+  onToggleVentsAi?: (enabled: boolean) => void;
   onProfileUpdated?: (fields: { full_name?: string; username?: string; bio?: string; phone_number?: string; avatar_url?: string; state?: string }) => void;
   // QA-harness-only deep link into a sub-screen (see qa-harness/main.tsx) --
   // real app callers never pass this, so subScreen still always starts at
@@ -1741,6 +1748,8 @@ export function SettingsScreen({
   onNavigate,
   isDark,
   onToggleDark,
+  ventsAiEnabled = true,
+  onToggleVentsAi,
   onProfileUpdated,
   initialSubScreen,
 }: SettingsScreenProps) {
@@ -1880,6 +1889,18 @@ export function SettingsScreen({
           <SettingRow icon={Bell} label="Push Notifications" toggle={pushNotifs} onToggle={setPushNotifs} />
           <Divider />
           <SettingRow icon={Moon} label="Dark Mode" toggle={isDark} onToggle={onToggleDark} />
+          <Divider />
+          {/* Device-local show/hide switch for the VENTS AI floating orb --
+              see src/lib/ventsAiPreference.ts. onToggle only fires the
+              real toggle() handler below (not a bare SyntheticEvent-leak
+              pattern, same guard as every other row here -- see
+              SettingRow's own comment). */}
+          <SettingRow
+            icon={Sparkles}
+            label="VENTS AI"
+            toggle={ventsAiEnabled}
+            onToggle={(v) => onToggleVentsAi?.(v)}
+          />
           <Divider />
           {/* No real localization system exists yet (single hardcoded
               English UI) -- shown as an honest static value rather than a

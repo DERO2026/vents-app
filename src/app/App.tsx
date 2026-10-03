@@ -31,6 +31,7 @@ import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { VentsAiOrb } from './components/VentsAiOrb';
 import { VentsAiScreen } from './components/VentsAiScreen';
 import { shouldShowVentsAiOrb } from './lib/ventsAiOrbScreens';
+import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
 import { ProfileScreen } from './components/ProfileScreen';
@@ -250,6 +251,15 @@ export default function App() {
   // stranding a genuinely-logged-in user on the sign-in screen.
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  // Settings > VENTS AI toggle -- device-local display preference for the
+  // floating orb (see src/lib/ventsAiPreference.ts). Lazily read once on
+  // mount so a prior session's choice is respected from the very first
+  // render, not just after Settings is opened.
+  const [ventsAiEnabled, setVentsAiEnabledState] = useState(() => isVentsAiEnabled());
+  const handleToggleVentsAi = useCallback((enabled: boolean) => {
+    setVentsAiEnabledState(enabled);
+    setVentsAiEnabled(enabled);
+  }, []);
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
   // that's harmless on its own (the deep link's setScreen call still wins,
@@ -3230,6 +3240,8 @@ export default function App() {
               onNavigate={navigateTo}
               isDark={true}
               onToggleDark={() => {}}
+              ventsAiEnabled={ventsAiEnabled}
+              onToggleVentsAi={handleToggleVentsAi}
               onProfileUpdated={(fields) => {
                 setCurrentUser((prev) => prev ? { ...prev, ...fields } : null);
               }}
@@ -3655,8 +3667,10 @@ export default function App() {
             Discover (explore) and Bookings (my-tickets) only, per
             src/app/lib/ventsAiOrbScreens.ts. Never rendered signed-out, and
             never on payment/checkout/wallet/refund/transfer or any other
-            screen, since it isn't in VENTS_AI_ORB_SCREENS. */}
-        {shouldShowVentsAiOrb(screen, !!currentUser) && (
+            screen, since it isn't in VENTS_AI_ORB_SCREENS. Also gated on
+            the user's own Settings > VENTS AI toggle (ventsAiEnabled) --
+            a device-local display preference, see src/lib/ventsAiPreference.ts. */}
+        {shouldShowVentsAiOrb(screen, !!currentUser) && ventsAiEnabled && (
           <VentsAiOrb userId={currentUser?.id} onOpen={() => navigateTo('vents-ai')} />
         )}
 
