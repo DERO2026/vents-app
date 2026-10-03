@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { X } from 'lucide-react';
 
 // Persistent floating orb entry point for VENTS AI, per design-export/
@@ -23,10 +24,63 @@ import { X } from 'lucide-react';
 const TOOLTIP_AUTO_HIDE_MS = 4000;
 
 const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
+const ORB_SIZE = 54;
+// A plain tap and the start of a drag look identical for the first few
+// pixels -- this is the threshold past which a pointer-down+move is
+// treated as a drag rather than a tap, so the orb still opens VENTS AI on
+// a normal tap instead of every tap being swallowed as a zero-distance drag.
+const DRAG_THRESHOLD_PX = 6;
+
+interface OrbPos { x: number; y: number; }
+
+// Draggable position is a device-local display preference (same
+// per-user-id localStorage pattern as the tooltip-seen flag above), not
+// account data -- never synced, never round-tripped through the backend.
+function loadOrbPos(key: string): OrbPos | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (typeof parsed?.x === 'number' && typeof parsed?.y === 'number') return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function saveOrbPos(key: string, pos: OrbPos) {
+  try {
+    localStorage.setItem(key, JSON.stringify(pos));
+  } catch {
+    // private browsing / storage disabled -- the orb still drags for this
+    // session, it just won't remember the new spot next launch.
+  }
+}
+
+// Keeps the orb fully on-screen (e.g. after an orientation change, or a
+// position saved on a larger viewport than the one it's now rendering in)
+// rather than letting it drift off the visible edge where it could become
+// unreachable.
+function clampPos(pos: OrbPos): OrbPos {
+  const maxX = Math.max(0, window.innerWidth - ORB_SIZE);
+  const maxY = Math.max(0, window.innerHeight - ORB_SIZE);
+  return { x: Math.min(Math.max(pos.x, 0), maxX), y: Math.min(Math.max(pos.y, 0), maxY) };
+}
 
 export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: string | null }) {
   const storageKey = `vents_ai_orb_seen_${userId || 'guest'}`;
+  const posKey = `vents_ai_orb_pos_${userId || 'guest'}`;
   const [showTooltip, setShowTooltip] = useState(false);
+  const [pos, setPos] = useState<OrbPos | null>(() => loadOrbPos(posKey));
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Refs, not state: drag bookkeeping must never itself trigger a
+  // re-render (only the actual position does), and handlePointerUp/onClick
+  // need the latest "did this gesture move" answer synchronously, which a
+  // state setter's async batching can't guarantee in time for the click
+  // that immediately follows pointerup.
+  const draggingRef = useRef(false);
+  const movedRef = useRef(false);
+  const dragStartRef = useRef<{ pointerX: number; pointerY: number; origX: number; origY: number } | null>(null);
 
   useEffect(() => {
     let seen = false;
@@ -49,6 +103,19 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
     return () => window.clearTimeout(timer);
   }, [storageKey]);
 
+  // Re-clamp a saved/dragged position on resize/orientation change so the
+  // orb never ends up off-screen (e.g. rotating a phone, or Safari's
+  // address bar changing the usable viewport height mid-session). Only
+  // applies once the orb has actually been moved -- the default
+  // bottom/right CSS anchor already tracks viewport changes on its own.
+  useEffect(() => {
+    function onResize() {
+      setPos(prev => (prev ? clampPos(prev) : prev));
+    }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
   const dismiss = () => {
     setShowTooltip(false);
     try {
@@ -59,9 +126,47 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
     }
   };
 
+  const handlePointerDown = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    const rect = wrapperRef.current?.getBoundingClientRect();
+    const origX = pos ? pos.x : (rect?.left ?? 0);
+    const origY = pos ? pos.y : (rect?.top ?? 0);
+    dragStartRef.current = { pointerX: e.clientX, pointerY: e.clientY, origX, origY };
+    movedRef.current = false;
+    draggingRef.current = true;
+    // setPointerCapture keeps move/up events firing on this element even if
+    // the finger/cursor leaves it mid-drag (a fast drag easily outruns a
+    // 54px circle) -- guarded since it's unsupported in jsdom (this
+    // project's test environment), unlike every real target platform
+    // (Chrome/Safari/Capacitor's native WebViews all support it).
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch { /* unsupported in this environment */ }
+  };
+
+  const handlePointerMove = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!draggingRef.current || !dragStartRef.current) return;
+    const dx = e.clientX - dragStartRef.current.pointerX;
+    const dy = e.clientY - dragStartRef.current.pointerY;
+    if (!movedRef.current && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
+    movedRef.current = true;
+    setPos(clampPos({ x: dragStartRef.current.origX + dx, y: dragStartRef.current.origY + dy }));
+  };
+
+  const handlePointerUp = (e: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    if (movedRef.current && dragStartRef.current) {
+      const dx = e.clientX - dragStartRef.current.pointerX;
+      const dy = e.clientY - dragStartRef.current.pointerY;
+      saveOrbPos(posKey, clampPos({ x: dragStartRef.current.origX + dx, y: dragStartRef.current.origY + dy }));
+    }
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch { /* already released */ }
+  };
+
   return (
     <div
-      style={{ position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))', right: 16, zIndex: 60 }}
+      ref={wrapperRef}
+      style={pos
+        ? { position: 'fixed', left: `${pos.x}px`, top: `${pos.y}px`, zIndex: 60 }
+        : { position: 'fixed', bottom: 'calc(96px + env(safe-area-inset-bottom, 0px))', right: 16, zIndex: 60 }}
       data-testid="vents-ai-orb"
     >
       <style>{`@keyframes ventsAiPulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(163,92,255,.45);}50%{box-shadow:0 0 0 10px rgba(163,92,255,0);}}`}</style>
@@ -108,13 +213,24 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
       <button
         type="button"
         aria-label="Open VENTS AI"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
         onClick={() => {
+          // A drag ends with the browser firing a click on release -- swallow
+          // it here so dragging the orb elsewhere on screen never also opens
+          // VENTS AI. A plain tap (no intervening pointermove past the
+          // threshold) leaves movedRef false and opens as normal.
+          if (movedRef.current) {
+            movedRef.current = false;
+            return;
+          }
           dismiss();
           onOpen();
         }}
         style={{
-          width: 54,
-          height: 54,
+          width: ORB_SIZE,
+          height: ORB_SIZE,
           borderRadius: '50%',
           background: GRADIENT,
           border: 'none',
@@ -125,6 +241,10 @@ export function VentsAiOrb({ onOpen, userId }: { onOpen: () => void; userId?: st
           cursor: 'pointer',
           animation: showTooltip ? 'ventsAiPulseGlow 2.4s infinite' : 'none',
           padding: 0,
+          // Without this, mobile browsers/WebViews treat a finger-down on
+          // the orb as the start of a page-scroll gesture, which both
+          // steals the drag and scrolls the screen underneath it.
+          touchAction: 'none',
         }}
       >
         <span style={{ fontSize: 21, color: '#fff' }}>✦</span>
