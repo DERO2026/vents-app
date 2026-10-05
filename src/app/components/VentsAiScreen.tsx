@@ -58,6 +58,365 @@ type PlanSummary = {
   created_at: string;
 };
 
+type WorkspaceCategory = {
+  id: string;
+  key: string;
+  label: string;
+  allocated_kobo: number;
+  is_priority: boolean;
+  committed_kobo: number;
+  paid_kobo: number;
+  booked: boolean;
+};
+
+type WorkspaceTask = { id: string; title: string; offset_days: number | null; due_override: string | null; done_at: string | null };
+
+type PlanWorkspaceData = {
+  plan: { id: string; title: string; event_type: string; status: string; event_date: string | null; city: string | null; guests: number | null; total_kobo: number | null };
+  categories: WorkspaceCategory[];
+  tasks: WorkspaceTask[];
+};
+
+// Mirrors api/_lib/aiTools.ts's executeGetPlan query shape exactly (same
+// tables, same RLS) -- a plain authoritative read for the dedicated Plan
+// Workspace (P07/P08), done directly rather than spending a model call
+// just to render a screen. Both this and get_plan read the identical
+// source of truth; neither is more "real" than the other.
+async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
+  const { data: plan, error: planError } = await supabase
+    .from('plans')
+    .select('id, title, event_type, status, event_date, city, guests, total_kobo')
+    .eq('id', planId)
+    .single();
+  if (planError) throw planError;
+
+  const { data: categories } = await supabase
+    .from('plan_categories')
+    .select('id, key, label, allocated_kobo, is_priority, sort')
+    .eq('plan_id', planId)
+    .order('sort');
+  const categoryIds = (categories ?? []).map((c: any) => c.id);
+
+  const { data: assignments } = categoryIds.length
+    ? await supabase.from('plan_assignments').select('category_id, agreed_kobo, status').in('category_id', categoryIds)
+    : { data: [] as any[] };
+  const { data: tasks } = await supabase
+    .from('plan_tasks')
+    .select('id, title, offset_days, due_override, done_at')
+    .eq('plan_id', planId);
+
+  const byCategory = new Map<string, any[]>();
+  for (const a of assignments ?? []) {
+    const list = byCategory.get(a.category_id) ?? [];
+    list.push(a);
+    byCategory.set(a.category_id, list);
+  }
+
+  return {
+    plan,
+    categories: (categories ?? []).map((c: any) => {
+      const active = (byCategory.get(c.id) ?? []).filter((a) => a.status === 'assigned' || a.status === 'booked');
+      return {
+        id: c.id,
+        key: c.key,
+        label: c.label,
+        allocated_kobo: c.allocated_kobo ?? 0,
+        is_priority: !!c.is_priority,
+        committed_kobo: active.filter((a) => a.status === 'assigned').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
+        paid_kobo: active.filter((a) => a.status === 'booked').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
+        booked: active.some((a) => a.status === 'booked'),
+      };
+    }),
+    tasks: tasks ?? [],
+  };
+}
+
+// Dedicated Plan Workspace (P07 Overview, P08 Budget) -- a non-chat-log
+// screen, distinct from a plan's chat thread (P24's "Open plan" vs. "Ask
+// SI"). Reads via fetchPlanWorkspace, the same RLS-scoped tables get_plan's
+// own backend executor reads -- never more or less authoritative than the
+// chat tool's view of the same plan.
+//
+// Style values below are copied verbatim from P07.html/P08.html (colors,
+// px sizes, border-radius, gradient stops) -- "style-value verified"
+// against that source, not visually verified (this sandbox cannot render
+// or screenshot). Team/Tasks/Timeline tabs are not implemented; they are
+// shown as explicit placeholders rather than silently omitted.
+function PlanWorkspaceView({
+  planId,
+  onBack,
+  onAskSi,
+  onComposerSend,
+}: {
+  planId: string;
+  onBack: () => void;
+  onAskSi: (title: string) => void;
+  onComposerSend: (text: string) => void;
+}) {
+  const [tab, setTab] = useState<'overview' | 'budget' | 'team' | 'tasks' | 'timeline'>('overview');
+  const [data, setData] = useState<PlanWorkspaceData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [composerText, setComposerText] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    setData(null);
+    setLoadError(null);
+    fetchPlanWorkspace(planId)
+      .then((d) => { if (!cancelled) setData(d); })
+      .catch((e) => { if (!cancelled) setLoadError(e?.message || 'Could not load this plan.'); });
+    return () => { cancelled = true; };
+  }, [planId]);
+
+  const TABS: { id: typeof tab; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'budget', label: 'Budget' },
+    { id: 'team', label: 'Team' },
+    { id: 'tasks', label: 'Tasks' },
+    { id: 'timeline', label: 'Timeline' },
+  ];
+
+  const composerPlaceholder = tab === 'budget' ? '"Move ₦300k from décor to photos"' : `Ask SI about ${data?.plan.title || 'this plan'}…`;
+
+  function sendComposer() {
+    const t = composerText.trim();
+    if (!t) return;
+    setComposerText('');
+    onComposerSend(t);
+  }
+
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#0a0810' }}>
+      <div style={{ flexShrink: 0, padding: '0 18px', borderBottom: '1px solid #1c1726', background: '#0b0812' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 50 }}>
+          <span onClick={onBack} role="button" aria-label="Back" style={{ fontSize: 19, color: '#e4d4ff', cursor: 'pointer' }}>←</span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 800 }}>
+              {data?.plan.title || 'Plan'} <span style={{ fontSize: 13, color: '#d3b8ff' }}>▾</span>
+            </div>
+            <div style={{ fontSize: 11.5, color: '#a89db3' }}>
+              {data?.plan.event_date ? data.plan.event_date : ''}{data?.plan.city ? ` · ${data.plan.city}` : ''}{data?.plan.guests ? ` · ${data.plan.guests} guests` : ''}
+            </div>
+          </div>
+          <span style={{ width: 34, height: 34, borderRadius: 10, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9c0d4' }}>⋯</span>
+        </div>
+        <div style={{ display: 'flex', gap: 20, fontSize: 13, fontWeight: 600, color: '#8a7f97' }}>
+          {TABS.map((t) => (
+            <span
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              data-testid={`workspace-tab-${t.id}`}
+              style={{ padding: '10px 0', cursor: 'pointer', color: tab === t.id ? '#f2eff6' : '#8a7f97', borderBottom: tab === t.id ? '2px solid #a35cff' : 'none' }}
+            >
+              {t.label}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {loadError ? (
+          <div style={{ fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 12 }}>
+            Couldn't load this plan — {loadError}
+          </div>
+        ) : !data ? (
+          <div style={{ fontSize: 12, color: '#5e5470', textAlign: 'center', padding: 20 }}>Loading plan…</div>
+        ) : tab === 'overview' ? (
+          <WorkspaceOverviewTab data={data} onOpenBudget={() => setTab('budget')} />
+        ) : tab === 'budget' ? (
+          <WorkspaceBudgetTab data={data} />
+        ) : (
+          <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>
+            {TABS.find((t) => t.id === tab)?.label} isn't built yet in this pass — not a mockup frame it skips, just not reached yet.
+          </div>
+        )}
+      </div>
+
+      <div style={{ flexShrink: 0, padding: '10px 16px 22px', background: '#0b0812', borderTop: '1px solid #1c1726' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#161020', border: '1px solid #2a2438', borderRadius: 12, padding: '6px 6px 6px 12px' }}>
+          <span style={{ width: 22, height: 22, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#fff' }}>✦</span>
+          <input
+            value={composerText}
+            onChange={(e) => setComposerText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && sendComposer()}
+            placeholder={composerPlaceholder}
+            style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontSize: 13, color: '#e8e3ee', fontFamily: 'inherit' }}
+          />
+          <span onClick={sendComposer} role="button" aria-label="Send" style={{ width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, cursor: 'pointer' }}>↑</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Readiness formula per P07's own spec text: tasks done (50%) + team slots
+// assigned (35%) + budget fully committed (15%). "Team slots assigned"
+// here reads as categories with an active (assigned or booked) provider,
+// since this schema has no separate team-member concept yet.
+function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData; onOpenBudget: () => void }) {
+  const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
+  const tasksTotal = data.tasks.length;
+  const tasksPct = tasksTotal > 0 ? tasksDone / tasksTotal : 0;
+
+  const assignedCategories = data.categories.filter((c) => c.committed_kobo > 0 || c.paid_kobo > 0 || c.booked).length;
+  const categoriesTotal = data.categories.length;
+  const teamPct = categoriesTotal > 0 ? assignedCategories / categoriesTotal : 0;
+
+  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0);
+  const totalCommittedOrPaid = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
+  const budgetPct = totalAllocated > 0 ? Math.min(1, totalCommittedOrPaid / totalAllocated) : 0;
+
+  const readiness = Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
+
+  const daysToGo = data.plan.event_date ? Math.max(0, Math.round((new Date(data.plan.event_date).getTime() - Date.now()) / 86400000)) : null;
+
+  const totalCommitted = data.categories.reduce((s, c) => s + c.committed_kobo, 0) / 100;
+  const totalPaid = data.categories.reduce((s, c) => s + c.paid_kobo, 0) / 100;
+  const totalEstimated = data.categories.filter((c) => c.committed_kobo === 0 && c.paid_kobo === 0).reduce((s, c) => s + c.allocated_kobo, 0) / 100;
+  const totalBudget = (data.plan.total_kobo ?? 0) / 100;
+  const leftToCommit = Math.max(0, totalBudget - totalCommitted - totalPaid);
+  const overBudgetCategory = data.categories.find((c) => c.committed_kobo + c.paid_kobo > c.allocated_kobo);
+
+  const upNext = data.tasks.filter((t) => !t.done_at).slice(0, 3);
+
+  return (
+    <>
+      <div style={{ display: 'flex', gap: 16, alignItems: 'center', padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d' }}>
+        <div style={{ width: 78, height: 78, borderRadius: '50%', background: `conic-gradient(#a35cff 0 ${readiness}%, #221d2d ${readiness}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#120e1a', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ fontSize: 19, fontWeight: 800 }}>{readiness}%</span>
+            <span style={{ fontSize: 9.5, color: '#8a7f97' }}>ready</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+          <span style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em' }}>{daysToGo != null ? `${daysToGo} days to go` : 'No date set'}</span>
+          <span style={{ fontSize: 13, color: '#a89db3' }}>{tasksDone} of {tasksTotal} tasks · {assignedCategories} of {categoriesTotal} team assigned</span>
+        </div>
+      </div>
+
+      <div style={{ padding: 14, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>BUDGET</span>
+          <span onClick={onOpenBudget} role="button" style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>Open ›</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 22, fontWeight: 800 }}>{naira(leftToCommit)}</span>
+          <span style={{ fontSize: 12, color: '#a89db3' }}>left to commit of {naira(totalBudget)}</span>
+        </div>
+        <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} />
+        {overBudgetCategory && (
+          <div style={{ fontSize: 12, color: '#fbbf24' }}>
+            {overBudgetCategory.label} is {naira((overBudgetCategory.committed_kobo + overBudgetCategory.paid_kobo - overBudgetCategory.allocated_kobo) / 100)} over its allocation
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>UP NEXT</span>
+          <span style={{ fontSize: 12, color: '#d3b8ff' }}>All tasks ›</span>
+        </div>
+        {upNext.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: '#5e5470', padding: '11px 0' }}>Nothing due yet.</div>
+        ) : (
+          upNext.map((t, i) => (
+            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '11px 0', borderBottom: i < upNext.length - 1 ? '1px solid #1c1726' : 'none' }}>
+              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid #4a3f56', flexShrink: 0 }} />
+              <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
+              <span style={{ fontSize: 11.5, color: '#a89db3' }}>{t.due_override || (t.offset_days != null ? `T-${t.offset_days}d` : '')}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+// Budget tab (P08). Rows sorted per P08's own spec text: over-budget first,
+// then committed, then estimates. "+N more" is not implemented here --
+// all categories are shown (an honest gap vs. the mockup's truncation,
+// not a fabricated count).
+function WorkspaceBudgetTab({ data }: { data: PlanWorkspaceData }) {
+  const totalBudget = (data.plan.total_kobo ?? 0) / 100;
+  const totalCommitted = data.categories.reduce((s, c) => s + c.committed_kobo, 0) / 100;
+  const totalPaid = data.categories.reduce((s, c) => s + c.paid_kobo, 0) / 100;
+  const totalEstimated = data.categories.filter((c) => c.committed_kobo === 0 && c.paid_kobo === 0).reduce((s, c) => s + c.allocated_kobo, 0) / 100;
+  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0) / 100;
+  const unallocated = Math.max(0, totalBudget - totalAllocated);
+
+  function status(c: WorkspaceCategory): 'over' | 'committed' | 'paid' | 'estimate' {
+    const spent = c.committed_kobo + c.paid_kobo;
+    if (spent > c.allocated_kobo) return 'over';
+    if (c.paid_kobo > 0) return 'paid';
+    if (c.committed_kobo > 0) return 'committed';
+    return 'estimate';
+  }
+  const sortRank: Record<string, number> = { over: 0, committed: 1, paid: 1, estimate: 2 };
+  const sorted = [...data.categories].sort((a, b) => sortRank[status(a)] - sortRank[status(b)]);
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 12, color: '#8a7f97' }}>Total budget</span>
+          <span style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>Edit</span>
+        </div>
+        <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em' }}>{naira(totalBudget)}</span>
+        <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
+            <div style={{ fontSize: 11, color: '#34d399' }}>● Paid</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(totalPaid)}</div>
+          </div>
+          <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
+            <div style={{ fontSize: 11, color: '#c084fc' }}>● Committed</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(totalCommitted)}</div>
+          </div>
+          <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
+            <div style={{ fontSize: 11, color: '#b892ff' }}>◌ Estimate · not a quote</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>≈ {naira(totalEstimated)}</div>
+          </div>
+          <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
+            <div style={{ fontSize: 11, color: '#a89db3' }}>○ Unallocated</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(unallocated)}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        {sorted.map((c, i) => {
+          const s = status(c);
+          const spent = (c.committed_kobo + c.paid_kobo) / 100;
+          const allocated = c.allocated_kobo / 100;
+          const over = spent - allocated;
+          const barPct = allocated > 0 ? Math.min(100, (spent / allocated) * 100) : 0;
+          const barColor = s === 'over' ? '#fbbf24' : s === 'paid' ? '#34d399' : s === 'committed' ? '#a35cff' : undefined;
+          return (
+            <div key={c.id} style={{ padding: '9px 0', borderBottom: i < sorted.length - 1 ? '1px solid #1c1726' : 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label} {c.is_priority && <span style={{ fontSize: 10, color: '#d3b8ff' }}>★</span>}</span>
+                <span style={{ fontSize: 13 }}>
+                  {s === 'estimate' ? (
+                    <span style={{ color: '#c9c0d4' }}>≈ {naira(allocated)}</span>
+                  ) : (
+                    <><b>{naira(spent)}</b> <span style={{ color: '#8a7f97' }}>/ {naira(allocated)}</span></>
+                  )}
+                </span>
+              </div>
+              <div style={{ height: 5, borderRadius: 999, background: s === 'estimate' ? 'repeating-linear-gradient(45deg, rgba(163,92,255,.35) 0 4px, rgba(163,92,255,.1) 4px 8px)' : '#221d2d', overflow: 'hidden', display: 'flex' }}>
+                {s !== 'estimate' && <span style={{ width: `${barPct}%`, background: barColor }} />}
+              </div>
+              <span style={{ fontSize: 11.5, color: s === 'over' ? '#fbbf24' : s === 'paid' ? '#34d399' : '#a89db3' }}>
+                {s === 'over' ? `Committed · ${naira(over)} over` : s === 'paid' ? `Paid via VENTS · ${naira(allocated - spent)} left` : s === 'committed' ? `Committed · ${naira(allocated - spent)} left` : 'Estimate · not booked'}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 // SUGGESTED prompt chips -- export's `suggestedPrompts` derived from SCEN's
 // icon+prompt pairs (lines ~294-347, ~415).
 const SUGGESTED_PROMPTS: { icon: string; label: string }[] = [
@@ -766,6 +1125,10 @@ export function VentsAiScreen({
   const [inputText, setInputText] = useState('');
   const [streaming, setStreaming] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // Dedicated Plan Workspace screen (P07/P08) -- distinct destination from
+  // a plan's chat thread (P24: "Ask SI opens the plan thread; Open plan
+  // opens Overview"). null means neither workspace tab is open.
+  const [workspacePlanId, setWorkspacePlanId] = useState<string | null>(null);
   const nextId = useRef(1);
 
   const active = conversations.find((c) => c.id === activeId) || null;
@@ -781,7 +1144,16 @@ export function VentsAiScreen({
   // its planId already attached) and this first send happen as one atomic
   // step, rather than racing React's async state updates (setActiveId from
   // a caller wouldn't be visible yet inside this same synchronous call).
-  async function sendText(text: string, openNewPlanThread?: { convId: string; planId: string; title: string }) {
+  async function sendText(
+    text: string,
+    openNewPlanThread?: { convId: string; planId: string; title: string },
+    // Explicit target conversation id, bypassing the `activeId` state read
+    // below -- needed when the caller just called setActiveId() in this
+    // same synchronous tick (e.g. re-opening a plan's existing thread from
+    // the Workspace screen) and so can't rely on `activeId` having updated
+    // yet.
+    targetConvId?: string
+  ) {
     const q = text.trim();
     if (!q || streaming) return;
     setInputText('');
@@ -811,10 +1183,11 @@ export function VentsAiScreen({
       // updater -- React does not guarantee an updater function runs
       // synchronously before this async function's next line, so mutating a
       // closed-over `convId` variable from inside one is not reliable here.
-      const existing = activeId ? conversations.find((c) => c.id === activeId) : undefined;
+      const resolvedId = targetConvId || activeId;
+      const existing = resolvedId ? conversations.find((c) => c.id === resolvedId) : undefined;
       history = existing ? existing.messages : [];
       planId = existing?.planId;
-      convId = activeId || '';
+      convId = resolvedId || '';
       if (!convId) {
         convId = `c${nextId.current++}`;
         setActiveId(convId);
@@ -905,14 +1278,15 @@ export function VentsAiScreen({
   // second competing one, and otherwise starts a fresh thread whose very
   // first turn asks SI for the plan's current state (always the real,
   // authoritative get_plan result -- never a cached/guessed summary).
-  function openPlan(planId: string, title: string) {
+  function openPlan(planId: string, title: string, firstMessage?: string) {
     const existingThread = conversations.find((c) => c.planId === planId);
     if (existingThread) {
       setActiveId(existingThread.id);
+      if (firstMessage) sendText(firstMessage, undefined, existingThread.id);
       return;
     }
     const convId = `c${nextId.current++}`;
-    sendText('Show me this plan.', { convId, planId, title });
+    sendText(firstMessage || 'Show me this plan.', { convId, planId, title: title || 'Plan' });
   }
 
   // Undo goes straight to the real RPC (still fully RLS/ownership
@@ -940,7 +1314,20 @@ export function VentsAiScreen({
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         <div style={{ flex: 1, display: 'flex', minWidth: 0, position: 'relative' }}>
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, position: 'relative' }}>
-            {!inConversation ? (
+            {workspacePlanId ? (
+              <PlanWorkspaceView
+                planId={workspacePlanId}
+                onBack={() => setWorkspacePlanId(null)}
+                onAskSi={(title) => {
+                  setWorkspacePlanId(null);
+                  openPlan(workspacePlanId, title);
+                }}
+                onComposerSend={(text) => {
+                  setWorkspacePlanId(null);
+                  openPlan(workspacePlanId, '', text);
+                }}
+              />
+            ) : !inConversation ? (
               <HomeView
                 inputText={inputText}
                 onInputChange={setInputText}
@@ -949,6 +1336,7 @@ export function VentsAiScreen({
                 conversations={conversations}
                 onOpenConversation={(id) => setActiveId(id)}
                 onOpenPlan={openPlan}
+                onOpenWorkspace={(planId) => setWorkspacePlanId(planId)}
                 errorText={errorText}
               />
             ) : (
@@ -991,6 +1379,7 @@ function HomeView({
   conversations,
   onOpenConversation,
   onOpenPlan,
+  onOpenWorkspace,
   errorText,
 }: {
   inputText: string;
@@ -1000,6 +1389,7 @@ function HomeView({
   conversations: LocalConversation[];
   onOpenConversation: (id: string) => void;
   onOpenPlan: (planId: string, title: string) => void;
+  onOpenWorkspace: (planId: string) => void;
   errorText: string | null;
 }) {
   const [room, setRoom] = useState<'chat' | 'plans'>('chat');
@@ -1094,7 +1484,7 @@ function HomeView({
             )}
           </>
         ) : (
-          <PlansListView onOpenPlan={onOpenPlan} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
+          <PlansListView onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
         )}
       </div>
     </div>
@@ -1108,9 +1498,11 @@ function HomeView({
 // have", a lighter query than the AI tool's full per-plan aggregation.
 function PlansListView({
   onOpenPlan,
+  onOpenWorkspace,
   onStartNewPlan,
 }: {
   onOpenPlan: (planId: string, title: string) => void;
+  onOpenWorkspace: (planId: string) => void;
   onStartNewPlan: (prompt: string) => void;
 }) {
   const [plans, setPlans] = useState<PlanSummary[] | null>(null);
@@ -1170,9 +1562,19 @@ function PlansListView({
                 {titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{p.event_date ? ` · ${p.event_date}` : ''}
               </div>
             </div>
-            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: p.status === 'draft' ? 'rgba(251,191,36,.1)' : 'rgba(163,92,255,.14)', color: p.status === 'draft' ? '#fbbf24' : '#d3b8ff', flexShrink: 0, marginLeft: 10 }}>
-              {p.status.toUpperCase()}
-            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 10 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: p.status === 'draft' ? 'rgba(251,191,36,.1)' : 'rgba(163,92,255,.14)', color: p.status === 'draft' ? '#fbbf24' : '#d3b8ff' }}>
+                {p.status.toUpperCase()}
+              </span>
+              <span
+                onClick={(e) => { e.stopPropagation(); onOpenWorkspace(p.id); }}
+                role="button"
+                data-testid="si-plan-open-workspace"
+                style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}
+              >
+                Open ›
+              </span>
+            </div>
           </div>
         ))
       )}
