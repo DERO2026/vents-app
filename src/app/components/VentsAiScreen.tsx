@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
 import { supabase } from '../../lib/supabase';
-import { PickerSheet } from './shared/PickerSheet';
+import { PickerSheet, PickerField } from './shared/PickerSheet';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -59,6 +59,15 @@ type PlanSummary = {
   created_at: string;
 };
 
+type WorkspaceAssignment = {
+  id: string;
+  provider_id: string | null;
+  own_vendor_name: string | null;
+  agreed_kobo: number | null;
+  status: 'shortlisted' | 'assigned' | 'booked' | 'cancelled';
+  provider: { business_name: string; category: string | null; location: string | null } | null;
+};
+
 type WorkspaceCategory = {
   id: string;
   key: string;
@@ -68,9 +77,24 @@ type WorkspaceCategory = {
   committed_kobo: number;
   paid_kobo: number;
   booked: boolean;
+  // All assignment rows for this category, every status -- P10/P11 need
+  // shortlisted/cancelled rows too (shortlist counts, "own vendor" glyph),
+  // not just the active assigned/booked one get_plan's own summary needs.
+  assignments: WorkspaceAssignment[];
 };
 
-type WorkspaceTask = { id: string; title: string; offset_days: number | null; due_override: string | null; done_at: string | null };
+type WorkspaceTask = {
+  id: string;
+  category_id: string | null;
+  title: string;
+  offset_days: number | null;
+  due_override: string | null;
+  done_at: string | null;
+  source: 'si' | 'user';
+  // A task a real booking auto-completes -- P10's own spec text: "can't
+  // be unticked manually, the booking is the truth."
+  completes_on_booking: boolean;
+};
 
 type PlanWorkspaceData = {
   plan: { id: string; title: string; event_type: string; status: string; event_date: string | null; city: string | null; guests: number | null; total_kobo: number | null };
@@ -99,11 +123,22 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
   const categoryIds = (categories ?? []).map((c: any) => c.id);
 
   const { data: assignments } = categoryIds.length
-    ? await supabase.from('plan_assignments').select('category_id, agreed_kobo, status').in('category_id', categoryIds)
+    ? await supabase.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status').in('category_id', categoryIds)
     : { data: [] as any[] };
+
+  // One extra join for the VENTS providers referenced by any assignment --
+  // plan_assignments itself only has provider_id; business_name/category/
+  // location live on service_providers, same table every other provider
+  // card in this file already reads.
+  const providerIds = [...new Set((assignments ?? []).map((a: any) => a.provider_id).filter(Boolean))];
+  const { data: providers } = providerIds.length
+    ? await supabase.from('service_providers').select('id, business_name, category, location').in('id', providerIds)
+    : { data: [] as any[] };
+  const providerById = new Map<string, any>((providers ?? []).map((p: any) => [p.id, p]));
+
   const { data: tasks } = await supabase
     .from('plan_tasks')
-    .select('id, title, offset_days, due_override, done_at')
+    .select('id, category_id, title, offset_days, due_override, done_at, source, completes_on_booking')
     .eq('plan_id', planId);
 
   const byCategory = new Map<string, any[]>();
@@ -116,7 +151,15 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
   return {
     plan,
     categories: (categories ?? []).map((c: any) => {
-      const active = (byCategory.get(c.id) ?? []).filter((a) => a.status === 'assigned' || a.status === 'booked');
+      const all: WorkspaceAssignment[] = (byCategory.get(c.id) ?? []).map((a: any) => ({
+        id: a.id,
+        provider_id: a.provider_id,
+        own_vendor_name: a.own_vendor_name,
+        agreed_kobo: a.agreed_kobo,
+        status: a.status,
+        provider: a.provider_id ? providerById.get(a.provider_id) ?? null : null,
+      }));
+      const active = all.filter((a) => a.status === 'assigned' || a.status === 'booked');
       return {
         id: c.id,
         key: c.key,
@@ -126,9 +169,19 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
         committed_kobo: active.filter((a) => a.status === 'assigned').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
         paid_kobo: active.filter((a) => a.status === 'booked').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
         booked: active.some((a) => a.status === 'booked'),
+        assignments: all,
       };
     }),
-    tasks: tasks ?? [],
+    tasks: (tasks ?? []).map((t: any) => ({
+      id: t.id,
+      category_id: t.category_id,
+      title: t.title,
+      offset_days: t.offset_days,
+      due_override: t.due_override,
+      done_at: t.done_at,
+      source: t.source === 'si' ? 'si' : 'user',
+      completes_on_booking: !!t.completes_on_booking,
+    })),
   };
 }
 
@@ -268,6 +321,18 @@ function PlanWorkspaceView({
   const [data, setData] = useState<PlanWorkspaceData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [composerText, setComposerText] = useState('');
+  // P10's own spec text: "Opened from Budget, Team, or a task chip" --
+  // a stacked screen over whichever tab is active, not a tab itself, so
+  // its own Back returns to that same tab rather than always Overview.
+  const [detailCategoryId, setDetailCategoryId] = useState<string | null>(null);
+
+  const load = () => {
+    setData(null);
+    setLoadError(null);
+    fetchPlanWorkspace(planId)
+      .then((d) => setData(d))
+      .catch((e) => setLoadError(e?.message || 'Could not load this plan.'));
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -287,7 +352,8 @@ function PlanWorkspaceView({
     { id: 'timeline', label: 'Timeline' },
   ];
 
-  const composerPlaceholder = tab === 'budget' ? '"Move ₦300k from décor to photos"' : `Ask SI about ${data?.plan.title || 'this plan'}…`;
+  const composerPlaceholder =
+    tab === 'budget' ? '"Move ₦300k from décor to photos"' : tab === 'team' ? '"Find a band under ₦350k"' : `Ask SI about ${data?.plan.title || 'this plan'}…`;
 
   function sendComposer() {
     const t = composerText.trim();
@@ -332,10 +398,24 @@ function PlanWorkspaceView({
           </div>
         ) : !data ? (
           <div style={{ fontSize: 12, color: '#5e5470', textAlign: 'center', padding: 20 }}>Loading plan…</div>
+        ) : detailCategoryId ? (
+          <CategoryDetailView
+            planId={planId}
+            planTitle={data.plan.title}
+            planCity={data.plan.city}
+            totalBudgetKobo={data.plan.total_kobo ?? 0}
+            allCategories={data.categories}
+            category={data.categories.find((c) => c.id === detailCategoryId)!}
+            tasks={data.tasks.filter((t) => t.category_id === detailCategoryId)}
+            onBack={() => setDetailCategoryId(null)}
+            onChanged={load}
+          />
         ) : tab === 'overview' ? (
           <WorkspaceOverviewTab data={data} onOpenBudget={() => setTab('budget')} />
         ) : tab === 'budget' ? (
-          <WorkspaceBudgetTab data={data} />
+          <WorkspaceBudgetTab data={data} onOpenCategory={setDetailCategoryId} />
+        ) : tab === 'team' ? (
+          <WorkspaceTeamTab data={data} onOpenCategory={setDetailCategoryId} />
         ) : (
           <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>
             {TABS.find((t) => t.id === tab)?.label} isn't built yet in this pass — not a mockup frame it skips, just not reached yet.
@@ -447,7 +527,7 @@ function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData;
 // then committed, then estimates. "+N more" is not implemented here --
 // all categories are shown (an honest gap vs. the mockup's truncation,
 // not a fabricated count).
-function WorkspaceBudgetTab({ data }: { data: PlanWorkspaceData }) {
+function WorkspaceBudgetTab({ data, onOpenCategory }: { data: PlanWorkspaceData; onOpenCategory: (categoryId: string) => void }) {
   const totalBudget = (data.plan.total_kobo ?? 0) / 100;
   const totalCommitted = data.categories.reduce((s, c) => s + c.committed_kobo, 0) / 100;
   const totalPaid = data.categories.reduce((s, c) => s + c.paid_kobo, 0) / 100;
@@ -503,7 +583,13 @@ function WorkspaceBudgetTab({ data }: { data: PlanWorkspaceData }) {
           const barPct = allocated > 0 ? Math.min(100, (spent / allocated) * 100) : 0;
           const barColor = s === 'over' ? '#fbbf24' : s === 'paid' ? '#34d399' : s === 'committed' ? '#a35cff' : undefined;
           return (
-            <div key={c.id} style={{ padding: '9px 0', borderBottom: i < sorted.length - 1 ? '1px solid #1c1726' : 'none', display: 'flex', flexDirection: 'column', gap: 7 }}>
+            <div
+              key={c.id}
+              onClick={() => onOpenCategory(c.id)}
+              role="button"
+              data-testid={`workspace-budget-row-${c.key}`}
+              style={{ padding: '9px 0', borderBottom: i < sorted.length - 1 ? '1px solid #1c1726' : 'none', display: 'flex', flexDirection: 'column', gap: 7, cursor: 'pointer' }}
+            >
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ fontSize: 14, fontWeight: 600 }}>{c.label} {c.is_priority && <span style={{ fontSize: 10, color: '#d3b8ff' }}>★</span>}</span>
                 <span style={{ fontSize: 13 }}>
@@ -524,6 +610,434 @@ function WorkspaceBudgetTab({ data }: { data: PlanWorkspaceData }) {
           );
         })}
       </div>
+    </>
+  );
+}
+
+// P09 Budget allocation sheet -- a bottom sheet over a dimmed backdrop,
+// opened from CategoryDetailView's "Edit" link. "Save allocation" calls
+// the REAL apply_plan_allocation_changes RPC directly (bypassing the AI
+// model), the exact same server-side invariant-enforcing path
+// apply_plan_update's own executor uses -- same precedent as Undo calling
+// undo_plan_change directly: a direct, unambiguous, structured UI action
+// needs no model round trip. The floor-price/count line reuses the real
+// search_services_fuzzy_filtered RPC recommend_providers already wraps.
+function AllocationSheet({
+  planId,
+  category,
+  categories,
+  planCity,
+  totalBudgetKobo,
+  onClose,
+  onSaved,
+}: {
+  planId: string;
+  category: WorkspaceCategory;
+  categories: WorkspaceCategory[];
+  planCity: string | null;
+  totalBudgetKobo: number;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [amountNaira, setAmountNaira] = useState(category.allocated_kobo / 100);
+  const [source, setSource] = useState<{ kind: 'unallocated' } | { kind: 'category'; id: string } | { kind: 'raise_total' } | null>({ kind: 'unallocated' });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [floorPrice, setFloorPrice] = useState<number | null>(null);
+  const [matchCount, setMatchCount] = useState<number | null>(null);
+  const [showCategoryPicker, setShowCategoryPicker] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data } = await supabase.rpc('search_services_fuzzy_filtered', { p_query: category.label, p_category: category.key, p_limit: 50, p_location: planCity, p_max_starting_price: null });
+        if (cancelled) return;
+        const rows = Array.isArray(data) ? data : [];
+        setMatchCount(rows.length);
+        const prices = rows.map((r: any) => Number(r.starting_price)).filter((n: number) => isFinite(n) && n >= 0);
+        setFloorPrice(prices.length ? Math.min(...prices) : null);
+      } catch {
+        // factual floor-price line is best-effort -- never blocks editing the allocation
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [category.key, category.label, planCity]);
+
+  const totalAllocatedOther = categories.filter((c) => c.id !== category.id).reduce((s, c) => s + c.allocated_kobo, 0);
+  const unallocatedKobo = Math.max(0, totalBudgetKobo - totalAllocatedOther - category.allocated_kobo);
+  const deltaKobo = Math.round(amountNaira * 100) - category.allocated_kobo;
+
+  const STEP_NAIRA = 50000;
+  function step(dir: 1 | -1) {
+    setAmountNaira((n) => Math.max(0, n + dir * STEP_NAIRA));
+  }
+
+  const otherCategories = categories.filter((c) => c.id !== category.id && !/conting/i.test(c.key) && !/conting/i.test(c.label));
+  const contingency = categories.find((c) => /conting/i.test(c.key) || /conting/i.test(c.label));
+
+  async function handleSave() {
+    if (deltaKobo === 0) { onClose(); return; }
+    if (deltaKobo > 0 && (!source || source.kind === 'raise_total')) {
+      // Raising the category needs a real source category to take from --
+      // "Raise total budget" is a distinct, larger action (editing the
+      // plan's own total_kobo) not built in this pass; stated, not faked.
+      if (source?.kind === 'raise_total') {
+        setError("Raising the total budget isn't built yet -- pick a category or Unallocated to take from instead.");
+        return;
+      }
+    }
+    setSaving(true);
+    setError(null);
+    try {
+      const changes: { category_id: string; new_allocated_kobo: number }[] = [
+        { category_id: category.id, new_allocated_kobo: Math.round(amountNaira * 100) },
+      ];
+      if (deltaKobo > 0 && source && source.kind === 'category') {
+        const sourceCat = categories.find((c) => c.id === source.id);
+        if (sourceCat) changes.push({ category_id: sourceCat.id, new_allocated_kobo: Math.max(0, sourceCat.allocated_kobo - deltaKobo) });
+      }
+      // deltaKobo < 0 (lowering the category) needs no source -- it just
+      // frees allocation back to Unallocated, nothing else to change.
+      const { error: rpcError } = await supabase.rpc('apply_plan_allocation_changes', { p_plan_id: planId, p_changes: changes, p_actor: 'user' });
+      if (rpcError) throw rpcError;
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      setError(e?.message || "That didn't go through.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(5,4,8,.72)' }} onClick={onClose} data-testid="ai-allocation-sheet-backdrop">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '24px 24px 0 0', background: '#120e1a', borderTop: '1px solid #2c2438', padding: '10px 20px 28px', display: 'flex', flexDirection: 'column', gap: 18 }}
+      >
+        <span style={{ width: 40, height: 4, borderRadius: 9, background: '#3a3048', alignSelf: 'center' }} />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 18, fontWeight: 800 }}>{category.label}</span>
+          <span style={{ fontSize: 12, color: '#8a7f97' }}>{category.booked ? 'Paid via VENTS' : category.committed_kobo > 0 ? 'Committed' : 'Estimate · not booked'}</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span onClick={() => step(-1)} role="button" data-testid="ai-allocation-minus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>−</span>
+          <input
+            type="number"
+            min={0}
+            value={amountNaira}
+            onChange={(e) => setAmountNaira(Math.max(0, Number(e.target.value) || 0))}
+            style={{ flex: 1, height: 56, borderRadius: 12, background: '#0a0810', border: '1px solid rgba(163,92,255,.55)', textAlign: 'center', fontSize: 24, fontWeight: 800, color: '#f2eff6', fontFamily: 'inherit' }}
+          />
+          <span onClick={() => step(1)} role="button" data-testid="ai-allocation-plus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>+</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: '#a89db3', textAlign: 'center' }}>
+          {matchCount == null ? 'Checking VENTS providers…' : matchCount === 0 ? 'No matching VENTS providers for this category yet' : `VENTS ${category.label.toLowerCase()} providers${planCity ? ` in ${planCity}` : ''} start from ${floorPrice != null ? naira(floorPrice) : '—'} · ${matchCount} found`}
+        </div>
+        {deltaKobo > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>TAKE {naira(deltaKobo / 100)} FROM</span>
+            <div
+              onClick={() => setSource({ kind: 'unallocated' })}
+              role="button"
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, cursor: 'pointer', background: source?.kind === 'unallocated' ? 'rgba(163,92,255,.12)' : '#0a0810', border: source?.kind === 'unallocated' ? '1px solid rgba(163,92,255,.55)' : '1px solid #2c2438' }}
+            >
+              <span style={{ fontSize: 13.5, fontWeight: 700 }}>Unallocated</span>
+              <span style={{ fontSize: 13, color: '#c9c0d4' }}>{naira(unallocatedKobo / 100)} → {naira(Math.max(0, unallocatedKobo - deltaKobo) / 100)}</span>
+            </div>
+            {contingency && (
+              <div
+                onClick={() => setSource({ kind: 'category', id: contingency.id })}
+                role="button"
+                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, cursor: 'pointer', background: source?.kind === 'category' && source.id === contingency.id ? 'rgba(163,92,255,.12)' : '#0a0810', border: source?.kind === 'category' && source.id === contingency.id ? '1px solid rgba(163,92,255,.55)' : '1px solid #2c2438' }}
+              >
+                <span style={{ fontSize: 13.5 }}>{contingency.label}</span>
+                <span style={{ fontSize: 13, color: '#8a7f97' }}>{naira(contingency.allocated_kobo / 100)}</span>
+              </div>
+            )}
+            {otherCategories.length > 0 && (
+              <PickerField
+                value={source?.kind === 'category' && source.id !== contingency?.id ? categories.find((c) => c.id === source.id)?.label || '' : ''}
+                placeholder="Another category…"
+                onOpen={() => setShowCategoryPicker(true)}
+              />
+            )}
+            <div
+              onClick={() => setSource({ kind: 'raise_total' })}
+              role="button"
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', borderRadius: 11, cursor: 'pointer', background: source?.kind === 'raise_total' ? 'rgba(163,92,255,.12)' : '#0a0810', border: source?.kind === 'raise_total' ? '1px solid rgba(163,92,255,.55)' : '1px solid #2c2438' }}
+            >
+              <span style={{ fontSize: 13.5 }}>Raise total budget</span>
+              <span style={{ fontSize: 13, color: '#8a7f97' }}>{naira(totalBudgetKobo / 100)}</span>
+            </div>
+          </div>
+        )}
+        {error && <div style={{ fontSize: 12, color: '#fbbf24' }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, height: 48, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={handleSave} role="button" data-testid="ai-allocation-save" style={{ flex: 1.6, height: 48, borderRadius: 12, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}>{saving ? 'Saving…' : 'Save allocation'}</span>
+        </div>
+      </div>
+      {showCategoryPicker && (
+        <PickerSheet
+          title="Take from which category?"
+          options={otherCategories.map((c) => ({ value: c.id, label: c.label, sublabel: naira(c.allocated_kobo / 100) }))}
+          value={source?.kind === 'category' ? source.id : ''}
+          searchable={false}
+          onSelect={(id) => { setSource({ kind: 'category', id }); setShowCategoryPicker(false); }}
+          onClose={() => setShowCategoryPicker(false)}
+          zIndex={1100}
+        />
+      )}
+    </div>
+  );
+}
+
+// P10 Category detail -- "the single place a category's money, provider,
+// tasks and notes meet" (the mockup's own words). Opened from Budget/Team
+// rows. Assigned-provider actions Message/View booking have no reachable
+// destination screen from this overlay component -- a stated gap, not a
+// dead click (tapping them shows that honestly rather than silently doing
+// nothing). "Replace" opens the real recommend_providers flow via the
+// plan's own Ask-SI thread, a genuine action, not a stub.
+function CategoryDetailView({
+  planId,
+  planTitle,
+  planCity,
+  totalBudgetKobo,
+  allCategories,
+  category,
+  tasks,
+  onBack,
+  onChanged,
+}: {
+  planId: string;
+  planTitle: string;
+  planCity: string | null;
+  totalBudgetKobo: number;
+  allCategories: WorkspaceCategory[];
+  category: WorkspaceCategory;
+  tasks: WorkspaceTask[];
+  onBack: () => void;
+  onChanged: () => void;
+}) {
+  const [showSheet, setShowSheet] = useState(false);
+  const [actionNote, setActionNote] = useState<string | null>(null);
+
+  const active = category.assignments.find((a) => a.status === 'assigned' || a.status === 'booked') || null;
+  const left = Math.max(0, category.allocated_kobo - category.committed_kobo - category.paid_kobo);
+
+  async function toggleTask(task: WorkspaceTask) {
+    if (task.completes_on_booking) return; // "can't be unticked manually -- the booking is the truth"
+    const { error } = await supabase.from('plan_tasks').update({ done_at: task.done_at ? null : new Date().toISOString() }).eq('id', task.id);
+    if (!error) onChanged();
+  }
+
+  const doneCount = tasks.filter((t) => !!t.done_at).length;
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: -4 }}>
+        <span onClick={onBack} role="button" aria-label="Back" style={{ fontSize: 19, color: '#e4d4ff', cursor: 'pointer' }}>←</span>
+        <span style={{ flex: 1, fontSize: 13, color: '#a89db3' }}>{planTitle}</span>
+        <span onClick={() => setShowSheet(true)} role="button" data-testid="ai-category-edit" style={{ fontSize: 13, color: '#d3b8ff', cursor: 'pointer' }}>Edit</span>
+      </div>
+      <div>
+        <div style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-.02em' }}>{category.label}</div>
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          {category.booked && <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(52,211,153,.12)', color: '#34d399' }}>PAID</span>}
+          {category.is_priority && <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(163,92,255,.14)', color: '#d3b8ff' }}>★ PRIORITY</span>}
+        </div>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d' }}>
+        <div style={{ padding: 12 }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Allocated</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(category.allocated_kobo / 100)}</div></div>
+        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#34d399' }}>Paid</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(category.paid_kobo / 100)}</div></div>
+        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Left</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(left / 100)}</div></div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>ASSIGNED</span>
+        {!active ? (
+          <div style={{ fontSize: 12.5, color: '#5e5470', padding: '12px 0' }}>No one assigned to this category yet.</div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d' }}>
+              <span style={{ width: 52, height: 52, borderRadius: 10, background: 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)', flexShrink: 0 }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{active.provider?.business_name || active.own_vendor_name || 'Provider'}</div>
+                <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>
+                  {active.provider ? [active.provider.category, active.provider.location].filter(Boolean).join(' · ') : 'Own vendor'}
+                </div>
+                <div style={{ fontSize: 12, color: active.status === 'booked' ? '#34d399' : '#c084fc', marginTop: 3 }}>
+                  {active.status === 'booked' ? 'Booking paid' : 'Committed'}{active.agreed_kobo != null ? ` · ${naira(active.agreed_kobo / 100)}` : ''}
+                </div>
+              </div>
+              <span style={{ fontSize: 12, color: '#d3b8ff' }}>›</span>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <span onClick={() => setActionNote('Messaging a provider from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Message</span>
+              <span onClick={() => setActionNote('Opening the real booking screen from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>View booking</span>
+              <span onClick={() => setActionNote('Finding a replacement provider happens in the plan\'s Ask SI thread -- open "Ask SI" from Overview and say what you need.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Replace</span>
+            </div>
+            {actionNote && <div style={{ fontSize: 11.5, color: '#8a7f97' }}>{actionNote}</div>}
+          </>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97', marginBottom: 6 }}>TASKS · {doneCount} OF {tasks.length}</span>
+        {tasks.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: '#5e5470', padding: '10px 0' }}>No tasks for this category yet.</div>
+        ) : (
+          tasks.map((t, i) => {
+            const done = !!t.done_at;
+            return (
+              <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '10px 0', borderBottom: i < tasks.length - 1 ? '1px solid #1c1726' : 'none' }}>
+                <span
+                  onClick={() => toggleTask(t)}
+                  role="button"
+                  style={{ width: 20, height: 20, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff', cursor: t.completes_on_booking ? 'default' : 'pointer', background: done ? '#a35cff' : 'transparent', border: done ? 'none' : '1.5px solid #4a3f56' }}
+                >
+                  {done ? '✓' : ''}
+                </span>
+                <span style={{ flex: 1, fontSize: 13.5, color: done ? '#8a7f97' : '#f2eff6', textDecoration: done ? 'line-through' : 'none' }}>{t.title}</span>
+                <span style={{ fontSize: 11, color: '#8a7f97' }}>{done && t.completes_on_booking ? 'via VENTS' : t.due_override || (t.offset_days != null ? `T-${t.offset_days}d` : '')}</span>
+              </div>
+            );
+          })
+        )}
+      </div>
+      {showSheet && (
+        <AllocationSheet
+          planId={planId}
+          category={category}
+          categories={allCategories}
+          planCity={planCity}
+          totalBudgetKobo={totalBudgetKobo}
+          onClose={() => setShowSheet(false)}
+          onSaved={onChanged}
+        />
+      )}
+    </>
+  );
+}
+
+// P11 Team tab -- every category as a "slot" row. Sort order is the
+// mockup's own spec text: booked -> committed -> own vendor -> next due
+// (expanded) -> open. "N on VENTS · from ₦X" / "No matches" per open
+// category comes from the same real search_services_fuzzy_filtered RPC
+// P09 uses, run once per open category.
+function WorkspaceTeamTab({ data, onOpenCategory }: { data: PlanWorkspaceData; onOpenCategory: (categoryId: string) => void }) {
+  const [matchInfo, setMatchInfo] = useState<Record<string, { count: number; floor: number | null }>>({});
+
+  const assignedCount = data.categories.filter((c) => c.assignments.some((a) => a.status === 'assigned' || a.status === 'booked')).length;
+
+  function slotState(c: WorkspaceCategory): 'booked' | 'committed' | 'own_vendor' | 'open' {
+    const active = c.assignments.find((a) => a.status === 'assigned' || a.status === 'booked');
+    if (!active) return 'open';
+    if (active.status === 'booked') return 'booked';
+    if (!active.provider_id && active.own_vendor_name) return 'own_vendor';
+    return 'committed';
+  }
+
+  const openCategories = data.categories.filter((c) => slotState(c) === 'open');
+  // Next-due = the open category with the soonest due task, shown
+  // expanded per the mockup's "(expanded, one at a time)" note.
+  function nextDueDate(c: WorkspaceCategory): number {
+    const t = data.tasks.find((t) => t.category_id === c.id && !t.done_at && (t.due_override || t.offset_days != null));
+    if (!t) return Infinity;
+    if (t.due_override) return new Date(t.due_override).getTime();
+    return data.plan.event_date ? new Date(data.plan.event_date).getTime() - (t.offset_days ?? 0) * 86400000 : Infinity;
+  }
+  const nextDueCategory = [...openCategories].sort((a, b) => nextDueDate(a) - nextDueDate(b)).find((c) => nextDueDate(c) < Infinity) || null;
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const c of openCategories) {
+        if (matchInfo[c.id]) continue;
+        try {
+          const { data: rows } = await supabase.rpc('search_services_fuzzy_filtered', { p_query: c.label, p_category: c.key, p_limit: 50, p_location: data.plan.city, p_max_starting_price: null });
+          if (cancelled) return;
+          const list = Array.isArray(rows) ? rows : [];
+          const prices = list.map((r: any) => Number(r.starting_price)).filter((n: number) => isFinite(n) && n >= 0);
+          setMatchInfo((prev) => ({ ...prev, [c.id]: { count: list.length, floor: prices.length ? Math.min(...prices) : null } }));
+        } catch { /* best-effort, line just stays blank for this category */ }
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.plan.city, openCategories.map((c) => c.id).join(',')]);
+
+  const rank: Record<string, number> = { booked: 0, committed: 1, own_vendor: 2, open: 3 };
+  const sorted = [...data.categories].sort((a, b) => {
+    const ra = a.id === nextDueCategory?.id ? 2.5 : rank[slotState(a)];
+    const rb = b.id === nextDueCategory?.id ? 2.5 : rank[slotState(b)];
+    return ra - rb;
+  });
+
+  return (
+    <>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 20, fontWeight: 800 }}>{assignedCount} of {data.categories.length} assigned</span>
+        <span style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>+ Category</span>
+      </div>
+      {sorted.map((c) => {
+        const state = slotState(c);
+        const active = c.assignments.find((a) => a.status === 'assigned' || a.status === 'booked');
+        const isNextDue = c.id === nextDueCategory?.id;
+        const info = matchInfo[c.id];
+
+        if (isNextDue) {
+          return (
+            <div key={c.id} style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid={`workspace-team-row-${c.key}`}>
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div onClick={() => onOpenCategory(c.id)} role="button" style={{ cursor: 'pointer' }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{c.label}</div>
+                  <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>
+                    {info ? `${info.count} on VENTS · from ${info.floor != null ? naira(info.floor) : '—'} · budget ≈ ${naira(c.allocated_kobo / 100)}` : 'Checking VENTS providers…'}
+                  </div>
+                </div>
+                <span style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24' }}>Due soon</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                {[0, 1, 2].map((i) => (
+                  <span key={i} style={{ width: 32, height: 32, borderRadius: '50%', marginLeft: i > 0 ? -14 : 0, background: 'repeating-linear-gradient(45deg,#2c2438,#2c2438 5px,#231d2e 5px,#231d2e 10px)', border: '2px solid #120e1a' }} />
+                ))}
+                <span style={{ flex: 1 }} />
+                <span onClick={() => onOpenCategory(c.id)} role="button" style={{ padding: '8px 14px', borderRadius: 9, background: 'rgba(163,92,255,.14)', color: '#d3b8ff', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>View providers</span>
+              </div>
+            </div>
+          );
+        }
+
+        const glyph =
+          state === 'booked' ? { bg: '#34d399', color: '#0a0810', content: '✓' } :
+          state === 'committed' ? { bg: '#a35cff', color: '#fff', content: '✓' } :
+          state === 'own_vendor' ? { bg: 'transparent', color: '#c084fc', content: '↗', border: '1.5px solid #a35cff' } :
+          { bg: 'transparent', color: 'transparent', content: '', border: '1.5px dashed #4a3f56' };
+
+        return (
+          <div key={c.id} onClick={() => onOpenCategory(c.id)} role="button" data-testid={`workspace-team-row-${c.key}`} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', cursor: 'pointer' }}>
+            <span style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', background: glyph.bg, color: glyph.color, border: (glyph as any).border }}>{glyph.content}</span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, color: '#8a7f97' }}>{c.label}{state === 'own_vendor' ? ' · own vendor' : ''}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 1 }}>
+                {active ? (active.provider?.business_name || active.own_vendor_name) : info ? (info.count > 0 ? `${info.count} on VENTS · from ${info.floor != null ? naira(info.floor) : '—'}` : `No matches within ${naira(c.allocated_kobo / 100)}`) : 'Checking VENTS providers…'}
+              </div>
+            </div>
+            {active ? (
+              <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 13.5, fontWeight: 700 }}>{naira((active.agreed_kobo ?? 0) / 100)}</div>
+                <div style={{ fontSize: 11, color: state === 'booked' ? '#34d399' : state === 'own_vendor' ? '#fbbf24' : '#c084fc' }}>
+                  {state === 'booked' ? 'Paid' : state === 'own_vendor' ? (active.agreed_kobo != null && active.agreed_kobo > c.allocated_kobo ? `Over by ${naira((active.agreed_kobo - c.allocated_kobo) / 100)}` : 'Own vendor') : 'Committed'}
+                </div>
+              </div>
+            ) : (
+              <span style={{ fontSize: 12, color: '#d3b8ff' }}>›</span>
+            )}
+          </div>
+        );
+      })}
     </>
   );
 }
