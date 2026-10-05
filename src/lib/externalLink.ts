@@ -22,3 +22,17 @@ export async function openExternalUrl(url: string): Promise<void> {
   }
   window.open(url, '_blank', 'noopener,noreferrer');
 }
+
+// Client-side mirror of public.is_safe_https_url() (migration 0155) --
+// used for a fast inline form error before submit, never as the actual
+// security boundary. The server-side RPC re-validates with the same rule
+// on every write and is the only check that actually matters: an
+// organizer's own browser running this check is not a trust boundary.
+// https:// only; rejects javascript:/data:/file:/vbscript: and any bare
+// scheme-less string (arbitrary text is never silently promoted to a link).
+export function isSafeHttpsUrl(url: string): boolean {
+  const trimmed = (url || '').trim();
+  if (!/^https:\/\/[^\s]+\.[^\s]+/i.test(trimmed)) return false;
+  if (/^\s*(javascript|data|file|vbscript):/i.test(trimmed)) return false;
+  return true;
+}

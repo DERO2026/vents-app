@@ -232,6 +232,7 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     latitude: dbEvent.latitude != null ? Number(dbEvent.latitude) : null,
     longitude: dbEvent.longitude != null ? Number(dbEvent.longitude) : null,
     placeId: dbEvent.place_id || null,
+    locationType: dbEvent.location_type || 'in_person',
     contactPhone: dbEvent.show_phone && dbEvent.contact_phone ? dbEvent.contact_phone : '',
   };
 }

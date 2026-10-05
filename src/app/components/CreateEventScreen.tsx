@@ -22,6 +22,7 @@ import { REGION } from '../../lib/regionConfig';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { pickImage } from '../../lib/pickImage';
 import { Sentry } from '../../lib/sentry';
+import { isSafeHttpsUrl } from '../../lib/externalLink';
 
 interface CreateEventScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; isOrganizer?: boolean; country?: string } | null;
@@ -75,6 +76,22 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
   const [endDate, setEndDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
+  // 'in_person' | 'online' | 'hybrid' -- a real column (events.location_type,
+  // migration 0155), not inferred from the location string. For 'online',
+  // the venue/address/city/state fields below are hidden and never
+  // required; `location` is still set to the fixed sentinel 'Online' at
+  // submit time only to satisfy events.location's existing NOT NULL
+  // constraint -- the UI never reads that string to decide what to show,
+  // only locationType.
+  const [locationType, setLocationType] = useState<'in_person' | 'online' | 'hybrid'>('in_person');
+  // Online/hybrid access details -- write-only from this screen's point of
+  // view (saved via organizer_set_event_online_access, never stored on the
+  // publicly-selectable events row). Loaded back for editing via
+  // get_event_online_access, which this screen is allowed to call since the
+  // organizer themselves always passes its authorization check.
+  const [onlinePlatform, setOnlinePlatform] = useState<'discord' | 'zoom' | 'google_meet' | 'youtube' | 'other'>('discord');
+  const [onlineAccessUrl, setOnlineAccessUrl] = useState('');
+  const [onlineInstructions, setOnlineInstructions] = useState('');
   const [venue, setVenue] = useState('');
   const [address, setAddress] = useState('');
   const [latitude, setLatitude] = useState<number | null>(null);
@@ -231,17 +248,42 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         if (row.end_date) setEndDate(String(row.end_date).split('T')[0]);
         setStartTime(row.start_time || '');
         setEndTime(row.end_time || '');
+        const loadedLocationType: 'in_person' | 'online' | 'hybrid' = row.location_type || 'in_person';
+        setLocationType(loadedLocationType);
         // location was assembled as "venue, state, city[, address]" on create —
         // parsed back in the same order (see submitEvent's locationString).
-        const parts = String(row.location || '').split(', ');
-        setVenue(parts[0] || '');
-        setStateName(parts[1] || '');
-        setCity(parts[2] || '');
-        setAddress(parts[3] || '');
+        // Skipped for a pure online event: its `location` column only ever
+        // holds the fixed 'Online' sentinel, which would otherwise land in
+        // the venue field and resurface oddly if the organizer later
+        // switches location type back to in-person/hybrid.
+        if (loadedLocationType !== 'online') {
+          const parts = String(row.location || '').split(', ');
+          setVenue(parts[0] || '');
+          setStateName(parts[1] || '');
+          setCity(parts[2] || '');
+          setAddress(parts[3] || '');
+        }
         if (row.country) setEventCountry(row.country);
         setLatitude(row.latitude != null ? Number(row.latitude) : null);
         setLongitude(row.longitude != null ? Number(row.longitude) : null);
         setPlaceId(row.place_id || null);
+        // Online/hybrid access details live in their own locked-down table
+        // (migration 0155) -- never on the events row -- so a second,
+        // organizer-authorized call fetches them back for editing here.
+        if (loadedLocationType !== 'in_person') {
+          try {
+            const { data: accessRows } = await supabase.rpc('get_event_online_access', { p_event_id: editEventId });
+            const access = Array.isArray(accessRows) ? accessRows[0] : accessRows;
+            if (access?.has_access_info) {
+              setOnlinePlatform(access.platform || 'discord');
+              setOnlineAccessUrl(access.access_url || '');
+              setOnlineInstructions(access.instructions || '');
+            }
+          } catch {
+            // Not authorized or no row yet -- leave the form fields at their
+            // defaults rather than blocking the rest of the edit load.
+          }
+        }
         setCapacity(row.ticket_goal != null ? String(row.ticket_goal) : '');
         const tts: TicketFormType[] = Array.isArray(row.ticket_types) && row.ticket_types.length
           ? row.ticket_types.map((t: any) => ({
@@ -493,8 +535,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       const eventCheck = eventCreateSchema.safeParse({
         title: title.trim(),
         description: description.trim(),
-        venue: venue.trim(),
-        city: city.trim(),
+        venue: locationType === 'online' ? 'Online' : venue.trim(),
+        city: locationType === 'online' ? 'Online' : city.trim(),
         address: address ? address.trim() : undefined,
         ticketTypes: ticketTypes.map(t => ({
           name: t.name.trim(),
@@ -505,7 +547,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       });
       if (!eventCheck.success) throw new Error(firstValidationError(eventCheck));
 
-      const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
+      const locationString = locationType === 'online'
+        ? 'Online'
+        : `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
       // Optional — only present for a multi-day event. Falls back to the
       // end time on the same calendar day as the start when no end date
@@ -582,9 +626,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              location_type: locationType,
               country: eventCountry,
-              latitude,
-              longitude,
+              latitude: locationType === 'online' ? null : latitude,
+              longitude: locationType === 'online' ? null : longitude,
               place_id: placeId,
               event_date: eventTimestamp,
               end_date: endTimestamp,
@@ -640,6 +685,17 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         throw error;
       }
 
+      const newEventId = data?.[0]?.id;
+      if (newEventId && locationType !== 'in_person' && onlineAccessUrl.trim()) {
+        const { error: accessError } = await supabase.rpc('organizer_set_event_online_access', {
+          p_event_id: newEventId,
+          p_platform: onlinePlatform,
+          p_access_url: onlineAccessUrl.trim(),
+          p_instructions: onlineInstructions.trim() || null,
+        });
+        if (accessError) throw accessError;
+      }
+
       const createdEvent: OrganizerEvent = {
         id: data?.[0]?.id || (() => { throw new Error('Event created but no ID returned from DB'); })(),
         title: title.trim(),
@@ -688,8 +744,8 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       const eventCheck = eventCreateSchema.safeParse({
         title: title.trim(),
         description: description.trim(),
-        venue: venue.trim(),
-        city: city.trim(),
+        venue: locationType === 'online' ? 'Online' : venue.trim(),
+        city: locationType === 'online' ? 'Online' : city.trim(),
         address: address ? address.trim() : undefined,
         ticketTypes: ticketTypes.map(t => ({
           name: t.name.trim(),
@@ -734,7 +790,9 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         }
       }
 
-      const locationString = `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
+      const locationString = locationType === 'online'
+        ? 'Online'
+        : `${venue.trim()}, ${stateName.trim()}, ${city.trim()}` + (address ? `, ${address.trim()}` : '');
       const eventTimestamp = new Date(`${date}T${startTime}:00${REGION.timezoneOffset}`).toISOString();
       // Optional — only present for a multi-day event. Falls back to the
       // end time on the same calendar day as the start when no end date
@@ -755,9 +813,10 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               image_url: imageUrl,
               gallery_urls: galleryUrls,
               location: locationString,
+              location_type: locationType,
               country: eventCountry,
-              latitude,
-              longitude,
+              latitude: locationType === 'online' ? null : latitude,
+              longitude: locationType === 'online' ? null : longitude,
               place_id: placeId,
               event_date: eventTimestamp,
               end_date: endTimestamp,
@@ -785,6 +844,16 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
       );
 
       if (error) throw error;
+
+      if (locationType !== 'in_person' && onlineAccessUrl.trim()) {
+        const { error: accessError } = await supabase.rpc('organizer_set_event_online_access', {
+          p_event_id: editEventId,
+          p_platform: onlinePlatform,
+          p_access_url: onlineAccessUrl.trim(),
+          p_instructions: onlineInstructions.trim() || null,
+        });
+        if (accessError) throw accessError;
+      }
 
       const updatedEvent: OrganizerEvent = {
         id: editEventId,
@@ -854,16 +923,26 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         setErrorMessage('Please select a start time.');
         return;
       }
-      if (!venue.trim()) {
-        setErrorMessage('Please enter the venue name.');
-        return;
+      // Physical venue/state/city are only required for an event that
+      // actually has a physical component -- never for a pure online event,
+      // per the product decision that Online is a first-class location
+      // type, not a fake address.
+      if (locationType !== 'online') {
+        if (!venue.trim()) {
+          setErrorMessage('Please enter the venue name.');
+          return;
+        }
+        if (!stateName.trim()) {
+          setErrorMessage('Please select your state.');
+          return;
+        }
+        if (!city.trim()) {
+          setErrorMessage('Please enter the city.');
+          return;
+        }
       }
-      if (!stateName.trim()) {
-        setErrorMessage('Please select your state.');
-        return;
-      }
-      if (!city.trim()) {
-        setErrorMessage('Please enter the city.');
+      if (locationType !== 'in_person' && !isSafeHttpsUrl(onlineAccessUrl)) {
+        setErrorMessage('Please enter a valid https:// online access link.');
         return;
       }
       // Field is marked required (label has a *) but was never actually
@@ -1360,36 +1439,65 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
               </div>
             </div>
             <div>
-              <Label>Venue Name *</Label>
-              <input
-                placeholder="e.g. Eko Hotel & Suites"
-                value={venue}
-                onChange={(e) => setVenue(e.target.value)}
-                style={INPUT_STYLE}
-              />
+              <Label>Location Type *</Label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {([
+                  { id: 'in_person', label: 'In Person' },
+                  { id: 'online', label: '🌐 Online' },
+                  { id: 'hybrid', label: '🔀 Hybrid' },
+                ] as const).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setLocationType(opt.id)}
+                    style={{
+                      flex: 1, height: '42px', borderRadius: '12px', fontSize: '13px', fontWeight: 700,
+                      fontFamily: 'Manrope, sans-serif', cursor: 'pointer',
+                      border: locationType === opt.id ? `1px solid ${ventsColors.accent}` : '1px solid rgba(255,255,255,0.1)',
+                      background: locationType === opt.id ? 'rgba(124,58,237,0.15)' : 'rgba(255,255,255,0.04)',
+                      color: locationType === opt.id ? ventsColors.white : ventsColors.ink2,
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div>
-              <Label>Full Address</Label>
-              <LocationPicker
-                value={{ address, lat: latitude, lng: longitude }}
-                onChange={(v) => {
-                  setAddress(v.address);
-                  setLatitude(v.lat);
-                  setLongitude(v.lng);
-                  if (v.placeId) setPlaceId(v.placeId);
-                  // venue/city/state only arrive on an actual place
-                  // selection or pin drag (never on free-typed fallback
-                  // text — see LocationValue's doc comment), so this never
-                  // clobbers a manual edit mid-keystroke. Still an
-                  // auto-fill, not a lock: every field below stays a plain
-                  // editable input/dropdown the organizer can override
-                  // immediately after picking a place.
-                  if (v.venue) setVenue(v.venue);
-                  if (v.city) setCity(v.city);
-                  if (v.state) setStateName(v.state);
-                }}
-              />
-            </div>
+            {locationType !== 'online' && (
+              <>
+                <div>
+                  <Label>Venue Name *</Label>
+                  <input
+                    placeholder="e.g. Eko Hotel & Suites"
+                    value={venue}
+                    onChange={(e) => setVenue(e.target.value)}
+                    style={INPUT_STYLE}
+                  />
+                </div>
+                <div>
+                  <Label>Full Address</Label>
+                  <LocationPicker
+                    value={{ address, lat: latitude, lng: longitude }}
+                    onChange={(v) => {
+                      setAddress(v.address);
+                      setLatitude(v.lat);
+                      setLongitude(v.lng);
+                      if (v.placeId) setPlaceId(v.placeId);
+                      // venue/city/state only arrive on an actual place
+                      // selection or pin drag (never on free-typed fallback
+                      // text — see LocationValue's doc comment), so this never
+                      // clobbers a manual edit mid-keystroke. Still an
+                      // auto-fill, not a lock: every field below stays a plain
+                      // editable input/dropdown the organizer can override
+                      // immediately after picking a place.
+                      if (v.venue) setVenue(v.venue);
+                      if (v.city) setCity(v.city);
+                      if (v.state) setStateName(v.state);
+                    }}
+                  />
+                </div>
+              </>
+            )}
             <div>
               <Label>Country *</Label>
               <PickerField
@@ -1398,47 +1506,112 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
                 onOpen={() => setShowCountryModal(true)}
               />
             </div>
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <div style={{ flex: 1, position: 'relative' }}>
-                <Label>City *</Label>
-                {stateName && NIGERIA_CITIES[stateName] ? (
-                  <PickerField
-                    value={city}
-                    placeholder="Select city"
-                    onOpen={() => setShowCityModal(true)}
-                  />
-                ) : (
+            {locationType !== 'online' && (
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ flex: 1, position: 'relative' }}>
+                  <Label>City *</Label>
+                  {stateName && NIGERIA_CITIES[stateName] ? (
+                    <PickerField
+                      value={city}
+                      placeholder="Select city"
+                      onOpen={() => setShowCityModal(true)}
+                    />
+                  ) : (
+                    <input
+                      placeholder={stateName ? 'Enter city' : 'Select state first'}
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      style={INPUT_STYLE}
+                    />
+                  )}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <Label>{eventSubdivisions?.label || 'State'} *</Label>
+                  {/* Only Nigeria (via NIGERIA_CITIES) has a curated city-in-
+                      state list; every other country's "state" is either a
+                      curated subdivision picker (countrySubdivisions.ts) or
+                      free text -- previously this was always the Nigeria
+                      state picker regardless of the event's country. */}
+                  {eventSubdivisions ? (
+                    <PickerField
+                      value={stateName}
+                      placeholder={`Select ${eventSubdivisions.label}`}
+                      onOpen={() => setShowStateModal(true)}
+                    />
+                  ) : (
+                    <input
+                      placeholder="State / Region / Province"
+                      value={stateName}
+                      onChange={(e) => setStateName(e.target.value)}
+                      style={INPUT_STYLE}
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+            {locationType !== 'in_person' && (
+              <div style={{
+                display: 'flex', flexDirection: 'column', gap: '10px', padding: '14px',
+                borderRadius: '14px', background: 'rgba(124,58,237,0.08)', border: '1px solid rgba(124,58,237,0.2)',
+              }}>
+                <p style={{ margin: 0, color: ventsColors.white, fontSize: '13px', fontWeight: 800 }}>
+                  Online Event Access
+                </p>
+                <p style={{ margin: 0, color: ventsColors.ink2, fontSize: '11.5px', lineHeight: 1.5 }}>
+                  This link is only shown to attendees after they successfully register or purchase a ticket — never on the public event listing.
+                </p>
+                <div>
+                  <Label>Access Platform *</Label>
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                    {([
+                      { id: 'discord', label: 'Discord' },
+                      { id: 'zoom', label: 'Zoom' },
+                      { id: 'google_meet', label: 'Google Meet' },
+                      { id: 'youtube', label: 'YouTube' },
+                      { id: 'other', label: 'Other' },
+                    ] as const).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setOnlinePlatform(p.id)}
+                        style={{
+                          height: '34px', padding: '0 12px', borderRadius: '10px', fontSize: '12px', fontWeight: 700,
+                          fontFamily: 'Manrope, sans-serif', cursor: 'pointer',
+                          border: onlinePlatform === p.id ? `1px solid ${ventsColors.accent}` : '1px solid rgba(255,255,255,0.1)',
+                          background: onlinePlatform === p.id ? 'rgba(124,58,237,0.2)' : 'rgba(255,255,255,0.04)',
+                          color: onlinePlatform === p.id ? ventsColors.white : ventsColors.ink2,
+                        }}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <Label>Access URL *</Label>
                   <input
-                    placeholder={stateName ? 'Enter city' : 'Select state first'}
-                    value={city}
-                    onChange={(e) => setCity(e.target.value)}
+                    placeholder="https://discord.gg/..."
+                    value={onlineAccessUrl}
+                    onChange={(e) => setOnlineAccessUrl(e.target.value)}
                     style={INPUT_STYLE}
                   />
-                )}
-              </div>
-              <div style={{ flex: 1 }}>
-                <Label>{eventSubdivisions?.label || 'State'} *</Label>
-                {/* Only Nigeria (via NIGERIA_CITIES) has a curated city-in-
-                    state list; every other country's "state" is either a
-                    curated subdivision picker (countrySubdivisions.ts) or
-                    free text -- previously this was always the Nigeria
-                    state picker regardless of the event's country. */}
-                {eventSubdivisions ? (
-                  <PickerField
-                    value={stateName}
-                    placeholder={`Select ${eventSubdivisions.label}`}
-                    onOpen={() => setShowStateModal(true)}
+                  {onlineAccessUrl.trim() && !isSafeHttpsUrl(onlineAccessUrl) && (
+                    <p style={{ margin: '4px 0 0', color: '#F59E0B', fontSize: '11px' }}>
+                      Must be a valid https:// link.
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <Label>Access Instructions (optional)</Label>
+                  <textarea
+                    placeholder="e.g. Join the #workshop channel once you're in."
+                    value={onlineInstructions}
+                    onChange={(e) => setOnlineInstructions(e.target.value)}
+                    style={{ ...INPUT_STYLE, minHeight: '70px', resize: 'vertical' }}
                   />
-                ) : (
-                  <input
-                    placeholder="State / Region / Province"
-                    value={stateName}
-                    onChange={(e) => setStateName(e.target.value)}
-                    style={INPUT_STYLE}
-                  />
-                )}
+                </div>
               </div>
-            </div>
+            )}
             <div>
               <Label>Total Capacity *</Label>
               <input

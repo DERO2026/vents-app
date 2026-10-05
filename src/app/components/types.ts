@@ -65,6 +65,11 @@ export interface Event {
   latitude?: number | null;
   longitude?: number | null;
   placeId?: string | null;
+  // First-class location type (events.location_type, migration 0155) --
+  // 'online'/'hybrid' events display a "🌐 Online"/"🔀 Hybrid" badge and
+  // skip the physical-address/map UI; undefined (pre-migration rows that
+  // somehow bypass the column default) is treated as 'in_person'.
+  locationType?: 'in_person' | 'online' | 'hybrid';
 }
 
 export interface TicketAttendee {

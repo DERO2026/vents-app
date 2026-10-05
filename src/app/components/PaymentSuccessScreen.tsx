@@ -14,6 +14,7 @@ import { Sentry } from '../../lib/sentry';
 import { TOAST_TOP_POSITION } from './shared/toastPosition';
 import { supabase } from '../../lib/supabase';
 import { UserAutocomplete } from './shared/UserAutocomplete';
+import { useExternalLinkWarning } from './ExternalLinkWarningModal';
 
 interface PaymentSuccessScreenProps {
   ticket: PurchasedTicket;
@@ -69,6 +70,37 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
   const signedToken = useSignedTicketToken(ticket.ticketId, ticket.token);
 
   const [saving, setSaving] = useState(false);
+
+  // Online/hybrid access -- fetched lazily on tap, never pre-fetched or
+  // cached alongside the ticket itself, since get_event_online_access
+  // re-checks live ticket ownership/payment status on every call (migration
+  // 0155) and the organizer may update the link at any time; fetching fresh
+  // each tap is how a stale cached URL is avoided per the product spec.
+  const isOnlineEvent = ticket.event.locationType === 'online' || ticket.event.locationType === 'hybrid';
+  const [loadingAccess, setLoadingAccess] = useState(false);
+  const [accessNotReady, setAccessNotReady] = useState(false);
+  const { requestOpen, modal: externalLinkModal } = useExternalLinkWarning();
+
+  const handleJoinEvent = async () => {
+    if (loadingAccess) return;
+    setLoadingAccess(true);
+    setAccessNotReady(false);
+    try {
+      const { data: accessRows, error } = await supabase.rpc('get_event_online_access', { p_event_id: ticket.event.id });
+      if (error) throw error;
+      const access = Array.isArray(accessRows) ? accessRows[0] : accessRows;
+      if (access?.has_access_info && access?.access_url) {
+        requestOpen(access.access_url);
+      } else {
+        setAccessNotReady(true);
+      }
+    } catch (err) {
+      Sentry.captureException(err);
+      setAccessNotReady(true);
+    } finally {
+      setLoadingAccess(false);
+    }
+  };
 
   const handleSave = async () => {
     // Was downloading a plain .txt receipt with no QR — replaced with a real
@@ -291,7 +323,11 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '16px' }}>
               {[
                 { icon: Calendar, text: `${ticket.event.date} · ${ticket.event.time}` },
-                { icon: MapPin, text: `${ticket.event.venue}, ${ticket.event.city}` },
+                ticket.event.locationType === 'online'
+                  ? { icon: MapPin, text: '🌐 Online Event' }
+                  : ticket.event.locationType === 'hybrid'
+                    ? { icon: MapPin, text: `🔀 ${ticket.event.venue}, ${ticket.event.city} + Online` }
+                    : { icon: MapPin, text: `${ticket.event.venue}, ${ticket.event.city}` },
                 {
                   icon: Ticket,
                   text: `${ticket.quantity} × ${ticket.ticketType.name} · ${formatPrice(ticket.totalAmount)}`,
@@ -446,6 +482,38 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           </button>
         </div>
 
+        {isOnlineEvent && (
+          <>
+            <button
+              onClick={handleJoinEvent}
+              disabled={loadingAccess}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg,#7C3AED,#A855F7)',
+                border: 'none',
+                borderRadius: '14px',
+                padding: '13px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '7px',
+                cursor: loadingAccess ? 'not-allowed' : 'pointer',
+                opacity: loadingAccess ? 0.7 : 1,
+              }}
+            >
+              <Send size={16} color="#fff" />
+              <span style={{ color: '#fff', fontSize: '13px', fontWeight: 700 }}>
+                {loadingAccess ? 'Loading…' : 'Join Event'}
+              </span>
+            </button>
+            {accessNotReady && (
+              <p style={{ color: ventsColors.ink2, fontSize: '12px', textAlign: 'center', margin: '-2px 0 0' }}>
+                Online access details haven't been added yet. Check back later.
+              </p>
+            )}
+          </>
+        )}
+
         {isTransferEligible(ticket) && (
           <button
             onClick={() => setShowTransfer(true)}
@@ -566,6 +634,7 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           </div>
         </div>
       )}
+      {externalLinkModal}
     </div>
   );
 }

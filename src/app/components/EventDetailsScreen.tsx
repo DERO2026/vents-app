@@ -969,7 +969,11 @@ export function EventDetailsScreen({
           ))}
         </div>
 
-        {/* Location */}
+        {/* Location -- a pure online event has no real venue/address, so it
+            never shows a fake address or the map, just a clear "Online
+            Event" marker (the private access link itself only ever comes
+            from get_event_online_access, gated on ticket ownership --
+            see the ticket-detail screen, never this public details view). */}
         <div
           style={{
             background: 'rgba(255,255,255,0.04)',
@@ -981,7 +985,7 @@ export function EventDetailsScreen({
             marginBottom: '16px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: event.locationType === 'online' ? 0 : '12px' }}>
             <div
               style={{
                 width: '36px',
@@ -997,21 +1001,41 @@ export function EventDetailsScreen({
               <MapPin size={16} color={ventsColors.accent} />
             </div>
             <div>
-              <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
-                {event.venue}
-              </div>
-              <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
-                {event.area}, {event.city}, {event.state}
-              </div>
+              {event.locationType === 'online' ? (
+                <>
+                  <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
+                    🌐 Online Event
+                  </div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
+                    Join online — access details are sent after you register or purchase a ticket.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ color: ventsColors.ink3, fontSize: '14px', fontWeight: 600 }}>
+                    {event.locationType === 'hybrid' ? '🔀 Hybrid — ' : ''}{event.venue}
+                  </div>
+                  <div style={{ color: ventsColors.ink3, fontSize: '12px' }}>
+                    {event.area}, {event.city}, {event.state}
+                  </div>
+                  {event.locationType === 'hybrid' && (
+                    <div style={{ color: ventsColors.ink3, fontSize: '11px', marginTop: '2px' }}>
+                      Also available online — access details are sent after you register or purchase a ticket.
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           </div>
-          <EventMap
-            latitude={event.latitude}
-            longitude={event.longitude}
-            venue={event.venue}
-            address={`${event.area}, ${event.city}, ${event.state}`}
-            onGetDirections={() => setShowMapDialog(true)}
-          />
+          {event.locationType !== 'online' && (
+            <EventMap
+              latitude={event.latitude}
+              longitude={event.longitude}
+              venue={event.venue}
+              address={`${event.area}, ${event.city}, ${event.state}`}
+              onGetDirections={() => setShowMapDialog(true)}
+            />
+          )}
         </div>
 
         {/* Organizer -- moved here, after Date/Time and Location/Map,
