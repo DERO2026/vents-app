@@ -131,6 +131,116 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
   };
 }
 
+// P01's "NEW · SI PLANNER" promo card -- shown on the Chat tab only when
+// the user has no plan yet. Exact copy/colors/radii from P01.html. Type
+// chips prefill AND immediately send ("Help me plan a {type}"), per that
+// frame's own spec text ("Type chips prefill ... and send").
+function NewPlannerPromoCard({ onPickType }: { onPickType: (text: string) => void }) {
+  const TYPES = ['Wedding', 'Birthday', 'Conference', 'Something else'];
+  return (
+    <div style={{ padding: 16, borderRadius: 14, background: 'linear-gradient(160deg, rgba(163,92,255,.16), rgba(18,14,26,1) 70%)', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>NEW · SI PLANNER</span>
+      <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.01em' }}>Plan an event with SI</span>
+      <span style={{ fontSize: 13, color: '#c9c0d4', lineHeight: 1.5 }}>Tell SI what you're hosting. Get a budget, a team of VENTS providers, tasks and a timeline.</span>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {TYPES.map((t) => (
+          <span
+            key={t}
+            onClick={() => onPickType(t === 'Something else' ? "I'm planning an event." : `Help me plan a ${t.toLowerCase()}`)}
+            style={{ fontSize: 12, padding: '6px 10px', borderRadius: 99, background: '#1c1726', border: '1px solid #2c2438', color: '#d6cfe0', cursor: 'pointer' }}
+          >
+            {t}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// When a plan exists, P01's promo card becomes this "CONTINUE PLANNING"
+// card (P24's own spec). Readiness/days-to-go/urgent-tasks are computed
+// from a real fetchPlanWorkspace read of the most recent plan -- never
+// fabricated placeholder numbers.
+function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSummary; onAskSi: () => void; onOpenWorkspace: () => void }) {
+  const [data, setData] = useState<PlanWorkspaceData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchPlanWorkspace(plan.id).then((d) => { if (!cancelled) setData(d); }).catch(() => { if (!cancelled) setData(null); });
+    return () => { cancelled = true; };
+  }, [plan.id]);
+
+  if (!data) return null;
+
+  const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
+  const tasksTotal = data.tasks.length;
+  const tasksPct = tasksTotal > 0 ? tasksDone / tasksTotal : 0;
+  const assignedCategories = data.categories.filter((c) => c.committed_kobo > 0 || c.paid_kobo > 0 || c.booked).length;
+  const categoriesTotal = data.categories.length;
+  const teamPct = categoriesTotal > 0 ? assignedCategories / categoriesTotal : 0;
+  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0);
+  const totalCommittedOrPaid = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
+  const budgetPct = totalAllocated > 0 ? Math.min(1, totalCommittedOrPaid / totalAllocated) : 0;
+  const readiness = Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
+  const daysToGo = data.plan.event_date ? Math.max(0, Math.round((new Date(data.plan.event_date).getTime() - Date.now()) / 86400000)) : null;
+
+  function dueDate(t: WorkspaceTask): Date | null {
+    if (t.due_override) return new Date(t.due_override);
+    if (data!.plan.event_date && t.offset_days != null) {
+      const d = new Date(data!.plan.event_date);
+      d.setDate(d.getDate() - t.offset_days);
+      return d;
+    }
+    return null;
+  }
+  const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const now = Date.now();
+  const incomplete = data.tasks
+    .filter((t) => !t.done_at)
+    .map((t) => ({ t, due: dueDate(t) }))
+    .filter((x) => x.due)
+    .sort((a, b) => a.due!.getTime() - b.due!.getTime());
+  const overdue = incomplete.filter((x) => x.due!.getTime() < now);
+  const upcoming = incomplete.filter((x) => x.due!.getTime() >= now);
+  const lines: { text: string; color: string }[] = [];
+  if (overdue.length > 0) lines.push({ text: `${overdue.length} overdue · ${overdue[0].t.title}`, color: '#fbbf24' });
+  for (const x of upcoming) {
+    if (lines.length >= 2) break;
+    lines.push({ text: `${x.t.title} due ${fmtDate(x.due!)}`, color: '#c9c0d4' });
+  }
+
+  return (
+    <div style={{ padding: 16, borderRadius: 14, background: 'linear-gradient(160deg, rgba(163,92,255,.16), #120e1a 70%)', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>CONTINUE PLANNING</span>
+        <span style={{ fontSize: 12, color: '#a89db3' }}>{daysToGo != null ? `${daysToGo} days` : ''}</span>
+      </div>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+        <div style={{ width: 52, height: 52, borderRadius: '50%', background: `conic-gradient(#a35cff 0 ${readiness}%, #2c2438 ${readiness}% 100%)`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+          <span style={{ width: 42, height: 42, borderRadius: '50%', background: '#16111f', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12.5, fontWeight: 800 }}>{readiness}%</span>
+        </div>
+        <div>
+          <div style={{ fontSize: 17, fontWeight: 800 }}>{plan.title}</div>
+          <div style={{ fontSize: 12.5, color: '#a89db3', marginTop: 2 }}>
+            {plan.event_date ? plan.event_date : ''}{plan.city ? ` · ${plan.city}` : ''}
+          </div>
+        </div>
+      </div>
+      {lines.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, paddingTop: 10, borderTop: '1px solid rgba(255,255,255,.06)' }}>
+          {lines.map((l, i) => (
+            <span key={i} style={{ fontSize: 13, color: l.color }}>● {l.text}</span>
+          ))}
+        </div>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Ask SI</span>
+        <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
+      </div>
+    </div>
+  );
+}
+
 // Dedicated Plan Workspace (P07 Overview, P08 Budget) -- a non-chat-log
 // screen, distinct from a plan's chat thread (P24's "Open plan" vs. "Ask
 // SI"). Reads via fetchPlanWorkspace, the same RLS-scoped tables get_plan's
@@ -419,13 +529,12 @@ function WorkspaceBudgetTab({ data }: { data: PlanWorkspaceData }) {
 
 // SUGGESTED prompt chips -- export's `suggestedPrompts` derived from SCEN's
 // icon+prompt pairs (lines ~294-347, ~415).
-const SUGGESTED_PROMPTS: { icon: string; label: string }[] = [
-  { icon: '🎫', label: 'Find concerts in Abuja this weekend' },
-  { icon: '💐', label: 'I need a wedding decorator under ₦300k in Lagos' },
-  { icon: '🎟️', label: 'Where is my ticket for my next event?' },
-  { icon: '💳', label: 'Has my payment gone through?' },
-  { icon: '👛', label: 'How much is in my VENTS Wallet?' },
-  { icon: '↩️', label: 'Can I get a refund on a ticket?' },
+// Exact copy and order from P01.html's SUGGESTED list -- drops the emoji
+// per that frame's own "brand rules" note.
+const SUGGESTED_PROMPTS: { label: string }[] = [
+  { label: 'I need a wedding decorator under ₦300k in Lagos' },
+  { label: 'Where is my ticket for my next event?' },
+  { label: 'How much is in my VENTS Wallet?' },
 ];
 
 function formatMoney(kobo: unknown): string {
@@ -1337,6 +1446,7 @@ export function VentsAiScreen({
                 onOpenConversation={(id) => setActiveId(id)}
                 onOpenPlan={openPlan}
                 onOpenWorkspace={(planId) => setWorkspacePlanId(planId)}
+                onQuickSend={(text) => sendText(text)}
                 errorText={errorText}
               />
             ) : (
@@ -1366,11 +1476,10 @@ export function VentsAiScreen({
 }
 
 // SI's two rooms (§01 IA: "SI gains a second room. Nothing else moves --
-// Chat (today's HomeView/ConversationView) and Plans (new)"). General Chat
-// history and plan threads are kept visually separate here -- a plan
-// thread never shows up mixed into "RECENT CONVERSATIONS", and Chat's
-// SUGGESTED prompts never include a planning prompt (that's what the
-// Plans tab's own "+ New Plan" is for).
+// Chat (today's HomeView/ConversationView) and Plans (new)"). Per P01/P24's
+// own spec text, plan threads now appear inline in RECENT CONVERSATIONS
+// (marked with a ◆), and the Plans tab shows a live count badge -- neither
+// is filtered out or static.
 function HomeView({
   inputText,
   onInputChange,
@@ -1380,6 +1489,7 @@ function HomeView({
   onOpenConversation,
   onOpenPlan,
   onOpenWorkspace,
+  onQuickSend,
   errorText,
 }: {
   inputText: string;
@@ -1390,10 +1500,37 @@ function HomeView({
   onOpenConversation: (id: string) => void;
   onOpenPlan: (planId: string, title: string) => void;
   onOpenWorkspace: (planId: string) => void;
+  onQuickSend: (text: string) => void;
   errorText: string | null;
 }) {
   const [room, setRoom] = useState<'chat' | 'plans'>('chat');
-  const chatConversations = conversations.filter((c) => !c.planId);
+  // Lifted up from PlansListView so both the Plans-tab badge/list and the
+  // Chat tab's promo/"Continue planning" card (P01/P24) can read the same
+  // real `plans` rows without two independent, possibly-inconsistent fetches.
+  const [plans, setPlans] = useState<PlanSummary[] | null>(null);
+  const [plansError, setPlansError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('plans')
+        .select('id, title, event_type, status, event_date, city, total_kobo, currency, created_at')
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        setPlansError(error.message);
+        setPlans([]);
+        return;
+      }
+      setPlans((data as PlanSummary[]) || []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // Recency-sorted, un-filtered -- a plan's pinned thread shows up here
+  // like any other conversation, just marked with a ◆ (P24's own spec).
+  const recentConversations = [...conversations].sort((a, b) => b.updatedAt - a.updatedAt);
 
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '18px 16px 30px' }}>
@@ -1411,16 +1548,16 @@ function HomeView({
           Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
         </div>
 
-        <div style={{ display: 'flex', gap: 4, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
-          {([['chat', 'Chat'], ['plans', 'Plans']] as const).map(([id, label]) => (
+        <div style={{ display: 'flex', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
+          {([['chat', 'Chat'], ['plans', plans && plans.length > 0 ? `Plans · ${plans.length}` : 'Plans']] as const).map(([id, label]) => (
             <div
               key={id}
-              onClick={() => setRoom(id)}
+              onClick={() => setRoom(id as 'chat' | 'plans')}
               data-testid={`si-room-${id}`}
               style={{
-                flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
-                background: room === id ? GRADIENT : 'transparent',
-                color: room === id ? '#fff' : '#a89db3',
+                flex: 1, textAlign: 'center', padding: 8, borderRadius: 8, fontSize: 13, fontWeight: room === id ? 700 : 600, cursor: 'pointer',
+                background: room === id ? '#1c1726' : 'transparent',
+                color: room === id ? '#f2eff6' : '#a89db3',
               }}
             >
               {label}
@@ -1447,25 +1584,34 @@ function HomeView({
               </div>
             )}
 
+            {plans && plans.length > 0 ? (
+              <ContinuePlanningCard
+                plan={plans[0]}
+                onAskSi={() => onOpenPlan(plans[0].id, plans[0].title)}
+                onOpenWorkspace={() => onOpenWorkspace(plans[0].id)}
+              />
+            ) : plans !== null && !plansError ? (
+              <NewPlannerPromoCard onPickType={onQuickSend} />
+            ) : null}
+
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>SUGGESTED</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 26 }}>
               {SUGGESTED_PROMPTS.map((p, i) => (
                 <div
                   key={i}
                   onClick={() => onInputChange(p.label)}
-                  style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', fontSize: 12.5, color: '#d6cfe0', display: 'flex', alignItems: 'center', gap: 10 }}
+                  style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', fontSize: 12.5, color: '#d6cfe0' }}
                 >
-                  <span style={{ fontSize: 14, flexShrink: 0 }}>{p.icon}</span>
                   {p.label}
                 </div>
               ))}
             </div>
 
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>RECENT CONVERSATIONS</div>
-            {chatConversations.length === 0 ? (
+            {recentConversations.length === 0 ? (
               <div style={{ fontSize: 12, color: '#5e5470' }}>No conversations yet this session.</div>
             ) : (
-              chatConversations.map((c) => {
+              recentConversations.map((c) => {
                 const lastAi = [...c.messages].reverse().find((m) => m.role === 'assistant');
                 return (
                   <div
@@ -1474,7 +1620,7 @@ function HomeView({
                     style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
                   >
                     <div>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.title}</div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.planId ? '◆ ' : ''}{c.title}</div>
                       <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{lastAi ? lastAi.text.slice(0, 42) : ''}</div>
                     </div>
                     <div style={{ fontSize: 10.5, color: '#5e5470', flexShrink: 0, marginLeft: 10 }}>{new Date(c.updatedAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}</div>
@@ -1484,48 +1630,31 @@ function HomeView({
             )}
           </>
         ) : (
-          <PlansListView onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
+          <PlansListView plans={plans} plansError={plansError} onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
         )}
       </div>
     </div>
   );
 }
 
-// Plans room (P25-style list). Reads directly from the `plans` table via
-// the user's own RLS-scoped client -- same pattern as every other VENTS
-// screen that lists the signed-in user's own rows (MyTicketsScreen, etc.),
-// not a duplicate of get_plan's own read: this is just "which plans do I
-// have", a lighter query than the AI tool's full per-plan aggregation.
+// Plans room (P25-style list). `plans`/`plansError` are lifted up into
+// HomeView (same `plans` table read via the user's own RLS-scoped client)
+// so the Chat tab's promo/Continue-planning card and this list never
+// disagree from two independent fetches.
 function PlansListView({
+  plans,
+  plansError,
   onOpenPlan,
   onOpenWorkspace,
   onStartNewPlan,
 }: {
+  plans: PlanSummary[] | null;
+  plansError: string | null;
   onOpenPlan: (planId: string, title: string) => void;
   onOpenWorkspace: (planId: string) => void;
   onStartNewPlan: (prompt: string) => void;
 }) {
-  const [plans, setPlans] = useState<PlanSummary[] | null>(null);
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('plans')
-        .select('id, title, event_type, status, event_date, city, total_kobo, currency, created_at')
-        .order('created_at', { ascending: false });
-      if (cancelled) return;
-      if (error) {
-        setLoadError(error.message);
-        setPlans([]);
-        return;
-      }
-      setPlans((data as PlanSummary[]) || []);
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
+  const loadError = plansError;
   return (
     <div>
       <div

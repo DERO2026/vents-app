@@ -99,7 +99,7 @@ describe('Plans room (P01 entry)', () => {
     expect(container!.textContent).toContain('Chat');
     expect(container!.textContent).toContain('Plans');
 
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
 
     expect(container!.textContent).toContain('Beach Wedding');
@@ -110,7 +110,7 @@ describe('Plans room (P01 entry)', () => {
   it('shows the empty state when the user has no plans yet (S2)', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     expect(container!.textContent).toContain('No plans yet');
   });
@@ -118,7 +118,7 @@ describe('Plans room (P01 entry)', () => {
   it('shows an error state when the plans query fails (S3)', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: null, error: { message: 'network down' } }) }) });
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     expect(container!.textContent).toContain("Couldn't load your plans");
     expect(container!.textContent).toContain('network down');
@@ -127,7 +127,7 @@ describe('Plans room (P01 entry)', () => {
   it('"+ New Plan" switches to Chat and prefills the composer rather than silently doing nothing', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickTestId('si-new-plan');
     await flush();
@@ -161,7 +161,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
     });
 
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
@@ -186,7 +186,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
     sendVentsAiMessage.mockResolvedValue({ type: 'message', text: 'ok', cards: [] });
 
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
@@ -196,7 +196,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
     const backBtn = container!.querySelector('[aria-label="Back"]') as HTMLElement;
     act(() => backBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await flush();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
@@ -216,7 +216,7 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
     });
 
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
@@ -235,7 +235,7 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
       .mockResolvedValueOnce({ type: 'message', text: 'Applied.', cards: [{ type: 'apply_plan_update', data: { plan_id: 'plan-1', change_log_id: 'log-1', applied: true, actor: 'si' } }] });
 
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
@@ -256,7 +256,7 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
       .mockResolvedValueOnce({ type: 'message', text: 'Reverted.', cards: [] });
 
     mount();
-    clickByText('Plans');
+    clickTestId('si-room-plans');
     await flush();
     clickByText('Beach Wedding');
     await flush();
