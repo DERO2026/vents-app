@@ -111,7 +111,9 @@ describe('Plans room (P01 entry)', () => {
 
     expect(container!.textContent).toContain('Beach Wedding');
     expect(container!.textContent).toContain('DRAFT');
-    expect(container!.textContent).toContain('+ New Plan');
+    // P25's own layout: once plans exist, "+ New plan" is the small inline
+    // link beside the UPCOMING header, not the big empty-state CTA.
+    expect(container!.textContent).toContain('+ New plan');
   });
 
   it('shows the empty state when the user has no plans yet (S2)', async () => {

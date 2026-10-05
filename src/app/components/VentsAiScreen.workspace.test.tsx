@@ -299,6 +299,29 @@ describe('P11 Team tab', () => {
     expect(container!.textContent).toContain('Find');
   });
 
+  it('excludes a contingency category from the "N of M assigned" count and from the team row list', async () => {
+    mockWorkspaceTables({
+      plan_categories: makeChain({
+        data: [...CATEGORY_ROWS, { id: 'cat-contingency', key: 'contingency', label: 'Contingency', allocated_kobo: 80000000, is_priority: false, is_contingency: true, sort: 3 }],
+        error: null,
+      }),
+    });
+    mockRpc({ data: [], error: null }, {
+      search_services_fuzzy_filtered: { data: [{ starting_price: 450000 }], error: null },
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    await flush();
+
+    // Still "1 of 2" (the two real team categories) -- the contingency
+    // line never counts as a team slot, matching the mockup's own Budget
+    // tab treatment of it as a value-only row.
+    expect(container!.textContent).toContain('1 of 2 assigned');
+    expect(container!.textContent).not.toContain('Contingency');
+  });
+
   it('S3-C: a real provider-search RPC error shows a real "couldn\'t load" + Retry, never silently reads as zero matches', async () => {
     mockWorkspaceTables();
     let callCount = 0;

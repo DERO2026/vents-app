@@ -93,6 +93,10 @@ type WorkspaceCategory = {
   vents_category: string | null;
   allocated_kobo: number;
   is_priority: boolean;
+  // A contingency line (e.g. "Contingency ₦800,000") has no team slot at
+  // all -- the mockup's own Budget tab lists it as a value-only row, and
+  // the Team tab's "N of M assigned" count/list excludes it entirely.
+  is_contingency: boolean;
   committed_kobo: number;
   paid_kobo: number;
   booked: boolean;
@@ -139,7 +143,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
 
   const { data: categories } = await supabase
     .from('plan_categories')
-    .select('id, key, label, vents_category, allocated_kobo, is_priority, sort')
+    .select('id, key, label, vents_category, allocated_kobo, is_priority, is_contingency, sort')
     .eq('plan_id', planId)
     .order('sort');
   const categoryIds = (categories ?? []).map((c: any) => c.id);
@@ -196,6 +200,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
         vents_category: c.vents_category ?? null,
         allocated_kobo: c.allocated_kobo ?? 0,
         is_priority: !!c.is_priority,
+        is_contingency: !!c.is_contingency,
         committed_kobo: active.filter((a) => a.status === 'assigned').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
         paid_kobo: active.filter((a) => a.status === 'booked').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
         booked: active.some((a) => a.status === 'booked'),
@@ -446,7 +451,7 @@ function PlanWorkspaceView({
               {data?.plan.title || 'Plan'} <span style={{ fontSize: 13, color: '#d3b8ff' }}>▾</span>
             </div>
             <div style={{ fontSize: 11.5, color: '#a89db3' }}>
-              {data?.plan.event_date ? data.plan.event_date : ''}{data?.plan.city ? ` · ${data.plan.city}` : ''}{data?.plan.guests ? ` · ${data.plan.guests} guests` : ''}
+              {data?.plan.event_date ? friendlyDate(data.plan.event_date) : ''}{data?.plan.city ? ` · ${data.plan.city}` : ''}{data?.plan.guests ? ` · ${data.plan.guests} guests` : ''}
             </div>
           </div>
           <span onClick={() => setShowHeaderMenu((v) => !v)} role="button" data-testid="workspace-header-menu" style={{ width: 34, height: 34, borderRadius: 10, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9c0d4', cursor: 'pointer', position: 'relative' }}>
@@ -601,7 +606,7 @@ function PlanSwitcherDropdown({
                   <div style={{ fontSize: 12, color: '#a89db3' }}>
                     {p.status === 'draft' ? 'Draft' : (
                       <>
-                        {p.event_date || 'Date not set'} · {p.readiness_pct}%
+                        {friendlyDate(p.event_date, true) || 'Date not set'} · {p.readiness_pct}%
                         {p.overdue_task_count > 0 && <> · <span style={{ color: '#fbbf24' }}>{p.overdue_task_count} overdue</span></>}
                       </>
                     )}
@@ -902,7 +907,7 @@ function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData;
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span style={{ fontSize: 22, fontWeight: 800 }}>{naira(leftToCommit)}</span>
-          <span style={{ fontSize: 12, color: '#a89db3' }}>left to commit of {naira(totalBudget)}</span>
+          <span style={{ fontSize: 12, color: '#a89db3' }}>left to commit of {compactNaira(totalBudget)}</span>
         </div>
         <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} />
         {overBudgetCategory && (
@@ -920,13 +925,19 @@ function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData;
         {upNext.length === 0 ? (
           <div style={{ fontSize: 12.5, color: '#5e5470', padding: '11px 0' }}>Nothing due yet.</div>
         ) : (
-          upNext.map((t, i) => (
-            <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '11px 0', borderBottom: i < upNext.length - 1 ? '1px solid #1c1726' : 'none' }}>
-              <span style={{ width: 20, height: 20, borderRadius: 6, border: '1.5px solid #4a3f56', flexShrink: 0 }} />
-              <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
-              <span style={{ fontSize: 11.5, color: '#a89db3' }}>{t.due_override || (t.offset_days != null ? `T-${t.offset_days}d` : '')}</span>
-            </div>
-          ))
+          upNext.map((t, i) => {
+            // Same real due-date resolution Tasks/Timeline already use --
+            // never the raw due_override string or a literal "T-10d".
+            const due = taskDueDate(t, data.plan.event_date);
+            const overdue = !!due && due.getTime() < new Date().setHours(0, 0, 0, 0);
+            return (
+              <div key={t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '11px 0', borderBottom: i < upNext.length - 1 ? '1px solid #1c1726' : 'none' }}>
+                <span style={{ width: 20, height: 20, borderRadius: 6, border: `1.5px solid ${overdue ? '#fbbf24' : '#4a3f56'}`, flexShrink: 0 }} />
+                <span style={{ flex: 1, fontSize: 14 }}>{t.title}</span>
+                <span style={{ fontSize: 11.5, color: overdue ? '#fbbf24' : '#a89db3' }}>{due ? (overdue ? `Due ${fmtTaskDate(due)}` : fmtTaskDate(due)) : ''}</span>
+              </div>
+            );
+          })
         )}
       </div>
     </>
@@ -1145,7 +1156,10 @@ function WorkspaceBudgetTab({
         {showSetTotal && (
           <SetTotalBudgetSheet planId={planId} initialNaira={totalBudget} onClose={() => setShowSetTotal(false)} onChanged={onChanged} />
         )}
-        <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} />
+        {/* hideLegend: the 2x2 Paid/Committed/Estimate/Unallocated grid right
+            below already shows these same figures (P08's own layout) --
+            BudgetBar's inline legend would just duplicate it. */}
+        <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} hideLegend />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
             <div style={{ fontSize: 11, color: '#34d399' }}>● Paid</div>
@@ -1188,7 +1202,7 @@ function WorkspaceBudgetTab({
                   {s === 'estimate' ? (
                     <span style={{ color: '#c9c0d4' }}>≈ {naira(allocated)}</span>
                   ) : (
-                    <><b>{naira(spent)}</b> <span style={{ color: '#8a7f97' }}>/ {naira(allocated)}</span></>
+                    <><b>{naira(spent)}</b> <span style={{ color: '#8a7f97' }}>/ {compactNaira(allocated)}</span></>
                   )}
                 </span>
               </div>
@@ -1576,7 +1590,10 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   const [ownVendorCategory, setOwnVendorCategory] = useState<WorkspaceCategory | null>(null);
   const shownRef = useRef(false);
 
-  const assignedCount = data.categories.filter((c) => c.assignments.some((a) => a.status === 'assigned' || a.status === 'booked')).length;
+  // Contingency has no team slot (see teamCategories below) -- excluded from
+  // both sides of the "N of M assigned" count, matching the mockup's Budget
+  // tab treatment of it as a value-only line.
+  const assignedCount = data.categories.filter((c) => !c.is_contingency && c.assignments.some((a) => a.status === 'assigned' || a.status === 'booked')).length;
 
   // The one real "just booked" assignment for THIS visit, if any -- real
   // updated_at timestamp, real sessionStorage "already shown" guard, never
@@ -1687,7 +1704,10 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   }, [data.plan.city, searchableOpenCategories.map((c) => c.id).join(',')]);
 
   const rank: Record<string, number> = { booked: 0, committed: 1, own_vendor: 2, open: 3 };
-  const sorted = [...data.categories].sort((a, b) => {
+  // A contingency category (e.g. "Contingency ₦800,000") has no team slot --
+  // the mockup's Budget tab shows it as a value-only line, never a row here.
+  const teamCategories = data.categories.filter((c) => !c.is_contingency);
+  const sorted = [...teamCategories].sort((a, b) => {
     const ra = a.id === nextDueCategory?.id ? 2.5 : rank[slotState(a)];
     const rb = b.id === nextDueCategory?.id ? 2.5 : rank[slotState(b)];
     return ra - rb;
@@ -1715,7 +1735,7 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 20, fontWeight: 800 }}>{assignedCount} of {data.categories.length} assigned</span>
+        <span style={{ fontSize: 20, fontWeight: 800 }}>{assignedCount} of {teamCategories.length} assigned</span>
         <span onClick={() => setShowAddCategory(true)} role="button" data-testid="workspace-team-add-category" style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>+ Category</span>
       </div>
       {sorted.map((c) => {
@@ -2620,8 +2640,38 @@ function naira(n: unknown): string {
   return `₦${v.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`;
 }
 
+// Mockup's own secondary/denominator convention (P08/P25: "/ 1.2m", "of
+// ₦8m", "₦4.35m / ₦8m") -- a compact ₦X.Xm/₦Xk form, used wherever the
+// mockup abbreviates a comparison amount, while the primary hero figure
+// stays full-precision via naira() above (e.g. P08's own "₦1,350,000" next
+// to "/ 1.2m" on the same line -- never both abbreviated or both full).
+function compactNaira(n: unknown): string {
+  const v = typeof n === 'number' ? n : Number(n);
+  if (!isFinite(v)) return '—';
+  const abs = Math.abs(v);
+  if (abs >= 1000000) {
+    const m = v / 1000000;
+    return `₦${(Number.isInteger(m * 100) ? m : Math.round(m * 100) / 100).toString().replace(/\.0+$/, '')}m`;
+  }
+  if (abs >= 1000) {
+    const k = Math.round(v / 1000);
+    return `₦${k}k`;
+  }
+  return naira(v);
+}
+
+// Mockup's own date convention for a plan's real event_date -- "Sat 12
+// Dec" (weekday + day + month, never a year, never raw ISO) -- used in
+// every header/row/switcher that shows a plan's date (P07-P11, P25, P26).
+function friendlyDate(iso: string | null | undefined, short?: boolean): string | null {
+  if (!iso) return null;
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleDateString('en-GB', short ? { day: 'numeric', month: 'short' } : { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
 // BudgetBar: three segments that never share a style (§12 "Budget interaction").
-function BudgetBar({ estimated, committed, paid, total }: { estimated: number; committed: number; paid: number; total: number | null }) {
+function BudgetBar({ estimated, committed, paid, total, hideLegend }: { estimated: number; committed: number; paid: number; total: number | null; hideLegend?: boolean }) {
   const denom = total && total > 0 ? total : Math.max(estimated + committed + paid, 1);
   const pct = (n: number) => `${Math.min(100, (n / denom) * 100)}%`;
   return (
@@ -2636,11 +2686,13 @@ function BudgetBar({ estimated, committed, paid, total }: { estimated: number; c
           }}
         />
       </div>
-      <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10, color: '#8a7f97' }}>
-        <span><span style={{ color: '#34d399' }}>●</span> Paid {naira(paid)}</span>
-        <span><span style={{ color: '#a35cff' }}>●</span> Committed {naira(committed)}</span>
-        <span>◆ Estimate · not a quote {naira(estimated)}</span>
-      </div>
+      {!hideLegend && (
+        <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10, color: '#8a7f97' }}>
+          <span><span style={{ color: '#34d399' }}>●</span> Paid {naira(paid)}</span>
+          <span><span style={{ color: '#a35cff' }}>●</span> Committed {naira(committed)}</span>
+          <span>◆ Estimate · not a quote {naira(estimated)}</span>
+        </div>
+      )}
     </div>
   );
 }
@@ -4009,7 +4061,7 @@ function PlansListView({
           <div>
             <div style={{ fontSize: 16, fontWeight: 800 }}>{p.title}</div>
             <div style={{ fontSize: 12.5, color: '#a89db3', marginTop: 3 }}>
-              {p.event_date ? p.event_date : 'Date not set'} · {p.city || 'City not set'}{p.guests ? ` · ${p.guests}` : ''}
+              {friendlyDate(p.event_date) || 'Date not set'} · {p.city || 'City not set'}{p.guests ? ` · ${p.guests}` : ''}
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
@@ -4067,20 +4119,8 @@ function PlansListView({
     );
   }
 
-  const showTopNewPlanBar = !(plans !== null && !loadError && upcoming.length === 0);
-
   return (
     <div>
-      {showTopNewPlanBar && (
-        <div
-          onClick={() => onStartNewPlan("I'm planning an event.")}
-          data-testid="si-new-plan"
-          style={{ cursor: 'pointer', marginBottom: 16, padding: '13px 14px', borderRadius: 12, background: 'rgba(163,92,255,.12)', border: '1px solid rgba(163,92,255,.35)', color: '#d3b8ff', fontSize: 13, fontWeight: 700, textAlign: 'center' }}
-        >
-          + New Plan
-        </div>
-      )}
-
       {actionError && (
         <div style={{ marginBottom: 12, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>{actionError}</div>
       )}
@@ -4126,6 +4166,11 @@ function PlansListView({
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#8a7f97' }}>UPCOMING</span>
+            {/* P25's own layout: "+ New plan" is this small inline link
+                beside UPCOMING once plans exist -- the big gradient CTA
+                is S2-A's own treatment, only for the genuinely-empty state
+                above. */}
+            <span onClick={() => onStartNewPlan("I'm planning an event.")} role="button" data-testid="si-new-plan" style={{ fontSize: 13, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>+ New plan</span>
           </div>
           {sorted.map(row)}
         </>
@@ -4143,7 +4188,7 @@ function PlansListView({
         <div key={p.id} onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{p.title}</div>
-            <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{p.event_date ? ` · ${p.event_date}` : ''}</div>
+            <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{friendlyDate(p.event_date) ? ` · ${friendlyDate(p.event_date)}` : ''}</div>
           </div>
           <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: '#1c1726', color: '#a89db3' }}>{p.status.toUpperCase()}</span>
         </div>
