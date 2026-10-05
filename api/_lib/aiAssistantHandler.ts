@@ -6,10 +6,12 @@ import {
   ALL_TOOLS,
   READ_ONLY_TOOL_NAMES,
   PROPOSAL_TOOL_NAMES,
+  PLAN_TOOL_NAMES,
   WEB_SEARCH_TOOL,
   WEB_SEARCH_TOOL_NAME,
   buildUserSupabaseClient,
   executeReadOnlyTool,
+  executePlanTool,
   buildProposal,
   executeStartTicketTransfer,
   executeRequestTicketRefund,
@@ -60,7 +62,16 @@ Ground rules:
 4. For any consequential action (transferring or refunding a ticket, booking a service, filing a report), you may only ever PROPOSE it via the matching tool. Never claim an action has been completed unless you are reporting the actual result of a real, already-executed tool call. The system will ask the user to confirm before anything actually happens.
 5. Whenever your answer includes anything from web_search, clearly label it as coming from outside VENTS (e.g. "I found this elsewhere, not listed on VENTS" / "this isn't on VENTS"). NEVER imply that an externally-found event, artist appearance, or service/business is bookable through VENTS, or present it as if it were a VENTS listing, unless a VENTS tool call has actually confirmed that exact thing exists on VENTS.
 
-Keep answers conversational and concise. When you have structured results (events, providers, tickets, bookings, payment status, wallet/VC balances), summarize them in your text -- the app will also render them as structured cards from the tool results, so you don't need to reformat them as lists or tables yourself.`;
+Keep answers conversational and concise. When you have structured results (events, providers, tickets, bookings, payment status, wallet/VC balances), summarize them in your text -- the app will also render them as structured cards from the tool results, so you don't need to reformat them as lists or tables yourself.
+
+6. SI Planner (create_plan_draft, get_plan, propose_plan_update, apply_plan_update, recommend_providers, assign_provider, reschedule_plan, confirm_brief) -- event-planning tools, distinct from the ticket/booking/report tools above:
+   a. Always call get_plan before answering a question about an existing plan's state (budget, categories, tasks, timeline) -- never recall or guess a figure from earlier in the conversation, since the user or you may have changed it since.
+   b. Changing a plan's budget has two very different paths, and mixing them up is a real mistake: a DIRECT, unambiguous user instruction ("move 300k from decoration to catering") calls apply_plan_update right away. YOUR OWN unprompted suggestion ("I'd recommend allocating more to photography") must go through propose_plan_update first -- that writes nothing -- and apply_plan_update only runs afterward if the user actually agrees to apply it. Never call apply_plan_update for your own suggestion before the user has agreed.
+   c. Every amount you report or accept is in naira, not kobo -- the tools handle the conversion. Keep Estimated, Committed, and Paid clearly distinct in what you say (get_plan returns all three separately) -- they are never the same thing, and an SI estimate must never be presented as if it were a provider's actual price or a quote.
+   d. recommend_providers returns only real VENTS provider data. NEVER state or imply a provider is "available" on any date -- there is no availability data in VENTS. Tell the user to confirm availability with the provider directly. Never invent a provider's price; if recommend_providers doesn't return a price for a provider, say so plainly.
+   e. assign_provider records which provider the user chose for a category -- it is NEVER a booking and NEVER charges anything. Do not say a provider has been "booked" or "reserved" -- say "assigned," and if the user wants to actually book and pay, that is the existing service-booking flow (start_service_booking), a completely separate step.
+   f. reschedule_plan only changes the plan's own date. It never cancels, refunds, or changes a real booking or payment -- if the plan has an assigned provider, say the new date still needs to be confirmed with that provider directly.
+   g. A planner change (apply_plan_update) is reversible by the user afterward through the app's own Undo -- never imply this can undo a real Paystack payment, booking, or any financial transaction. Those are permanent through this tool layer.`;
 
 export async function handleAiAssistant(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res, 'POST, OPTIONS');
@@ -234,17 +245,24 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
         });
       }
 
-      // Otherwise every tool_use block this round is a Phase 1 read tool --
-      // execute all of them and feed results back as tool_result blocks.
+      // Otherwise every tool_use block this round is either a Phase 1 read
+      // tool or an SI Planner tool -- both auto-execute here and feed
+      // results back as tool_result blocks (see the PLAN_TOOLS comment in
+      // aiTools.ts for why planner tools don't go through the Phase 2
+      // confirmation flow: they're reversible planning data, never money).
       conversation.push({ role: 'assistant', content: blocks });
 
       const toolResults = await Promise.all(
         toolUseBlocks.map(async (block) => {
-          if (!READ_ONLY_TOOL_NAMES.has(block.name)) {
+          const isReadOnly = READ_ONLY_TOOL_NAMES.has(block.name);
+          const isPlanTool = PLAN_TOOL_NAMES.has(block.name);
+          if (!isReadOnly && !isPlanTool) {
             return { type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool', is_error: true };
           }
           try {
-            const result = await executeReadOnlyTool(block.name, client, block.input);
+            const result = isReadOnly
+              ? await executeReadOnlyTool(block.name, client, block.input)
+              : await executePlanTool(block.name, client, session.userId, block.input);
             cards.push({ type: block.name, data: result, source: 'vents' as const });
             return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) };
           } catch (toolError: any) {

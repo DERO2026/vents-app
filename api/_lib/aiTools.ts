@@ -215,10 +215,168 @@ export const PROPOSAL_TOOLS = [
   },
 ] as const;
 
-export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...PROPOSAL_TOOLS];
+// SI Planner tools (Batch 2) -- a THIRD category, distinct from both
+// READ_ONLY_TOOLS (auto-executed, nothing changes) and PROPOSAL_TOOLS
+// (never auto-executed, always end the turn with a signed-token
+// confirmation before anything happens). Per the frozen design spec's own
+// "Correct -- do not change in code" rule, plan edits are NOT money:
+// "Purple PlanUpdateCard for plan edits vs amber ConfirmationCard for
+// money." So these tools auto-execute inside the model loop exactly like
+// READ_ONLY_TOOLS (no signed token -- ownership is enforced by RLS plus
+// each RPC's own auth.uid() check, not by a confirmation round trip), but
+// propose_plan_update is deliberately READ-ONLY (computes a diff, writes
+// nothing) and apply_plan_update is the only one of the eight that writes
+// a budget change -- the system prompt (api/_lib/aiAssistantHandler.ts) is
+// what actually enforces "a bare SI suggestion must go through
+// propose_plan_update, never straight to apply_plan_update" -- there is no
+// server-side token for this distinction because, unlike a ticket refund
+// or a service booking, a planning allocation is reversible (Undo, see
+// apply_plan_allocation_changes/undo_plan_change, migration 0157) rather
+// than consequential in the way money is.
+export const PLAN_TOOLS = [
+  {
+    name: 'create_plan_draft',
+    description:
+      "Create a new personal event plan from a conversation, with whatever the user has already said -- leave anything not yet known as null/omitted rather than asking for a complete form up front. Seeds the plan's standard category list for its event_type (e.g. a wedding gets venue/catering/photography/etc.) with every category unallocated (0) -- never invent a budget split; that happens later via propose_plan_update/apply_plan_update once a total budget is actually known.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        event_type: { type: 'string', description: 'e.g. "wedding", "birthday", "conference", "private_dinner", or any other free-text event type.' },
+        title: { type: 'string', description: 'A short plan title, e.g. "Beach Wedding" or "Tola\'s 30th".' },
+        event_date: { type: 'string', description: 'YYYY-MM-DD, optional -- omit if not yet known.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD, optional, for a multi-day event.' },
+        city: { type: 'string', description: 'Optional.' },
+        guests: { type: 'number', description: 'Optional estimated guest count.' },
+        setting: { type: 'string', description: 'Optional, e.g. "indoor", "outdoor", "beach".' },
+        total_budget_naira: { type: 'number', description: 'Optional total budget in naira, if the user has already stated one.' },
+      },
+      required: ['event_type', 'title'],
+    },
+  },
+  {
+    name: 'get_plan',
+    description:
+      "Fetch the full current state of one of the current user's own plans: brief, budget totals (estimated/committed/paid, never mixed), categories, provider assignments, tasks, and milestones. Always call this before answering a question about an existing plan's state -- never guess or recall stale figures from earlier in the conversation.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string', description: 'The plan UUID. If the user hasn\'t named a plan and only one exists, use that one.' },
+      },
+      required: ['plan_id'],
+    },
+  },
+  {
+    name: 'propose_plan_update',
+    description:
+      "Compute and return a proposed budget reallocation WITHOUT changing anything -- use this for SI's OWN unprompted suggestion (e.g. \"I'd recommend allocating more to photography\"). This never writes to the plan; the user must separately choose to apply it (apply_plan_update) before it takes effect. Do NOT use this for a direct, unambiguous user instruction -- call apply_plan_update straight away for those instead.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string' },
+        changes: {
+          type: 'array',
+          description: 'Category reallocations to preview.',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', description: 'The category key or id, e.g. "photography".' },
+              new_allocation_naira: { type: 'number' },
+            },
+            required: ['category', 'new_allocation_naira'],
+          },
+        },
+      },
+      required: ['plan_id', 'changes'],
+    },
+  },
+  {
+    name: 'apply_plan_update',
+    description:
+      "Actually apply a budget reallocation to the plan -- use this for a direct, explicit user instruction (e.g. \"move 300k from decoration to catering\") right away, or after the user has explicitly agreed to a previously proposed change (propose_plan_update). The change is reversible by the user afterward (Undo), but never claim you've reversed a real payment this way -- this only ever touches planning allocations, never a booking or Paystack transaction.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string' },
+        changes: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              category: { type: 'string', description: 'The category key or id.' },
+              new_allocation_naira: { type: 'number' },
+            },
+            required: ['category', 'new_allocation_naira'],
+          },
+        },
+        actor: { type: 'string', description: '"user" for a direct instruction, "si" only when the user just tapped Apply on your own prior suggestion.' },
+      },
+      required: ['plan_id', 'changes', 'actor'],
+    },
+  },
+  {
+    name: 'recommend_providers',
+    description:
+      'Search real VENTS service providers to recommend for a plan category, optionally filtered by location and a maximum price. NEVER state or imply a provider is "available" on the event date -- VENTS has no availability data; always tell the user to confirm availability with the provider directly. Prices shown are only real starting_price data already on file -- never invent or estimate a provider\'s price.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'e.g. "photographer", "makeup artist".' },
+        category: { type: 'string', description: 'Optional exact category filter.' },
+        location: { type: 'string', description: 'Optional location filter, e.g. "Lagos".' },
+        max_price_naira: { type: 'number', description: 'Optional maximum starting price in naira -- a provider with no price on file is excluded rather than assumed to fit.' },
+        limit: { type: 'number', description: 'Max results (default 10, max 50).' },
+      },
+      required: ['query'],
+    },
+  },
+  {
+    name: 'assign_provider',
+    description:
+      "Assign a real VENTS provider the user has chosen to a plan category, at an agreed amount. This does NOT book or charge anything -- assigned is not booked. Replaces any prior shortlisted/assigned provider for that category (never a category that's already paid-booked, which this refuses). Never claim this created a booking or reservation.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string' },
+        category: { type: 'string', description: 'The category key or id.' },
+        provider_id: { type: 'string', description: 'The service provider UUID, from a prior recommend_providers result.' },
+        agreed_amount_naira: { type: 'number', description: 'Optional amount agreed with the provider, in naira.' },
+      },
+      required: ['plan_id', 'category', 'provider_id'],
+    },
+  },
+  {
+    name: 'reschedule_plan',
+    description:
+      "Change a plan's event date. This never touches bookings, payments, or financial records -- if the plan has an assigned provider, the assignment is left exactly as-is, and the user should be told to confirm the new date with that provider directly.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string' },
+        event_date: { type: 'string', description: 'YYYY-MM-DD.' },
+        end_date: { type: 'string', description: 'YYYY-MM-DD, optional.' },
+      },
+      required: ['plan_id', 'event_date'],
+    },
+  },
+  {
+    name: 'confirm_brief',
+    description:
+      "Mark a draft plan's brief as confirmed once enough is known to be useful (title and event type are always enough -- date, budget, and guest count can stay unknown; do not force completeness). This only changes the plan's status for display purposes; it never requires or checks any specific field being filled in.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        plan_id: { type: 'string' },
+      },
+      required: ['plan_id'],
+    },
+  },
+] as const;
+
+export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...PROPOSAL_TOOLS, ...PLAN_TOOLS];
 
 export const READ_ONLY_TOOL_NAMES = new Set(READ_ONLY_TOOLS.map((t) => t.name));
 export const PROPOSAL_TOOL_NAMES = new Set(PROPOSAL_TOOLS.map((t) => t.name));
+export const PLAN_TOOL_NAMES = new Set(PLAN_TOOLS.map((t) => t.name));
 
 // Anthropic's native server-side web search tool. Bounded max_uses per turn
 // so a single conversation round can't run up unbounded search cost -- see
@@ -523,4 +681,372 @@ export async function executeCreateReport(client: SupabaseClient, userId: string
     .single();
   if (error) throw new Error(error.message);
   return data;
+}
+
+// ---------------------------------------------------------------------
+// SI Planner tool executors (Batch 2) -- auto-executed inside the model
+// loop, same as Phase 1 read tools (see the PLAN_TOOLS comment above for
+// why these don't go through the Phase 2 confirmation-token flow). Every
+// executor here uses the SAME user-forwarded client as every other tool
+// in this file -- never a service-role client -- so a plan tool can never
+// see or touch another user's plan: ownership is enforced twice, once by
+// each table's/RPC's own RLS-or-auth.uid() check, and again here by never
+// trusting a client-supplied owner/user id for anything but the one value
+// (userId) the server itself already authenticated.
+// ---------------------------------------------------------------------
+
+const NAIRA_TO_KOBO = 100;
+
+function toKobo(naira: unknown): number | null {
+  if (naira === null || naira === undefined) return null;
+  const n = Number(naira);
+  if (!isFinite(n) || n < 0) throw new Error('Amount must be a non-negative number');
+  return Math.round(n * NAIRA_TO_KOBO);
+}
+
+function fromKobo(kobo: unknown): number | null {
+  if (kobo === null || kobo === undefined) return null;
+  return Number(kobo) / NAIRA_TO_KOBO;
+}
+
+// Event-type category templates (§12 "Event-type templates (server
+// data)") -- every category starts fully unallocated (0). This is
+// deliberately NOT a percentage-of-budget split: no authoritative split
+// numbers exist in this codebase, and inventing one would be exactly the
+// "SI invents prices" failure mode the design spec repeatedly rules out.
+// SI proposes real allocations later, once it actually knows the budget
+// and the user's priorities, via propose_plan_update/apply_plan_update.
+const EVENT_TYPE_CATEGORIES: Record<string, string[]> = {
+  wedding: ['venue', 'catering', 'photography', 'videography', 'decoration', 'music', 'sound', 'mc', 'cake', 'makeup', 'transport', 'invitations', 'security'],
+  birthday: ['venue', 'food', 'cake', 'decoration', 'dj', 'photography', 'entertainment'],
+  conference: ['venue', 'av', 'stage', 'speakers', 'registration', 'branding', 'catering', 'security', 'photography', 'streaming', 'staff'],
+  private_dinner: ['venue', 'menu', 'drinks', 'decoration', 'music'],
+};
+const DEFAULT_CATEGORIES = ['venue', 'catering', 'decoration', 'photography', 'music'];
+
+function categoryLabel(key: string): string {
+  return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+}
+
+export async function executeCreatePlanDraft(client: SupabaseClient, userId: string, input: any) {
+  const eventType = String(input?.event_type ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+  const title = String(input?.title ?? '').trim();
+  if (!eventType) throw new Error('event_type is required');
+  if (!title) throw new Error('title is required');
+
+  const totalKobo = toKobo(input?.total_budget_naira);
+
+  const { data: plan, error } = await client
+    .from('plans')
+    .insert([{
+      owner_id: userId,
+      kind: 'personal',
+      event_type: eventType,
+      title,
+      status: 'draft',
+      event_date: input?.event_date ?? null,
+      end_date: input?.end_date ?? null,
+      city: input?.city ?? null,
+      guests: typeof input?.guests === 'number' ? input.guests : null,
+      setting: input?.setting ?? null,
+      total_kobo: totalKobo,
+      currency: 'NGN',
+    }])
+    .select()
+    .single();
+  if (error) throw new Error(error.message);
+
+  const categoryKeys = EVENT_TYPE_CATEGORIES[eventType] ?? DEFAULT_CATEGORIES;
+  const { error: catError } = await client
+    .from('plan_categories')
+    .insert(categoryKeys.map((key, idx) => ({
+      plan_id: plan.id,
+      key,
+      label: categoryLabel(key),
+      allocated_kobo: 0,
+      sort: idx,
+    })));
+  if (catError) throw new Error(catError.message);
+
+  return {
+    plan_id: plan.id,
+    title: plan.title,
+    event_type: plan.event_type,
+    status: plan.status,
+    event_date: plan.event_date,
+    city: plan.city,
+    guests: plan.guests,
+    total_budget_naira: fromKobo(plan.total_kobo),
+    categories: categoryKeys,
+  };
+}
+
+// Resolves a model-supplied "category" (either a plan_categories.id uuid,
+// or a plain key like "photography") to a real row scoped to the given
+// plan -- never trusts a bare id without checking it actually belongs to
+// this plan, same defensive check Batch 2's SQL functions make server-side.
+async function resolvePlanCategory(client: SupabaseClient, planId: string, category: string) {
+  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(category);
+  const { data, error } = await client
+    .from('plan_categories')
+    .select('id, key, label, allocated_kobo')
+    .eq('plan_id', planId)
+    .eq(isUuid ? 'id' : 'key', category)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error(`Category "${category}" not found on this plan`);
+  return data;
+}
+
+export async function executeGetPlan(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const { data: plan, error } = await client.from('plans').select('*').eq('id', planId).maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!plan) throw new Error('Plan not found');
+
+  const { data: categories } = await client
+    .from('plan_categories')
+    .select('id, key, label, allocated_kobo, is_priority, is_contingency, sort')
+    .eq('plan_id', planId)
+    .order('sort');
+  const categoryIds = (categories ?? []).map((c: any) => c.id);
+
+  const [{ data: assignments }, { data: tasks }, { data: milestones }, { data: messages }] = await Promise.all([
+    categoryIds.length
+      ? client.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status, booking_id').in('category_id', categoryIds)
+      : Promise.resolve({ data: [] as any[] }),
+    client.from('plan_tasks').select('id, category_id, title, offset_days, due_override, done_at, source').eq('plan_id', planId),
+    client.from('plan_milestones').select('id, phase_key, label, ends_offset_days').eq('plan_id', planId),
+    client.from('plan_messages').select('role, content, created_at').eq('plan_id', planId).order('created_at', { ascending: false }).limit(20),
+  ]);
+
+  const assignmentsByCategory = new Map<string, any[]>();
+  for (const a of assignments ?? []) {
+    const list = assignmentsByCategory.get(a.category_id) ?? [];
+    list.push(a);
+    assignmentsByCategory.set(a.category_id, list);
+  }
+
+  let totalCommitted = 0;
+  let totalPaid = 0;
+  const categoriesOut = (categories ?? []).map((c: any) => {
+    const catAssignments = assignmentsByCategory.get(c.id) ?? [];
+    const activeAssignments = catAssignments.filter((a) => a.status === 'assigned' || a.status === 'booked');
+    const committed = activeAssignments.filter((a) => a.status === 'assigned').reduce((s: number, a: any) => s + (a.agreed_kobo ?? 0), 0);
+    const paid = activeAssignments.filter((a) => a.status === 'booked').reduce((s: number, a: any) => s + (a.agreed_kobo ?? 0), 0);
+    totalCommitted += committed;
+    totalPaid += paid;
+    const estimated = Math.max(0, (c.allocated_kobo ?? 0) - committed - paid);
+    return {
+      category_id: c.id,
+      key: c.key,
+      label: c.label,
+      allocated_naira: fromKobo(c.allocated_kobo),
+      estimated_naira: fromKobo(estimated),
+      committed_naira: fromKobo(committed),
+      paid_naira: fromKobo(paid),
+      is_priority: c.is_priority,
+      is_contingency: c.is_contingency,
+      assignments: activeAssignments.map((a: any) => ({
+        provider_id: a.provider_id,
+        own_vendor_name: a.own_vendor_name,
+        agreed_amount_naira: fromKobo(a.agreed_kobo),
+        status: a.status,
+      })),
+    };
+  });
+
+  return {
+    plan_id: plan.id,
+    title: plan.title,
+    event_type: plan.event_type,
+    status: plan.status,
+    event_date: plan.event_date,
+    end_date: plan.end_date,
+    city: plan.city,
+    guests: plan.guests,
+    setting: plan.setting,
+    total_budget_naira: fromKobo(plan.total_kobo),
+    budget_summary: {
+      total_committed_naira: fromKobo(totalCommitted),
+      total_paid_naira: fromKobo(totalPaid),
+    },
+    categories: categoriesOut,
+    tasks: (tasks ?? []).map((t: any) => ({
+      id: t.id, category_id: t.category_id, title: t.title, offset_days: t.offset_days,
+      due_override: t.due_override, done: !!t.done_at, source: t.source,
+    })),
+    milestones: milestones ?? [],
+    recent_messages: (messages ?? []).reverse(),
+  };
+}
+
+// Pure computation, writes nothing -- see the PLAN_TOOLS comment on why
+// this is the one tool SI must use for its own unprompted suggestions.
+export async function executeProposePlanUpdate(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const changes = Array.isArray(input?.changes) ? input.changes : [];
+  if (changes.length === 0) throw new Error('No changes given');
+
+  const resolved = await Promise.all(
+    changes.map(async (c: any) => {
+      const cat = await resolvePlanCategory(client, planId, String(c.category));
+      const newKobo = toKobo(c.new_allocation_naira);
+      return {
+        category_id: cat.id,
+        key: cat.key,
+        label: cat.label,
+        before_naira: fromKobo(cat.allocated_kobo),
+        after_naira: fromKobo(newKobo),
+      };
+    })
+  );
+
+  return { plan_id: planId, proposed_changes: resolved, applied: false };
+}
+
+export async function executeApplyPlanUpdate(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const changes = Array.isArray(input?.changes) ? input.changes : [];
+  if (changes.length === 0) throw new Error('No changes given');
+  const actor = input?.actor === 'si' ? 'si' : 'user';
+
+  const resolvedChanges = await Promise.all(
+    changes.map(async (c: any) => {
+      const cat = await resolvePlanCategory(client, planId, String(c.category));
+      return { category_id: cat.id, new_allocated_kobo: toKobo(c.new_allocation_naira) };
+    })
+  );
+
+  const { data: changeLogId, error } = await client.rpc('apply_plan_allocation_changes', {
+    p_plan_id: planId,
+    p_changes: resolvedChanges,
+    p_actor: actor,
+  });
+  if (error) throw new Error(error.message);
+
+  return { plan_id: planId, change_log_id: changeLogId, applied: true, actor };
+}
+
+export async function executeRecommendProviders(client: SupabaseClient, _userId: string, input: any) {
+  const limit = clampLimit(input?.limit);
+  // service_providers.starting_price (0034) is a plain naira numeric, not
+  // kobo -- unlike every plans/plan_categories amount column, which really
+  // is kobo. No conversion here; p_max_starting_price takes the same
+  // naira value the model was given.
+  const maxPriceNaira = input?.max_price_naira != null ? Number(input.max_price_naira) : null;
+  if (maxPriceNaira !== null && (!isFinite(maxPriceNaira) || maxPriceNaira < 0)) {
+    throw new Error('max_price_naira must be a non-negative number');
+  }
+  const { data, error } = await client.rpc('search_services_fuzzy_filtered', {
+    p_query: String(input?.query ?? ''),
+    p_category: input?.category ? String(input.category) : null,
+    p_limit: limit,
+    p_location: input?.location ? String(input.location) : null,
+    p_max_starting_price: maxPriceNaira,
+  });
+  if (error) throw new Error(error.message);
+
+  // Clean organic/sponsored boundary (Batch 2 §10): no sponsor/featured
+  // data exists anywhere in this codebase yet, so this is always false --
+  // never a hardcoded true, never influenced by anything -- and sort order
+  // stays match_score only. A future Featured Provider feature plugs in by
+  // setting this per-row from real data; it must never affect `ORDER BY`
+  // in search_services_fuzzy_filtered itself.
+  return (data ?? []).map((row: any) => ({
+    provider_id: row.provider_id,
+    business_name: row.business_name,
+    category: row.provider_category,
+    location: row.location,
+    starting_price_naira: row.starting_price != null ? Number(row.starting_price) : null,
+    service_id: row.service_id,
+    service_name: row.service_name,
+    service_price_naira: row.service_price,
+    is_sponsored: false,
+    availability_note: 'Confirm availability with provider.',
+  }));
+}
+
+export async function executeAssignProvider(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const cat = await resolvePlanCategory(client, planId, String(input?.category ?? ''));
+  const agreedKobo = toKobo(input?.agreed_amount_naira);
+
+  const { data, error } = await client.rpc('assign_plan_provider', {
+    p_category_id: cat.id,
+    p_provider_id: String(input?.provider_id ?? ''),
+    p_agreed_kobo: agreedKobo,
+  });
+  if (error) throw new Error(error.message);
+  const row = Array.isArray(data) ? data[0] : data;
+
+  return {
+    category: cat.key,
+    provider_id: row.provider_id,
+    agreed_amount_naira: fromKobo(row.agreed_kobo),
+    status: row.status,
+    booked: row.status === 'booked',
+  };
+}
+
+export async function executeReschedulePlan(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const eventDate = input?.event_date ? String(input.event_date) : null;
+  if (!eventDate) throw new Error('event_date is required');
+
+  const { data, error } = await client
+    .from('plans')
+    .update({ event_date: eventDate, end_date: input?.end_date ?? null })
+    .eq('id', planId)
+    .select('id, event_date, end_date')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('Plan not found');
+
+  const { data: categoryRows } = await client.from('plan_categories').select('id').eq('plan_id', planId);
+  const categoryIds = (categoryRows ?? []).map((c: any) => c.id);
+  const { data: assignments } = categoryIds.length
+    ? await client.from('plan_assignments').select('id').in('category_id', categoryIds).in('status', ['assigned', 'booked'])
+    : { data: [] as any[] };
+
+  return {
+    plan_id: data.id,
+    event_date: data.event_date,
+    end_date: data.end_date,
+    has_assigned_providers: (assignments?.length ?? 0) > 0,
+    note: (assignments?.length ?? 0) > 0
+      ? 'This plan has assigned providers -- confirm the new date with each of them directly. No booking or payment was changed.'
+      : undefined,
+  };
+}
+
+export async function executeConfirmBrief(client: SupabaseClient, _userId: string, input: any) {
+  const planId = String(input?.plan_id ?? '');
+  const { data, error } = await client
+    .from('plans')
+    .update({ status: 'active' })
+    .eq('id', planId)
+    .eq('status', 'draft')
+    .select('id, status')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error('Plan not found, or its brief is already confirmed');
+  return data;
+}
+
+const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, input: any) => Promise<unknown>> = {
+  create_plan_draft: executeCreatePlanDraft,
+  get_plan: executeGetPlan,
+  propose_plan_update: executeProposePlanUpdate,
+  apply_plan_update: executeApplyPlanUpdate,
+  recommend_providers: executeRecommendProviders,
+  assign_provider: executeAssignProvider,
+  reschedule_plan: executeReschedulePlan,
+  confirm_brief: executeConfirmBrief,
+};
+
+export async function executePlanTool(name: string, client: SupabaseClient, userId: string, input: any): Promise<unknown> {
+  const fn = PLAN_EXECUTORS[name];
+  if (!fn) throw new Error(`Unknown plan tool: ${name}`);
+  return fn(client, userId, input);
 }
