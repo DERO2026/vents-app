@@ -500,11 +500,11 @@ function PlanWorkspaceView({
         ) : tab === 'budget' ? (
           <WorkspaceBudgetTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onAskSi={() => onAskSi(data.plan.title)} onChanged={load} />
         ) : tab === 'team' ? (
-          <WorkspaceTeamTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onChanged={load} />
+          <WorkspaceTeamTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onAskSi={() => onAskSi(data.plan.title)} onChanged={load} />
         ) : tab === 'tasks' ? (
           <WorkspaceTasksTab data={data} onChanged={load} />
         ) : tab === 'timeline' ? (
-          <WorkspaceTimelineTab data={data} onOpenTasks={() => setTabRemembered('tasks')} />
+          <WorkspaceTimelineTab data={data} planId={planId} onOpenTasks={() => setTabRemembered('tasks')} onChanged={load} />
         ) : (
           <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>
             {TABS.find((t) => t.id === tab)?.label} isn't built yet in this pass — not a mockup frame it skips, just not reached yet.
@@ -625,6 +625,108 @@ function PlanSwitcherDropdown({
 // plan_tasks row per affected assignment ("Confirm new date with X"),
 // per the mockup's own spec text -- never auto-reschedules a real
 // booking, which this backend has no path to do at all.
+// S4-A "Set total" -- a real plans.update() write, scoped by the existing
+// plans_update_own RLS (same direct-update precedent as P20/P22's
+// AllocationSheet-adjacent writes), never a frontend-only number.
+function SetTotalBudgetSheet({
+  planId,
+  initialNaira,
+  onClose,
+  onChanged,
+}: {
+  planId: string;
+  initialNaira?: number;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [value, setValue] = useState(initialNaira ? String(initialNaira) : '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const naira = Number(value);
+    if (!isFinite(naira) || naira <= 0) { setError('Enter a real amount in naira.'); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await supabase.from('plans').update({ total_kobo: Math.round(naira * 100) }).eq('id', planId);
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onChanged();
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'flex-end', zIndex: 980 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Set total budget</span>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="e.g. 8000000"
+          data-testid="workspace-budget-set-total-input"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={save} role="button" data-testid="workspace-budget-set-total-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// S4-D "Set" -- a plan with no event_date yet has no existing date to
+// preview an "impact" against (unlike DateChangeSheet, which previews the
+// real effect of CHANGING an already-set date), so this is a plain direct
+// plans.update() write, same RLS-scoped pattern as SetTotalBudgetSheet.
+function SetEventDateSheet({
+  planId,
+  onClose,
+  onChanged,
+}: {
+  planId: string;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [value, setValue] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (!value) { setError('Pick a date.'); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await supabase.from('plans').update({ event_date: value }).eq('id', planId);
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onChanged();
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'flex-end', zIndex: 980 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Set event date</span>
+        <input
+          type="date"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          data-testid="workspace-timeline-set-date-input"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={save} role="button" data-testid="workspace-timeline-set-date-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving…' : 'Save'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function DateChangeSheet({
   planId,
   data,
@@ -965,6 +1067,31 @@ function WorkspaceBudgetTab({
   onAskSi: () => void;
   onChanged: () => void;
 }) {
+  const [showSetTotal, setShowSetTotal] = useState(false);
+
+  // S4-A "Budget · no total yet" -- a real missing-data state, not a
+  // ₦0 budget rendered as if it were real. "Not sure yet" hands off to
+  // the plan's own Ask SI thread (same real flow as S4-B's "Finish brief
+  // with SI"); "Set total" is a real plans.update() write, never a
+  // frontend-only number.
+  if (!data.plan.total_kobo) {
+    return (
+      <>
+        <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="workspace-budget-not-yet">
+          <span style={{ fontSize: 16, fontWeight: 800 }}>Set a total to see your budget</span>
+          <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>SI splits it across categories as planning estimates — not quotes.</span>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Not sure yet</span>
+            <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
+          </div>
+        </div>
+        {showSetTotal && (
+          <SetTotalBudgetSheet planId={planId} onClose={() => setShowSetTotal(false)} onChanged={onChanged} />
+        )}
+      </>
+    );
+  }
+
   const totalBudgetKobo = data.plan.total_kobo ?? 0;
   const totalBudget = totalBudgetKobo / 100;
   const totalCommittedKobo = data.categories.reduce((s, c) => s + c.committed_kobo, 0);
@@ -1006,9 +1133,12 @@ function WorkspaceBudgetTab({
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span style={{ fontSize: 12, color: '#8a7f97' }}>Total budget</span>
-          <span style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>Edit</span>
+          <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-edit-total" style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>Edit</span>
         </div>
         <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: '-.02em' }}>{naira(totalBudget)}</span>
+        {showSetTotal && (
+          <SetTotalBudgetSheet planId={planId} initialNaira={totalBudget} onClose={() => setShowSetTotal(false)} onChanged={onChanged} />
+        )}
         <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={totalBudget || null} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           <div style={{ padding: '8px 10px', borderRadius: 10, background: '#120e1a', border: '1px solid #221d2d' }}>
@@ -1388,8 +1518,9 @@ function CategoryDetailView({
 // mockup's own spec text.
 const JUST_BOOKED_WINDOW_MS = 10 * 60 * 1000;
 
-function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: PlanWorkspaceData; planId: string; onOpenCategory: (categoryId: string) => void; onChanged: () => void }) {
+function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: { data: PlanWorkspaceData; planId: string; onOpenCategory: (categoryId: string) => void; onAskSi: () => void; onChanged: () => void }) {
   const [matchInfo, setMatchInfo] = useState<Record<string, { count: number; floor: number | null }>>({});
+  const [matchError, setMatchError] = useState<Record<string, boolean>>({});
   const [readiness, setReadiness] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
   const shownRef = useRef(false);
@@ -1469,18 +1600,30 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: P
   }
   const nextDueCategory = [...openCategories].sort((a, b) => nextDueDate(a) - nextDueDate(b)).find((c) => nextDueDate(c) < Infinity) || null;
 
+  async function fetchMatchInfo(c: WorkspaceCategory) {
+    try {
+      const { data: rows, error } = await supabase.rpc('search_services_fuzzy_filtered', { p_query: c.label, p_category: c.key, p_limit: 50, p_location: data.plan.city, p_max_starting_price: null });
+      if (error) throw error;
+      const list = Array.isArray(rows) ? rows : [];
+      const prices = list.map((r: any) => Number(r.starting_price)).filter((n: number) => isFinite(n) && n >= 0);
+      setMatchInfo((prev) => ({ ...prev, [c.id]: { count: list.length, floor: prices.length ? Math.min(...prices) : null } }));
+      setMatchError((prev) => { const next = { ...prev }; delete next[c.id]; return next; });
+    } catch {
+      // S3-C "Provider search failed" -- a real RPC error (including a
+      // real Postgrest `error` the query resolved WITH, never silently
+      // treated as "zero matches") renders a real retry, not a
+      // permanently-blank row pretending to still be loading.
+      setMatchError((prev) => ({ ...prev, [c.id]: true }));
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
       for (const c of openCategories) {
-        if (matchInfo[c.id]) continue;
-        try {
-          const { data: rows } = await supabase.rpc('search_services_fuzzy_filtered', { p_query: c.label, p_category: c.key, p_limit: 50, p_location: data.plan.city, p_max_starting_price: null });
-          if (cancelled) return;
-          const list = Array.isArray(rows) ? rows : [];
-          const prices = list.map((r: any) => Number(r.starting_price)).filter((n: number) => isFinite(n) && n >= 0);
-          setMatchInfo((prev) => ({ ...prev, [c.id]: { count: list.length, floor: prices.length ? Math.min(...prices) : null } }));
-        } catch { /* best-effort, line just stays blank for this category */ }
+        if (matchInfo[c.id] || matchError[c.id]) continue;
+        if (cancelled) return;
+        await fetchMatchInfo(c);
       }
     })();
     return () => { cancelled = true; };
@@ -1493,6 +1636,25 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: P
     const rb = b.id === nextDueCategory?.id ? 2.5 : rank[slotState(b)];
     return ra - rb;
   });
+
+  // S4-B "Team · no categories yet" -- a draft whose brief hasn't been
+  // confirmed has no plan_categories rows at all (create_plan_draft only
+  // seeds them at creation; see executeCreatePlanDraft). Real missing
+  // data, not an empty "0 of 0 assigned" header. Checked after every hook
+  // above (never before an early return) so this component's hook order
+  // stays identical across a 0 -> non-zero categories transition on the
+  // same mounted instance (e.g. after confirming the brief elsewhere).
+  if (data.categories.length === 0) {
+    return (
+      <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="workspace-team-not-yet">
+        <span style={{ fontSize: 16, fontWeight: 800 }}>No team slots yet</span>
+        <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>
+          Confirm the brief and SI suggests categories{data.plan.guests ? ` for a ${titleCase(data.plan.event_type)} of ${data.plan.guests}` : ` for your ${titleCase(data.plan.event_type)}`}.
+        </span>
+        <span onClick={onAskSi} role="button" data-testid="workspace-team-finish-brief" style={{ fontSize: 13, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Finish brief with SI ›</span>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -1546,11 +1708,19 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: P
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <div onClick={() => onOpenCategory(c.id)} role="button" style={{ cursor: 'pointer' }}>
                   <div style={{ fontSize: 14, fontWeight: 700 }}>{c.label}</div>
-                  <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>
-                    {info ? `${info.count} on VENTS · from ${info.floor != null ? naira(info.floor) : '—'} · budget ≈ ${naira(c.allocated_kobo / 100)}` : 'Checking VENTS providers…'}
+                  <div style={{ fontSize: 12, color: matchError[c.id] ? '#c9c0d4' : '#a89db3', marginTop: 2 }}>
+                    {matchError[c.id]
+                      ? `Couldn't load ${c.label.toLowerCase()} right now.`
+                      : info
+                        ? `${info.count} on VENTS · from ${info.floor != null ? naira(info.floor) : '—'} · budget ≈ ${naira(c.allocated_kobo / 100)}`
+                        : `Finding ${c.label.toLowerCase()}${data.plan.city ? ` in ${data.plan.city}` : ''}…`}
                   </div>
                 </div>
-                <span style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24' }}>Due soon</span>
+                {matchError[c.id] ? (
+                  <span onClick={() => fetchMatchInfo(c)} role="button" data-testid={`workspace-team-retry-${c.id}`} style={{ fontSize: 12.5, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Retry</span>
+                ) : (
+                  <span style={{ fontSize: 11, fontWeight: 700, color: '#fbbf24' }}>Due soon</span>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                 {[0, 1, 2].map((i) => (
@@ -1574,8 +1744,19 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: P
             <span style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', background: glyph.bg, color: glyph.color, border: (glyph as any).border }}>{glyph.content}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 12, color: '#8a7f97' }}>{c.label}{state === 'own_vendor' ? ' · own vendor' : ''}</div>
-              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 1 }}>
-                {active ? (active.provider?.business_name || active.own_vendor_name) : info ? (info.count > 0 ? `${info.count} on VENTS · from ${info.floor != null ? naira(info.floor) : '—'}` : `No matches within ${naira(c.allocated_kobo / 100)}`) : 'Checking VENTS providers…'}
+              <div style={{ fontSize: 14, fontWeight: 700, marginTop: 1, color: !active && matchError[c.id] ? '#c9c0d4' : undefined }}>
+                {active
+                  ? (active.provider?.business_name || active.own_vendor_name)
+                  : matchError[c.id]
+                    // S3-C "Provider search failed" -- a real RPC error, not
+                    // silently treated as "zero matches" and not a
+                    // permanently-stuck "Finding…" line either.
+                    ? `Couldn't load ${c.label.toLowerCase()} right now.`
+                    // S2-B's own literal copy: "Not started · N on VENTS" while open.
+                    : info
+                      ? (info.count > 0 ? `Not started · ${info.count} on VENTS` : `No matches within ${naira(c.allocated_kobo / 100)}`)
+                      // S1-B's own literal copy: "Finding {category} in {city}…"
+                      : `Finding ${c.label.toLowerCase()}${data.plan.city ? ` in ${data.plan.city}` : ''}…`}
               </div>
             </div>
             {active ? (
@@ -1585,8 +1766,13 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: P
                   {state === 'booked' ? 'Paid' : state === 'own_vendor' ? (active.agreed_kobo != null && active.agreed_kobo > c.allocated_kobo ? `Over by ${naira((active.agreed_kobo - c.allocated_kobo) / 100)}` : 'Own vendor') : 'Committed'}
                 </div>
               </div>
+            ) : matchError[c.id] ? (
+              <span onClick={(e) => { e.stopPropagation(); fetchMatchInfo(c); }} role="button" data-testid={`workspace-team-retry-${c.id}`} style={{ fontSize: 12.5, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Retry</span>
             ) : (
-              <span style={{ fontSize: 12, color: '#d3b8ff' }}>›</span>
+              // S2-B's own "Find" link (not a bare chevron) -- same
+              // destination (onOpenCategory, the real discovery/assignment
+              // flow) as tapping anywhere else on this row.
+              <span style={{ fontSize: 12, color: '#d3b8ff', fontWeight: 700 }}>Find</span>
             )}
           </div>
         );
@@ -1638,6 +1824,23 @@ function WorkspaceTasksTab({ data, onChanged }: { data: PlanWorkspaceData; onCha
     const t = setTimeout(() => setJustCompleted(null), 4000);
     return () => clearTimeout(t);
   }, [justCompleted]);
+
+  // S4-C "Tasks · none yet" -- a draft's brief hasn't been confirmed, so
+  // there's genuinely no task list to show (plan_tasks is seeded by SI's
+  // guided flow once a brief is confirmed, never fabricated here). An
+  // active plan with zero tasks is a real, different (rare) state and
+  // falls through to the normal empty buckets below, not this card.
+  if (data.plan.status === 'draft' && data.tasks.length === 0) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }} data-testid="workspace-tasks-not-yet">
+        <div style={{ padding: 16, borderRadius: 14, border: '1px dashed #2c2438', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span style={{ fontSize: 13, color: '#a89db3' }}>Tasks appear once the brief is confirmed.</span>
+          <span onClick={() => setAddNote(true)} role="button" style={{ fontSize: 12.5, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>+ Add</span>
+        </div>
+        {addNote && <div style={{ fontSize: 11.5, color: '#8a7f97' }}>Adding a task from here isn't built yet -- ask SI to add it instead.</div>}
+      </div>
+    );
+  }
 
   const eventDateIso = data.plan.event_date;
   const categoryLabel = (id: string | null) => data.categories.find((c) => c.id === id)?.label ?? null;
@@ -1783,10 +1986,34 @@ function WorkspaceTasksTab({ data, onChanged }: { data: PlanWorkspaceData; onCha
 // text ("dates move via tasks or the event date"); tapping a milestone
 // switches to Tasks rather than filtering it (a stated, smaller scope --
 // no per-phase filter state exists yet).
-function WorkspaceTimelineTab({ data, onOpenTasks }: { data: PlanWorkspaceData; onOpenTasks: () => void }) {
+function WorkspaceTimelineTab({ data, planId, onOpenTasks, onChanged }: { data: PlanWorkspaceData; planId: string; onOpenTasks: () => void; onChanged: () => void }) {
+  const [showSetDate, setShowSetDate] = useState(false);
   const eventDateIso = data.plan.event_date;
   const now = Date.now();
   const withDue = data.tasks.map((t) => ({ t, due: taskDueDate(t, eventDateIso) }));
+
+  // S4-D "Timeline · no date" -- phases are counted back from the event
+  // date (ends_offset_days), so with no date there is genuinely nothing
+  // to derive a timeline from, regardless of how many milestone rows
+  // exist. Checked before the milestones-empty case below since a
+  // missing date is the more specific, more actionable explanation.
+  if (!eventDateIso) {
+    return (
+      <>
+        <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', gap: 14, alignItems: 'center' }} data-testid="workspace-timeline-not-yet">
+          <span style={{ width: 16, height: 16, borderRadius: 4, border: '2px dashed #4a3f56', transform: 'rotate(45deg)', flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Pick a date to build the timeline</div>
+            <div style={{ fontSize: 12, color: '#a89db3', marginTop: 3 }}>Phases are counted back from the event.</div>
+          </div>
+          <span onClick={() => setShowSetDate(true)} role="button" data-testid="workspace-timeline-set-date" style={{ fontSize: 12.5, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Set</span>
+        </div>
+        {showSetDate && (
+          <SetEventDateSheet planId={planId} onClose={() => setShowSetDate(false)} onChanged={onChanged} />
+        )}
+      </>
+    );
+  }
 
   if (data.milestones.length === 0) {
     return <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>No timeline phases yet for this plan.</div>;
@@ -2305,16 +2532,38 @@ function PlanSummaryCard({ plan, onOpenPlan }: { plan: any; onOpenPlan?: (planId
 function PlanUpdateCard({
   data,
   applied,
+  streaming,
   onApply,
   onUndo,
 }: {
   data: any;
   applied: boolean;
+  // S1-C "SI applying a change" -- whether a request is currently in
+  // flight. `clicked` (below) distinguishes THIS card's own in-flight
+  // Apply from some unrelated message the user sent meanwhile.
+  streaming?: boolean;
   onApply?: () => void;
   onUndo?: (changeLogId: string) => void;
 }) {
   const changes: any[] = Array.isArray(data?.proposed_changes) ? data.proposed_changes : [];
   const [undone, setUndone] = useState(false);
+  const [clicked, setClicked] = useState(false);
+  // Once the in-flight request settles (success or failure -- this card
+  // has no way to tell which, since success renders as a SEPARATE
+  // apply_plan_update card elsewhere in the thread, never a mutation of
+  // this one), restore the real editable/error state rather than leaving
+  // Apply stuck disabled forever.
+  useEffect(() => {
+    if (!streaming && clicked) setClicked(false);
+  }, [streaming, clicked]);
+  const applying = clicked && !!streaming;
+
+  function handleApply() {
+    if (applying) return; // prevents a duplicate apply_plan_update call from a fast double-tap
+    setClicked(true);
+    onApply?.();
+  }
+
   return (
     <div style={{ marginTop: 10, background: applied ? '#120e1a' : 'rgba(163,92,255,.08)', border: applied ? '1px solid #221d2d' : '1px solid rgba(163,92,255,.35)', borderRadius: 12, padding: applied ? '12px 14px' : 14 }} data-testid="ai-plan-update-card">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -2344,13 +2593,23 @@ function PlanUpdateCard({
         ))}
       </div>
       {!applied && onApply && (
-        <div
-          onClick={onApply}
-          data-testid="ai-plan-update-apply"
-          style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: GRADIENT, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-        >
-          Apply
-        </div>
+        // S1-C's own layout/copy once tapped: "Updating budget…" + a
+        // separate "Apply disabled" label, replacing the plain button.
+        applying ? (
+          <div style={{ marginTop: 12, padding: '9px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid rgba(163,92,255,.35)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }} data-testid="ai-plan-update-applying">
+            <span style={{ fontSize: 13 }}>Updating budget…</span>
+            <span style={{ fontSize: 12, color: '#8a7f97' }}>Apply disabled</span>
+          </div>
+        ) : (
+          <div
+            onClick={handleApply}
+            role="button"
+            data-testid="ai-plan-update-apply"
+            style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: GRADIENT, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+          >
+            Apply
+          </div>
+        )
       )}
       {undone && <div style={{ marginTop: 10, fontSize: 11, color: '#786d87' }}>Reverted to the previous allocation.</div>}
     </div>
@@ -2903,6 +3162,7 @@ const PLAN_SUMMARY_CARD_TYPES = new Set(['create_plan_draft', 'get_plan']);
 
 function AssistantCards({
   cards,
+  streaming,
   onOpenEvent,
   onOpenProvider,
   onOpenPlan,
@@ -2911,6 +3171,10 @@ function AssistantCards({
   onSelectPlanForThread,
 }: {
   cards: BackendCard[];
+  // S1-C -- whether a request is currently in flight, so a just-tapped
+  // Apply button can disable itself and say so, rather than risk a
+  // duplicate apply_plan_update call.
+  streaming?: boolean;
   onOpenEvent?: (id: string) => void;
   onOpenProvider?: (id: string) => void;
   onOpenPlan?: (planId: string, title: string) => void;
@@ -2957,6 +3221,7 @@ function AssistantCards({
               key={i}
               data={card.data}
               applied={false}
+              streaming={streaming}
               onApply={() => onQuickAction?.('Apply that change.')}
             />
           );
@@ -3615,15 +3880,19 @@ function PlansListView({
     );
   }
 
+  const showTopNewPlanBar = !(plans !== null && !loadError && upcoming.length === 0);
+
   return (
     <div>
-      <div
-        onClick={() => onStartNewPlan("I'm planning an event.")}
-        data-testid="si-new-plan"
-        style={{ cursor: 'pointer', marginBottom: 16, padding: '13px 14px', borderRadius: 12, background: 'rgba(163,92,255,.12)', border: '1px solid rgba(163,92,255,.35)', color: '#d3b8ff', fontSize: 13, fontWeight: 700, textAlign: 'center' }}
-      >
-        + New Plan
-      </div>
+      {showTopNewPlanBar && (
+        <div
+          onClick={() => onStartNewPlan("I'm planning an event.")}
+          data-testid="si-new-plan"
+          style={{ cursor: 'pointer', marginBottom: 16, padding: '13px 14px', borderRadius: 12, background: 'rgba(163,92,255,.12)', border: '1px solid rgba(163,92,255,.35)', color: '#d3b8ff', fontSize: 13, fontWeight: 700, textAlign: 'center' }}
+        >
+          + New Plan
+        </div>
+      )}
 
       {actionError && (
         <div style={{ marginBottom: 12, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>{actionError}</div>
@@ -3638,9 +3907,33 @@ function PlansListView({
           Couldn't load your plans — {loadError}
         </div>
       ) : upcoming.length === 0 ? (
-        // S2 Empty.
-        <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: '20px 10px', lineHeight: 1.6 }}>
-          No plans yet. Tell SI what you're planning — "Beach wedding, 120 guests, Lagos, ₦8m" — and it'll start one for you.
+        // S2-A -- exact mockup copy/layout: title, subtitle, type chips (prefill+send,
+        // same precedent as the Chat tab's NewPlannerPromoCard), and a real "Start a
+        // plan" CTA that enters the existing plan-creation flow (never a fake navigation).
+        <div style={{ padding: '24px 18px', borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>No plans yet</span>
+          <span style={{ fontSize: 13.5, color: '#a89db3', lineHeight: 1.5 }}>Tell SI about an event and it'll build the plan with you.</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {[['Plan a wedding', 'Help me plan a wedding'], ['Plan a birthday', 'Help me plan a birthday'], ['Plan a conference', 'Help me plan a conference']].map(([label, prompt]) => (
+              <span
+                key={label}
+                onClick={() => onStartNewPlan(prompt)}
+                role="button"
+                data-testid={`si-plans-empty-chip-${label.split(' ').pop()}`}
+                style={{ fontSize: 12, padding: '7px 11px', borderRadius: 99, background: '#1c1726', border: '1px solid #2c2438', color: '#d6cfe0', cursor: 'pointer' }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
+          <span
+            onClick={() => onStartNewPlan("I'm planning an event.")}
+            role="button"
+            data-testid="si-new-plan"
+            style={{ height: 46, borderRadius: 12, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+          >
+            Start a plan
+          </span>
         </div>
       ) : (
         <>
@@ -3820,6 +4113,7 @@ function ConversationView({
                   {m.cards && m.cards.length > 0 && (
                     <AssistantCards
                       cards={m.cards}
+                      streaming={streaming}
                       onOpenEvent={onOpenEvent}
                       onOpenProvider={onOpenProvider}
                       onOpenPlan={onOpenPlan}
@@ -3844,9 +4138,46 @@ function ConversationView({
           )}
 
           {errorText && (
-            <div style={{ marginBottom: 14, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
-              {errorText}
-            </div>
+            lastConvUserText.trim().toLowerCase().startsWith('build my plan') ? (
+              // S3-A "Plan generation failed" -- the exact failed turn is
+              // still right there to retry (never a fabricated retry that
+              // just dismisses the error); "Edit brief" is a real chat
+              // turn, not a dead button, since the brief itself is only
+              // ever a display-only card (no plans row exists yet on this
+              // path) -- there is no separate persisted draft to edit.
+              <div style={{ marginBottom: 14, padding: 18, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="ai-plan-build-error-card">
+                <span style={{ fontSize: 17, fontWeight: 800 }}>Couldn't build your plan</span>
+                <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>Nothing was lost — your brief details are still here. Nothing was charged or changed.</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span
+                    onClick={() => onQuickAction?.("I'd like to edit the brief before building.")}
+                    role="button"
+                    data-testid="ai-plan-build-error-edit"
+                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}
+                  >
+                    Edit brief
+                  </span>
+                  <span
+                    onClick={() => onQuickAction?.(lastConvUserText)}
+                    role="button"
+                    data-testid="ai-plan-build-error-retry"
+                    style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                  >
+                    Try again
+                  </span>
+                </div>
+              </div>
+            ) : (
+              // S3-D generic retryable error (existing pattern) -- Retry
+              // re-sends the exact failed turn, same real pipeline, never
+              // a button that only dismisses the banner.
+              <div style={{ marginBottom: 14, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+                <span>{errorText}</span>
+                {lastConvUserText && (
+                  <span onClick={() => onQuickAction?.(lastConvUserText)} role="button" data-testid="ai-generic-error-retry" style={{ fontWeight: 700, color: '#fbbf24', cursor: 'pointer', flexShrink: 0 }}>Retry</span>
+                )}
+              </div>
+            )
           )}
 
           {streaming && (

@@ -294,8 +294,42 @@ describe('P11 Team tab', () => {
     expect(container!.textContent).toContain('1 of 2 assigned');
     expect(container!.textContent).toContain('Ade Studios');
     expect(container!.textContent).toContain('Paid');
-    // Decoration is open -- the real per-category provider search result shows up, not a fabricated count.
-    expect(container!.textContent).toMatch(/1 on VENTS · from ₦450,000/);
+    // Decoration is open -- the real per-category provider search result shows up, not a fabricated count (S2-B's own "Not started · N on VENTS" copy).
+    expect(container!.textContent).toContain('Not started · 1 on VENTS');
+    expect(container!.textContent).toContain('Find');
+  });
+
+  it('S3-C: a real provider-search RPC error shows a real "couldn\'t load" + Retry, never silently reads as zero matches', async () => {
+    mockWorkspaceTables();
+    let callCount = 0;
+    mockRpc({ data: [], error: null }, {});
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+      if (name === 'search_services_fuzzy_filtered') {
+        callCount += 1;
+        if (callCount === 1) return Promise.resolve({ data: null, error: { message: 'timeout' } });
+        return Promise.resolve({ data: [{ starting_price: 450000 }], error: null });
+      }
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    await flush();
+
+    expect(container!.textContent).toContain("Couldn't load decoration right now.");
+    expect(container!.querySelector('[data-testid^="workspace-team-retry-"]')).toBeTruthy();
+    // A real RPC error is never silently treated as "no matches" (which would be a lie about the real data).
+    expect(container!.textContent).not.toContain('No matches within');
+
+    const retryBtn = container!.querySelector('[data-testid^="workspace-team-retry-"]') as HTMLElement;
+    act(() => retryBtn.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    await flush();
+
+    expect(callCount).toBe(2);
+    expect(container!.textContent).toContain('Not started · 1 on VENTS');
   });
 });
 
@@ -561,5 +595,108 @@ describe('P22 Date-change impact sheet', () => {
     act(() => cancelBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(supabaseFrom).not.toHaveBeenCalledWith('plans');
     expect(container!.querySelector('[data-testid="ai-date-change-sheet-backdrop"]')).toBeFalsy();
+  });
+});
+
+describe('S4 Not-yet/draft states: genuinely missing data, never fabricated placeholders', () => {
+  const DRAFT_OVERVIEW_ROW = { ...PLAN_OVERVIEW_ROW, status: 'draft' };
+
+  it('S4-A: Budget shows "set a total" when the plan has no total_kobo yet, and "Set total" writes a real plans.update', async () => {
+    const updateEq = vi.fn(() => Promise.resolve({ data: null, error: null }));
+    const plansUpdate = vi.fn(() => ({ eq: updateEq }));
+    mockWorkspaceTables({
+      plans: (() => {
+        // Read path (select().eq().single()) stays on makeChain's own
+        // chainable eq/single; only update() is overridden, returning a
+        // SEPARATE object with its own eq -- never touching the read
+        // chain's eq, which fetchPlanWorkspace's single-plan fetch still
+        // needs to resolve through.
+        const chain = makeChain({ data: [DRAFT_OVERVIEW_ROW], error: null }, { data: { ...PLAN_ROW, status: 'draft', total_kobo: null }, error: null });
+        chain.update = plansUpdate;
+        return chain;
+      })(),
+    });
+    mockRpc({ data: [DRAFT_OVERVIEW_ROW], error: null }, { get_plans_overview: { data: [DRAFT_OVERVIEW_ROW], error: null } });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-budget');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-budget-not-yet"]')).toBeTruthy();
+    expect(container!.textContent).toContain('Set a total to see your budget');
+
+    clickTestId('workspace-budget-set-total');
+    await flush();
+    const input = container!.querySelector('[data-testid="workspace-budget-set-total-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, '8000000');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('workspace-budget-set-total-save');
+    await flush();
+
+    expect(plansUpdate).toHaveBeenCalledWith({ total_kobo: 800000000 });
+  });
+
+  it('S4-B: Team shows "no team slots yet" when the plan has zero categories, with a real "Finish brief with SI" action', async () => {
+    mockWorkspaceTables({ plan_categories: makeChain({ data: [], error: null }) });
+    mockRpc({ data: [DRAFT_OVERVIEW_ROW], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-team-not-yet"]')).toBeTruthy();
+    expect(container!.textContent).toContain('No team slots yet');
+    expect(container!.textContent).toContain('Finish brief with SI');
+  });
+
+  it('S4-C: Tasks shows "tasks appear once the brief is confirmed" for a draft plan with zero tasks', async () => {
+    mockWorkspaceTables({
+      plans: makeChain({ data: [DRAFT_OVERVIEW_ROW], error: null }, { data: { ...PLAN_ROW, status: 'draft' }, error: null }),
+      plan_tasks: makeChain({ data: [], error: null }),
+    });
+    mockRpc({ data: [DRAFT_OVERVIEW_ROW], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-tasks');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-tasks-not-yet"]')).toBeTruthy();
+    expect(container!.textContent).toContain('Tasks appear once the brief is confirmed.');
+  });
+
+  it('S4-D: Timeline shows "pick a date" when the plan has no event_date, and "Set" writes a real plans.update', async () => {
+    const updateEq = vi.fn(() => Promise.resolve({ data: null, error: null }));
+    const plansUpdate = vi.fn(() => ({ eq: updateEq }));
+    mockWorkspaceTables({
+      plans: (() => {
+        const chain = makeChain({ data: [PLAN_OVERVIEW_ROW], error: null }, { data: { ...PLAN_ROW, event_date: null }, error: null });
+        chain.update = plansUpdate;
+        return chain;
+      })(),
+    });
+    mockRpc({ data: [PLAN_OVERVIEW_ROW], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-timeline');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-timeline-not-yet"]')).toBeTruthy();
+    expect(container!.textContent).toContain('Pick a date to build the timeline');
+
+    clickTestId('workspace-timeline-set-date');
+    await flush();
+    const input = container!.querySelector('[data-testid="workspace-timeline-set-date-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, '2026-12-19');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('workspace-timeline-set-date-save');
+    await flush();
+
+    expect(plansUpdate).toHaveBeenCalledWith({ event_date: '2026-12-19' });
   });
 });

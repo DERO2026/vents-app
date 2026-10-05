@@ -131,6 +131,25 @@ describe('Plans room (P01 entry)', () => {
     expect(container!.textContent).toContain('network down');
   });
 
+  it('S2-A: the empty Plans tab shows the exact mockup card (title/subtitle/chips/CTA), and a chip prefills the real plan-creation flow', async () => {
+    mockPlansOverview({ data: [], error: null });
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+
+    expect(container!.textContent).toContain('No plans yet');
+    expect(container!.textContent).toContain("Tell SI about an event and it'll build the plan with you.");
+    expect(container!.textContent).toContain('Plan a wedding');
+    expect(container!.textContent).toContain('Plan a birthday');
+    expect(container!.textContent).toContain('Plan a conference');
+    expect(container!.textContent).toContain('Start a plan');
+
+    clickTestId('si-plans-empty-chip-wedding');
+    await flush();
+    const input = container!.querySelector('input') as HTMLInputElement;
+    expect(input.value).toBe('Help me plan a wedding');
+  });
+
   it('"+ New Plan" switches to Chat and prefills the composer rather than silently doing nothing', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
     mount();
@@ -248,6 +267,57 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
     expect(container!.textContent).toContain('PLAN UPDATE');
     expect(container!.textContent).toContain('✓ Applied');
     expect(container!.querySelector('[data-testid="ai-plan-update-undo"]')).toBeTruthy();
+  });
+
+  it('S1-C: while Apply is in flight it disables itself and says so, and a second tap does not send a duplicate request', async () => {
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
+    let resolveApply: (v: any) => void;
+    sendVentsAiMessage
+      .mockResolvedValueOnce({ type: 'message', text: 'Suggestion', cards: [{ type: 'propose_plan_update', data: { plan_id: 'plan-1', applied: false, proposed_changes: [{ category: 'decoration', label: 'Decoration', before_naira: 650000, after_naira: 450000 }] } }] })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveApply = resolve; }));
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickByText('Beach Wedding');
+    await flush();
+
+    clickTestId('ai-plan-update-apply');
+    await flush();
+
+    // Disabled + the exact mockup copy, never a fake instant "applied".
+    expect(container!.textContent).toContain('Updating budget…');
+    expect(container!.textContent).toContain('Apply disabled');
+    expect(container!.querySelector('[data-testid="ai-plan-update-apply"]')).toBeFalsy();
+
+    // A second tap (e.g. on the same still-visible card) must not fire a second request.
+    clickTestId('ai-plan-update-applying');
+    await flush();
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(2);
+
+    await act(async () => { resolveApply!({ type: 'message', text: 'Applied.', cards: [{ type: 'apply_plan_update', data: { plan_id: 'plan-1', change_log_id: 'log-1', applied: true, actor: 'si' } }] }); await flush(); });
+    expect(container!.querySelector('[data-testid="ai-plan-update-apply"]')).toBeTruthy(); // restored, not stuck disabled
+  });
+
+  it('S1-C: restores the real editable/error state if the Apply request fails, never pretending it succeeded', async () => {
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
+    sendVentsAiMessage
+      .mockResolvedValueOnce({ type: 'message', text: 'Suggestion', cards: [{ type: 'propose_plan_update', data: { plan_id: 'plan-1', applied: false, proposed_changes: [{ category: 'decoration', label: 'Decoration', before_naira: 650000, after_naira: 450000 }] } }] })
+      .mockRejectedValueOnce(new Error('network down'));
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickByText('Beach Wedding');
+    await flush();
+
+    clickTestId('ai-plan-update-apply');
+    await flush();
+
+    expect(container!.textContent).toContain('network down');
+    // Apply is clickable again -- never stuck disabled, never silently "applied".
+    expect(container!.querySelector('[data-testid="ai-plan-update-apply"]')).toBeTruthy();
+    expect(container!.querySelector('[data-testid="ai-plan-update-undo"]')).toBeFalsy();
   });
 
   it('Undo calls the real undo_plan_change RPC directly, then refreshes the plan state', async () => {
@@ -600,6 +670,64 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
 
     await act(async () => { resolveSend!({ type: 'message', text: 'Your plan is ready.', cards: [] }); await flush(); });
     expect(container!.querySelector('[data-testid="ai-building-plan-loader"]')).toBeFalsy();
+  });
+
+  it('S3-A: a failed "Build my plan." turn shows the real error card, and "Try again" re-sends the exact same turn', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockRejectedValueOnce(new Error('network down'));
+
+    mount();
+    setInputAndSend('Build my plan with these final details: title "X".');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="ai-plan-build-error-card"]')).toBeTruthy();
+    expect(container!.textContent).toContain("Couldn't build your plan");
+    expect(container!.textContent).toContain('Nothing was charged or changed.');
+    // The generic banner is replaced by this specific card, not shown alongside it.
+    expect(container!.querySelector('[data-testid="ai-generic-error-retry"]')).toBeFalsy();
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Built it.', cards: [] });
+    clickTestId('ai-plan-build-error-retry');
+    await flush();
+
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(2);
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Build my plan with these final details: title "X".');
+    expect(container!.querySelector('[data-testid="ai-plan-build-error-card"]')).toBeFalsy();
+  });
+
+  it('S3-A: "Edit brief" sends a real chat turn asking to edit, never a dead button', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockRejectedValueOnce(new Error('network down'));
+
+    mount();
+    setInputAndSend('Build my plan with these final details: title "X".');
+    await flush();
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Sure, what would you like to change?', cards: [] });
+    clickTestId('ai-plan-build-error-edit');
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toContain('edit the brief');
+  });
+
+  it('S3-D: a generic (non-plan-build) failed turn keeps the existing banner, and Retry re-sends the exact same turn', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockRejectedValueOnce(new Error('network down'));
+
+    mount();
+    setInputAndSend('What providers do you have for catering?');
+    await flush();
+
+    expect(container!.textContent).toContain('network down');
+    expect(container!.querySelector('[data-testid="ai-plan-build-error-card"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-generic-error-retry"]')).toBeTruthy();
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Here you go.', cards: [] });
+    clickTestId('ai-generic-error-retry');
+    await flush();
+
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(2);
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('What providers do you have for catering?');
   });
 });
 
