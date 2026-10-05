@@ -86,6 +86,11 @@ type WorkspaceCategory = {
   id: string;
   key: string;
   label: string;
+  // 'custom' when added via "+ Category" (migration 0161's
+  // add_plan_category) -- S2-C's own signal for "not a VENTS service
+  // category," distinct from a template-seeded category (always NULL
+  // today; that column exists but was never populated for the seed path).
+  vents_category: string | null;
   allocated_kobo: number;
   is_priority: boolean;
   committed_kobo: number;
@@ -134,7 +139,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
 
   const { data: categories } = await supabase
     .from('plan_categories')
-    .select('id, key, label, allocated_kobo, is_priority, sort')
+    .select('id, key, label, vents_category, allocated_kobo, is_priority, sort')
     .eq('plan_id', planId)
     .order('sort');
   const categoryIds = (categories ?? []).map((c: any) => c.id);
@@ -188,6 +193,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
         id: c.id,
         key: c.key,
         label: c.label,
+        vents_category: c.vents_category ?? null,
         allocated_kobo: c.allocated_kobo ?? 0,
         is_priority: !!c.is_priority,
         committed_kobo: active.filter((a) => a.status === 'assigned').reduce((s, a) => s + (a.agreed_kobo ?? 0), 0),
@@ -1410,9 +1416,26 @@ function CategoryDetailView({
 }) {
   const [showSheet, setShowSheet] = useState(false);
   const [actionNote, setActionNote] = useState<string | null>(null);
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
 
   const active = category.assignments.find((a) => a.status === 'assigned' || a.status === 'booked') || null;
   const left = Math.max(0, category.allocated_kobo - category.committed_kobo - category.paid_kobo);
+
+  // S5-A: only a plan-only, unpaid/unbooked assignment is eligible here --
+  // a real paid booking is explicitly protected (S5-B's own booking flow,
+  // not implemented yet; "View booking" below stays a stated gap for it).
+  async function removeAssignment() {
+    if (!active) return;
+    setRemoving(true);
+    setRemoveError(null);
+    const { error } = await supabase.rpc('remove_plan_assignment', { p_assignment_id: active.id });
+    setRemoving(false);
+    if (error) { setRemoveError(error.message); return; }
+    setShowRemoveConfirm(false);
+    onChanged();
+  }
 
   async function toggleTask(task: WorkspaceTask) {
     if (task.completes_on_booking) return; // "can't be unticked manually -- the booking is the truth"
@@ -1460,12 +1483,38 @@ function CategoryDetailView({
               </div>
               <span style={{ fontSize: 12, color: '#d3b8ff' }}>›</span>
             </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <span onClick={() => setActionNote('Messaging a provider from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Message</span>
-              <span onClick={() => setActionNote('Opening the real booking screen from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>View booking</span>
-              <span onClick={() => setActionNote('Finding a replacement provider happens in the plan\'s Ask SI thread -- open "Ask SI" from Overview and say what you need.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Replace</span>
-            </div>
+            {active.status === 'booked' ? (
+              // S5-B (booked and paid) stays explicitly deferred -- the
+              // mockup's own rule is "the planner never cancels or
+              // refunds, open the real booking instead," and no
+              // booking-detail screen exists yet to open. Stated gap, not
+              // a fake destination.
+              <div style={{ display: 'flex', gap: 8 }}>
+                <span onClick={() => setActionNote('Messaging a provider from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Message</span>
+                <span onClick={() => setActionNote('Opening the real booking screen from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>View booking</span>
+              </div>
+            ) : (
+              // S5-A: a plan-only, unpaid/unbooked assignment can be
+              // removed for real.
+              <div style={{ display: 'flex', gap: 8 }}>
+                <span onClick={() => setActionNote('Messaging a provider from here is not built yet.')} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Message</span>
+                <span onClick={() => setShowRemoveConfirm(true)} role="button" data-testid="ai-category-remove" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid rgba(248,113,113,.45)', fontSize: 12.5, fontWeight: 700, color: '#f87171', cursor: 'pointer' }}>Remove</span>
+              </div>
+            )}
             {actionNote && <div style={{ fontSize: 11.5, color: '#8a7f97' }}>{actionNote}</div>}
+            {showRemoveConfirm && active.status !== 'booked' && (
+              <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #2c2438', display: 'flex', flexDirection: 'column', gap: 12 }} data-testid="ai-category-remove-confirm">
+                <span style={{ fontSize: 16, fontWeight: 800 }}>Remove {active.provider?.business_name || active.own_vendor_name}?</span>
+                <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>
+                  {active.agreed_kobo ? `${naira(active.agreed_kobo / 100)} committed returns to ${category.label} as an estimate. ` : ''}Linked tasks reopen.
+                </span>
+                {removeError && <span style={{ fontSize: 12, color: '#fbbf24' }}>{removeError}</span>}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span onClick={() => setShowRemoveConfirm(false)} role="button" data-testid="ai-category-remove-keep" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Keep</span>
+                  <span onClick={removeAssignment} role="button" data-testid="ai-category-remove-confirm-button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid rgba(248,113,113,.45)', fontSize: 12.5, fontWeight: 700, color: '#f87171', cursor: removing ? 'default' : 'pointer', opacity: removing ? 0.7 : 1 }}>{removing ? 'Removing…' : 'Remove'}</span>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -1523,6 +1572,8 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   const [matchError, setMatchError] = useState<Record<string, boolean>>({});
   const [readiness, setReadiness] = useState<number | null>(null);
   const [moving, setMoving] = useState(false);
+  const [showAddCategory, setShowAddCategory] = useState(false);
+  const [ownVendorCategory, setOwnVendorCategory] = useState<WorkspaceCategory | null>(null);
   const shownRef = useRef(false);
 
   const assignedCount = data.categories.filter((c) => c.assignments.some((a) => a.status === 'assigned' || a.status === 'booked')).length;
@@ -1590,6 +1641,11 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   }
 
   const openCategories = data.categories.filter((c) => slotState(c) === 'open');
+  // S2-C: a custom category (vents_category === 'custom', added via "+
+  // Category") never gets a VENTS provider search -- "stays first-class,
+  // just without recommendations," per the mockup's own spec text.
+  const isCustomCategory = (c: WorkspaceCategory) => c.vents_category === 'custom';
+  const searchableOpenCategories = openCategories.filter((c) => !isCustomCategory(c));
   // Next-due = the open category with the soonest due task, shown
   // expanded per the mockup's "(expanded, one at a time)" note.
   function nextDueDate(c: WorkspaceCategory): number {
@@ -1620,7 +1676,7 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      for (const c of openCategories) {
+      for (const c of searchableOpenCategories) {
         if (matchInfo[c.id] || matchError[c.id]) continue;
         if (cancelled) return;
         await fetchMatchInfo(c);
@@ -1628,7 +1684,7 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.plan.city, openCategories.map((c) => c.id).join(',')]);
+  }, [data.plan.city, searchableOpenCategories.map((c) => c.id).join(',')]);
 
   const rank: Record<string, number> = { booked: 0, committed: 1, own_vendor: 2, open: 3 };
   const sorted = [...data.categories].sort((a, b) => {
@@ -1660,7 +1716,7 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
         <span style={{ fontSize: 20, fontWeight: 800 }}>{assignedCount} of {data.categories.length} assigned</span>
-        <span style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>+ Category</span>
+        <span onClick={() => setShowAddCategory(true)} role="button" data-testid="workspace-team-add-category" style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>+ Category</span>
       </div>
       {sorted.map((c) => {
         const state = slotState(c);
@@ -1698,6 +1754,24 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
                 )}
                 <span>✓ Booking added to your VENTS bookings</span>
               </div>
+            </div>
+          );
+        }
+
+        // S2-C "Custom category, no VENTS match type" -- exact mockup copy
+        // and layout: dashed glyph, "Not a VENTS service category · track
+        // your own," and a real "Add" action (assign_own_vendor), never a
+        // VENTS provider search for a category that was explicitly marked
+        // as not mapping to one.
+        if (!active && isCustomCategory(c)) {
+          return (
+            <div key={c.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '12px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d' }} data-testid={`workspace-team-row-${c.key}`}>
+              <span style={{ width: 22, height: 22, borderRadius: '50%', flexShrink: 0, border: '1.5px dashed #4a3f56' }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>{c.label}</div>
+                <div style={{ fontSize: 12, color: '#a89db3', marginTop: 1 }}>Not a VENTS service category · track your own</div>
+              </div>
+              <span onClick={() => setOwnVendorCategory(c)} role="button" data-testid={`workspace-team-add-vendor-${c.id}`} style={{ fontSize: 12, color: '#d3b8ff', fontWeight: 700, cursor: 'pointer' }}>Add</span>
             </div>
           );
         }
@@ -1785,7 +1859,120 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
           </span>
         </div>
       )}
+      {showAddCategory && (
+        <AddCategorySheet planId={planId} onClose={() => setShowAddCategory(false)} onChanged={onChanged} />
+      )}
+      {ownVendorCategory && (
+        <AddOwnVendorSheet category={ownVendorCategory} onClose={() => setOwnVendorCategory(null)} onChanged={onChanged} />
+      )}
     </>
+  );
+}
+
+// S2-C / "+ Category" -- a real add_plan_category() write (migration
+// 0161), scoped by that function's own ownership check. The new row's
+// vents_category is always 'custom' server-side, which is what routes it
+// into S2-C's own row treatment above rather than a VENTS provider search.
+function AddCategorySheet({ planId, onClose, onChanged }: { planId: string; onClose: () => void; onChanged: () => void }) {
+  const [label, setLabel] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const t = label.trim();
+    if (!t) { setError('Enter a category name.'); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await supabase.rpc('add_plan_category', { p_plan_id: planId, p_label: t });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onChanged();
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'flex-end', zIndex: 980 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Add a category</span>
+        <input
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          placeholder="e.g. Fireworks"
+          data-testid="workspace-add-category-input"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={save} role="button" data-testid="workspace-add-category-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// S2-C's "Add" action -- a real assign_own_vendor() write (migration
+// 0161), mirroring assign_plan_provider's own replace/paid-booking
+// protection exactly. Name is the only required field; phone/amount are
+// optional, matching how little the mockup's own copy demands.
+function AddOwnVendorSheet({ category, onClose, onChanged }: { category: WorkspaceCategory; onClose: () => void; onChanged: () => void }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [amount, setAmount] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    const t = name.trim();
+    if (!t) { setError('Enter a vendor name.'); return; }
+    const naira = amount.trim() ? Number(amount) : null;
+    if (naira != null && (!isFinite(naira) || naira < 0)) { setError('Enter a real amount in naira.'); return; }
+    setSaving(true);
+    setError(null);
+    const { error: err } = await supabase.rpc('assign_own_vendor', {
+      p_category_id: category.id,
+      p_vendor_name: t,
+      p_vendor_phone: phone.trim() || null,
+      p_agreed_kobo: naira != null ? Math.round(naira * 100) : null,
+    });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    onChanged();
+    onClose();
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'flex-end', zIndex: 980 }} onClick={onClose}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Add your own vendor · {category.label}</span>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Vendor name"
+          data-testid="workspace-add-vendor-name-input"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        <input
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+          placeholder="Phone (optional)"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        <input
+          type="number"
+          inputMode="numeric"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Agreed amount in naira (optional)"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        {error && <span style={{ fontSize: 12, color: '#fbbf24' }}>{error}</span>}
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={save} role="button" data-testid="workspace-add-vendor-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.7 : 1 }}>{saving ? 'Adding…' : 'Add'}</span>
+        </div>
+      </div>
+    </div>
   );
 }
 

@@ -700,3 +700,162 @@ describe('S4 Not-yet/draft states: genuinely missing data, never fabricated plac
     expect(plansUpdate).toHaveBeenCalledWith({ event_date: '2026-12-19' });
   });
 });
+
+describe('S2-C Custom category: "+ Category" and "Add" are real writes, never a dead button', () => {
+  it('"+ Category" calls the real add_plan_category RPC with this plan\'s id and the typed label', async () => {
+    mockWorkspaceTables();
+    const addCategorySpy = vi.fn(() => Promise.resolve({ data: { id: 'cat-new', plan_id: 'plan-1', key: 'fireworks', label: 'Fireworks', vents_category: 'custom', allocated_kobo: 0, sort: 2 }, error: null }));
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+      if (name === 'add_plan_category') return addCategorySpy();
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    clickTestId('workspace-team-add-category');
+    await flush();
+
+    const input = container!.querySelector('[data-testid="workspace-add-category-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'Fireworks');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('workspace-add-category-save');
+    await flush();
+
+    expect(supabaseRpc).toHaveBeenCalledWith('add_plan_category', { p_plan_id: 'plan-1', p_label: 'Fireworks' });
+  });
+
+  it('a custom category (vents_category: "custom") renders the exact S2-C row, never a VENTS provider search', async () => {
+    mockWorkspaceTables({
+      plan_categories: makeChain({
+        data: [{ id: 'cat-fireworks', key: 'fireworks', label: 'Fireworks', vents_category: 'custom', allocated_kobo: 0, is_priority: false, sort: 0 }],
+        error: null,
+      }),
+      plan_assignments: makeChain({ data: [], error: null }),
+    });
+    const searchSpy = vi.fn(() => Promise.resolve({ data: [{ starting_price: 450000 }], error: null }));
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+      if (name === 'search_services_fuzzy_filtered') return searchSpy();
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    await flush();
+
+    expect(container!.textContent).toContain('Fireworks');
+    expect(container!.textContent).toContain('Not a VENTS service category · track your own');
+    expect(container!.querySelector('[data-testid="workspace-team-add-vendor-cat-fireworks"]')).toBeTruthy();
+    // Never a fake/real search for a category explicitly marked as not mapping to VENTS.
+    expect(searchSpy).not.toHaveBeenCalled();
+  });
+
+  it('"Add" on a custom category calls the real assign_own_vendor RPC, never a fake provider', async () => {
+    mockWorkspaceTables({
+      plan_categories: makeChain({
+        data: [{ id: 'cat-fireworks', key: 'fireworks', label: 'Fireworks', vents_category: 'custom', allocated_kobo: 0, is_priority: false, sort: 0 }],
+        error: null,
+      }),
+      plan_assignments: makeChain({ data: [], error: null }),
+    });
+    const assignSpy = vi.fn(() => Promise.resolve({ data: { id: 'asg-new', category_id: 'cat-fireworks', own_vendor_name: 'Boom Co', agreed_kobo: 15000000, status: 'assigned' }, error: null }));
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+      if (name === 'assign_own_vendor') return assignSpy();
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    clickTestId('workspace-team-add-vendor-cat-fireworks');
+    await flush();
+
+    const nameInput = container!.querySelector('[data-testid="workspace-add-vendor-name-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(nameInput, 'Boom Co');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('workspace-add-vendor-save');
+    await flush();
+
+    expect(supabaseRpc).toHaveBeenCalledWith('assign_own_vendor', { p_category_id: 'cat-fireworks', p_vendor_name: 'Boom Co', p_vendor_phone: null, p_agreed_kobo: null });
+  });
+});
+
+describe('S5-A Remove plan-only assignment: a real transactional remove_plan_assignment RPC', () => {
+  it('shows the exact S5-A confirm card and "Remove" calls the real RPC with this assignment\'s id', async () => {
+    mockWorkspaceTables({
+      plan_assignments: makeChain({
+        data: [{ id: 'asg-1', category_id: 'cat-photo', provider_id: null, own_vendor_name: 'Highlife Collective', agreed_kobo: 30000000, status: 'assigned', updated_at: new Date().toISOString() }],
+        error: null,
+      }),
+    });
+    const removeSpy = vi.fn(() => Promise.resolve({ data: { id: 'asg-1', status: 'cancelled' }, error: null }));
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+      if (name === 'remove_plan_assignment') return removeSpy();
+      return Promise.resolve({ data: [], error: null });
+    });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    clickTestId('workspace-team-row-photography');
+    await flush();
+    clickTestId('ai-category-remove');
+    await flush();
+
+    expect(container!.textContent).toContain('Remove Highlife Collective?');
+    expect(container!.textContent).toContain('committed returns to Photography as an estimate');
+    expect(container!.textContent).toContain('Linked tasks reopen.');
+
+    clickTestId('ai-category-remove-confirm-button');
+    await flush();
+
+    expect(supabaseRpc).toHaveBeenCalledWith('remove_plan_assignment', { p_assignment_id: 'asg-1' });
+  });
+
+  it('"Keep" dismisses the confirm card without calling the RPC', async () => {
+    mockWorkspaceTables({
+      plan_assignments: makeChain({
+        data: [{ id: 'asg-1', category_id: 'cat-photo', provider_id: null, own_vendor_name: 'Highlife Collective', agreed_kobo: 30000000, status: 'assigned', updated_at: new Date().toISOString() }],
+        error: null,
+      }),
+    });
+    mockRpc();
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    clickTestId('workspace-team-row-photography');
+    await flush();
+    clickTestId('ai-category-remove');
+    await flush();
+    clickTestId('ai-category-remove-keep');
+
+    expect(container!.querySelector('[data-testid="ai-category-remove-confirm"]')).toBeFalsy();
+    expect(supabaseRpc.mock.calls.some((c) => c[0] === 'remove_plan_assignment')).toBe(false);
+  });
+
+  it('a booked (paid) assignment never shows the Remove action -- S5-B protection stays intact', async () => {
+    mockWorkspaceTables(); // default ASSIGNMENT_ROWS: asg-1 is status 'booked' on cat-photo
+    mockRpc();
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+    clickTestId('workspace-team-row-photography');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="ai-category-remove"]')).toBeFalsy();
+    expect(container!.textContent).toContain('View booking');
+  });
+});
