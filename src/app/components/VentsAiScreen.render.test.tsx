@@ -12,6 +12,21 @@ vi.mock('../../lib/ventsAi', () => ({
   sendVentsAiMessage: (...args: any[]) => sendVentsAiMessage(...args),
 }));
 
+// VentsAiScreen now reads the Plans room (plans table) and calls
+// undo_plan_change directly -- stub the real client so importing this
+// component doesn't try to construct one against real env vars. None of
+// these tests open the Plans room, so a harmless empty response is enough.
+vi.mock('../../lib/supabase', () => ({
+  supabase: {
+    from: () => ({
+      select: () => ({
+        order: () => Promise.resolve({ data: [], error: null }),
+      }),
+    }),
+    rpc: () => Promise.resolve({ data: null, error: null }),
+  },
+}));
+
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
 

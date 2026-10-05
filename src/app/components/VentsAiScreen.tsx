@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
+import { supabase } from '../../lib/supabase';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -35,6 +36,26 @@ type LocalConversation = {
   title: string;
   messages: ChatMessage[];
   updatedAt: number;
+  // When set, this conversation is a plan's pinned SI thread (§01 IA: "one
+  // pinned SI thread per plan"), not general Chat. Every outgoing message
+  // in a plan thread carries this id as plan context (see sendText) so SI
+  // can call get_plan/propose_plan_update/etc. against the right plan --
+  // this is a hint for the MODEL's tool arguments, never an authorization
+  // mechanism: every plan tool still independently re-checks ownership
+  // server-side regardless of what context the client sent.
+  planId?: string;
+};
+
+type PlanSummary = {
+  id: string;
+  title: string;
+  event_type: string;
+  status: string;
+  event_date: string | null;
+  city: string | null;
+  total_kobo: number | null;
+  currency: string;
+  created_at: string;
 };
 
 // SUGGESTED prompt chips -- export's `suggestedPrompts` derived from SCEN's
@@ -369,21 +390,283 @@ function ExternalResultCard({ card }: { card: BackendCard }) {
 }
 
 // ---------------------------------------------------------------------
+// SI Planner cards -- frozen design spec §12: Estimated (striped/≈),
+// Committed (purple) and Paid (green) never share a style; a purple
+// PlanUpdateCard for plan edits is visually distinct from the amber
+// ConfirmationCard above (which stays reserved for money/booking). All
+// data here is the real tool result from api/_lib/aiTools.ts -- nothing
+// below fabricates a number, a provider, or an availability claim.
+// ---------------------------------------------------------------------
+
+function naira(n: unknown): string {
+  const v = typeof n === 'number' ? n : Number(n);
+  if (!isFinite(v)) return '—';
+  return `₦${v.toLocaleString('en-NG', { maximumFractionDigits: 0 })}`;
+}
+
+// BudgetBar: three segments that never share a style (§12 "Budget interaction").
+function BudgetBar({ estimated, committed, paid, total }: { estimated: number; committed: number; paid: number; total: number | null }) {
+  const denom = total && total > 0 ? total : Math.max(estimated + committed + paid, 1);
+  const pct = (n: number) => `${Math.min(100, (n / denom) * 100)}%`;
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', height: 8, borderRadius: 999, overflow: 'hidden', background: '#1c1726' }}>
+        <div style={{ width: pct(paid), background: '#34d399' }} />
+        <div style={{ width: pct(committed), background: '#a35cff' }} />
+        <div
+          style={{
+            width: pct(estimated),
+            background: 'repeating-linear-gradient(45deg, rgba(163,92,255,.35) 0 4px, rgba(163,92,255,.12) 4px 8px)',
+          }}
+        />
+      </div>
+      <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 10, color: '#8a7f97' }}>
+        <span><span style={{ color: '#34d399' }}>●</span> Paid {naira(paid)}</span>
+        <span><span style={{ color: '#a35cff' }}>●</span> Committed {naira(committed)}</span>
+        <span>◆ Estimate · not a quote {naira(estimated)}</span>
+      </div>
+    </div>
+  );
+}
+
+function PlanSummaryCard({ plan, onOpenPlan }: { plan: any; onOpenPlan?: (planId: string, title: string) => void }) {
+  const categories: any[] = Array.isArray(plan?.categories) ? plan.categories : [];
+  const totalEstimated = categories.reduce((s, c) => s + (c.estimated_naira || 0), 0);
+  // Committed/paid totals come straight from get_plan's own budget_summary
+  // (authoritative), never re-derived from the per-category rows here --
+  // summing both would double count against that server-computed total.
+  const totalCommitted = plan?.budget_summary?.total_committed_naira || 0;
+  const totalPaid = plan?.budget_summary?.total_paid_naira || 0;
+  return (
+    <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 14 }} data-testid="ai-plan-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#f0edf5' }}>{plan?.title || 'Your plan'}</div>
+          <div style={{ fontSize: 10.5, color: '#a89db3', marginTop: 2 }}>
+            {titleCase(String(plan?.event_type || ''))}
+            {plan?.city ? ` · ${plan.city}` : ''}
+            {plan?.event_date ? ` · ${plan.event_date}` : ''}
+          </div>
+        </div>
+        <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: plan?.status === 'draft' ? 'rgba(251,191,36,.1)' : 'rgba(163,92,255,.14)', color: plan?.status === 'draft' ? '#fbbf24' : '#d3b8ff' }}>
+          {String(plan?.status || 'draft').toUpperCase()}
+        </span>
+      </div>
+      {plan?.total_budget_naira != null && (
+        <div style={{ fontSize: 11.5, color: '#c9c0d4', marginTop: 10 }}>
+          Total budget <b style={{ color: '#f0edf5' }}>{naira(plan.total_budget_naira)}</b>
+        </div>
+      )}
+      {categories.length > 0 && (
+        <>
+          <BudgetBar estimated={totalEstimated} committed={totalCommitted} paid={totalPaid} total={plan?.total_budget_naira ?? null} />
+          <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {categories.slice(0, 6).map((c: any) => {
+              const assigned = Array.isArray(c.assignments) && c.assignments.length > 0;
+              const booked = assigned && c.assignments.some((a: any) => a.status === 'booked');
+              return (
+                <div key={c.category_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, padding: '6px 0', borderTop: '1px solid #1c1726' }}>
+                  <span style={{ color: '#e4dfeb' }}>{c.label}</span>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ color: '#8a7f97' }}>{naira(c.allocated_naira)}</span>
+                    {assigned && (
+                      <span style={{ fontSize: 9, fontWeight: 700, padding: '2px 6px', borderRadius: 5, background: booked ? 'rgba(52,211,153,.12)' : 'rgba(163,92,255,.14)', color: booked ? '#34d399' : '#d3b8ff' }}>
+                        {booked ? 'PAID' : 'ASSIGNED'}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              );
+            })}
+            {categories.length > 6 && <div style={{ fontSize: 10.5, color: '#5e5470' }}>+ {categories.length - 6} more</div>}
+          </div>
+        </>
+      )}
+      {plan?.id && onOpenPlan && (
+        <div
+          onClick={() => onOpenPlan(plan.id, plan.title || 'Plan')}
+          style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: 'rgba(163,92,255,.14)', color: '#d3b8ff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Open Plan
+        </div>
+      )}
+    </div>
+  );
+}
+
+// PlanUpdateCard: purple, distinct from the amber ConfirmationCard above.
+// `applied=false` is SI's own suggestion -- nothing has changed yet, and
+// the only way it does is the user tapping Apply (never auto-applied).
+// `applied=true` is the real result of either a direct user instruction or
+// an already-approved suggestion; it carries an Undo action wired to the
+// real undo_plan_change RPC, never a frontend-only revert.
+function PlanUpdateCard({
+  data,
+  applied,
+  onApply,
+  onUndo,
+}: {
+  data: any;
+  applied: boolean;
+  onApply?: () => void;
+  onUndo?: (changeLogId: string) => void;
+}) {
+  const changes: any[] = Array.isArray(data?.proposed_changes) ? data.proposed_changes : [];
+  const [undone, setUndone] = useState(false);
+  return (
+    <div style={{ marginTop: 10, background: 'rgba(163,92,255,.08)', border: '1px solid rgba(163,92,255,.35)', borderRadius: 12, padding: 14 }} data-testid="ai-plan-update-card">
+      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#d3b8ff', background: 'rgba(163,92,255,.15)', padding: '3px 7px', borderRadius: 6 }}>
+        {applied ? (undone ? 'UNDONE' : 'PLAN UPDATED') : 'SUGGESTED CHANGE'}
+      </span>
+      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {changes.map((c, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#c9c0d4' }}>
+            <span>{c.label || c.key || c.category}</span>
+            <span>
+              <span style={{ color: '#786d87', textDecoration: applied ? 'line-through' : 'none' }}>{naira(c.before_naira)}</span>
+              {' → '}
+              <span style={{ color: '#f0edf5', fontWeight: 700 }}>{naira(c.after_naira)}</span>
+            </span>
+          </div>
+        ))}
+      </div>
+      {!applied && onApply && (
+        <div
+          onClick={onApply}
+          data-testid="ai-plan-update-apply"
+          style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: GRADIENT, color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Apply
+        </div>
+      )}
+      {applied && !undone && data?.change_log_id && onUndo && (
+        <div
+          onClick={() => {
+            setUndone(true);
+            onUndo(data.change_log_id);
+          }}
+          data-testid="ai-plan-update-undo"
+          style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: '#1c1726', border: '1px solid #2c2438', color: '#c9c0d4', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
+        >
+          Undo
+        </div>
+      )}
+      {undone && <div style={{ marginTop: 10, fontSize: 11, color: '#786d87' }}>Reverted to the previous allocation.</div>}
+    </div>
+  );
+}
+
+// ProviderRecCard: recommend_providers' own shape (provider_id, starting_
+// price_naira, is_sponsored, availability_note) -- distinct from the
+// general search_services_or_providers ProviderCardRow above, since this
+// one always carries the "confirm availability" note and an Assign action
+// that goes through the real assign_provider tool, never a direct booking.
+function ProviderRecCard({ providers, onAssign }: { providers: any[]; onAssign?: (p: any) => void }) {
+  return (
+    <div style={{ display: 'flex', gap: 10, overflowX: 'auto', marginTop: 10, paddingBottom: 4 }}>
+      {providers.map((p, i) => (
+        <div key={`${p.provider_id}-${i}`} style={{ flexShrink: 0, width: 200, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 700, color: '#f0edf5' }}>{p.business_name}</div>
+            {p.is_sponsored && <span style={{ fontSize: 8.5, fontWeight: 700, color: '#786d87' }}>SPONSORED</span>}
+          </div>
+          <div style={{ fontSize: 10.5, color: '#a89db3', marginTop: 3 }}>{p.category || '—'} · {p.location || '—'}</div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#e8e3ee', marginTop: 6 }}>
+            {p.starting_price_naira != null ? `From ${naira(p.starting_price_naira)}` : 'Price not listed'}
+          </div>
+          <div style={{ fontSize: 9.5, color: '#fbbf24', marginTop: 6, lineHeight: 1.4 }}>{p.availability_note || 'Confirm availability with provider.'}</div>
+          {onAssign && (
+            <div
+              onClick={() => onAssign(p)}
+              style={{ marginTop: 8, textAlign: 'center', padding: 7, borderRadius: 7, background: 'rgba(163,92,255,.14)', color: '#d3b8ff', fontSize: 11, fontWeight: 700, cursor: 'pointer' }}
+            >
+              Assign this provider
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// AssignedCard: the real result of assign_provider -- always "Assigned",
+// never "Booked"/"Paid"/"Confirmed booking" unless booked is literally true
+// (which assign_provider's own RPC never sets -- it only ever writes
+// status='assigned'; booked can only become true through a later, separate
+// real booking elsewhere, reflected the next time this plan is fetched).
+function AssignedCard({ data }: { data: any }) {
+  const booked = data?.booked === true;
+  return (
+    <div
+      style={{ marginTop: 10, background: booked ? 'rgba(52,211,153,.08)' : 'rgba(163,92,255,.08)', border: `1px solid ${booked ? 'rgba(52,211,153,.3)' : 'rgba(163,92,255,.35)'}`, borderRadius: 12, padding: 14 }}
+      data-testid="ai-assigned-card"
+    >
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#f0edf5' }}>
+        Provider {booked ? 'booked & paid' : 'assigned'} — {titleCase(String(data?.category || ''))}
+      </div>
+      <div style={{ fontSize: 11, color: '#a89db3', marginTop: 6 }}>
+        {data?.agreed_amount_naira != null ? `Agreed amount: ${naira(data.agreed_amount_naira)}` : 'No amount agreed yet.'}
+      </div>
+      {!booked && (
+        <div style={{ fontSize: 10.5, color: '#8a7f97', marginTop: 6 }}>
+          Not booked yet — assigning a provider doesn't charge anything or create a reservation.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lightweight result card for reschedule_plan/confirm_brief -- neither
+// returns the full plan shape PlanSummaryCard needs, and neither is a
+// budget change, so a plain note card (not a diff, not a budget bar) is
+// the honest representation of what actually happened.
+function PlanActionCard({ type, data }: { type: string; data: any }) {
+  if (type === 'reschedule_plan') {
+    return (
+      <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 14 }} data-testid="ai-reschedule-card">
+        <div style={{ fontSize: 12.5, fontWeight: 700, color: '#f0edf5' }}>Date updated: {data?.event_date}</div>
+        {data?.note && <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6 }}>{data.note}</div>}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 14 }} data-testid="ai-confirm-brief-card">
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: '#f0edf5' }}>Brief confirmed</div>
+      <div style={{ fontSize: 11, color: '#a89db3', marginTop: 4 }}>This plan is now active.</div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------
 // Card dispatch -- routes a backend card to the right renderer by `type`.
 // ---------------------------------------------------------------------
 
 const EVENT_CARD_TYPES = new Set(['search_events', 'get_event']);
 const PROVIDER_CARD_TYPES = new Set(['search_services_or_providers', 'get_provider_profile']);
 const INFO_CARD_TYPES = new Set(['get_my_tickets', 'get_my_bookings', 'get_payment_status', 'get_wallet_balance', 'get_vents_cents_balance']);
+const PLAN_SUMMARY_CARD_TYPES = new Set(['create_plan_draft', 'get_plan']);
 
 function AssistantCards({
   cards,
   onOpenEvent,
   onOpenProvider,
+  onOpenPlan,
+  onQuickAction,
+  onUndoChange,
 }: {
   cards: BackendCard[];
   onOpenEvent?: (id: string) => void;
   onOpenProvider?: (id: string) => void;
+  onOpenPlan?: (planId: string, title: string) => void;
+  // Fires a canned follow-up message through the normal chat pipeline --
+  // used for Apply/Assign buttons, so the real apply_plan_update/
+  // assign_provider tool executes server-side exactly as if the user had
+  // typed the request themselves. Never a frontend-only state change.
+  onQuickAction?: (text: string) => void;
+  // Undo is the one exception that doesn't go through the model: it calls
+  // the real undo_plan_change RPC directly (still fully RLS/ownership
+  // enforced server-side), then triggers a refresh via onQuickAction.
+  onUndoChange?: (changeLogId: string) => void;
 }) {
   return (
     <>
@@ -403,6 +686,48 @@ function AssistantCards({
         }
         if (INFO_CARD_TYPES.has(card.type)) {
           return <InfoCard key={i} type={card.type} data={card.data} />;
+        }
+        if (PLAN_SUMMARY_CARD_TYPES.has(card.type)) {
+          return <PlanSummaryCard key={i} plan={card.data} onOpenPlan={onOpenPlan} />;
+        }
+        if (card.type === 'propose_plan_update') {
+          return (
+            <PlanUpdateCard
+              key={i}
+              data={card.data}
+              applied={false}
+              onApply={() => onQuickAction?.('Apply that change.')}
+            />
+          );
+        }
+        if (card.type === 'apply_plan_update') {
+          return <PlanUpdateCard key={i} data={card.data} applied onUndo={onUndoChange} />;
+        }
+        if (card.type === 'recommend_providers') {
+          const providers = Array.isArray(card.data) ? card.data : [];
+          if (!providers.length) {
+            // P15 "No suitable provider" -- an honest empty state, not
+            // silence, when the filters (category/location/max price)
+            // matched nothing real.
+            return (
+              <div key={i} style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 14, fontSize: 11.5, color: '#786d87' }} data-testid="ai-no-providers-card">
+                No matching providers on VENTS right now — try a different category, location, or a higher budget.
+              </div>
+            );
+          }
+          return (
+            <ProviderRecCard
+              key={i}
+              providers={providers}
+              onAssign={(p) => onQuickAction?.(`Assign provider ${p.provider_id} (${p.business_name}) to this category.`)}
+            />
+          );
+        }
+        if (card.type === 'assign_provider') {
+          return <AssignedCard key={i} data={card.data} />;
+        }
+        if (card.type === 'reschedule_plan' || card.type === 'confirm_brief') {
+          return <PlanActionCard key={i} type={card.type} data={card.data} />;
         }
         // Confirmed-action result cards (start_ticket_transfer,
         // request_ticket_refund, start_service_booking, create_report) --
@@ -450,36 +775,72 @@ export function VentsAiScreen({
     return t.length > 36 ? `${t.slice(0, 36)}…` : t || 'New chat';
   }
 
-  async function sendText(text: string) {
+  // `openNewPlanThread`: when set, this call is the FIRST message of a
+  // brand-new plan-pinned conversation (see openPlan below) -- bypasses
+  // the activeId-based resolution entirely so the new conversation (with
+  // its planId already attached) and this first send happen as one atomic
+  // step, rather than racing React's async state updates (setActiveId from
+  // a caller wouldn't be visible yet inside this same synchronous call).
+  async function sendText(text: string, openNewPlanThread?: { convId: string; planId: string; title: string }) {
     const q = text.trim();
     if (!q || streaming) return;
     setInputText('');
     setErrorText(null);
 
-    // Compute the target conversation and its prior history synchronously
-    // from the current `conversations` state (available directly, since
-    // this runs from an event handler) rather than inside a setState
-    // updater -- React does not guarantee an updater function runs
-    // synchronously before this async function's next line, so mutating a
-    // closed-over `convId` variable from inside one is not reliable here.
-    const existing = activeId ? conversations.find((c) => c.id === activeId) : undefined;
-    const history: ChatMessage[] = existing ? existing.messages : [];
-    let convId = activeId;
-    if (!convId) {
-      convId = `c${nextId.current++}`;
+    let convId: string;
+    let planId: string | undefined;
+    let history: ChatMessage[];
+
+    if (openNewPlanThread) {
+      convId = openNewPlanThread.convId;
+      planId = openNewPlanThread.planId;
+      history = [];
       setActiveId(convId);
-      const newConv: LocalConversation = { id: convId, title: titleFromText(q), messages: [{ role: 'user', text: q }], updatedAt: Date.now() };
+      const newConv: LocalConversation = {
+        id: convId,
+        title: openNewPlanThread.title,
+        messages: [{ role: 'user', text: q }],
+        updatedAt: Date.now(),
+        planId,
+      };
       setConversations((prev) => [newConv, ...prev]);
     } else {
-      const targetId = convId;
-      setConversations((prev) =>
-        prev.map((c) => (c.id === targetId ? { ...c, messages: [...c.messages, { role: 'user', text: q }], updatedAt: Date.now() } : c))
-      );
+      // Compute the target conversation and its prior history synchronously
+      // from the current `conversations` state (available directly, since
+      // this runs from an event handler) rather than inside a setState
+      // updater -- React does not guarantee an updater function runs
+      // synchronously before this async function's next line, so mutating a
+      // closed-over `convId` variable from inside one is not reliable here.
+      const existing = activeId ? conversations.find((c) => c.id === activeId) : undefined;
+      history = existing ? existing.messages : [];
+      planId = existing?.planId;
+      convId = activeId || '';
+      if (!convId) {
+        convId = `c${nextId.current++}`;
+        setActiveId(convId);
+        const newConv: LocalConversation = { id: convId, title: titleFromText(q), messages: [{ role: 'user', text: q }], updatedAt: Date.now() };
+        setConversations((prev) => [newConv, ...prev]);
+      } else {
+        const targetId = convId;
+        setConversations((prev) =>
+          prev.map((c) => (c.id === targetId ? { ...c, messages: [...c.messages, { role: 'user', text: q }], updatedAt: Date.now() } : c))
+        );
+      }
     }
 
     setStreaming(true);
     try {
-      const apiMessages: VentsAiMessage[] = [...history, { role: 'user' as const, text: q }].map((m) => ({ role: m.role, content: m.text }));
+      // When this is a plan's pinned thread, every outgoing user turn
+      // carries the plan id as context for the model's own tool calls
+      // (§01 IA: "every request carries plan_id") -- display text (what
+      // the user actually sees in the bubble) is never touched, only the
+      // copy sent to the API. This is a hint for which tool arguments the
+      // model should use, never an authorization mechanism: every plan
+      // tool independently re-verifies ownership server-side regardless.
+      const apiMessages: VentsAiMessage[] = [...history, { role: 'user' as const, text: q }].map((m) => ({
+        role: m.role,
+        content: planId && m.role === 'user' ? `[plan_id: ${planId}] ${m.text}` : m.text,
+      }));
       const res = await sendVentsAiMessage(apiMessages);
       appendAssistantResponse(convId, res);
     } catch (e: any) {
@@ -539,6 +900,39 @@ export function VentsAiScreen({
     );
   }
 
+  // Opens (or returns to) a plan's own pinned thread -- reuses an
+  // already-open thread for this plan this session rather than spawning a
+  // second competing one, and otherwise starts a fresh thread whose very
+  // first turn asks SI for the plan's current state (always the real,
+  // authoritative get_plan result -- never a cached/guessed summary).
+  function openPlan(planId: string, title: string) {
+    const existingThread = conversations.find((c) => c.planId === planId);
+    if (existingThread) {
+      setActiveId(existingThread.id);
+      return;
+    }
+    const convId = `c${nextId.current++}`;
+    sendText('Show me this plan.', { convId, planId, title });
+  }
+
+  // Undo goes straight to the real RPC (still fully RLS/ownership
+  // enforced server-side -- see undo_plan_change, migration 0157), not
+  // through the model -- there is nothing for SI to "decide" about an
+  // undo the user already explicitly tapped. Refreshes the thread with
+  // the plan's real post-undo state afterward, same as any other mutation.
+  async function handleUndoChange(convId: string, changeLogId: string) {
+    try {
+      const { error } = await supabase.rpc('undo_plan_change', { p_change_log_id: changeLogId });
+      if (error) throw error;
+    } catch (e: any) {
+      setErrorText(e?.message || "Undo didn't go through.");
+      return;
+    }
+    if (activeId === convId) {
+      sendText('Show me the updated plan after that undo.');
+    }
+  }
+
   const inConversation = !!active;
 
   return (
@@ -554,6 +948,7 @@ export function VentsAiScreen({
                 onClose={onClose}
                 conversations={conversations}
                 onOpenConversation={(id) => setActiveId(id)}
+                onOpenPlan={openPlan}
                 errorText={errorText}
               />
             ) : (
@@ -568,6 +963,9 @@ export function VentsAiScreen({
                 onCancel={(idx) => handleCancel(active!.id, idx)}
                 onOpenEvent={onOpenEvent}
                 onOpenProvider={onOpenProvider}
+                onOpenPlan={openPlan}
+                onQuickAction={(text) => sendText(text)}
+                onUndoChange={(changeLogId) => handleUndoChange(active!.id, changeLogId)}
                 errorText={errorText}
               />
             )}
@@ -579,6 +977,12 @@ export function VentsAiScreen({
   );
 }
 
+// SI's two rooms (§01 IA: "SI gains a second room. Nothing else moves --
+// Chat (today's HomeView/ConversationView) and Plans (new)"). General Chat
+// history and plan threads are kept visually separate here -- a plan
+// thread never shows up mixed into "RECENT CONVERSATIONS", and Chat's
+// SUGGESTED prompts never include a planning prompt (that's what the
+// Plans tab's own "+ New Plan" is for).
 function HomeView({
   inputText,
   onInputChange,
@@ -586,6 +990,7 @@ function HomeView({
   onClose,
   conversations,
   onOpenConversation,
+  onOpenPlan,
   errorText,
 }: {
   inputText: string;
@@ -594,8 +999,12 @@ function HomeView({
   onClose: () => void;
   conversations: LocalConversation[];
   onOpenConversation: (id: string) => void;
+  onOpenPlan: (planId: string, title: string) => void;
   errorText: string | null;
 }) {
+  const [room, setRoom] = useState<'chat' | 'plans'>('chat');
+  const chatConversations = conversations.filter((c) => !c.planId);
+
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '18px 16px 30px' }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -608,63 +1017,165 @@ function HomeView({
           </div>
           <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS SI" role="button">✕</div>
         </div>
-        <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 18px' }}>
-          Ask about events, services, tickets, wallet or bookings — answered from real VENTS data.
+        <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 16px' }}>
+          Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
         </div>
 
-        <div style={{ position: 'relative', marginBottom: 24 }}>
-          <input
-            value={inputText}
-            onChange={(e) => onInputChange(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && onSend()}
-            placeholder="Ask VENTS SI anything…"
-            style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
-          />
-          <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
-        </div>
-
-        {errorText && (
-          <div style={{ marginBottom: 18, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
-            {errorText}
-          </div>
-        )}
-
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>SUGGESTED</div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 26 }}>
-          {SUGGESTED_PROMPTS.map((p, i) => (
+        <div style={{ display: 'flex', gap: 4, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
+          {([['chat', 'Chat'], ['plans', 'Plans']] as const).map(([id, label]) => (
             <div
-              key={i}
-              onClick={() => onInputChange(p.label)}
-              style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', fontSize: 12.5, color: '#d6cfe0', display: 'flex', alignItems: 'center', gap: 10 }}
+              key={id}
+              onClick={() => setRoom(id)}
+              data-testid={`si-room-${id}`}
+              style={{
+                flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: 8, fontSize: 12.5, fontWeight: 700, cursor: 'pointer',
+                background: room === id ? GRADIENT : 'transparent',
+                color: room === id ? '#fff' : '#a89db3',
+              }}
             >
-              <span style={{ fontSize: 14, flexShrink: 0 }}>{p.icon}</span>
-              {p.label}
+              {label}
             </div>
           ))}
         </div>
 
-        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>RECENT CONVERSATIONS</div>
-        {conversations.length === 0 ? (
-          <div style={{ fontSize: 12, color: '#5e5470' }}>No conversations yet this session.</div>
-        ) : (
-          conversations.map((c) => {
-            const lastAi = [...c.messages].reverse().find((m) => m.role === 'assistant');
-            return (
-              <div
-                key={c.id}
-                onClick={() => onOpenConversation(c.id)}
-                style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-              >
-                <div>
-                  <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.title}</div>
-                  <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{lastAi ? lastAi.text.slice(0, 42) : ''}</div>
-                </div>
-                <div style={{ fontSize: 10.5, color: '#5e5470', flexShrink: 0, marginLeft: 10 }}>{new Date(c.updatedAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}</div>
+        {room === 'chat' ? (
+          <>
+            <div style={{ position: 'relative', marginBottom: 24 }}>
+              <input
+                value={inputText}
+                onChange={(e) => onInputChange(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && onSend()}
+                placeholder="Ask VENTS SI anything…"
+                style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+              />
+              <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
+            </div>
+
+            {errorText && (
+              <div style={{ marginBottom: 18, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
+                {errorText}
               </div>
-            );
-          })
+            )}
+
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>SUGGESTED</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 26 }}>
+              {SUGGESTED_PROMPTS.map((p, i) => (
+                <div
+                  key={i}
+                  onClick={() => onInputChange(p.label)}
+                  style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', fontSize: 12.5, color: '#d6cfe0', display: 'flex', alignItems: 'center', gap: 10 }}
+                >
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>{p.icon}</span>
+                  {p.label}
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>RECENT CONVERSATIONS</div>
+            {chatConversations.length === 0 ? (
+              <div style={{ fontSize: 12, color: '#5e5470' }}>No conversations yet this session.</div>
+            ) : (
+              chatConversations.map((c) => {
+                const lastAi = [...c.messages].reverse().find((m) => m.role === 'assistant');
+                return (
+                  <div
+                    key={c.id}
+                    onClick={() => onOpenConversation(c.id)}
+                    style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.title}</div>
+                      <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{lastAi ? lastAi.text.slice(0, 42) : ''}</div>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: '#5e5470', flexShrink: 0, marginLeft: 10 }}>{new Date(c.updatedAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}</div>
+                  </div>
+                );
+              })
+            )}
+          </>
+        ) : (
+          <PlansListView onOpenPlan={onOpenPlan} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
         )}
       </div>
+    </div>
+  );
+}
+
+// Plans room (P25-style list). Reads directly from the `plans` table via
+// the user's own RLS-scoped client -- same pattern as every other VENTS
+// screen that lists the signed-in user's own rows (MyTicketsScreen, etc.),
+// not a duplicate of get_plan's own read: this is just "which plans do I
+// have", a lighter query than the AI tool's full per-plan aggregation.
+function PlansListView({
+  onOpenPlan,
+  onStartNewPlan,
+}: {
+  onOpenPlan: (planId: string, title: string) => void;
+  onStartNewPlan: (prompt: string) => void;
+}) {
+  const [plans, setPlans] = useState<PlanSummary[] | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('plans')
+        .select('id, title, event_type, status, event_date, city, total_kobo, currency, created_at')
+        .order('created_at', { ascending: false });
+      if (cancelled) return;
+      if (error) {
+        setLoadError(error.message);
+        setPlans([]);
+        return;
+      }
+      setPlans((data as PlanSummary[]) || []);
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div>
+      <div
+        onClick={() => onStartNewPlan("I'm planning an event.")}
+        data-testid="si-new-plan"
+        style={{ cursor: 'pointer', marginBottom: 16, padding: '13px 14px', borderRadius: 12, background: 'rgba(163,92,255,.12)', border: '1px solid rgba(163,92,255,.35)', color: '#d3b8ff', fontSize: 13, fontWeight: 700, textAlign: 'center' }}
+      >
+        + New Plan
+      </div>
+
+      {plans === null ? (
+        // S1 Loading.
+        <div style={{ fontSize: 12, color: '#5e5470', textAlign: 'center', padding: 20 }}>Loading your plans…</div>
+      ) : loadError ? (
+        // S3 Error.
+        <div style={{ fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 12 }}>
+          Couldn't load your plans — {loadError}
+        </div>
+      ) : plans.length === 0 ? (
+        // S2 Empty.
+        <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: '20px 10px', lineHeight: 1.6 }}>
+          No plans yet. Tell SI what you're planning — "Beach wedding, 120 guests, Lagos, ₦8m" — and it'll start one for you.
+        </div>
+      ) : (
+        plans.map((p) => (
+          <div
+            key={p.id}
+            onClick={() => onOpenPlan(p.id, p.title)}
+            style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+          >
+            <div>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{p.title}</div>
+              <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>
+                {titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{p.event_date ? ` · ${p.event_date}` : ''}
+              </div>
+            </div>
+            <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: p.status === 'draft' ? 'rgba(251,191,36,.1)' : 'rgba(163,92,255,.14)', color: p.status === 'draft' ? '#fbbf24' : '#d3b8ff', flexShrink: 0, marginLeft: 10 }}>
+              {p.status.toUpperCase()}
+            </span>
+          </div>
+        ))
+      )}
     </div>
   );
 }
@@ -680,6 +1191,9 @@ function ConversationView({
   onCancel,
   onOpenEvent,
   onOpenProvider,
+  onOpenPlan,
+  onQuickAction,
+  onUndoChange,
   errorText,
 }: {
   conversation: LocalConversation;
@@ -692,6 +1206,9 @@ function ConversationView({
   onCancel: (idx: number) => void;
   onOpenEvent?: (id: string) => void;
   onOpenProvider?: (id: string) => void;
+  onOpenPlan?: (planId: string, title: string) => void;
+  onQuickAction?: (text: string) => void;
+  onUndoChange?: (changeLogId: string) => void;
   errorText: string | null;
 }) {
   return (
@@ -699,8 +1216,13 @@ function ConversationView({
       <style>{`@keyframes ventsAiDotFade{0%,80%,100%{opacity:.25;}40%{opacity:1;}}`}</style>
       <div style={{ height: 56, flexShrink: 0, borderBottom: '1px solid #1c1726', display: 'flex', alignItems: 'center', gap: 12, padding: '0 16px', background: '#0b0812' }}>
         <div onClick={onBack} role="button" aria-label="Back" style={{ fontSize: 19, color: '#e4d4ff', cursor: 'pointer' }}>←</div>
-        <div style={{ flex: 1, fontSize: 13.5, fontWeight: 700, color: '#f2eff6' }}>{conversation.title}</div>
-        <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, color: '#34d399', background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.3)', padding: '4px 8px', borderRadius: 6 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f2eff6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conversation.title}</div>
+          {conversation.planId && (
+            <div style={{ fontSize: 10, color: '#d3b8ff', marginTop: 1 }}>◆ Plan thread · SI sees this plan</div>
+          )}
+        </div>
+        <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, color: '#34d399', background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.3)', padding: '4px 8px', borderRadius: 6, flexShrink: 0 }}>
           ● LIVE DATA
         </div>
       </div>
@@ -724,7 +1246,16 @@ function ConversationView({
                       {m.text}
                     </div>
                   )}
-                  {m.cards && m.cards.length > 0 && <AssistantCards cards={m.cards} onOpenEvent={onOpenEvent} onOpenProvider={onOpenProvider} />}
+                  {m.cards && m.cards.length > 0 && (
+                    <AssistantCards
+                      cards={m.cards}
+                      onOpenEvent={onOpenEvent}
+                      onOpenProvider={onOpenProvider}
+                      onOpenPlan={onOpenPlan}
+                      onQuickAction={onQuickAction}
+                      onUndoChange={onUndoChange}
+                    />
+                  )}
                   {m.confirmation && (
                     <ConfirmationCard
                       action={m.confirmation.action}
@@ -766,7 +1297,7 @@ function ConversationView({
             value={inputText}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSend()}
-            placeholder="Ask a follow-up…"
+            placeholder={conversation.planId ? `Ask SI about ${conversation.title}…` : 'Ask a follow-up…'}
             style={{ width: '100%', boxSizing: 'border-box', background: '#161020', border: '1px solid #2a2438', borderRadius: 12, padding: '12px 48px 12px 14px', fontSize: 13, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
           />
           <div onClick={onSend} style={{ position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 13 }}>↑</div>
