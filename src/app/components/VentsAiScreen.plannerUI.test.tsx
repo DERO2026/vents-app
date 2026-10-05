@@ -414,7 +414,7 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
     expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Great food, Photography');
   });
 
-  it('preview_plan_brief renders the brief read-only and "Build my plan" sends the exact trigger text create_plan_draft/confirm_brief key off', async () => {
+  it('preview_plan_brief renders the brief and "Build my plan" sends every field (title/type/date/city/setting/guests/budget/style/priorities) as a real follow-up turn', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
     sendVentsAiMessage.mockResolvedValueOnce({
       type: 'message',
@@ -442,7 +442,103 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
     act(() => buildBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await flush();
 
-    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Build my plan.');
+    const sentText = sendVentsAiMessage.mock.calls[1][0].at(-1).content;
+    expect(sentText.toLowerCase()).toMatch(/^build my plan/);
+    expect(sentText).toContain('Beach Wedding');
+    expect(sentText).toContain('Lagos');
+    expect(sentText).toContain('120');
+    expect(sentText).toContain('₦8,000,000');
+    expect(sentText).toContain('Great food');
+  });
+
+  it('P05 editors: editing guests and budget updates the card immediately and those edited values (not the originals) are what Build sends', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{ type: 'preview_plan_brief', data: { title: 'Beach Wedding', event_type: 'wedding', city: 'Lagos', guests: 120, total_budget_naira: 8000000 } }],
+    });
+
+    mount();
+    setInputAndSend('that covers it');
+    await flush();
+    expect(container!.textContent).toContain('120'); // original guest count showing
+
+    // Open the Guests row, bump it up twice, confirm with Done.
+    clickTestId('ai-brief-row-guests');
+    clickTestId('ai-brief-guests-plus');
+    clickTestId('ai-brief-guests-plus');
+    clickTestId('ai-brief-row-guests-done');
+    // Card reflects the edit immediately, without anything sent yet.
+    expect(container!.textContent).toContain('122');
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(1);
+
+    // Open Budget, replace the value, confirm.
+    clickTestId('ai-brief-row-budget');
+    const budgetInput = container!.querySelector('[data-testid="ai-plan-brief-card"] input[type="number"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(budgetInput, '9500000');
+      budgetInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('ai-brief-row-budget-done');
+    expect(container!.textContent).toContain('₦9,500,000');
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Building...', cards: [] });
+    const buildBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Build my plan');
+    act(() => buildBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    // The EDITED values reach the real chat turn, not the original 120 / ₦8,000,000.
+    const sentText = sendVentsAiMessage.mock.calls[1][0].at(-1).content;
+    expect(sentText).toContain('guests 122');
+    expect(sentText).toContain('₦9,500,000');
+    expect(sentText).not.toContain('guests 120');
+    expect(sentText).not.toContain('₦8,000,000');
+  });
+
+  it('P05 editors: re-tapping an open row cancels that edit without committing it', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{ type: 'preview_plan_brief', data: { title: 'Beach Wedding', event_type: 'wedding', guests: 120 } }],
+    });
+
+    mount();
+    setInputAndSend('that covers it');
+    await flush();
+
+    clickTestId('ai-brief-row-guests');
+    expect(container!.querySelector('[data-testid="ai-brief-guests-plus"]')).toBeTruthy();
+    clickTestId('ai-brief-guests-plus'); // bump the in-progress draft, but never confirm with Done
+    clickTestId('ai-brief-row-guests'); // tapping the row again cancels, discarding the draft
+    expect(container!.querySelector('[data-testid="ai-brief-guests-plus"]')).toBeFalsy();
+    expect(container!.textContent).toContain('120'); // unchanged -- the uncommitted draft never landed
+  });
+
+  it('P05 editors: the date row uses a native date input defaulting to today or later, and city opens the real PickerSheet', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{ type: 'preview_plan_brief', data: { title: 'Beach Wedding', event_type: 'wedding' } }],
+    });
+
+    mount();
+    setInputAndSend('that covers it');
+    await flush();
+
+    clickTestId('ai-brief-row-date');
+    const dateInput = container!.querySelector('[data-testid="ai-plan-brief-card"] input[type="date"]') as HTMLInputElement;
+    expect(dateInput).toBeTruthy();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    expect(dateInput.min).toBe(todayIso);
+
+    clickTestId('ai-brief-row-location');
+    const cityTrigger = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Choose a city');
+    act(() => cityTrigger!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container!.textContent).toContain('Lagos'); // the real PickerSheet's own option list, not a fabricated one
   });
 
   it('P06: the "Build my plan." turn shows BuildingPlanLoader instead of the generic typing dots while it is in flight', async () => {

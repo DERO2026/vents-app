@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
 import { supabase } from '../../lib/supabase';
+import { PickerSheet } from './shared/PickerSheet';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -1233,20 +1234,82 @@ function PlanQuestionCard({ data, onAnswer }: { data: any; onAnswer?: (text: str
 // an explicit, stated gap, not a silently approximated one. "Build my
 // plan" sends a real follow-up turn so create_plan_draft/confirm_brief
 // are the ones that actually create anything, never this card itself.
-function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: () => void }) {
+// A short list for the city PickerSheet (same component the rest of VENTS
+// uses for city/location). allowCustom on the sheet means this is a set of
+// suggestions, not a hard allowlist -- any city the user types is usable.
+const BRIEF_CITY_OPTIONS = ['Lagos', 'Abuja', 'Ibadan', 'Port Harcourt', 'Kano', 'Kaduna', 'Enugu', 'Benin City', 'Calabar', 'Jos', 'Abeokuta', 'Owerri'].map((c) => ({ value: c, label: c }));
+const BRIEF_SETTING_OPTIONS = ['Indoor', 'Outdoor', 'Beach'];
+
+type EditableBrief = {
+  event_date: string | null;
+  city: string | null;
+  setting: string | null;
+  guests: number | null;
+  total_budget_naira: number | null;
+};
+
+// P05 Event Brief -- the mockup's own spec text says every row is tappable
+// into an inline editor (date picker, PickerSheet for city, stepper for
+// guests, currency input). Date uses the same native <input type="date">
+// VENTS already uses in CreateEventScreen; city reuses the real
+// PickerSheet component; guests gets a small +/- stepper (no existing
+// VENTS stepper component to reuse, so this is the one genuinely new
+// control, kept to the mockup's plain two-button shape); budget is a
+// plain number input, same convention as CreateEventScreen's ticket-price
+// field. Venue/Style/Priorities editing is NOT built -- an explicit,
+// stated gap (Venue means assigning a real provider, Style/Priorities
+// editing would need its own multi-select sheet; neither is in this pass).
+//
+// Edits are purely local display state until "Build my plan" is tapped --
+// there is still no plan row to diverge from. On Build, the edited values
+// are spelled out explicitly in the real chat turn sent to the model
+// (never a silent frontend-only copy), so create_plan_draft -- the only
+// thing that actually writes a plans row -- receives exactly what's shown
+// on the card, not a guess reconstructed from earlier conversation.
+function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: EditableBrief) => void }) {
   const [built, setBuilt] = useState(false);
+  const [editing, setEditing] = useState<'date' | 'location' | 'guests' | 'budget' | null>(null);
+  const [showCityPicker, setShowCityPicker] = useState(false);
+  const [brief, setBrief] = useState<EditableBrief>({
+    event_date: data?.event_date ?? null,
+    city: data?.city ?? null,
+    setting: data?.setting ?? null,
+    guests: typeof data?.guests === 'number' ? data.guests : null,
+    total_budget_naira: typeof data?.total_budget_naira === 'number' ? data.total_budget_naira : null,
+  });
+  // Draft values for whichever row is open -- committed into `brief` only
+  // on that row's own "Done", so a cancel (tapping the row again) discards
+  // the in-progress edit rather than leaving a half-typed value live.
+  const [draftGuests, setDraftGuests] = useState(brief.guests ?? 1);
+  const [draftBudget, setDraftBudget] = useState(brief.total_budget_naira ?? 0);
+
   if (built) return null;
-  const rows: { label: string; value: string; amber?: boolean }[] = [
-    { label: 'Date', value: data?.event_date || 'Not set yet' },
-    { label: 'Location', value: [data?.city, data?.setting].filter(Boolean).join(' · ') || 'Not set yet' },
-    { label: 'Guests', value: typeof data?.guests === 'number' ? String(data.guests) : 'Not set yet' },
-    { label: 'Venue', value: data?.venue_status || 'Not booked yet', amber: !data?.venue_status || /not booked/i.test(data.venue_status) },
-    { label: 'Total budget', value: typeof data?.total_budget_naira === 'number' ? naira(data.total_budget_naira) : 'Not set yet' },
-  ];
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+
+  function openRow(row: 'date' | 'location' | 'guests' | 'budget') {
+    if (editing === row) {
+      setEditing(null);
+      return;
+    }
+    if (row === 'guests') setDraftGuests(brief.guests ?? 1);
+    if (row === 'budget') setDraftBudget(brief.total_budget_naira ?? 0);
+    setEditing(row);
+  }
+
   function handleBuild() {
     setBuilt(true);
-    onBuild?.();
+    onBuild?.(brief);
   }
+
+  const rows: { key: 'date' | 'location' | 'guests' | 'budget'; label: string; value: string }[] = [
+    { key: 'date', label: 'Date', value: brief.event_date || 'Not set yet' },
+    { key: 'location', label: 'Location', value: [brief.city, brief.setting].filter(Boolean).join(' · ') || 'Not set yet' },
+    { key: 'guests', label: 'Guests', value: brief.guests != null ? String(brief.guests) : 'Not set yet' },
+    { key: 'budget', label: 'Total budget', value: brief.total_budget_naira != null ? naira(brief.total_budget_naira) : 'Not set yet' },
+  ];
+  const venueRow = { label: 'Venue', value: data?.venue_status || 'Not booked yet', amber: !data?.venue_status || /not booked/i.test(data.venue_status) };
+
   return (
     <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 14, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="ai-plan-brief-card">
       <div>
@@ -1255,11 +1318,101 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: () => void }) {
       </div>
       <div style={{ borderRadius: 12, background: '#16111f', border: '1px solid #221d2d', overflow: 'hidden' }}>
         {rows.map((r, i) => (
-          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 13px', borderTop: i > 0 ? '1px solid #1c1726' : 'none' }}>
-            <span style={{ fontSize: 12.5, color: '#8a7f97' }}>{r.label}</span>
-            <span style={{ fontSize: 13, fontWeight: 700, color: r.amber ? '#fbbf24' : '#f0edf5' }}>{r.value}</span>
+          <div key={r.key} style={{ borderTop: i > 0 ? '1px solid #1c1726' : 'none' }}>
+            <div
+              onClick={() => openRow(r.key)}
+              role="button"
+              data-testid={`ai-brief-row-${r.key}`}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 14px', cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: 13, color: '#8a7f97' }}>{r.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700 }}>{r.value} <span style={{ color: '#8a7f97', fontWeight: 500 }}>{editing === r.key ? '⌄' : '›'}</span></span>
+            </div>
+            {editing === r.key && (
+              <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {r.key === 'date' && (
+                  <>
+                    <input
+                      type="date"
+                      value={brief.event_date || ''}
+                      min={todayIso}
+                      onChange={(e) => setBrief((b) => ({ ...b, event_date: e.target.value }))}
+                      style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: '#f0f0ff', fontFamily: 'inherit' }}
+                    />
+                    <span onClick={() => setEditing(null)} role="button" data-testid="ai-brief-row-date-done" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                  </>
+                )}
+                {r.key === 'location' && (
+                  <>
+                    <div
+                      onClick={() => setShowCityPicker(true)}
+                      role="button"
+                      style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: brief.city ? '#f0f0ff' : '#8b8fa8', cursor: 'pointer' }}
+                    >
+                      {brief.city || 'Choose a city'}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      {BRIEF_SETTING_OPTIONS.map((s) => (
+                        <span
+                          key={s}
+                          onClick={() => setBrief((b) => ({ ...b, setting: s.toLowerCase() }))}
+                          role="button"
+                          style={{ flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: 99, fontSize: 12.5, cursor: 'pointer', background: brief.setting === s.toLowerCase() ? 'rgba(163,92,255,.14)' : '#1c1726', border: brief.setting === s.toLowerCase() ? '1px solid rgba(163,92,255,.55)' : '1px solid #2c2438', color: brief.setting === s.toLowerCase() ? '#f0e8ff' : '#d6cfe0', fontWeight: brief.setting === s.toLowerCase() ? 700 : 400 }}
+                        >
+                          {s}
+                        </span>
+                      ))}
+                    </div>
+                    <span onClick={() => setEditing(null)} role="button" style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+                  </>
+                )}
+                {r.key === 'guests' && (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'center' }}>
+                      <span onClick={() => setDraftGuests((g) => Math.max(1, g - 1))} role="button" data-testid="ai-brief-guests-minus" style={{ width: 36, height: 36, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer' }}>−</span>
+                      <span style={{ fontSize: 17, fontWeight: 800, minWidth: 48, textAlign: 'center' }}>{draftGuests}</span>
+                      <span onClick={() => setDraftGuests((g) => g + 1)} role="button" data-testid="ai-brief-guests-plus" style={{ width: 36, height: 36, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, cursor: 'pointer' }}>+</span>
+                    </div>
+                    <span
+                      onClick={() => { setBrief((b) => ({ ...b, guests: draftGuests })); setEditing(null); }}
+                      role="button"
+                      data-testid="ai-brief-row-guests-done"
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                    >
+                      Done
+                    </span>
+                  </>
+                )}
+                {r.key === 'budget' && (
+                  <>
+                    <div style={{ position: 'relative' }}>
+                      <span style={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 14, color: '#8a7f97' }}>₦</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={draftBudget || ''}
+                        onChange={(e) => setDraftBudget(Math.max(0, Number(e.target.value) || 0))}
+                        style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px 12px 28px', fontSize: 14, color: '#f0f0ff', fontFamily: 'inherit' }}
+                      />
+                    </div>
+                    <span
+                      onClick={() => { setBrief((b) => ({ ...b, total_budget_naira: draftBudget })); setEditing(null); }}
+                      role="button"
+                      data-testid="ai-brief-row-budget-done"
+                      style={{ textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}
+                    >
+                      Done
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         ))}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 14px', borderTop: '1px solid #1c1726' }}>
+          <span style={{ fontSize: 13, color: '#8a7f97' }}>{venueRow.label}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: venueRow.amber ? '#fbbf24' : '#f0edf5' }}>{venueRow.value}</span>
+        </div>
       </div>
       {Array.isArray(data?.style) && data.style.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -1279,8 +1432,38 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: () => void }) {
       )}
       <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: GRADIENT, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
       <span style={{ textAlign: 'center', fontSize: 11.5, color: '#8a7f97' }}>You can change any of this later.</span>
+      {showCityPicker && (
+        <PickerSheet
+          title="Choose a city"
+          options={BRIEF_CITY_OPTIONS}
+          value={brief.city || ''}
+          allowCustom
+          onSelect={(v) => { setBrief((b) => ({ ...b, city: v })); setShowCityPicker(false); }}
+          onClose={() => setShowCityPicker(false)}
+        />
+      )}
     </div>
   );
+}
+
+// Builds the real chat-turn text sent on "Build my plan" -- spells out
+// every brief field explicitly (edited or not) so create_plan_draft (the
+// only thing that actually writes a plans row) is driven by exactly what
+// the user saw on the card, never a silent frontend-only copy that could
+// diverge from it. Starts with "build my plan" so BuildingPlanLoader's
+// own detection (ConversationView's lastConvUserText check) still matches.
+function buildPlanMessage(original: any, brief: EditableBrief): string {
+  const parts: string[] = [];
+  parts.push(`title "${original?.title || 'Untitled'}"`);
+  if (original?.event_type) parts.push(`event type ${original.event_type}`);
+  parts.push(`date ${brief.event_date || 'not set'}`);
+  parts.push(`city ${brief.city || 'not set'}`);
+  parts.push(`setting ${brief.setting || 'not set'}`);
+  parts.push(`guests ${brief.guests ?? 'not set'}`);
+  parts.push(`total budget ${brief.total_budget_naira != null ? naira(brief.total_budget_naira) : 'not set'}`);
+  if (Array.isArray(original?.style) && original.style.length > 0) parts.push(`style ${original.style.join(', ')}`);
+  if (Array.isArray(original?.priorities) && original.priorities.length > 0) parts.push(`priorities ${original.priorities.join(', ')}`);
+  return `Build my plan with these final details: ${parts.join(', ')}.`;
 }
 
 // ---------------------------------------------------------------------
@@ -1382,7 +1565,7 @@ function AssistantCards({
           return <PlanQuestionCard key={i} data={card.data} onAnswer={(text) => onQuickAction?.(text)} />;
         }
         if (card.type === 'preview_plan_brief') {
-          return <PlanBriefCard key={i} data={card.data} onBuild={() => onQuickAction?.('Build my plan.')} />;
+          return <PlanBriefCard key={i} data={card.data} onBuild={(brief) => onQuickAction?.(buildPlanMessage(card.data, brief))} />;
         }
         // Confirmed-action result cards (start_ticket_transfer,
         // request_ticket_refund, start_service_booking, create_report) --
@@ -2026,7 +2209,7 @@ function ConversationView({
           )}
 
           {streaming && (
-            lastConvUserText.trim().toLowerCase() === 'build my plan.' ? (
+            lastConvUserText.trim().toLowerCase().startsWith('build my plan') ? (
               <BuildingPlanLoader title={conversation.title} />
             ) : (
               <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
