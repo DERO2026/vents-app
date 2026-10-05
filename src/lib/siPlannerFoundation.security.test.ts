@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // Static-analysis tests (same approach as every other *.security.test.ts in
-// this repo) for the SI Planner Batch 1/2 migrations (0156, 0157).
+// this repo) for the SI Planner Batch 1/2/3 migrations (0156, 0157).
 
 let m0156: string;
 let m0157: string;
@@ -169,5 +169,57 @@ describe('table grants (0157 §5): authenticated only, never anon', () => {
     expect(grantSection).toMatch(/GRANT SELECT, INSERT ON public\.plan_messages TO authenticated;/);
     expect(grantSection).toMatch(/GRANT SELECT ON public\.plan_change_log TO authenticated;/);
     expect(grantSection).not.toMatch(/TO anon/);
+  });
+});
+
+describe('plan_messages (0156): the persisted per-plan SI thread, read/written only as the plan owner', () => {
+  it('RLS is enabled', () => {
+    expect(m0156).toMatch(/ALTER TABLE public\.plan_messages ENABLE ROW LEVEL SECURITY;/);
+  });
+
+  it('SELECT is scoped to the plan owner (or admin/root), never a bare caller-supplied plan_id', () => {
+    const section = m0156.slice(m0156.indexOf('CREATE POLICY plan_messages_select_own'), m0156.indexOf('CREATE POLICY plan_messages_insert_own'));
+    expect(section).toMatch(/p\.owner_id = auth\.uid\(\) OR public\.is_admin_or_root\(\)/);
+  });
+
+  it('INSERT is scoped to the plan owner only -- no admin/root bypass on writes, and no insert as anyone else\'s plan', () => {
+    const section = m0156.slice(m0156.indexOf('CREATE POLICY plan_messages_insert_own'));
+    const policyText = section.slice(0, section.indexOf(';') + 1);
+    expect(policyText).toMatch(/p\.owner_id = auth\.uid\(\)/);
+  });
+
+  it('has no UPDATE or DELETE policy -- a persisted conversation turn can never be edited or erased by a client', () => {
+    expect(m0156).not.toMatch(/CREATE POLICY plan_messages_update/);
+    expect(m0156).not.toMatch(/CREATE POLICY plan_messages_delete/);
+  });
+
+  it('role is constrained to user/assistant -- a client cannot inject a third message role', () => {
+    expect(m0156).toMatch(/CONSTRAINT plan_messages_role_check CHECK \(role IN \('user', 'assistant'\)\)/);
+  });
+});
+
+describe('aiAssistantHandler.ts persistPlanTurn (Batch 3): plan message persistence never becomes the plan\'s source of truth', () => {
+  let handlerSrc: string;
+  beforeAll(() => {
+    handlerSrc = readFileSync(join(__dirname, '..', '..', 'api', '_lib', 'aiAssistantHandler.ts'), 'utf8');
+  });
+
+  it('only persists a plan_id that came from a tool call that actually succeeded, never a bare model-supplied id', () => {
+    expect(handlerSrc).toMatch(/Only reached on success, so a plan_id for a plan this user\s*\n\s*\/\/ doesn't own \(the executor would have thrown\) never lands\s*\n\s*\/\/ here\./);
+    expect(handlerSrc).toMatch(/const planId = result\?\.plan_id \?\? block\.input\?\.plan_id;/);
+  });
+
+  it('relies on plan_messages RLS as the real authorization boundary for the insert, not on where planId came from', () => {
+    expect(handlerSrc).toMatch(/RLS \(plan_messages_insert_own, 0156\) requires the plan to exist and/);
+  });
+
+  it('skips persistence entirely when zero or more than one plan was touched, rather than guessing which plan a reply belongs to', () => {
+    expect(handlerSrc).toMatch(/if \(touchedPlanIds\.size === 1\) \{/);
+  });
+
+  it('a persistence failure is caught and logged, never thrown back to the caller -- conversation history is best-effort, not the source of truth for plan state', () => {
+    const fnBody = handlerSrc.match(/async function persistPlanTurn[\s\S]*?\n\}/)?.[0] ?? '';
+    expect(fnBody).toMatch(/try \{/);
+    expect(fnBody).toMatch(/\} catch \(err\) \{/);
   });
 });

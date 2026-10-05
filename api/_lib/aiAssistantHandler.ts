@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession, enforceRateLimit } from './verifyAuth.js';
 import { applyCors } from './cors.js';
 import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ALL_TOOLS,
   READ_ONLY_TOOL_NAMES,
@@ -18,6 +19,76 @@ import {
   executeStartServiceBooking,
   executeCreateReport,
 } from './aiTools.js';
+
+// Flattens an Anthropic message `content` field (either a plain string, or
+// an array of content blocks) down to its text, for persisting into
+// plan_messages -- that table stores plain text, not Anthropic's block
+// format, and a plan conversation's history is meant to be human-readable
+// later, not re-parsed as API request/response shapes.
+function flattenContentToText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .filter((b: any) => b?.type === 'text' && typeof b.text === 'string')
+      .map((b: any) => b.text)
+      .join('\n');
+  }
+  return '';
+}
+
+// Persists one plan-scoped conversation turn (the user's latest message and
+// the assistant's final reply) into plan_messages -- the persisted half of
+// the "one pinned SI thread per plan" design, for ONLY the plan(s) an
+// actual tool call touched this turn (never a client-supplied plan_id with
+// no real activity behind it, and never general Chat outside a plan, which
+// stays in-memory exactly as before this batch).
+//
+// Best-effort: a failure here is logged and swallowed, never surfaced to
+// the user or allowed to turn a successful AI turn into an error response --
+// conversation history is a convenience on top of the plan, not the source
+// of truth for it (plan state only ever comes from the plan tables/RPCs via
+// get_plan, never reconstructed from these rows).
+//
+// De-duplicates against a retry of the exact same turn: if the most
+// recently stored row for this plan already has this exact role+content,
+// it is not inserted again (the common "client retried the same HTTP
+// request" case, e.g. after a client-side timeout on an already-completed
+// call).
+async function persistPlanTurn(client: SupabaseClient, planId: string, userText: string, assistantText: string) {
+  try {
+    const rows: { plan_id: string; role: 'user' | 'assistant'; content: string }[] = [];
+    if (userText.trim()) rows.push({ plan_id: planId, role: 'user', content: userText });
+    if (assistantText.trim()) rows.push({ plan_id: planId, role: 'assistant', content: assistantText });
+    if (rows.length === 0) return;
+
+    const { data: lastRows } = await client
+      .from('plan_messages')
+      .select('role, content')
+      .eq('plan_id', planId)
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const last = Array.isArray(lastRows) ? lastRows[0] : null;
+
+    const toInsert = rows.filter((r, i) => {
+      // Only the first row in this turn can collide with what's already
+      // the last stored row -- the second row (the assistant's reply)
+      // never matches a pre-existing row at the moment it's being added.
+      if (i === 0 && last && last.role === r.role && last.content === r.content) return false;
+      return true;
+    });
+    if (toInsert.length === 0) return;
+
+    // RLS (plan_messages_insert_own, 0156) requires the plan to exist and
+    // be owned by the authenticated caller -- this is the real
+    // authorization boundary, not the fact that planId came from a
+    // successful tool call this same request. A plan_id that somehow isn't
+    // the caller's own is rejected here regardless of how it got this far.
+    await client.from('plan_messages').insert(toInsert);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('plan_messages persistence failed (non-fatal):', (err as any)?.message || err);
+  }
+}
 
 // VENTS AI -- server-orchestrated conversational assistant. Modeled directly
 // on api/extract-events.ts's structure (raw fetch to the Anthropic Messages
@@ -157,6 +228,13 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
     const client = buildUserSupabaseClient(accessToken);
     const conversation: any[] = messages.map((m: any) => ({ role: m.role, content: m.content }));
     const cards: any[] = [];
+    // Populated only from a plan tool that actually SUCCEEDED this request
+    // (see the toolResults map below) -- never from a bare tool_use input,
+    // so a model-supplied plan_id that turned out not to belong to this
+    // user (the tool call errored) never reaches persistPlanTurn at all.
+    const touchedPlanIds = new Set<string>();
+    const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
+    const lastUserText = lastUserMessage ? flattenContentToText(lastUserMessage.content) : '';
 
     for (let round = 0; round < MAX_TOOL_ROUNDTRIPS; round++) {
       const ctrl = new AbortController();
@@ -223,6 +301,15 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
 
       if (toolUseBlocks.length === 0) {
         const text = blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n');
+        // Only persist when exactly one plan was touched this turn --
+        // zero means this wasn't a plan conversation at all (nothing to
+        // persist); more than one is an ambiguous turn (e.g. the model
+        // called get_plan on two different plans), and guessing which one
+        // the reply is "about" risks attaching a reply to the wrong
+        // plan's thread, so it's skipped rather than guessed.
+        if (touchedPlanIds.size === 1) {
+          await persistPlanTurn(client, [...touchedPlanIds][0], lastUserText, text);
+        }
         return res.status(200).json({ type: 'message', text, cards });
       }
 
@@ -260,10 +347,20 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
             return { type: 'tool_result', tool_use_id: block.id, content: 'Unknown tool', is_error: true };
           }
           try {
-            const result = isReadOnly
+            const result: any = isReadOnly
               ? await executeReadOnlyTool(block.name, client, block.input)
               : await executePlanTool(block.name, client, session.userId, block.input);
             cards.push({ type: block.name, data: result, source: 'vents' as const });
+            if (isPlanTool) {
+              // The plan_id this call succeeded against -- either echoed
+              // back in the result (every plan-tool executor includes it)
+              // or, failing that, the plan_id the model supplied as input.
+              // Only reached on success, so a plan_id for a plan this user
+              // doesn't own (the executor would have thrown) never lands
+              // here.
+              const planId = result?.plan_id ?? block.input?.plan_id;
+              if (typeof planId === 'string' && planId) touchedPlanIds.add(planId);
+            }
             return { type: 'tool_result', tool_use_id: block.id, content: JSON.stringify(result) };
           } catch (toolError: any) {
             return {
