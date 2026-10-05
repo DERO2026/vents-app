@@ -449,6 +449,27 @@ export const PLAN_TOOLS = [
       required: ['title', 'event_type'],
     },
   },
+  // P27 "Which event?" -- call this when a free-chat (non-plan-thread)
+  // message implies a service/category the user wants AND they have 2+
+  // active/draft plans, so you genuinely don't know which one they mean.
+  // Never guess a plan on their behalf. Renders as a card listing the real
+  // candidates, each with its real per-category estimate when one exists
+  // (never an invented price) -- plans where that category already has an
+  // assigned/booked provider are excluded by the tool itself (proof SI
+  // actually read them, per the mockup's own spec text), so every option
+  // shown is genuinely still open.
+  {
+    name: 'disambiguate_plans',
+    description:
+      "Call this when a free-chat request names a service/category (e.g. \"I still need a caterer\") and the user has more than one active or draft plan, so you can't tell which one it's for. Returns only plans that genuinely still need that category -- never list one yourself from memory. Follow with a short line like 'Is this for one of your plans?' and let the card's options do the rest.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        category_hint: { type: 'string', description: 'The category/service the user mentioned, e.g. "caterer", "photography" -- used to find which plans already have it filled, and to show a real per-plan estimate when one exists.' },
+      },
+      required: ['category_hint'],
+    },
+  },
 ] as const;
 
 export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...PROPOSAL_TOOLS, ...PLAN_TOOLS];
@@ -1221,6 +1242,78 @@ async function executePreviewPlanBrief(_client: SupabaseClient, _userId: string,
   };
 }
 
+// P27 -- real read, scoped to the caller's own plans only (same RLS as
+// every other plan_* table read in this file; never trusts a client-
+// supplied owner). Excludes any plan whose matching category already has
+// an active (assigned/booked) assignment -- "SI excludes plans where the
+// slot is already filled and says so, proof it read them" (P27's own
+// spec text). category_estimated_naira comes straight off that plan's
+// own plan_categories.allocated_kobo when a matching category row
+// exists; null (never invented) otherwise.
+export async function executeDisambiguatePlans(client: SupabaseClient, _userId: string, input: any) {
+  const categoryHint = String(input?.category_hint ?? '').trim().toLowerCase();
+
+  const { data: plans, error } = await client
+    .from('plans')
+    .select('id, title, status, event_date, city')
+    .in('status', ['draft', 'active'])
+    .order('event_date', { ascending: true, nullsFirst: false });
+  if (error) throw new Error(error.message);
+  const planList = plans ?? [];
+  if (planList.length === 0) return { category_hint: categoryHint || null, candidates: [] };
+
+  const planIds = planList.map((p: any) => p.id);
+  const { data: categories } = await client
+    .from('plan_categories')
+    .select('id, plan_id, key, label, allocated_kobo')
+    .in('plan_id', planIds);
+  const categoryRows = categories ?? [];
+
+  // Loose match -- "caterer" must still find a "catering" category, same
+  // tolerance resolvePlanCategory's own key/label lookup assumes callers
+  // might not phrase exactly. A shared 5-char prefix (e.g. "cater") covers
+  // the common English noun/verb variants without a real NLP dependency.
+  const matchesHint = (c: any) => {
+    if (!categoryHint) return false;
+    const key = String(c.key).toLowerCase();
+    const label = String(c.label).toLowerCase();
+    if (key === categoryHint || key.includes(categoryHint) || categoryHint.includes(key)) return true;
+    if (label.includes(categoryHint) || categoryHint.includes(label)) return true;
+    const prefixLen = Math.min(5, key.length, categoryHint.length);
+    return prefixLen >= 4 && key.slice(0, prefixLen) === categoryHint.slice(0, prefixLen);
+  };
+
+  const matchingCategoryIds = categoryRows.filter(matchesHint).map((c: any) => c.id);
+  const { data: assignments } = matchingCategoryIds.length
+    ? await client.from('plan_assignments').select('category_id').in('category_id', matchingCategoryIds).in('status', ['assigned', 'booked'])
+    : { data: [] as any[] };
+  const filledCategoryIds = new Set((assignments ?? []).map((a: any) => a.category_id));
+
+  const matchingCategoryByPlan = new Map<string, any>();
+  for (const c of categoryRows) {
+    if (matchesHint(c)) matchingCategoryByPlan.set(c.plan_id, c);
+  }
+
+  const candidates = planList
+    .filter((p: any) => {
+      const cat = matchingCategoryByPlan.get(p.id);
+      return !(cat && filledCategoryIds.has(cat.id));
+    })
+    .map((p: any) => {
+      const cat = matchingCategoryByPlan.get(p.id);
+      return {
+        plan_id: p.id,
+        title: p.title,
+        status: p.status,
+        event_date: p.event_date,
+        city: p.city,
+        category_estimated_naira: cat ? fromKobo(cat.allocated_kobo) : null,
+      };
+    });
+
+  return { category_hint: categoryHint || null, candidates };
+}
+
 const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, input: any) => Promise<unknown>> = {
   create_plan_draft: executeCreatePlanDraft,
   get_plan: executeGetPlan,
@@ -1233,6 +1326,7 @@ const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, in
   offer_plan_intent: executeOfferPlanIntent,
   ask_plan_question: executeAskPlanQuestion,
   preview_plan_brief: executePreviewPlanBrief,
+  disambiguate_plans: executeDisambiguatePlans,
 };
 
 export async function executePlanTool(name: string, client: SupabaseClient, userId: string, input: any): Promise<unknown> {

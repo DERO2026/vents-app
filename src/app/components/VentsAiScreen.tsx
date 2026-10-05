@@ -47,6 +47,12 @@ type LocalConversation = {
   planId?: string;
 };
 
+// Fetched via get_plans_overview() (migration 0160) -- one aggregate RPC
+// call for every one of the caller's own plans, rather than an N+1 of
+// per-plan fetchPlanWorkspace-style reads just to render the P25 list.
+// readiness_pct/committed_or_paid_kobo/overdue_task_count mirror
+// computeReadiness()'s own formula and the Tasks tab's own due-date
+// derivation exactly, computed server-side in SQL.
 type PlanSummary = {
   id: string;
   title: string;
@@ -54,9 +60,13 @@ type PlanSummary = {
   status: string;
   event_date: string | null;
   city: string | null;
+  guests: number | null;
   total_kobo: number | null;
   currency: string;
   created_at: string;
+  readiness_pct: number;
+  committed_or_paid_kobo: number;
+  overdue_task_count: number;
 };
 
 type WorkspaceAssignment = {
@@ -334,11 +344,20 @@ function PlanWorkspaceView({
   onBack,
   onAskSi,
   onComposerSend,
+  onSwitchPlan,
+  onStartNewPlan,
 }: {
   planId: string;
   onBack: () => void;
   onAskSi: (title: string) => void;
   onComposerSend: (text: string) => void;
+  // P26 plan switcher -- parent just swaps which plan id this same
+  // component instance renders; see tabMemory below for why this doesn't
+  // lose the new plan's own last-used tab.
+  onSwitchPlan: (planId: string) => void;
+  // "+ New plan" inside the switcher -- same prefill-only behavior as the
+  // Plans list's own "+ New Plan" row, never auto-sent.
+  onStartNewPlan: (prompt: string) => void;
 }) {
   const [tab, setTab] = useState<'overview' | 'budget' | 'team' | 'tasks' | 'timeline'>('overview');
   const [data, setData] = useState<PlanWorkspaceData | null>(null);
@@ -350,6 +369,14 @@ function PlanWorkspaceView({
   const [detailCategoryId, setDetailCategoryId] = useState<string | null>(null);
   const [showHeaderMenu, setShowHeaderMenu] = useState(false);
   const [showDateSheet, setShowDateSheet] = useState(false);
+  const [showPlanSwitcher, setShowPlanSwitcher] = useState(false);
+  const [switcherPlans, setSwitcherPlans] = useState<PlanSummary[] | null>(null);
+  // P26's own spec text: "Each plan remembers its own scroll/tab" --
+  // this component instance is never remounted on switch (same `key`),
+  // so a plain `tab` useState would otherwise leak one plan's active tab
+  // onto the next. A ref-backed per-plan map is enough to honor that
+  // without a new backend/model contract -- purely client-side UI state.
+  const tabMemory = useRef<Record<string, typeof tab>>({});
 
   const load = () => {
     setData(null);
@@ -363,11 +390,27 @@ function PlanWorkspaceView({
     let cancelled = false;
     setData(null);
     setLoadError(null);
+    setTab(tabMemory.current[planId] ?? 'overview');
+    setDetailCategoryId(null);
     fetchPlanWorkspace(planId)
       .then((d) => { if (!cancelled) setData(d); })
       .catch((e) => { if (!cancelled) setLoadError(e?.message || 'Could not load this plan.'); });
     return () => { cancelled = true; };
   }, [planId]);
+
+  function setTabRemembered(next: typeof tab) {
+    tabMemory.current[planId] = next;
+    setTab(next);
+  }
+
+  function openPlanSwitcher() {
+    setShowPlanSwitcher(true);
+    if (switcherPlans === null) {
+      supabase.rpc('get_plans_overview').then(({ data: rows, error }: any) => {
+        if (!error) setSwitcherPlans(Array.isArray(rows) ? (rows as PlanSummary[]) : []);
+      });
+    }
+  }
 
   const TABS: { id: typeof tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -392,7 +435,7 @@ function PlanWorkspaceView({
       <div style={{ flexShrink: 0, padding: '0 18px', borderBottom: '1px solid #1c1726', background: '#0b0812' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, height: 50 }}>
           <span onClick={onBack} role="button" aria-label="Back" style={{ fontSize: 19, color: '#e4d4ff', cursor: 'pointer' }}>←</span>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div onClick={openPlanSwitcher} role="button" data-testid="workspace-plan-switcher-trigger" style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
             <div style={{ fontSize: 15, fontWeight: 800 }}>
               {data?.plan.title || 'Plan'} <span style={{ fontSize: 13, color: '#d3b8ff' }}>▾</span>
             </div>
@@ -423,7 +466,7 @@ function PlanWorkspaceView({
           {TABS.map((t) => (
             <span
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => setTabRemembered(t.id)}
               data-testid={`workspace-tab-${t.id}`}
               style={{ padding: '10px 0', cursor: 'pointer', color: tab === t.id ? '#f2eff6' : '#8a7f97', borderBottom: tab === t.id ? '2px solid #a35cff' : 'none' }}
             >
@@ -453,7 +496,7 @@ function PlanWorkspaceView({
             onChanged={load}
           />
         ) : tab === 'overview' ? (
-          <WorkspaceOverviewTab data={data} onOpenBudget={() => setTab('budget')} />
+          <WorkspaceOverviewTab data={data} onOpenBudget={() => setTabRemembered('budget')} />
         ) : tab === 'budget' ? (
           <WorkspaceBudgetTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onAskSi={() => onAskSi(data.plan.title)} onChanged={load} />
         ) : tab === 'team' ? (
@@ -461,7 +504,7 @@ function PlanWorkspaceView({
         ) : tab === 'tasks' ? (
           <WorkspaceTasksTab data={data} onChanged={load} />
         ) : tab === 'timeline' ? (
-          <WorkspaceTimelineTab data={data} onOpenTasks={() => setTab('tasks')} />
+          <WorkspaceTimelineTab data={data} onOpenTasks={() => setTabRemembered('tasks')} />
         ) : (
           <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>
             {TABS.find((t) => t.id === tab)?.label} isn't built yet in this pass — not a mockup frame it skips, just not reached yet.
@@ -490,6 +533,83 @@ function PlanWorkspaceView({
           onChanged={load}
         />
       )}
+      {showPlanSwitcher && (
+        <PlanSwitcherDropdown
+          plans={switcherPlans}
+          activePlanId={planId}
+          onSelect={(id) => { setShowPlanSwitcher(false); if (id !== planId) onSwitchPlan(id); }}
+          onNewPlan={() => { setShowPlanSwitcher(false); onStartNewPlan("I'm planning another event."); }}
+          onAllPlans={() => { setShowPlanSwitcher(false); onBack(); }}
+          onClose={() => setShowPlanSwitcher(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// P26 -- "Title ▾ on every planner view opens this dropdown." Real plans
+// only (get_plans_overview(), the same aggregate RPC the Plans list uses),
+// current plan marked with a check, "+ New plan" and "All plans" footer
+// rows exactly as the mockup shows. On desktop the plan rail replaces this
+// (R3, not built here -- see the architectural-investigation note on R3).
+function PlanSwitcherDropdown({
+  plans,
+  activePlanId,
+  onSelect,
+  onNewPlan,
+  onAllPlans,
+  onClose,
+}: {
+  plans: PlanSummary[] | null;
+  activePlanId: string;
+  onSelect: (planId: string) => void;
+  onNewPlan: () => void;
+  onAllPlans: () => void;
+  onClose: () => void;
+}) {
+  const rows = (plans ?? []).filter((p) => p.status === 'draft' || p.status === 'active');
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 975 }} onClick={onClose} data-testid="workspace-plan-switcher">
+      <div style={{ position: 'absolute', inset: 0, top: 96, background: 'rgba(5,4,8,.72)' }} />
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', top: 100, left: 12, right: 12, borderRadius: 18, background: '#120e1a', border: '1px solid #2c2438', padding: 8, display: 'flex', flexDirection: 'column', boxShadow: '0 20px 50px rgba(0,0,0,.6)' }}
+      >
+        {plans === null ? (
+          <div style={{ padding: 12, fontSize: 12.5, color: '#786d87', textAlign: 'center' }}>Loading your plans…</div>
+        ) : rows.length === 0 ? (
+          <div style={{ padding: 12, fontSize: 12.5, color: '#786d87', textAlign: 'center' }}>No other plans yet.</div>
+        ) : (
+          rows.map((p) => {
+            const isActive = p.id === activePlanId;
+            return (
+              <div
+                key={p.id}
+                onClick={() => onSelect(p.id)}
+                role="button"
+                data-testid={`workspace-plan-switcher-row-${p.id}`}
+                style={{ display: 'flex', gap: 12, alignItems: 'center', padding: 12, borderRadius: 11, background: isActive ? 'rgba(163,92,255,.1)' : 'transparent', cursor: 'pointer' }}
+              >
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{p.title}</div>
+                  <div style={{ fontSize: 12, color: '#a89db3' }}>
+                    {p.status === 'draft' ? 'Draft' : (
+                      <>
+                        {p.event_date || 'Date not set'} · {p.readiness_pct}%
+                        {p.overdue_task_count > 0 && <> · <span style={{ color: '#fbbf24' }}>{p.overdue_task_count} overdue</span></>}
+                      </>
+                    )}
+                  </div>
+                </div>
+                {isActive && <span style={{ color: '#d3b8ff' }}>✓</span>}
+              </div>
+            );
+          })
+        )}
+        <div style={{ height: 1, background: '#221d2d', margin: '4px 8px' }} />
+        <div onClick={onNewPlan} role="button" data-testid="workspace-plan-switcher-new" style={{ padding: 12, fontSize: 14, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>+ New plan</div>
+        <div onClick={onAllPlans} role="button" data-testid="workspace-plan-switcher-all" style={{ padding: 12, fontSize: 14, color: '#c9c0d4', cursor: 'pointer' }}>All plans</div>
+      </div>
     </div>
   );
 }
@@ -2705,6 +2825,53 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
   );
 }
 
+// P27 "Which event?" -- one disambiguate_plans result. Each row is a real
+// candidate the backend already confirmed still needs this category (see
+// executeDisambiguatePlans); the "Something else" row is a static UI
+// action, not server data, same precedent as PlanOfferCard's "Just chat".
+function PlanDisambiguationCard({
+  candidates,
+  onSelectPlan,
+  onSomethingElse,
+}: {
+  candidates: { plan_id: string; title: string; status: string; event_date: string | null; city: string | null; category_estimated_naira: number | null }[];
+  onSelectPlan: (planId: string, title: string) => void;
+  onSomethingElse: () => void;
+}) {
+  const [resolved, setResolved] = useState(false);
+  if (resolved) return null;
+  return (
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 8 }} data-testid="ai-plan-disambiguation-card">
+      {candidates.map((c) => (
+        <div
+          key={c.plan_id}
+          onClick={() => { setResolved(true); onSelectPlan(c.plan_id, c.title); }}
+          role="button"
+          data-testid={`ai-plan-disambiguation-option-${c.plan_id}`}
+          style={{ padding: '12px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #2c2438', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+        >
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 700 }}>◆ {c.title}</div>
+            <div style={{ fontSize: 11.5, color: '#a89db3' }}>
+              {c.status === 'draft' ? 'Draft' : (c.event_date || 'Date not set')}{c.city ? ` · ${c.city}` : ''}
+              {c.category_estimated_naira != null ? ` · ≈ ${naira(c.category_estimated_naira)}` : ''}
+            </div>
+          </div>
+          <span style={{ color: '#d3b8ff' }}>›</span>
+        </div>
+      ))}
+      <div
+        onClick={() => { setResolved(true); onSomethingElse(); }}
+        role="button"
+        data-testid="ai-plan-disambiguation-something-else"
+        style={{ padding: '12px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #2c2438', fontSize: 13.5, color: '#c9c0d4', cursor: 'pointer' }}
+      >
+        Something else
+      </div>
+    </div>
+  );
+}
+
 // Builds the real chat-turn text sent on "Build my plan" -- spells out
 // every brief field explicitly (edited or not) so create_plan_draft (the
 // only thing that actually writes a plans row) is driven by exactly what
@@ -2741,6 +2908,7 @@ function AssistantCards({
   onOpenPlan,
   onQuickAction,
   onUndoChange,
+  onSelectPlanForThread,
 }: {
   cards: BackendCard[];
   onOpenEvent?: (id: string) => void;
@@ -2755,6 +2923,11 @@ function AssistantCards({
   // the real undo_plan_change RPC directly (still fully RLS/ownership
   // enforced server-side), then triggers a refresh via onQuickAction.
   onUndoChange?: (changeLogId: string) => void;
+  // P27 -- picking a plan in the disambiguation card attaches THIS SAME
+  // free-chat thread to that plan (header chip appears, per the mockup's
+  // own spec text) and continues the original request with plan context,
+  // rather than opening a separate new thread the way P24's "Ask SI" does.
+  onSelectPlanForThread?: (planId: string, title: string) => void;
 }) {
   return (
     <>
@@ -2830,6 +3003,19 @@ function AssistantCards({
         if (card.type === 'preview_plan_brief') {
           return <PlanBriefCard key={i} data={card.data} onBuild={(brief) => onQuickAction?.(buildPlanMessage(card.data, brief))} />;
         }
+        if (card.type === 'disambiguate_plans') {
+          const cardData = card.data as any;
+          const candidates = Array.isArray(cardData?.candidates) ? cardData.candidates : [];
+          if (candidates.length === 0) return null; // nothing genuinely open -- SYSTEM_PROMPT 6j already has the model say so in prose instead.
+          return (
+            <PlanDisambiguationCard
+              key={i}
+              candidates={candidates}
+              onSelectPlan={(planId, title) => onSelectPlanForThread?.(planId, title)}
+              onSomethingElse={() => onQuickAction?.("Something else -- not tied to a specific plan.")}
+            />
+          );
+        }
         // Confirmed-action result cards (start_ticket_transfer,
         // request_ticket_refund, start_service_booking, create_report) --
         // api/ai-assistant.ts pushes these on the confirmedAction path's
@@ -2894,7 +3080,12 @@ export function VentsAiScreen({
     // same synchronous tick (e.g. re-opening a plan's existing thread from
     // the Workspace screen) and so can't rely on `activeId` having updated
     // yet.
-    targetConvId?: string
+    targetConvId?: string,
+    // P27 -- attaches an EXISTING free-chat thread to a plan as part of
+    // this same send (picking a disambiguation option), rather than
+    // racing a separate setConversations call against this closure's
+    // stale `conversations` read, same reasoning as targetConvId above.
+    attachPlanId?: string
   ) {
     const q = text.trim();
     if (!q || streaming) return;
@@ -2928,17 +3119,17 @@ export function VentsAiScreen({
       const resolvedId = targetConvId || activeId;
       const existing = resolvedId ? conversations.find((c) => c.id === resolvedId) : undefined;
       history = existing ? existing.messages : [];
-      planId = existing?.planId;
+      planId = attachPlanId || existing?.planId;
       convId = resolvedId || '';
       if (!convId) {
         convId = `c${nextId.current++}`;
         setActiveId(convId);
-        const newConv: LocalConversation = { id: convId, title: titleFromText(q), messages: [{ role: 'user', text: q }], updatedAt: Date.now() };
+        const newConv: LocalConversation = { id: convId, title: titleFromText(q), messages: [{ role: 'user', text: q }], updatedAt: Date.now(), planId };
         setConversations((prev) => [newConv, ...prev]);
       } else {
         const targetId = convId;
         setConversations((prev) =>
-          prev.map((c) => (c.id === targetId ? { ...c, messages: [...c.messages, { role: 'user', text: q }], updatedAt: Date.now() } : c))
+          prev.map((c) => (c.id === targetId ? { ...c, messages: [...c.messages, { role: 'user', text: q }], updatedAt: Date.now(), ...(attachPlanId ? { planId: attachPlanId } : {}) } : c))
         );
       }
     }
@@ -3068,6 +3259,8 @@ export function VentsAiScreen({
                   setWorkspacePlanId(null);
                   openPlan(workspacePlanId, '', text);
                 }}
+                onSwitchPlan={(id) => setWorkspacePlanId(id)}
+                onStartNewPlan={(prompt) => { setWorkspacePlanId(null); setInputText(prompt); }}
               />
             ) : !inConversation ? (
               <HomeView
@@ -3097,6 +3290,7 @@ export function VentsAiScreen({
                 onOpenPlan={openPlan}
                 onQuickAction={(text) => sendText(text)}
                 onUndoChange={(changeLogId) => handleUndoChange(active!.id, changeLogId)}
+                onSelectPlanForThread={(planId, title) => sendText(`Use my "${title}" plan for this.`, undefined, active!.id, planId)}
                 errorText={errorText}
               />
             )}
@@ -3143,22 +3337,24 @@ function HomeView({
   const [plans, setPlans] = useState<PlanSummary[] | null>(null);
   const [plansError, setPlansError] = useState<string | null>(null);
 
+  async function loadPlans() {
+    // Single aggregate RPC -- never an N+1 of per-plan reads just to show
+    // readiness/committed/overdue on this list (see migration 0160's
+    // get_plans_overview()).
+    const { data, error } = await supabase.rpc('get_plans_overview');
+    if (error) {
+      setPlansError(error.message);
+      setPlans([]);
+      return;
+    }
+    // Defensive against test/mock rpc dispatchers that return a fixed
+    // shape for every rpc name -- a real get_plans_overview() always
+    // returns an array (possibly empty), never a bare object.
+    setPlans(Array.isArray(data) ? (data as PlanSummary[]) : []);
+  }
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const { data, error } = await supabase
-        .from('plans')
-        .select('id, title, event_type, status, event_date, city, total_kobo, currency, created_at')
-        .order('created_at', { ascending: false });
-      if (cancelled) return;
-      if (error) {
-        setPlansError(error.message);
-        setPlans([]);
-        return;
-      }
-      setPlans((data as PlanSummary[]) || []);
-    })();
-    return () => { cancelled = true; };
+    loadPlans();
   }, []);
 
   // Recency-sorted, un-filtered -- a plan's pinned thread shows up here
@@ -3263,31 +3459,162 @@ function HomeView({
             )}
           </>
         ) : (
-          <PlansListView plans={plans} plansError={plansError} onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} />
+          <PlansListView plans={plans} plansError={plansError} onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} onPlansChanged={loadPlans} />
         )}
       </div>
     </div>
   );
 }
 
-// Plans room (P25-style list). `plans`/`plansError` are lifted up into
-// HomeView (same `plans` table read via the user's own RLS-scoped client)
-// so the Chat tab's promo/Continue-planning card and this list never
-// disagree from two independent fetches.
+// Plans room (P25). `plans`/`plansError` are lifted up into HomeView (one
+// get_plans_overview() RPC call via the user's own RLS-scoped client) so
+// the Chat tab's promo/Continue-planning card and this list never disagree
+// from two independent fetches. Sorted by event date with drafts last
+// (P25's own spec text: "Sorted by event date; drafts (brief unconfirmed)
+// last") -- get_plans_overview() already orders event_date first, so the
+// only reshuffle needed here is pulling draft rows to the end.
 function PlansListView({
   plans,
   plansError,
   onOpenPlan,
   onOpenWorkspace,
   onStartNewPlan,
+  onPlansChanged,
 }: {
   plans: PlanSummary[] | null;
   plansError: string | null;
   onOpenPlan: (planId: string, title: string) => void;
   onOpenWorkspace: (planId: string) => void;
   onStartNewPlan: (prompt: string) => void;
+  onPlansChanged: () => void;
 }) {
   const loadError = plansError;
+  const [menuPlanId, setMenuPlanId] = useState<string | null>(null);
+  const [renamePlan, setRenamePlan] = useState<PlanSummary | null>(null);
+  const [deletePlan, setDeletePlan] = useState<PlanSummary | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [showPastArchived, setShowPastArchived] = useState(false);
+
+  const upcoming = (plans ?? []).filter((p) => p.status === 'draft' || p.status === 'active');
+  const active = upcoming.filter((p) => p.status === 'active');
+  const drafts = upcoming.filter((p) => p.status === 'draft');
+  const sorted = [...active, ...drafts]; // event-date order already set by get_plans_overview(); drafts last.
+  const pastPlans = (plans ?? []).filter((p) => p.status === 'past');
+  const archivedPlans = (plans ?? []).filter((p) => p.status === 'archived');
+
+  async function rename(p: PlanSummary, title: string) {
+    setActionError(null);
+    const t = title.trim();
+    if (!t) return;
+    // plans_update_own RLS already scopes this to the caller's own row --
+    // never trusts anything but the authenticated client for ownership.
+    const { error } = await supabase.from('plans').update({ title: t }).eq('id', p.id);
+    if (error) { setActionError(error.message); return; }
+    setRenamePlan(null);
+    onPlansChanged();
+  }
+
+  async function archive(p: PlanSummary) {
+    setActionError(null);
+    setMenuPlanId(null);
+    const { error } = await supabase.from('plans').update({ status: 'archived' }).eq('id', p.id);
+    if (error) { setActionError(error.message); return; }
+    onPlansChanged();
+  }
+
+  async function duplicateAsTemplate(p: PlanSummary) {
+    setActionError(null);
+    setMenuPlanId(null);
+    const { error } = await supabase.rpc('duplicate_plan_as_template', { p_plan_id: p.id, p_title: `${p.title} (template)` });
+    if (error) { setActionError(error.message); return; }
+    onPlansChanged();
+  }
+
+  async function confirmDelete(p: PlanSummary) {
+    setActionError(null);
+    // plans_delete_own RLS already scopes this to the caller's own row.
+    const { error } = await supabase.from('plans').delete().eq('id', p.id);
+    if (error) { setActionError(error.message); return; }
+    setDeletePlan(null);
+    onPlansChanged();
+  }
+
+  function row(p: PlanSummary) {
+    const totalKobo = p.total_kobo ?? 0;
+    const pct = Math.max(0, Math.min(100, p.readiness_pct));
+    const daysToGo = p.event_date ? Math.max(0, Math.round((new Date(p.event_date).getTime() - Date.now()) / 86400000)) : null;
+    // "Status chip shows only the single most important state" (P25's own
+    // spec text) -- draft wins outright, then overdue, then plain active.
+    const chip = p.status === 'draft'
+      ? { label: 'DRAFT', bg: '#1c1726', color: '#a89db3' }
+      : p.overdue_task_count > 0
+        ? { label: `${p.overdue_task_count} OVERDUE`, bg: 'rgba(251,191,36,.1)', color: '#fbbf24' }
+        : { label: 'ACTIVE', bg: 'rgba(163,92,255,.15)', color: '#d3b8ff' };
+
+    return (
+      <div key={p.id} data-testid="si-plan-row" style={{ position: 'relative', background: '#120e1a', border: `1px solid ${p.status === 'active' && p.overdue_task_count === 0 ? 'rgba(163,92,255,.4)' : '#221d2d'}`, borderRadius: 14, padding: 16, marginBottom: 10, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <div style={{ fontSize: 16, fontWeight: 800 }}>{p.title}</div>
+            <div style={{ fontSize: 12.5, color: '#a89db3', marginTop: 3 }}>
+              {p.event_date ? p.event_date : 'Date not set'} · {p.city || 'City not set'}{p.guests ? ` · ${p.guests}` : ''}
+            </div>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+            <span style={{ fontSize: 10, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: chip.bg, color: chip.color }}>{chip.label}</span>
+            <span
+              onClick={(e) => { e.stopPropagation(); onOpenWorkspace(p.id); }}
+              role="button"
+              data-testid="si-plan-open-workspace"
+              style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}
+            >
+              Open ›
+            </span>
+            <span
+              onClick={(e) => { e.stopPropagation(); setMenuPlanId((v) => (v === p.id ? null : p.id)); }}
+              role="button"
+              aria-label="Plan actions"
+              data-testid={`si-plan-menu-${p.id}`}
+              style={{ fontSize: 15, color: '#8a7f97', cursor: 'pointer', padding: '2px 4px' }}
+            >
+              ⋯
+            </span>
+          </div>
+        </div>
+
+        {p.status === 'draft' ? (
+          <div style={{ fontSize: 12, color: '#a89db3' }}>
+            Brief incomplete · <span onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ color: '#d3b8ff', fontWeight: 700, cursor: 'pointer' }}>Finish with SI</span>
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', gap: 3, height: 5 }}>
+              <span style={{ width: `${pct}%`, borderRadius: 9, background: '#a35cff' }} />
+              <span style={{ flex: 1, borderRadius: 9, background: '#2c2438' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#a89db3' }} onClick={() => onOpenPlan(p.id, p.title)} role="button">
+              <span>{pct}% ready{daysToGo != null ? ` · ${daysToGo} days` : ''}</span>
+              <span>{naira(p.committed_or_paid_kobo / 100)}{totalKobo > 0 ? ` / ${naira(totalKobo / 100)} committed` : ' committed'}</span>
+            </div>
+          </>
+        )}
+
+        {menuPlanId === p.id && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            data-testid={`si-plan-menu-open-${p.id}`}
+            style={{ position: 'absolute', top: 42, right: 14, background: '#1a1522', border: '1px solid #2c2438', borderRadius: 10, padding: 6, zIndex: 20, boxShadow: '0 12px 30px rgba(0,0,0,.5)', minWidth: 190 }}
+          >
+            <div onClick={() => { setMenuPlanId(null); setRenamePlan(p); }} role="button" data-testid={`si-plan-rename-${p.id}`} style={{ padding: '10px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#e8e3ee', cursor: 'pointer' }}>Rename</div>
+            <div onClick={() => duplicateAsTemplate(p)} role="button" data-testid={`si-plan-duplicate-${p.id}`} style={{ padding: '10px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#e8e3ee', cursor: 'pointer' }}>Duplicate as template</div>
+            <div onClick={() => archive(p)} role="button" data-testid={`si-plan-archive-${p.id}`} style={{ padding: '10px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#e8e3ee', cursor: 'pointer' }}>Archive</div>
+            <div onClick={() => { setMenuPlanId(null); setDeletePlan(p); }} role="button" data-testid={`si-plan-delete-${p.id}`} style={{ padding: '10px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#f87171', cursor: 'pointer' }}>Delete</div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <div
@@ -3298,6 +3625,10 @@ function PlansListView({
         + New Plan
       </div>
 
+      {actionError && (
+        <div style={{ marginBottom: 12, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>{actionError}</div>
+      )}
+
       {plans === null ? (
         // S1 Loading.
         <div style={{ fontSize: 12, color: '#5e5470', textAlign: 'center', padding: 20 }}>Loading your plans…</div>
@@ -3306,40 +3637,84 @@ function PlansListView({
         <div style={{ fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 12 }}>
           Couldn't load your plans — {loadError}
         </div>
-      ) : plans.length === 0 ? (
+      ) : upcoming.length === 0 ? (
         // S2 Empty.
         <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: '20px 10px', lineHeight: 1.6 }}>
           No plans yet. Tell SI what you're planning — "Beach wedding, 120 guests, Lagos, ₦8m" — and it'll start one for you.
         </div>
       ) : (
-        plans.map((p) => (
-          <div
-            key={p.id}
-            onClick={() => onOpenPlan(p.id, p.title)}
-            style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <div>
-              <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{p.title}</div>
-              <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>
-                {titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{p.event_date ? ` · ${p.event_date}` : ''}
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, marginLeft: 10 }}>
-              <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: p.status === 'draft' ? 'rgba(251,191,36,.1)' : 'rgba(163,92,255,.14)', color: p.status === 'draft' ? '#fbbf24' : '#d3b8ff' }}>
-                {p.status.toUpperCase()}
-              </span>
-              <span
-                onClick={(e) => { e.stopPropagation(); onOpenWorkspace(p.id); }}
-                role="button"
-                data-testid="si-plan-open-workspace"
-                style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}
-              >
-                Open ›
-              </span>
-            </div>
+        <>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#8a7f97' }}>UPCOMING</span>
           </div>
-        ))
+          {sorted.map(row)}
+        </>
       )}
+
+      {plans !== null && !loadError && (pastPlans.length > 0 || archivedPlans.length > 0) && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#8a7f97', paddingTop: 4 }}>
+          <span>Past · {pastPlans.length} · Archived · {archivedPlans.length}</span>
+          <span onClick={() => setShowPastArchived((v) => !v)} role="button" data-testid="si-plans-show-past" style={{ color: '#d3b8ff', cursor: 'pointer' }}>
+            {showPastArchived ? 'Hide' : 'Show'}
+          </span>
+        </div>
+      )}
+      {showPastArchived && [...pastPlans, ...archivedPlans].map((p) => (
+        <div key={p.id} onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{p.title}</div>
+            <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{titleCase(p.event_type)}{p.city ? ` · ${p.city}` : ''}{p.event_date ? ` · ${p.event_date}` : ''}</div>
+          </div>
+          <span style={{ fontSize: 9.5, fontWeight: 700, padding: '3px 7px', borderRadius: 6, background: '#1c1726', color: '#a89db3' }}>{p.status.toUpperCase()}</span>
+        </div>
+      ))}
+
+      {renamePlan && (
+        <RenamePlanSheet plan={renamePlan} onCancel={() => setRenamePlan(null)} onSave={(title) => rename(renamePlan, title)} />
+      )}
+      {deletePlan && (
+        <DeletePlanConfirmDialog plan={deletePlan} onCancel={() => setDeletePlan(null)} onConfirm={() => confirmDelete(deletePlan)} />
+      )}
+    </div>
+  );
+}
+
+// Rename -- a minimal inline-edit sheet, same visual language as the
+// other bottom sheets in this file (DateChangeSheet etc).
+function RenamePlanSheet({ plan, onCancel, onSave }: { plan: PlanSummary; onCancel: () => void; onSave: (title: string) => void }) {
+  const [title, setTitle] = useState(plan.title);
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'flex-end', zIndex: 980 }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Rename plan</span>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          data-testid="si-plan-rename-input"
+          style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+        />
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onCancel} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={() => onSave(title)} role="button" data-testid="si-plan-rename-save" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Save</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// P25's own spec text: "Delete (ConfirmDialog)" -- deletion is irreversible
+// (a real row delete via plans_delete_own RLS), so it always confirms first.
+function DeletePlanConfirmDialog({ plan, onCancel, onConfirm }: { plan: PlanSummary; onCancel: () => void; onConfirm: () => void }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(5,4,8,.72)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 980 }} onClick={onCancel}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 300, background: '#120e1a', border: '1px solid #2c2438', borderRadius: 16, padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 14, fontWeight: 700 }}>Delete "{plan.title}"?</span>
+        <span style={{ fontSize: 12.5, color: '#a89db3' }}>This permanently deletes the plan, its budget, team, tasks and timeline. This can't be undone.</span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <span onClick={onCancel} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span onClick={onConfirm} role="button" data-testid="si-plan-delete-confirm" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#fb7185', fontSize: 12.5, fontWeight: 700, color: '#2a0810', cursor: 'pointer' }}>Delete</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -3384,6 +3759,7 @@ function ConversationView({
   onOpenPlan,
   onQuickAction,
   onUndoChange,
+  onSelectPlanForThread,
   errorText,
 }: {
   conversation: LocalConversation;
@@ -3399,6 +3775,7 @@ function ConversationView({
   onOpenPlan?: (planId: string, title: string) => void;
   onQuickAction?: (text: string) => void;
   onUndoChange?: (changeLogId: string) => void;
+  onSelectPlanForThread?: (planId: string, title: string) => void;
   errorText: string | null;
 }) {
   // Used only to switch the streaming indicator to BuildingPlanLoader
@@ -3448,6 +3825,7 @@ function ConversationView({
                       onOpenPlan={onOpenPlan}
                       onQuickAction={onQuickAction}
                       onUndoChange={onUndoChange}
+                      onSelectPlanForThread={onSelectPlanForThread}
                     />
                   )}
                   {m.confirmation && (

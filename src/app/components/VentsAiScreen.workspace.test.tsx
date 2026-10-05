@@ -102,6 +102,23 @@ const TASK_ROWS = [
   { id: 'task-1', category_id: 'cat-photo', title: 'Book photographer', offset_days: null, due_override: null, done_at: '2026-10-01T00:00:00Z', source: 'si', completes_on_booking: true },
   { id: 'task-2', category_id: 'cat-photo', title: 'Confirm arrival time', offset_days: 7, due_override: null, done_at: null, source: 'user', completes_on_booking: false },
 ];
+// The Plans room's own list (needed to reach "Open ›" into the Workspace)
+// now reads get_plans_overview() (migration 0160), a separate RPC from
+// every other call this file mocks -- this is its row for PLAN_ROW.
+const PLAN_OVERVIEW_ROW = { id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: '2026-12-12', city: 'Lagos', guests: 120, total_kobo: 800000000, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 50, committed_or_paid_kobo: 45000000, overdue_task_count: 0 };
+
+// Dispatches supabaseRpc by name so every test's own rpc expectations
+// (apply_plan_allocation_changes, undo_plan_change, etc.) keep working
+// exactly as before, while get_plans_overview always has a real row to
+// serve openWorkspace()'s "Open ›" click, unless a test explicitly
+// overrides it.
+function mockRpc(fallback: { data: any; error: any } = { data: [], error: null }, overrides: Record<string, { data: any; error: any }> = {}) {
+  supabaseRpc.mockImplementation((name: string) => {
+    if (overrides[name]) return Promise.resolve(overrides[name]);
+    if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_OVERVIEW_ROW], error: null });
+    return Promise.resolve(fallback);
+  });
+}
 
 function mockWorkspaceTables(overrides: Partial<Record<string, any>> = {}) {
   supabaseFrom.mockImplementation((table: string) => {
@@ -128,7 +145,7 @@ async function openWorkspace() {
 describe('Plan Workspace data (P07-P11): reads the real tables directly, never through the model', () => {
   it('fetchPlanWorkspace joins provider business_name/category/location onto each assignment', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -147,7 +164,7 @@ describe('Plan Workspace data (P07-P11): reads the real tables directly, never t
 describe('P10 Category detail', () => {
   it('shows the real assigned provider, the stat grid, and tasks with "via VENTS" locked on a completes_on_booking task', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -164,7 +181,7 @@ describe('P10 Category detail', () => {
 
   it('a completes_on_booking task cannot be unticked -- clicking it sends no update', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -194,7 +211,7 @@ describe('P10 Category detail', () => {
       if (table === 'service_providers') return makeChain({ data: PROVIDER_ROWS, error: null });
       return makeChain({ data: [], error: null });
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -214,10 +231,9 @@ describe('P10 Category detail', () => {
 describe('P09 Allocation sheet: Save calls the real apply_plan_allocation_changes RPC directly', () => {
   it('opens from Category Detail\'s Edit link, and Save sends the real RPC with the edited amount', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockImplementation((name: string) => {
-      if (name === 'search_services_fuzzy_filtered') return Promise.resolve({ data: [{ starting_price: 450000 }, { starting_price: 500000 }], error: null });
-      if (name === 'apply_plan_allocation_changes') return Promise.resolve({ data: 'change-log-1', error: null });
-      return Promise.resolve({ data: null, error: null });
+    mockRpc({ data: null, error: null }, {
+      search_services_fuzzy_filtered: { data: [{ starting_price: 450000 }, { starting_price: 500000 }], error: null },
+      apply_plan_allocation_changes: { data: 'change-log-1', error: null },
     });
 
     await openWorkspace();
@@ -248,7 +264,7 @@ describe('P09 Allocation sheet: Save calls the real apply_plan_allocation_change
 
   it('Cancel closes the sheet without calling the RPC', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -266,9 +282,8 @@ describe('P09 Allocation sheet: Save calls the real apply_plan_allocation_change
 describe('P11 Team tab', () => {
   it('shows real assignment status glyphs (booked vs. open) and a real per-category match count for open slots', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockImplementation((name: string) => {
-      if (name === 'search_services_fuzzy_filtered') return Promise.resolve({ data: [{ starting_price: 450000 }], error: null });
-      return Promise.resolve({ data: [], error: null });
+    mockRpc({ data: [], error: null }, {
+      search_services_fuzzy_filtered: { data: [{ starting_price: 450000 }], error: null },
     });
 
     await openWorkspace();
@@ -297,7 +312,7 @@ describe('P16 Tasks tab (+ P17 completed-task states folded in)', () => {
         error: null,
       }),
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-tasks');
@@ -333,7 +348,7 @@ describe('P16 Tasks tab (+ P17 completed-task states folded in)', () => {
       if (table === 'service_providers') return makeChain({ data: PROVIDER_ROWS, error: null });
       return makeChain({ data: [], error: null });
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-tasks');
@@ -363,7 +378,7 @@ describe('P18 Timeline tab', () => {
         error: null,
       }),
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-timeline');
@@ -376,7 +391,7 @@ describe('P18 Timeline tab', () => {
 
   it('shows the real "no timeline phases yet" empty state rather than fabricating milestones', async () => {
     mockWorkspaceTables({ plan_milestones: makeChain({ data: [], error: null }) });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-timeline');
@@ -398,7 +413,7 @@ describe('P14 Provider-assigned success state', () => {
         error: null,
       }),
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-team');
@@ -420,7 +435,7 @@ describe('P14 Provider-assigned success state', () => {
         error: null,
       }),
     });
-    supabaseRpc.mockResolvedValue({ data: 'log-1', error: null });
+    mockRpc({ data: 'log-1', error: null });
 
     await openWorkspace();
     clickTestId('workspace-tab-team');
@@ -453,7 +468,7 @@ describe('P20 Budget exceeded', () => {
       plan_assignments: makeChain({ data: OVER_ASSIGNMENT_ROWS, error: null }),
       service_providers: makeChain({ data: [{ id: 'prov-2', business_name: 'Ìdáná Kitchen', category: 'Catering', location: 'Lagos' }], error: null }),
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -469,7 +484,7 @@ describe('P20 Budget exceeded', () => {
       plan_assignments: makeChain({ data: OVER_ASSIGNMENT_ROWS, error: null }),
       service_providers: makeChain({ data: [{ id: 'prov-2', business_name: 'Ìdáná Kitchen', category: 'Catering', location: 'Lagos' }], error: null }),
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-tab-budget');
@@ -505,7 +520,7 @@ describe('P22 Date-change impact sheet', () => {
       if (table === 'plan_tasks') return tasksInsertChain;
       return makeChain({ data: [], error: null });
     });
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-header-menu');
@@ -534,7 +549,7 @@ describe('P22 Date-change impact sheet', () => {
 
   it('Cancel closes the sheet without writing anything', async () => {
     mockWorkspaceTables();
-    supabaseRpc.mockResolvedValue({ data: [], error: null });
+    mockRpc();
 
     await openWorkspace();
     clickTestId('workspace-header-menu');

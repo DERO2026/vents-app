@@ -34,6 +34,17 @@ beforeEach(() => {
   supabaseRpc.mockResolvedValue({ data: null, error: null });
 });
 
+// The Plans room now reads get_plans_overview() (migration 0160), one
+// aggregate RPC, rather than a plain `.from('plans').select().order()` --
+// this dispatches by rpc name so other rpc calls in the same test (e.g.
+// undo_plan_change) keep whatever default/override they already have.
+function mockPlansOverview(result: { data: any; error: any }) {
+  supabaseRpc.mockImplementation((name: string, ...args: any[]) => {
+    if (name === 'get_plans_overview') return Promise.resolve(result);
+    return Promise.resolve({ data: null, error: null });
+  });
+}
+
 afterEach(() => {
   if (root) act(() => root!.unmount());
   if (container) container.remove();
@@ -87,13 +98,9 @@ function setInputAndSend(text: string) {
 
 describe('Plans room (P01 entry)', () => {
   it('shows a Chat/Plans toggle, and lists real plans from the plans table when Plans is selected', async () => {
-    supabaseFrom.mockReturnValue({
-      select: () => ({
-        order: () => Promise.resolve({
-          data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: 'Lagos', total_kobo: 100000000, currency: 'NGN', created_at: '2026-01-01' }],
-          error: null,
-        }),
-      }),
+    mockPlansOverview({
+      data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: 'Lagos', guests: null, total_kobo: 100000000, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }],
+      error: null,
     });
     mount();
     expect(container!.textContent).toContain('Chat');
@@ -108,7 +115,7 @@ describe('Plans room (P01 entry)', () => {
   });
 
   it('shows the empty state when the user has no plans yet (S2)', async () => {
-    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    mockPlansOverview({ data: [], error: null });
     mount();
     clickTestId('si-room-plans');
     await flush();
@@ -116,7 +123,7 @@ describe('Plans room (P01 entry)', () => {
   });
 
   it('shows an error state when the plans query fails (S3)', async () => {
-    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: null, error: { message: 'network down' } }) }) });
+    mockPlansOverview({ data: null, error: { message: 'network down' } });
     mount();
     clickTestId('si-room-plans');
     await flush();
@@ -138,13 +145,9 @@ describe('Plans room (P01 entry)', () => {
 
 describe('Plan thread (one pinned SI thread per plan)', () => {
   it('opening a plan sends "Show me this plan." carrying the plan_id as hidden context, and renders the real PlanSummaryCard', async () => {
-    supabaseFrom.mockReturnValue({
-      select: () => ({
-        order: () => Promise.resolve({
-          data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: 'Lagos', total_kobo: 100000000, currency: 'NGN', created_at: '2026-01-01' }],
-          error: null,
-        }),
-      }),
+    mockPlansOverview({
+      data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: 'Lagos', guests: null, total_kobo: 100000000, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }],
+      error: null,
     });
     sendVentsAiMessage.mockResolvedValueOnce({
       type: 'message',
@@ -178,11 +181,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
   });
 
   it('reopening an already-open plan thread reuses it instead of starting a second competing one', async () => {
-    supabaseFrom.mockReturnValue({
-      select: () => ({
-        order: () => Promise.resolve({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01' }], error: null }),
-      }),
-    });
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'draft', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
     sendVentsAiMessage.mockResolvedValue({ type: 'message', text: 'ok', cards: [] });
 
     mount();
@@ -208,7 +207,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
 
 describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the amber money card)', () => {
   it('propose_plan_update renders as a suggestion that has NOT been applied, with an Apply action', async () => {
-    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01' }], error: null }) }) });
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
     sendVentsAiMessage.mockResolvedValueOnce({
       type: 'message',
       text: "Here's what I'd suggest.",
@@ -229,7 +228,7 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
   });
 
   it('tapping Apply sends a real follow-up turn through the normal pipeline, not a frontend-only state flip', async () => {
-    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01' }], error: null }) }) });
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
     sendVentsAiMessage
       .mockResolvedValueOnce({ type: 'message', text: 'Suggestion', cards: [{ type: 'propose_plan_update', data: { plan_id: 'plan-1', applied: false, proposed_changes: [{ category: 'decoration', label: 'Decoration', before_naira: 650000, after_naira: 450000 }] } }] })
       .mockResolvedValueOnce({ type: 'message', text: 'Applied.', cards: [{ type: 'apply_plan_update', data: { plan_id: 'plan-1', change_log_id: 'log-1', applied: true, actor: 'si' } }] });
@@ -252,7 +251,7 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
   });
 
   it('Undo calls the real undo_plan_change RPC directly, then refreshes the plan state', async () => {
-    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01' }], error: null }) }) });
+    mockPlansOverview({ data: [{ id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: null, city: null, guests: null, total_kobo: null, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 0, committed_or_paid_kobo: 0, overdue_task_count: 0 }], error: null });
     sendVentsAiMessage
       .mockResolvedValueOnce({ type: 'message', text: 'Applied.', cards: [{ type: 'apply_plan_update', data: { plan_id: 'plan-1', change_log_id: 'log-1', applied: true, actor: 'user' } }] })
       .mockResolvedValueOnce({ type: 'message', text: 'Reverted.', cards: [] });
@@ -601,5 +600,183 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
 
     await act(async () => { resolveSend!({ type: 'message', text: 'Your plan is ready.', cards: [] }); await flush(); });
     expect(container!.querySelector('[data-testid="ai-building-plan-loader"]')).toBeFalsy();
+  });
+});
+
+// A plain `.update()/.delete().eq('id', ...)` chain, thenable at `.eq()` --
+// matches exactly how PlansListView's rename/archive/delete calls are
+// shaped (no `.select()` chained after), unlike the read-side makeChain
+// used elsewhere in this file.
+function plansActionChain(result: { data: any; error: any } = { data: null, error: null }) {
+  const chain: any = {};
+  chain.update = vi.fn(() => chain);
+  chain.delete = vi.fn(() => chain);
+  chain.eq = vi.fn(() => Promise.resolve(result));
+  return chain;
+}
+
+describe('P25 Plans list: Rename/Archive/Delete/Duplicate only ever touch the caller\'s own plan', () => {
+  const PLAN_ROW = { id: 'plan-1', title: 'Beach Wedding', event_type: 'wedding', status: 'active', event_date: '2026-12-12', city: 'Lagos', guests: 120, total_kobo: 800000000, currency: 'NGN', created_at: '2026-01-01', readiness_pct: 47, committed_or_paid_kobo: 435000000, overdue_task_count: 0 };
+
+  it('Rename calls a real plans.update scoped to this plan\'s id, never a client-side-only title change', async () => {
+    const actionChain = plansActionChain();
+    mockPlansOverview({ data: [PLAN_ROW], error: null });
+    supabaseFrom.mockImplementation(() => actionChain);
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickTestId(`si-plan-menu-${PLAN_ROW.id}`);
+    await flush();
+    clickTestId(`si-plan-rename-${PLAN_ROW.id}`);
+    await flush();
+
+    const input = container!.querySelector('[data-testid="si-plan-rename-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'Beach Wedding (updated)');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickTestId('si-plan-rename-save');
+    await flush();
+
+    expect(supabaseFrom).toHaveBeenCalledWith('plans');
+    expect(actionChain.update).toHaveBeenCalledWith({ title: 'Beach Wedding (updated)' });
+    expect(actionChain.eq).toHaveBeenCalledWith('id', PLAN_ROW.id);
+  });
+
+  it('Archive updates status to archived via plans.update, scoped to this plan\'s row', async () => {
+    const actionChain = plansActionChain();
+    mockPlansOverview({ data: [PLAN_ROW], error: null });
+    supabaseFrom.mockImplementation(() => actionChain);
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickTestId(`si-plan-menu-${PLAN_ROW.id}`);
+    await flush();
+    clickTestId(`si-plan-archive-${PLAN_ROW.id}`);
+    await flush();
+
+    expect(actionChain.update).toHaveBeenCalledWith({ status: 'archived' });
+    expect(actionChain.eq).toHaveBeenCalledWith('id', PLAN_ROW.id);
+  });
+
+  it('Delete requires confirmation, then calls plans.delete scoped to this plan\'s id', async () => {
+    const actionChain = plansActionChain();
+    mockPlansOverview({ data: [PLAN_ROW], error: null });
+    supabaseFrom.mockImplementation(() => actionChain);
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickTestId(`si-plan-menu-${PLAN_ROW.id}`);
+    await flush();
+    clickTestId(`si-plan-delete-${PLAN_ROW.id}`);
+    await flush();
+
+    // Not deleted yet -- ConfirmDialog still showing.
+    expect(actionChain.delete).not.toHaveBeenCalled();
+    expect(container!.textContent).toContain('This can\'t be undone');
+
+    clickTestId('si-plan-delete-confirm');
+    await flush();
+
+    expect(actionChain.delete).toHaveBeenCalled();
+    expect(actionChain.eq).toHaveBeenCalledWith('id', PLAN_ROW.id);
+  });
+
+  it('Duplicate as template calls the real duplicate_plan_as_template RPC with this plan\'s id, never a frontend-only copy', async () => {
+    mockPlansOverview({ data: [PLAN_ROW], error: null });
+    supabaseRpc.mockImplementation((name: string) => {
+      if (name === 'duplicate_plan_as_template') return Promise.resolve({ data: { id: 'plan-2' }, error: null });
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [PLAN_ROW], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+
+    mount();
+    clickTestId('si-room-plans');
+    await flush();
+    clickTestId(`si-plan-menu-${PLAN_ROW.id}`);
+    await flush();
+    clickTestId(`si-plan-duplicate-${PLAN_ROW.id}`);
+    await flush();
+
+    expect(supabaseRpc).toHaveBeenCalledWith('duplicate_plan_as_template', { p_plan_id: PLAN_ROW.id, p_title: 'Beach Wedding (template)' });
+  });
+});
+
+describe('P27 Plan disambiguation: picking a plan attaches THIS thread to it, never guesses', () => {
+  it('renders real candidates with real per-plan estimates, and "Something else" continues as a normal provider search', async () => {
+    mockPlansOverview({ data: [], error: null });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: 'Is this for one of your plans?',
+      cards: [{
+        type: 'disambiguate_plans',
+        data: {
+          category_hint: 'caterer',
+          candidates: [
+            { plan_id: 'plan-mum', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan', category_estimated_naira: 450000 },
+            { plan_id: 'plan-dinner', title: 'Team end-of-year dinner', status: 'draft', event_date: null, city: 'Lagos', category_estimated_naira: null },
+          ],
+        },
+      }],
+    }).mockResolvedValueOnce({ type: 'message', text: 'Sure, searching generally.', cards: [] });
+
+    mount();
+    setInputAndSend('I still need a caterer');
+    await flush();
+
+    expect(container!.textContent).toContain("Mum's 60th");
+    expect(container!.textContent).toContain('₦450,000');
+    expect(container!.textContent).toContain('Something else');
+
+    clickTestId('ai-plan-disambiguation-something-else');
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toContain('Something else');
+  });
+
+  it('picking a candidate attaches the thread to that plan (header chip appears) and continues the original request with plan context', async () => {
+    mockPlansOverview({ data: [], error: null });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: 'Is this for one of your plans?',
+      cards: [{
+        type: 'disambiguate_plans',
+        data: {
+          category_hint: 'caterer',
+          candidates: [{ plan_id: 'plan-mum', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan', category_estimated_naira: 450000 }],
+        },
+      }],
+    }).mockResolvedValueOnce({ type: 'message', text: 'Looking at caterers for that plan.', cards: [] });
+
+    mount();
+    setInputAndSend('I still need a caterer');
+    await flush();
+
+    clickTestId('ai-plan-disambiguation-option-plan-mum');
+    await flush();
+
+    const secondCallMessages = sendVentsAiMessage.mock.calls[1][0];
+    expect(secondCallMessages.at(-1).content).toBe('[plan_id: plan-mum] Use my "Mum\'s 60th" plan for this.');
+    expect(container!.textContent).toContain('Plan thread · SI sees this plan');
+  });
+
+  it('a disambiguate_plans result with zero candidates renders no card -- the model\'s own prose explains why instead', async () => {
+    mockPlansOverview({ data: [], error: null });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: 'Every one of your plans already has catering sorted.',
+      cards: [{ type: 'disambiguate_plans', data: { category_hint: 'caterer', candidates: [] } }],
+    });
+
+    mount();
+    setInputAndSend('I still need a caterer');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="ai-plan-disambiguation-card"]')).toBeFalsy();
+    expect(container!.textContent).toContain('Every one of your plans already has catering sorted.');
   });
 });

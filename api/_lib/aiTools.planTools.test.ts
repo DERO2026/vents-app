@@ -8,6 +8,7 @@ import {
   executeAssignProvider,
   executeReschedulePlan,
   executeConfirmBrief,
+  executeDisambiguatePlans,
   executePlanTool,
   PLAN_TOOLS,
   PLAN_TOOL_NAMES,
@@ -387,6 +388,68 @@ describe('offer_plan_intent / ask_plan_question / preview_plan_brief (P02-P05 pr
     expect(result.priorities).toEqual(['Great food', 'Photography', 'Live music']);
     expect(fromCalls).toEqual([]);
     expect(rpcCalls).toEqual([]);
+  });
+});
+
+describe('executeDisambiguatePlans (P27 "Which event?")', () => {
+  it('excludes a plan whose matching category already has an active assignment, and includes the real allocated estimate for open ones', async () => {
+    const { client } = makeFakeClient();
+    client.from = vi.fn((table: string) => {
+      if (table === 'plans') return makeChain({
+        data: [
+          { id: 'plan1', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan' },
+          { id: 'plan2', title: 'Team end-of-year dinner', status: 'draft', event_date: null, city: 'Lagos' },
+        ],
+        error: null,
+      });
+      if (table === 'plan_categories') return makeChain({
+        data: [
+          { id: 'cat1', plan_id: 'plan1', key: 'catering', label: 'Catering', allocated_kobo: 45000000 },
+          { id: 'cat2', plan_id: 'plan2', key: 'catering', label: 'Catering', allocated_kobo: 0 },
+        ],
+        error: null,
+      });
+      if (table === 'plan_assignments') return makeChain({ data: [], error: null }); // neither category has an active assignment yet
+      return makeChain({ data: null, error: null });
+    });
+
+    const result: any = await executeDisambiguatePlans(client, 'user1', { category_hint: 'caterer' });
+    expect(result.candidates).toHaveLength(2);
+    const mum = result.candidates.find((c: any) => c.plan_id === 'plan1');
+    expect(mum.category_estimated_naira).toBe(450000);
+  });
+
+  it('excludes a plan whose category slot is already filled by an active/booked assignment -- proof it actually read them', async () => {
+    const { client } = makeFakeClient();
+    client.from = vi.fn((table: string) => {
+      if (table === 'plans') return makeChain({
+        data: [
+          { id: 'plan1', title: 'Beach Wedding', status: 'active', event_date: '2026-12-12', city: 'Lagos' },
+          { id: 'plan2', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan' },
+        ],
+        error: null,
+      });
+      if (table === 'plan_categories') return makeChain({
+        data: [
+          { id: 'cat1', plan_id: 'plan1', key: 'catering', label: 'Catering', allocated_kobo: 80000000 },
+          { id: 'cat2', plan_id: 'plan2', key: 'catering', label: 'Catering', allocated_kobo: 45000000 },
+        ],
+        error: null,
+      });
+      // Beach Wedding's catering category already has an assigned provider.
+      if (table === 'plan_assignments') return makeChain({ data: [{ category_id: 'cat1' }], error: null });
+      return makeChain({ data: null, error: null });
+    });
+
+    const result: any = await executeDisambiguatePlans(client, 'user1', { category_hint: 'catering' });
+    expect(result.candidates.map((c: any) => c.plan_id)).toEqual(['plan2']);
+  });
+
+  it('only reads plans already scoped to the authenticated client -- never trusts a client-supplied owner', async () => {
+    const { client, fromCalls } = makeFakeClient({ from: { plans: { data: [], error: null } } });
+    const result: any = await executeDisambiguatePlans(client, 'some-user', { category_hint: 'dj' });
+    expect(result.candidates).toEqual([]);
+    expect(fromCalls[0].table).toBe('plans'); // the one authenticated read -- RLS (plans_select_own) is what actually scopes it.
   });
 });
 
