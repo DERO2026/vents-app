@@ -36,8 +36,8 @@ interface SettingsScreenProps {
   onNavigate?: (screen: string) => void;
   isDark: boolean;
   onToggleDark: () => void;
-  // Device-local show/hide switch for the VENTS AI floating orb (see
-  // src/lib/ventsAiPreference.ts and App.tsx's shouldShowVentsAiOrb gate).
+  // Device-local on/off switch for the SI bottom-nav destination (see
+  // src/lib/ventsAiPreference.ts and BottomNav.tsx's siEnabled gate).
   // Both optional with safe fallbacks so this screen still renders (minus
   // the row) for any caller -- e.g. the QA harness -- that hasn't wired
   // them up.
@@ -1890,14 +1890,14 @@ export function SettingsScreen({
           <Divider />
           <SettingRow icon={Moon} label="Dark Mode" toggle={isDark} onToggle={onToggleDark} />
           <Divider />
-          {/* Device-local show/hide switch for the VENTS AI floating orb --
+          {/* Device-local on/off switch for the SI bottom-nav destination --
               see src/lib/ventsAiPreference.ts. onToggle only fires the
               real toggle() handler below (not a bare SyntheticEvent-leak
               pattern, same guard as every other row here -- see
               SettingRow's own comment). */}
           <SettingRow
             icon={Sparkles}
-            label="VENTS AI"
+            label="VENTS SI"
             toggle={ventsAiEnabled}
             onToggle={(v) => onToggleVentsAi?.(v)}
           />

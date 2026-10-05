@@ -485,7 +485,7 @@ export function VentsAiScreen({
     } catch (e: any) {
       // Per the export's STATE_CARDS tone ("Something went wrong … Nothing
       // was charged or changed") -- adapted copy, no literal states screen.
-      setErrorText(e?.message || "Something went wrong reaching VENTS AI. Nothing was charged or changed.");
+      setErrorText(e?.message || "Something went wrong reaching VENTS SI. Nothing was charged or changed.");
     } finally {
       setStreaming(false);
     }
@@ -604,9 +604,9 @@ function HomeView({
             <div style={{ width: 34, height: 34, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <span style={{ fontSize: 15, color: '#fff' }}>✦</span>
             </div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: '#f5f2f8' }}>VENTS AI</div>
+            <div style={{ fontSize: 19, fontWeight: 800, color: '#f5f2f8' }}>VENTS SI</div>
           </div>
-          <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS AI" role="button">✕</div>
+          <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS SI" role="button">✕</div>
         </div>
         <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 18px' }}>
           Ask about events, services, tickets, wallet or bookings — answered from real VENTS data.
@@ -617,7 +617,7 @@ function HomeView({
             value={inputText}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSend()}
-            placeholder="Ask VENTS AI anything…"
+            placeholder="Ask VENTS SI anything…"
             style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
           />
           <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>

@@ -28,9 +28,7 @@ import { ManageProviderServicesScreen } from './components/ManageProviderService
 import { ServiceBookingsScreen } from './components/ServiceBookingsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
-import { VentsAiOrb } from './components/VentsAiOrb';
 import { VentsAiScreen } from './components/VentsAiScreen';
-import { shouldShowVentsAiOrb } from './lib/ventsAiOrbScreens';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
@@ -251,10 +249,10 @@ export default function App() {
   // stranding a genuinely-logged-in user on the sign-in screen.
   const [hydrationTimedOut, setHydrationTimedOut] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
-  // Settings > VENTS AI toggle -- device-local display preference for the
-  // floating orb (see src/lib/ventsAiPreference.ts). Lazily read once on
-  // mount so a prior session's choice is respected from the very first
-  // render, not just after Settings is opened.
+  // Settings > SI toggle -- device-local preference gating the bottom
+  // nav's SI destination (see src/lib/ventsAiPreference.ts). Lazily read
+  // once on mount so a prior session's choice is respected from the very
+  // first render, not just after Settings is opened.
   const [ventsAiEnabled, setVentsAiEnabledState] = useState(() => isVentsAiEnabled());
   const handleToggleVentsAi = useCallback((enabled: boolean) => {
     setVentsAiEnabledState(enabled);
@@ -3652,26 +3650,27 @@ export default function App() {
             )}
           </div>
 
-        {/* Bottom navigation — 4 tabs, shared by every role. It has no FAB
-            (see BottomNav.tsx) and is never mounted on create-event (see
-            navScreens above), so it cannot be the source of a stray
-            floating button on the event wizard. */}
+        {/* Bottom navigation — Home / Passes / Chats / Profile / SI, shared
+            by every role. It has no FAB (see BottomNav.tsx) and is never
+            mounted on create-event (see navScreens above), so it cannot be
+            the source of a stray floating button on the event wizard.
+            SI replaces the earlier standalone floating orb (VentsAiOrb.tsx)
+            as the one global entry point into VENTS SI -- the orb component
+            itself is left intact (its drag/persist/clamp behavior has its
+            own tests) but is no longer mounted here, since a dedicated nav
+            tab and a floating button would otherwise compete as two global
+            ways to reach the same destination. Disabled (not hidden) when
+            the user's own Settings > SI toggle (ventsAiEnabled, see
+            src/lib/ventsAiPreference.ts) is off, so it never becomes a
+            broken destination. */}
         {showBottomNav && (
           <BottomNav
             activeTab={activeTab}
             onTabChange={handleTabChange}
+            siActive={screen === 'vents-ai'}
+            siEnabled={ventsAiEnabled}
+            onOpenSi={() => navigateTo('vents-ai')}
           />
-        )}
-
-        {/* VENTS AI floating orb -- persistent entry point over Home,
-            Discover (explore) and Bookings (my-tickets) only, per
-            src/app/lib/ventsAiOrbScreens.ts. Never rendered signed-out, and
-            never on payment/checkout/wallet/refund/transfer or any other
-            screen, since it isn't in VENTS_AI_ORB_SCREENS. Also gated on
-            the user's own Settings > VENTS AI toggle (ventsAiEnabled) --
-            a device-local display preference, see src/lib/ventsAiPreference.ts. */}
-        {shouldShowVentsAiOrb(screen, !!currentUser) && ventsAiEnabled && (
-          <VentsAiOrb userId={currentUser?.id} onOpen={() => navigateTo('vents-ai')} />
         )}
 
         </ErrorBoundary>
