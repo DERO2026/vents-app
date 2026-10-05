@@ -1105,6 +1105,184 @@ function PlanActionCard({ type, data }: { type: string; data: any }) {
   );
 }
 
+// P02 "I CAUGHT" card -- renders offer_plan_intent's extracted fields as
+// tiles (only the fields the model actually gave; nothing guessed to fill
+// a gap). "Just chat" is a pure local dismiss (nothing to undo server-side
+// since nothing was written); "Plan this event with SI" sends a real
+// follow-up turn so the model proceeds into ask_plan_question itself.
+function PlanOfferCard({ data, onAccept }: { data: any; onAccept?: () => void }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  const tiles: { label: string; value: string }[] = [];
+  if (data?.event_type) tiles.push({ label: 'Event', value: titleCase(String(data.event_type)) });
+  if (typeof data?.guests === 'number') tiles.push({ label: 'Guests', value: String(data.guests) });
+  if (data?.city) tiles.push({ label: 'City', value: String(data.city) });
+  if (typeof data?.total_budget_naira === 'number') tiles.push({ label: 'Budget', value: naira(data.total_budget_naira) });
+
+  return (
+    <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid rgba(163,92,255,.4)', borderRadius: 14, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }} data-testid="ai-plan-offer-card">
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.14em', color: '#d3b8ff' }}>I CAUGHT</span>
+      {tiles.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {tiles.map((t) => (
+            <div key={t.label} style={{ padding: '9px 10px', borderRadius: 9, background: '#1c1726' }}>
+              <div style={{ fontSize: 10.5, color: '#8a7f97' }}>{t.label}</div>
+              <div style={{ fontSize: 13, fontWeight: 700, marginTop: 2 }}>{t.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {typeof data?.questions_remaining === 'number' && (
+        <span style={{ fontSize: 12.5, color: '#a89db3' }}>About {data.questions_remaining} quick question{data.questions_remaining === 1 ? '' : 's'} to go.</span>
+      )}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <span onClick={() => setDismissed(true)} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Just chat</span>
+        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with SI</span>
+      </div>
+    </div>
+  );
+}
+
+// P03/P04 QuestionCard -- one ask_plan_question result, single_choice or
+// multi_select. Free-text is always still available (the real composer
+// below it is untouched), and Skip sends an explicit real turn rather than
+// silently doing nothing.
+function PlanQuestionCard({ data, onAnswer }: { data: any; onAnswer?: (text: string) => void }) {
+  const [answered, setAnswered] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  if (answered) return null;
+  const options: { id: string; label: string; hint: string | null }[] = Array.isArray(data?.options) ? data.options : [];
+  const isMulti = data?.question_type === 'multi_select';
+  const maxSelect = typeof data?.max_select === 'number' ? data.max_select : options.length;
+
+  function pickSingle(label: string) {
+    setAnswered(true);
+    onAnswer?.(label);
+  }
+  function toggleMulti(id: string) {
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= maxSelect) return prev;
+      return [...prev, id];
+    });
+  }
+  function submitMulti() {
+    const labels = options.filter((o) => selected.includes(o.id)).map((o) => o.label);
+    setAnswered(true);
+    onAnswer?.(labels.join(', '));
+  }
+
+  return (
+    <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 14, padding: 14, display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="ai-plan-question-card">
+      {typeof data?.step === 'number' && (
+        <div style={{ display: 'flex', gap: 4 }}>
+          {Array.from({ length: Math.max(data.step_count_estimate || data.step, data.step) }).map((_, i) => (
+            <span key={i} style={{ flex: 1, height: 3, borderRadius: 9, background: i < data.step ? '#a35cff' : '#2c2438' }} />
+          ))}
+        </div>
+      )}
+      {data?.lead_in && <div style={{ fontSize: 13.5, lineHeight: 1.55, color: '#e4dfeb' }}>{data.lead_in}</div>}
+      <div style={{ fontSize: 13.5, fontWeight: 600 }}>{data?.question}</div>
+      {isMulti ? (
+        <>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {options.map((o) => {
+              const isSel = selected.includes(o.id);
+              return (
+                <span
+                  key={o.id}
+                  onClick={() => toggleMulti(o.id)}
+                  role="button"
+                  style={{ padding: '9px 13px', borderRadius: 99, background: isSel ? 'rgba(163,92,255,.14)' : '#1c1726', border: isSel ? '1px solid rgba(163,92,255,.55)' : '1px solid #2c2438', fontSize: 13, fontWeight: isSel ? 700 : 400, color: isSel ? '#f0e8ff' : '#d6cfe0', cursor: 'pointer' }}
+                >
+                  {isSel ? '✓ ' : ''}{o.label}
+                </span>
+              );
+            })}
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span style={{ fontSize: 12, color: '#8a7f97' }}>Pick up to {maxSelect}</span>
+            <span onClick={submitMulti} role="button" style={{ padding: '10px 18px', borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Done</span>
+          </div>
+        </>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {options.map((o) => (
+            <div
+              key={o.id}
+              onClick={() => pickSingle(o.label)}
+              role="button"
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #2c2438', cursor: 'pointer' }}
+            >
+              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{o.label}</span>
+              {o.hint && <span style={{ fontSize: 12, color: '#8a7f97' }}>{o.hint}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+      {data?.allow_skip !== false && (
+        <span onClick={() => pickSingle('Skip for now.')} role="button" style={{ fontSize: 12, color: '#8a7f97', cursor: 'pointer' }}>Skip for now — you can add this later</span>
+      )}
+    </div>
+  );
+}
+
+// P05 Event Brief -- read-only review before create_plan_draft runs.
+// Inline per-row editors (date picker, city picker, guest stepper,
+// currency input) from the mockup's own spec text are NOT built here --
+// an explicit, stated gap, not a silently approximated one. "Build my
+// plan" sends a real follow-up turn so create_plan_draft/confirm_brief
+// are the ones that actually create anything, never this card itself.
+function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: () => void }) {
+  const [built, setBuilt] = useState(false);
+  if (built) return null;
+  const rows: { label: string; value: string; amber?: boolean }[] = [
+    { label: 'Date', value: data?.event_date || 'Not set yet' },
+    { label: 'Location', value: [data?.city, data?.setting].filter(Boolean).join(' · ') || 'Not set yet' },
+    { label: 'Guests', value: typeof data?.guests === 'number' ? String(data.guests) : 'Not set yet' },
+    { label: 'Venue', value: data?.venue_status || 'Not booked yet', amber: !data?.venue_status || /not booked/i.test(data.venue_status) },
+    { label: 'Total budget', value: typeof data?.total_budget_naira === 'number' ? naira(data.total_budget_naira) : 'Not set yet' },
+  ];
+  function handleBuild() {
+    setBuilt(true);
+    onBuild?.();
+  }
+  return (
+    <div style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 14, padding: 14, display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="ai-plan-brief-card">
+      <div>
+        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em' }}>{data?.title || 'Your plan'}</div>
+        {data?.host_names && <div style={{ fontSize: 13, color: '#a89db3', marginTop: 4 }}>{data.host_names}</div>}
+      </div>
+      <div style={{ borderRadius: 12, background: '#16111f', border: '1px solid #221d2d', overflow: 'hidden' }}>
+        {rows.map((r, i) => (
+          <div key={r.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '11px 13px', borderTop: i > 0 ? '1px solid #1c1726' : 'none' }}>
+            <span style={{ fontSize: 12.5, color: '#8a7f97' }}>{r.label}</span>
+            <span style={{ fontSize: 13, fontWeight: 700, color: r.amber ? '#fbbf24' : '#f0edf5' }}>{r.value}</span>
+          </div>
+        ))}
+      </div>
+      {Array.isArray(data?.style) && data.style.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>STYLE</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {data.style.map((s: string) => <span key={s} style={{ padding: '5px 10px', borderRadius: 99, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12 }}>{s}</span>)}
+          </div>
+        </div>
+      )}
+      {Array.isArray(data?.priorities) && data.priorities.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <span style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>PRIORITIES · PROTECTED IN BUDGET</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {data.priorities.map((p: string, i: number) => <span key={p} style={{ padding: '5px 10px', borderRadius: 99, background: 'rgba(163,92,255,.14)', border: '1px solid rgba(163,92,255,.4)', fontSize: 12, color: '#f0e8ff' }}>{i + 1} · {p}</span>)}
+          </div>
+        </div>
+      )}
+      <span onClick={handleBuild} role="button" style={{ textAlign: 'center', padding: 13, borderRadius: 12, background: GRADIENT, fontSize: 14, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Build my plan</span>
+      <span style={{ textAlign: 'center', fontSize: 11.5, color: '#8a7f97' }}>You can change any of this later.</span>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------
 // Card dispatch -- routes a backend card to the right renderer by `type`.
 // ---------------------------------------------------------------------
@@ -1196,6 +1374,15 @@ function AssistantCards({
         }
         if (card.type === 'reschedule_plan' || card.type === 'confirm_brief') {
           return <PlanActionCard key={i} type={card.type} data={card.data} />;
+        }
+        if (card.type === 'offer_plan_intent') {
+          return <PlanOfferCard key={i} data={card.data} onAccept={() => onQuickAction?.('Yes, plan this event with SI.')} />;
+        }
+        if (card.type === 'ask_plan_question') {
+          return <PlanQuestionCard key={i} data={card.data} onAnswer={(text) => onQuickAction?.(text)} />;
+        }
+        if (card.type === 'preview_plan_brief') {
+          return <PlanBriefCard key={i} data={card.data} onBuild={() => onQuickAction?.('Build my plan.')} />;
         }
         // Confirmed-action result cards (start_ticket_transfer,
         // request_ticket_refund, start_service_booking, create_report) --
@@ -1711,6 +1898,32 @@ function PlansListView({
   );
 }
 
+// P06 "Building the plan" loading state -- shown in place of the generic
+// typing-dots indicator specifically while the real create_plan_draft/
+// confirm_brief round-trip is in flight. The mockup's own 5-item checklist
+// ticks each item as a REAL server stage returns; this backend has no
+// per-stage progress signal (create_plan_draft is one request/response,
+// not a stream), so rather than fake those ticks against state that
+// doesn't exist, this renders the frame's shell (icon/title/subtitle) with
+// a single honest "Working on it…" indeterminate line instead of 5
+// fabricated checkmarks. Documented gap, not a silent one.
+function BuildingPlanLoader({ title }: { title: string }) {
+  return (
+    <div style={{ padding: '40px 8px 16px', display: 'flex', flexDirection: 'column', gap: 24 }} data-testid="ai-building-plan-loader">
+      <span style={{ width: 56, height: 56, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, color: '#fff', boxShadow: '0 0 0 10px rgba(163,92,255,.08)' }}>✦</span>
+      <div>
+        <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-.02em', lineHeight: 1.2 }}>Building your<br />{title} plan</div>
+        <div style={{ fontSize: 13, color: '#a89db3', marginTop: 8 }}>Usually under 20 seconds.</div>
+      </div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+        <span style={{ width: 20, height: 20, borderRadius: '50%', border: '2px solid #a35cff', borderRightColor: 'transparent', flexShrink: 0, animation: 'ventsAiSpin 0.8s linear infinite' }} />
+        <span style={{ fontSize: 14, fontWeight: 600 }}>Working on it…</span>
+      </div>
+      <style>{`@keyframes ventsAiSpin{to{transform:rotate(360deg);}}`}</style>
+    </div>
+  );
+}
+
 function ConversationView({
   conversation,
   streaming,
@@ -1742,6 +1955,10 @@ function ConversationView({
   onUndoChange?: (changeLogId: string) => void;
   errorText: string | null;
 }) {
+  // Used only to switch the streaming indicator to BuildingPlanLoader
+  // (P06) specifically for the "Build my plan." turn -- every other
+  // in-flight turn keeps the generic typing-dots indicator.
+  const lastConvUserText = [...conversation.messages].reverse().find((m) => m.role === 'user')?.text || '';
   return (
     <>
       <style>{`@keyframes ventsAiDotFade{0%,80%,100%{opacity:.25;}40%{opacity:1;}}`}</style>
@@ -1809,16 +2026,20 @@ function ConversationView({
           )}
 
           {streaming && (
-            <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
-              <div style={{ width: 26, height: 26, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <span style={{ fontSize: 11, color: '#fff' }}>✦</span>
+            lastConvUserText.trim().toLowerCase() === 'build my plan.' ? (
+              <BuildingPlanLoader title={conversation.title} />
+            ) : (
+              <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
+                <div style={{ width: 26, height: 26, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <span style={{ fontSize: 11, color: '#fff' }}>✦</span>
+                </div>
+                <div style={{ background: '#120e1a', border: '1px solid #221d2d', borderRadius: '3px 14px 14px 14px', padding: '13px 16px', display: 'flex', gap: 4 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite' }} />
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite .15s' }} />
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite .3s' }} />
+                </div>
               </div>
-              <div style={{ background: '#120e1a', border: '1px solid #221d2d', borderRadius: '3px 14px 14px 14px', padding: '13px 16px', display: 'flex', gap: 4 }}>
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite' }} />
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite .15s' }} />
-                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#8a7f97', animation: 'ventsAiDotFade 1.2s infinite .3s' }} />
-              </div>
-            </div>
+            )
           )}
         </div>
       </div>

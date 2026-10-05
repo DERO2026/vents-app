@@ -370,6 +370,85 @@ export const PLAN_TOOLS = [
       required: ['plan_id'],
     },
   },
+  // The three tools below are pure formatting/validation -- like
+  // propose_plan_update, they touch no table and create no plan row; they
+  // exist only so the pre-plan slot-filling conversation (mockup frames
+  // P02-P05: intent detected -> structured questions -> brief review,
+  // all BEFORE a plans row exists) renders as real structured cards
+  // instead of the model's prose being guessed at by the frontend.
+  // create_plan_draft is still the only tool that actually writes a row,
+  // and it only runs once the user has reviewed preview_plan_brief and
+  // explicitly asked to proceed (see SYSTEM_PROMPT point 6h).
+  {
+    name: 'offer_plan_intent',
+    description:
+      "Call this the moment you detect the user wants a whole event planned (not just one service booked), to surface what you've already understood as a confirmable offer -- NEVER create a plan yet. Renders as a card with the extracted fields as tiles and two actions: accept (start the guided Q&A) or dismiss (stay in plain chat). Leave any field you don't know yet out entirely -- do not guess a value just to fill the card.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        event_type: { type: 'string' },
+        title: { type: 'string', description: 'Short working title, e.g. "Beach wedding".' },
+        guests: { type: 'number' },
+        city: { type: 'string' },
+        total_budget_naira: { type: 'number' },
+        questions_remaining: { type: 'number', description: 'Your honest estimate of how many more questions are needed -- shown as "About N quick questions to go." Keep it small and update it on later offer_plan_intent calls if it changes.' },
+      },
+      required: ['event_type'],
+    },
+  },
+  {
+    name: 'ask_plan_question',
+    description:
+      "Ask ONE structured question while gathering the details needed for a new plan (after offer_plan_intent has been accepted), instead of writing it as plain text. Renders as a card: your lead_in reacting to the user's last answer, then the options as tappable rows (single_choice) or toggle chips (multi_select, capped at max_select). The user can always answer free-text instead, or skip. Ask ONE thing per call -- never bundle multiple questions into one call's options list.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        working_title: { type: 'string', description: 'The plan\'s working title so far, e.g. "Beach wedding" -- shown in the card header.' },
+        step: { type: 'number', description: '1-based index of this question.' },
+        step_count_estimate: { type: 'number', description: 'Your current best estimate of the total number of questions -- this can change between calls; the UI labels it "~N" to signal that.' },
+        lead_in: { type: 'string', description: 'A short line reacting to the user\'s previous answer before asking the next question -- keeps it conversational, not a form.' },
+        question: { type: 'string', description: 'The question itself.' },
+        question_type: { type: 'string', enum: ['single_choice', 'multi_select'] },
+        options: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id: { type: 'string' },
+              label: { type: 'string' },
+              hint: { type: 'string', description: 'Optional short right-aligned hint, e.g. "Add details".' },
+            },
+            required: ['id', 'label'],
+          },
+        },
+        max_select: { type: 'number', description: 'Only for multi_select -- the max number of options the user may pick.' },
+        allow_skip: { type: 'boolean', description: 'Default true -- whether "Skip for now" is offered.' },
+      },
+      required: ['step', 'question', 'question_type', 'options'],
+    },
+  },
+  {
+    name: 'preview_plan_brief',
+    description:
+      "Once enough is known (title + event_type is always enough -- never force completeness), call this to show the full brief for review BEFORE creating anything. Renders as a full-screen brief card with a single 'Build my plan' action. Only after the user confirms from there do you call create_plan_draft (immediately followed by confirm_brief) -- never create the plan before this preview has been shown and agreed to.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
+        event_type: { type: 'string' },
+        host_names: { type: 'string', description: 'Optional, e.g. "Tolu & Dami".' },
+        event_date: { type: 'string', description: 'YYYY-MM-DD, optional.' },
+        city: { type: 'string' },
+        setting: { type: 'string', description: 'e.g. "indoor", "outdoor", "beach".' },
+        guests: { type: 'number' },
+        venue_status: { type: 'string', description: 'Plain-language venue status, e.g. "Not booked -- SI will help". Omit if genuinely unknown; never invent a status.' },
+        total_budget_naira: { type: 'number' },
+        style: { type: 'array', items: { type: 'string' }, description: 'Style tags the user gave, e.g. ["Elegant", "Modern", "Beach"].' },
+        priorities: { type: 'array', items: { type: 'string' }, description: 'Ordered list (most important first) of what gets protected in the budget -- from the multi-select priorities question, max 3.' },
+      },
+      required: ['title', 'event_type'],
+    },
+  },
 ] as const;
 
 export const ALL_TOOLS = [...READ_ONLY_TOOLS, ...PROPOSAL_TOOLS, ...PLAN_TOOLS];
@@ -1034,6 +1113,52 @@ export async function executeConfirmBrief(client: SupabaseClient, _userId: strin
   return data;
 }
 
+// Pure formatting/validation -- no table touched, no plan_id (none exists
+// yet pre-creation). See the PLAN_TOOLS comment above these three schemas.
+async function executeOfferPlanIntent(_client: SupabaseClient, _userId: string, input: any) {
+  return {
+    event_type: input?.event_type != null ? String(input.event_type) : null,
+    title: input?.title != null ? String(input.title) : null,
+    guests: typeof input?.guests === 'number' ? input.guests : null,
+    city: input?.city != null ? String(input.city) : null,
+    total_budget_naira: typeof input?.total_budget_naira === 'number' ? input.total_budget_naira : null,
+    questions_remaining: typeof input?.questions_remaining === 'number' ? input.questions_remaining : null,
+  };
+}
+
+async function executeAskPlanQuestion(_client: SupabaseClient, _userId: string, input: any) {
+  const options = Array.isArray(input?.options)
+    ? input.options.map((o: any) => ({ id: String(o?.id ?? ''), label: String(o?.label ?? ''), hint: o?.hint != null ? String(o.hint) : null }))
+    : [];
+  return {
+    working_title: input?.working_title != null ? String(input.working_title) : null,
+    step: typeof input?.step === 'number' ? input.step : null,
+    step_count_estimate: typeof input?.step_count_estimate === 'number' ? input.step_count_estimate : null,
+    lead_in: input?.lead_in != null ? String(input.lead_in) : null,
+    question: String(input?.question ?? ''),
+    question_type: input?.question_type === 'multi_select' ? 'multi_select' : 'single_choice',
+    options,
+    max_select: typeof input?.max_select === 'number' ? input.max_select : null,
+    allow_skip: input?.allow_skip !== false,
+  };
+}
+
+async function executePreviewPlanBrief(_client: SupabaseClient, _userId: string, input: any) {
+  return {
+    title: String(input?.title ?? ''),
+    event_type: String(input?.event_type ?? ''),
+    host_names: input?.host_names != null ? String(input.host_names) : null,
+    event_date: input?.event_date != null ? String(input.event_date) : null,
+    city: input?.city != null ? String(input.city) : null,
+    setting: input?.setting != null ? String(input.setting) : null,
+    guests: typeof input?.guests === 'number' ? input.guests : null,
+    venue_status: input?.venue_status != null ? String(input.venue_status) : null,
+    total_budget_naira: typeof input?.total_budget_naira === 'number' ? input.total_budget_naira : null,
+    style: Array.isArray(input?.style) ? input.style.map(String) : [],
+    priorities: Array.isArray(input?.priorities) ? input.priorities.map(String) : [],
+  };
+}
+
 const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, input: any) => Promise<unknown>> = {
   create_plan_draft: executeCreatePlanDraft,
   get_plan: executeGetPlan,
@@ -1043,6 +1168,9 @@ const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, in
   assign_provider: executeAssignProvider,
   reschedule_plan: executeReschedulePlan,
   confirm_brief: executeConfirmBrief,
+  offer_plan_intent: executeOfferPlanIntent,
+  ask_plan_question: executeAskPlanQuestion,
+  preview_plan_brief: executePreviewPlanBrief,
 };
 
 export async function executePlanTool(name: string, client: SupabaseClient, userId: string, input: any): Promise<unknown> {

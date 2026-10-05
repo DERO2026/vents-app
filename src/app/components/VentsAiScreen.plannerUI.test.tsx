@@ -306,3 +306,158 @@ describe('Provider recommendation and assignment (assigned is never booked)', ()
     expect(container!.textContent).toMatch(/not booked yet/i);
   });
 });
+
+describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, no plan row until the end', () => {
+  it('offer_plan_intent renders the extracted-field tiles and "Plan this event with SI" sends a real follow-up turn', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: 'Congratulations. I can plan this with you end to end.',
+      cards: [{ type: 'offer_plan_intent', data: { event_type: 'wedding', guests: 120, city: 'Lagos', total_budget_naira: 8000000, questions_remaining: 4 } }],
+    });
+
+    mount();
+    setInputAndSend("I'm planning a beach wedding for 120 people in Lagos with a ₦8 million budget.");
+    await flush();
+
+    expect(container!.textContent).toContain('I CAUGHT');
+    expect(container!.textContent).toContain('120');
+    expect(container!.textContent).toContain('Lagos');
+    expect(container!.textContent).toContain('₦8,000,000');
+    expect(container!.textContent).toContain('About 4 quick questions to go.');
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'First question...', cards: [] });
+    clickTestId('ai-plan-offer-card'); // no-op click on the card itself, just confirming it's present
+    const acceptBtn = Array.from(container!.querySelectorAll('span')).find((s) => s.textContent === 'Plan this event with SI');
+    act(() => acceptBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Yes, plan this event with SI.');
+  });
+
+  it('"Just chat" dismisses the offer card locally without sending anything', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: 'Congratulations.',
+      cards: [{ type: 'offer_plan_intent', data: { event_type: 'wedding' } }],
+    });
+
+    mount();
+    setInputAndSend('plan my wedding');
+    await flush();
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(1);
+
+    const dismissBtn = Array.from(container!.querySelectorAll('span')).find((s) => s.textContent === 'Just chat');
+    act(() => dismissBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container!.textContent).not.toContain('I CAUGHT');
+    expect(sendVentsAiMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it('ask_plan_question (single_choice): tapping an option sends its exact label as a real follow-up turn', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{
+        type: 'ask_plan_question',
+        data: {
+          step: 2, step_count_estimate: 4, lead_in: '68 days — very doable.', question: 'Do you already have a venue?',
+          question_type: 'single_choice',
+          options: [{ id: 'has_one', label: 'Yes, I have one' }, { id: 'help', label: 'Help me find one' }],
+        },
+      }],
+    });
+
+    mount();
+    setInputAndSend('Saturday 12 December');
+    await flush();
+    expect(container!.textContent).toContain('Do you already have a venue?');
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'ok', cards: [] });
+    const optionRow = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes('Help me find one'));
+    act(() => optionRow!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Help me find one');
+  });
+
+  it('ask_plan_question (multi_select): toggling chips then Done sends the comma-joined labels, capped at max_select', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{
+        type: 'ask_plan_question',
+        data: {
+          step: 4, question: 'What matters most?', question_type: 'multi_select', max_select: 2,
+          options: [{ id: 'food', label: 'Great food' }, { id: 'photo', label: 'Photography' }, { id: 'music', label: 'Live music' }],
+        },
+      }],
+    });
+
+    mount();
+    setInputAndSend('Elegant, modern, beachy');
+    await flush();
+
+    const chip = (label: string) => Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes(label))!;
+    act(() => chip('Great food').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    act(() => chip('Photography').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    // Third tap is over max_select (2) and is a no-op.
+    act(() => chip('Live music').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'ok', cards: [] });
+    const doneBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Done');
+    act(() => doneBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Great food, Photography');
+  });
+
+  it('preview_plan_brief renders the brief read-only and "Build my plan" sends the exact trigger text create_plan_draft/confirm_brief key off', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{
+        type: 'preview_plan_brief',
+        data: {
+          title: 'Beach Wedding', event_type: 'wedding', city: 'Lagos', setting: 'Outdoor', guests: 120,
+          total_budget_naira: 8000000, style: ['Elegant', 'Modern', 'Beach'], priorities: ['Great food', 'Photography', 'Live music'],
+        },
+      }],
+    });
+
+    mount();
+    setInputAndSend('that covers it');
+    await flush();
+
+    expect(container!.textContent).toContain('Beach Wedding');
+    expect(container!.textContent).toContain('₦8,000,000');
+    expect(container!.textContent).toContain('1 · Great food');
+    expect(container!.textContent).toContain('Not booked yet'); // no venue_status given -- shown in amber, not fabricated.
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Building...', cards: [] });
+    const buildBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Build my plan');
+    act(() => buildBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Build my plan.');
+  });
+
+  it('P06: the "Build my plan." turn shows BuildingPlanLoader instead of the generic typing dots while it is in flight', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    let resolveSend: (v: any) => void;
+    sendVentsAiMessage.mockImplementation(() => new Promise((resolve) => { resolveSend = resolve; }));
+
+    mount();
+    setInputAndSend('Build my plan.');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="ai-building-plan-loader"]')).toBeTruthy();
+    expect(container!.textContent).toContain('Usually under 20 seconds.');
+
+    await act(async () => { resolveSend!({ type: 'message', text: 'Your plan is ready.', cards: [] }); await flush(); });
+    expect(container!.querySelector('[data-testid="ai-building-plan-loader"]')).toBeFalsy();
+  });
+});

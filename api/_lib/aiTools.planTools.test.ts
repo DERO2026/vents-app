@@ -8,6 +8,7 @@ import {
   executeAssignProvider,
   executeReschedulePlan,
   executeConfirmBrief,
+  executePlanTool,
   PLAN_TOOLS,
   PLAN_TOOL_NAMES,
   PROPOSAL_TOOL_NAMES,
@@ -249,6 +250,87 @@ describe('executeConfirmBrief', () => {
   it('throws if the plan is not a draft (or not the caller\'s)', async () => {
     const { client } = makeFakeClient({ from: { plans: { data: null, error: null } } });
     await expect(executeConfirmBrief(client, 'user1', { plan_id: 'plan1' })).rejects.toThrow();
+  });
+});
+
+describe('offer_plan_intent / ask_plan_question / preview_plan_brief (P02-P05 pre-plan cards)', () => {
+  it('offer_plan_intent writes nothing and just echoes/normalizes the extracted fields', async () => {
+    const { client, fromCalls, rpcCalls } = makeFakeClient();
+    const result: any = await executePlanTool('offer_plan_intent', client, 'user1', {
+      event_type: 'wedding',
+      title: 'Beach wedding',
+      guests: 120,
+      city: 'Lagos',
+      total_budget_naira: 8000000,
+      questions_remaining: 4,
+    });
+    expect(result).toEqual({
+      event_type: 'wedding',
+      title: 'Beach wedding',
+      guests: 120,
+      city: 'Lagos',
+      total_budget_naira: 8000000,
+      questions_remaining: 4,
+    });
+    // Pure formatting -- no table or RPC touched.
+    expect(fromCalls).toEqual([]);
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it('offer_plan_intent leaves unknown fields as null rather than guessing a value', async () => {
+    const { client } = makeFakeClient();
+    const result: any = await executePlanTool('offer_plan_intent', client, 'user1', { event_type: 'wedding' });
+    expect(result.title).toBeNull();
+    expect(result.guests).toBeNull();
+    expect(result.city).toBeNull();
+    expect(result.total_budget_naira).toBeNull();
+  });
+
+  it('ask_plan_question normalizes options and defaults question_type/allow_skip', async () => {
+    const { client } = makeFakeClient();
+    const result: any = await executePlanTool('ask_plan_question', client, 'user1', {
+      step: 2,
+      question: 'Do you already have a venue?',
+      options: [{ id: 'has_one', label: 'Yes, I have one', hint: 'Add details' }, { id: 'help', label: 'Help me find one' }],
+    });
+    expect(result.question_type).toBe('single_choice');
+    expect(result.allow_skip).toBe(true);
+    expect(result.options).toEqual([
+      { id: 'has_one', label: 'Yes, I have one', hint: 'Add details' },
+      { id: 'help', label: 'Help me find one', hint: null },
+    ]);
+  });
+
+  it('ask_plan_question respects an explicit multi_select type and allow_skip: false', async () => {
+    const { client } = makeFakeClient();
+    const result: any = await executePlanTool('ask_plan_question', client, 'user1', {
+      step: 4,
+      question: 'What matters most?',
+      question_type: 'multi_select',
+      max_select: 3,
+      allow_skip: false,
+      options: [{ id: 'food', label: 'Great food' }],
+    });
+    expect(result.question_type).toBe('multi_select');
+    expect(result.max_select).toBe(3);
+    expect(result.allow_skip).toBe(false);
+  });
+
+  it('preview_plan_brief writes nothing and normalizes style/priorities arrays', async () => {
+    const { client, fromCalls, rpcCalls } = makeFakeClient();
+    const result: any = await executePlanTool('preview_plan_brief', client, 'user1', {
+      title: 'Beach Wedding',
+      event_type: 'wedding',
+      city: 'Lagos',
+      guests: 120,
+      total_budget_naira: 8000000,
+      style: ['Elegant', 'Modern', 'Beach'],
+      priorities: ['Great food', 'Photography', 'Live music'],
+    });
+    expect(result.style).toEqual(['Elegant', 'Modern', 'Beach']);
+    expect(result.priorities).toEqual(['Great food', 'Photography', 'Live music']);
+    expect(fromCalls).toEqual([]);
+    expect(rpcCalls).toEqual([]);
   });
 });
 
