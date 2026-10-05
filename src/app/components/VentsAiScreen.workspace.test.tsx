@@ -245,6 +245,9 @@ describe('P09 Allocation sheet: Save calls the real apply_plan_allocation_change
     await flush();
 
     expect(container!.textContent).toContain('2 found'); // the real floor-price/count line
+    // The amount field renders as formatted currency ("₦900,000"), matching
+    // the mockup's P09 frame -- never a raw unformatted number.
+    expect(container!.textContent).toContain('₦900,000');
 
     clickTestId('ai-allocation-plus');
     clickTestId('ai-allocation-plus'); // +₦100k (2 x ₦50k steps) over the ₦900,000 allocated

@@ -1330,10 +1330,10 @@ function AllocationSheet({
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span onClick={() => step(-1)} role="button" data-testid="ai-allocation-minus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>−</span>
           <input
-            type="number"
-            min={0}
-            value={amountNaira}
-            onChange={(e) => setAmountNaira(Math.max(0, Number(e.target.value) || 0))}
+            type="text"
+            inputMode="numeric"
+            value={naira(amountNaira)}
+            onChange={(e) => setAmountNaira(Math.max(0, Number(e.target.value.replace(/[^0-9]/g, '')) || 0))}
             style={{ flex: 1, height: 56, borderRadius: 12, background: '#0a0810', border: '1px solid rgba(163,92,255,.55)', textAlign: 'center', fontSize: 24, fontWeight: 800, color: '#f2eff6', fontFamily: 'inherit' }}
           />
           <span onClick={() => step(1)} role="button" data-testid="ai-allocation-plus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>+</span>
@@ -3332,7 +3332,7 @@ function PlanDisambiguationCard({
   onSelectPlan,
   onSomethingElse,
 }: {
-  candidates: { plan_id: string; title: string; status: string; event_date: string | null; city: string | null; category_estimated_naira: number | null }[];
+  candidates: { plan_id: string; title: string; status: string; event_date: string | null; city: string | null; category_estimated_naira: number | null; category_label?: string | null }[];
   onSelectPlan: (planId: string, title: string) => void;
   onSomethingElse: () => void;
 }) {
@@ -3351,8 +3351,8 @@ function PlanDisambiguationCard({
           <div>
             <div style={{ fontSize: 13.5, fontWeight: 700 }}>◆ {c.title}</div>
             <div style={{ fontSize: 11.5, color: '#a89db3' }}>
-              {c.status === 'draft' ? 'Draft' : (c.event_date || 'Date not set')}{c.city ? ` · ${c.city}` : ''}
-              {c.category_estimated_naira != null ? ` · ≈ ${naira(c.category_estimated_naira)}` : ''}
+              {c.status === 'draft' ? 'Draft' : (friendlyDate(c.event_date, true) || 'Date not set')}{c.city ? ` · ${c.city}` : ''}
+              {c.category_estimated_naira != null ? ` · ≈ ${compactNaira(c.category_estimated_naira)}${c.category_label ? ` for ${c.category_label.toLowerCase()}` : ''}` : ''}
             </div>
           </div>
           <span style={{ color: '#d3b8ff' }}>›</span>

@@ -847,8 +847,8 @@ describe('P27 Plan disambiguation: picking a plan attaches THIS thread to it, ne
         data: {
           category_hint: 'caterer',
           candidates: [
-            { plan_id: 'plan-mum', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan', category_estimated_naira: 450000 },
-            { plan_id: 'plan-dinner', title: 'Team end-of-year dinner', status: 'draft', event_date: null, city: 'Lagos', category_estimated_naira: null },
+            { plan_id: 'plan-mum', title: "Mum's 60th", status: 'active', event_date: '2026-11-07', city: 'Ibadan', category_estimated_naira: 450000, category_label: 'Catering' },
+            { plan_id: 'plan-dinner', title: 'Team end-of-year dinner', status: 'draft', event_date: null, city: 'Lagos', category_estimated_naira: null, category_label: null },
           ],
         },
       }],
@@ -859,7 +859,11 @@ describe('P27 Plan disambiguation: picking a plan attaches THIS thread to it, ne
     await flush();
 
     expect(container!.textContent).toContain("Mum's 60th");
-    expect(container!.textContent).toContain('₦450,000');
+    // The mockup's own P27 convention (verified by rendered comparison):
+    // dates abbreviate to "7 Nov" (no weekday) and amounts here are the
+    // compact "₦450k for catering" form, not full precision.
+    expect(container!.textContent).toContain('7 Nov');
+    expect(container!.textContent).toContain('₦450k for catering');
     expect(container!.textContent).toContain('Something else');
 
     clickTestId('ai-plan-disambiguation-something-else');

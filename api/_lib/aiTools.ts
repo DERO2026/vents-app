@@ -1308,6 +1308,7 @@ export async function executeDisambiguatePlans(client: SupabaseClient, _userId: 
         event_date: p.event_date,
         city: p.city,
         category_estimated_naira: cat ? fromKobo(cat.allocated_kobo) : null,
+        category_label: cat ? cat.label : null,
       };
     });
 
