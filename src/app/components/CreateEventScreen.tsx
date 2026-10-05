@@ -1127,6 +1127,17 @@ export function CreateEventScreen({ currentUser, onBack, onCreated, editEventId,
         ref={stepContentRef}
         style={{
           flex: 1,
+          // Without this, a flex item's default min-height:auto lets it
+          // grow to its content's intrinsic height instead of being
+          // clamped by the flex column (a well-documented WebKit/iOS
+          // flexbox quirk) -- this div then grows past the phone frame's
+          // fixed, overflow:hidden bounds instead of scrolling internally,
+          // so overflowY:'auto' never kicks in and the bottom of the form
+          // (and the fixed CTA sitting over it) becomes unreachable. Every
+          // other screen in this codebase with the same flex:1/overflowY
+          // pattern already sets this (PromoteEventScreen, SettingsScreen,
+          // WalletScreen) -- this was the one missing it.
+          minHeight: 0,
           overflowY: 'auto',
           padding: `4px 16px ${step === 6 ? '200px' : '120px'}`,
           scrollbarWidth: 'none',
