@@ -892,12 +892,27 @@ export async function executeGetPlan(client: SupabaseClient, _userId: string, in
 
   const [{ data: assignments }, { data: tasks }, { data: milestones }, { data: messages }] = await Promise.all([
     categoryIds.length
-      ? client.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status, booking_id').in('category_id', categoryIds)
+      ? client.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status, booking_id, updated_at').in('category_id', categoryIds)
       : Promise.resolve({ data: [] as any[] }),
     client.from('plan_tasks').select('id, category_id, title, offset_days, due_override, done_at, source').eq('plan_id', planId),
     client.from('plan_milestones').select('id, phase_key, label, ends_offset_days').eq('plan_id', planId),
     client.from('plan_messages').select('role, content, created_at').eq('plan_id', planId).order('created_at', { ascending: false }).limit(20),
   ]);
+
+  // Providers/bookings referenced by ANY assignment (not just active ones)
+  // -- a cancelled assignment still needs its provider name and its real
+  // refund status (see the P21 fix, migration 0158: cancel_service_booking
+  // now syncs plan_assignments.status to 'cancelled', but the model still
+  // needs to read the real service_bookings refund fields rather than
+  // assume a full refund).
+  const providerIds = [...new Set((assignments ?? []).map((a: any) => a.provider_id).filter(Boolean))];
+  const bookingIds = [...new Set((assignments ?? []).map((a: any) => a.booking_id).filter(Boolean))];
+  const [{ data: providers }, { data: bookings }] = await Promise.all([
+    providerIds.length ? client.from('service_providers').select('id, business_name').in('id', providerIds) : Promise.resolve({ data: [] as any[] }),
+    bookingIds.length ? client.from('service_bookings').select('id, status, payment_status, refund_reason').in('id', bookingIds) : Promise.resolve({ data: [] as any[] }),
+  ]);
+  const providerById = new Map<string, any>((providers ?? []).map((p: any) => [p.id, p]));
+  const bookingById = new Map<string, any>((bookings ?? []).map((b: any) => [b.id, b]));
 
   const assignmentsByCategory = new Map<string, any[]>();
   for (const a of assignments ?? []) {
@@ -916,6 +931,15 @@ export async function executeGetPlan(client: SupabaseClient, _userId: string, in
     totalCommitted += committed;
     totalPaid += paid;
     const estimated = Math.max(0, (c.allocated_kobo ?? 0) - committed - paid);
+
+    // The most recently cancelled assignment, only surfaced when the
+    // category has no currently-active one -- so "what happened to my
+    // photographer" can be answered from a real row, not silence, without
+    // ever showing a stale cancelled assignment alongside a fresh one.
+    const recentlyCancelled = activeAssignments.length === 0
+      ? catAssignments.filter((a) => a.status === 'cancelled').sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())[0]
+      : null;
+
     return {
       category_id: c.id,
       key: c.key,
@@ -928,10 +952,21 @@ export async function executeGetPlan(client: SupabaseClient, _userId: string, in
       is_contingency: c.is_contingency,
       assignments: activeAssignments.map((a: any) => ({
         provider_id: a.provider_id,
+        business_name: a.provider_id ? providerById.get(a.provider_id)?.business_name ?? null : null,
         own_vendor_name: a.own_vendor_name,
         agreed_amount_naira: fromKobo(a.agreed_kobo),
         status: a.status,
       })),
+      recently_cancelled: recentlyCancelled
+        ? {
+            business_name: recentlyCancelled.provider_id ? providerById.get(recentlyCancelled.provider_id)?.business_name ?? null : null,
+            own_vendor_name: recentlyCancelled.own_vendor_name,
+            agreed_amount_naira: fromKobo(recentlyCancelled.agreed_kobo),
+            // Real refund status, read off the real booking -- NEVER assume
+            // "fully refunded" here; state exactly what the booking says.
+            refund_status: recentlyCancelled.booking_id ? bookingById.get(recentlyCancelled.booking_id)?.payment_status ?? null : null,
+          }
+        : null,
     };
   });
 

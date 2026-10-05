@@ -1,0 +1,14 @@
+-- Fix for a real finding from Supabase's own security advisor right after
+-- 0158 was applied: sync_plan_assignment_on_booking_cancel() is a trigger
+-- function (RETURNS trigger) and was granted EXECUTE to anon/authenticated,
+-- copying set_service_bookings_updated_at's (0054) grant pattern without
+-- noticing that pattern itself grants more than a trigger function needs.
+-- A trigger fires via the trigger mechanism regardless of the invoking
+-- role's EXECUTE grant on the function -- Postgres also separately refuses
+-- to call a trigger-returning function directly via SQL/RPC ("trigger
+-- functions can only be called as triggers"), so this was not actually
+-- exploitable, but the advisor is right that the grant is pointless
+-- surface area and should not exist. Revoking it entirely; the trigger
+-- itself (trg_sync_plan_assignment_on_booking_cancel, unchanged) keeps
+-- firing exactly as before -- only direct RPC-style invocation is removed.
+REVOKE EXECUTE ON FUNCTION public.sync_plan_assignment_on_booking_cancel() FROM anon, authenticated, project_admin;

@@ -130,6 +130,62 @@ describe('executeGetPlan', () => {
     const { client } = makeFakeClient({ from: { plans: { data: null, error: null } } });
     await expect(executeGetPlan(client, 'user1', { plan_id: 'not-mine' })).rejects.toThrow(/not found/i);
   });
+
+  it('surfaces a cancelled booking as recently_cancelled with its REAL refund_status, never assuming a full refund', async () => {
+    const { client } = makeFakeClient();
+    client.from = vi.fn((table: string) => {
+      if (table === 'plans') return makeChain({ data: { id: 'plan1', title: 'T', event_type: 'wedding', status: 'active', event_date: null, end_date: null, city: null, guests: null, setting: null, total_kobo: 100000000 }, error: null });
+      if (table === 'plan_categories') return makeChain({ data: [{ id: 'cat1', key: 'photography', label: 'Photography', allocated_kobo: 50000000, is_priority: false, is_contingency: false, sort: 0 }], error: null });
+      // migration 0158's trigger already flipped this assignment to
+      // 'cancelled' once the real booking was cancelled -- get_plan just
+      // has to read that honestly, not reconstruct it.
+      if (table === 'plan_assignments') return makeChain({
+        data: [{ id: 'a1', category_id: 'cat1', provider_id: 'p1', own_vendor_name: null, agreed_kobo: 45000000, status: 'cancelled', booking_id: 'b1', updated_at: '2026-10-01T00:00:00Z' }],
+        error: null,
+      });
+      if (table === 'service_providers') return makeChain({ data: [{ id: 'p1', business_name: 'Ade Studios' }], error: null });
+      if (table === 'service_bookings') return makeChain({ data: [{ id: 'b1', status: 'cancelled', payment_status: 'refund_pending', refund_reason: 'Provider unavailable' }], error: null });
+      if (table === 'plan_tasks') return makeChain({ data: [], error: null });
+      if (table === 'plan_milestones') return makeChain({ data: [], error: null });
+      if (table === 'plan_messages') return makeChain({ data: [], error: null });
+      return makeChain({ data: null, error: null });
+    });
+
+    const result: any = await executeGetPlan(client, 'user1', { plan_id: 'plan1' });
+    const cat = result.categories[0];
+    expect(cat.assignments).toEqual([]); // no active assignment -- the category reads as open/reopened
+    expect(cat.recently_cancelled).toMatchObject({
+      business_name: 'Ade Studios',
+      agreed_amount_naira: 450000,
+      refund_status: 'refund_pending', // exactly what the real booking says, never "refunded" by assumption
+    });
+  });
+
+  it('never shows recently_cancelled once a category has a fresh active assignment', async () => {
+    const { client } = makeFakeClient();
+    client.from = vi.fn((table: string) => {
+      if (table === 'plans') return makeChain({ data: { id: 'plan1', title: 'T', event_type: 'wedding', status: 'active', event_date: null, end_date: null, city: null, guests: null, setting: null, total_kobo: 100000000 }, error: null });
+      if (table === 'plan_categories') return makeChain({ data: [{ id: 'cat1', key: 'photography', label: 'Photography', allocated_kobo: 50000000, is_priority: false, is_contingency: false, sort: 0 }], error: null });
+      if (table === 'plan_assignments') return makeChain({
+        data: [
+          { id: 'a1', category_id: 'cat1', provider_id: 'p1', own_vendor_name: null, agreed_kobo: 45000000, status: 'cancelled', booking_id: 'b1', updated_at: '2026-10-01T00:00:00Z' },
+          { id: 'a2', category_id: 'cat1', provider_id: 'p2', own_vendor_name: null, agreed_kobo: 38000000, status: 'assigned', booking_id: null, updated_at: '2026-10-02T00:00:00Z' },
+        ],
+        error: null,
+      });
+      if (table === 'service_providers') return makeChain({ data: [{ id: 'p1', business_name: 'Ade Studios' }, { id: 'p2', business_name: 'Lumen & Lace' }], error: null });
+      if (table === 'service_bookings') return makeChain({ data: [{ id: 'b1', status: 'cancelled', payment_status: 'refunded', refund_reason: null }], error: null });
+      if (table === 'plan_tasks') return makeChain({ data: [], error: null });
+      if (table === 'plan_milestones') return makeChain({ data: [], error: null });
+      if (table === 'plan_messages') return makeChain({ data: [], error: null });
+      return makeChain({ data: null, error: null });
+    });
+
+    const result: any = await executeGetPlan(client, 'user1', { plan_id: 'plan1' });
+    const cat = result.categories[0];
+    expect(cat.assignments).toEqual([{ provider_id: 'p2', business_name: 'Lumen & Lace', own_vendor_name: null, agreed_amount_naira: 380000, status: 'assigned' }]);
+    expect(cat.recently_cancelled).toBeNull();
+  });
 });
 
 describe('propose vs apply (direct instruction vs SI suggestion)', () => {
