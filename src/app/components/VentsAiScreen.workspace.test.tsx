@@ -282,3 +282,105 @@ describe('P11 Team tab', () => {
     expect(container!.textContent).toMatch(/1 on VENTS · from ₦450,000/);
   });
 });
+
+describe('P16 Tasks tab (+ P17 completed-task states folded in)', () => {
+  const todayPlusDays = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+
+  it('buckets real tasks by due date (overdue vs. this week) and a completes_on_booking task cannot be manually toggled', async () => {
+    mockWorkspaceTables({
+      plan_tasks: makeChain({
+        data: [
+          { id: 't1', category_id: 'cat-photo', title: 'Confirm venue capacity', offset_days: null, due_override: todayPlusDays(-3), done_at: null, source: 'user', completes_on_booking: false },
+          { id: 't2', category_id: 'cat-photo', title: 'Book photographer', offset_days: null, due_override: null, done_at: '2026-10-01T00:00:00Z', source: 'si', completes_on_booking: true },
+        ],
+        error: null,
+      }),
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-tasks');
+    await flush();
+
+    expect(container!.textContent).toContain('OVERDUE · 1');
+    expect(container!.textContent).toContain('Confirm venue capacity');
+    expect(container!.textContent).toContain('Completed · 1'); // collapsed by default, per the mockup's own spec
+
+    const showCompleted = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes('Completed · 1'));
+    act(() => showCompleted!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(container!.textContent).toContain('Book photographer');
+    expect(container!.textContent).toContain('Done via VENTS booking');
+
+    supabaseFrom.mockClear();
+    const lockedBox = container!.querySelector('[data-testid="workspace-task-t2"]') as HTMLElement;
+    act(() => lockedBox.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(supabaseFrom).not.toHaveBeenCalledWith('plan_tasks');
+  });
+
+  it('completing a manual task sends a real plan_tasks update and shows an Undo toast that reverts with another real write', async () => {
+    const sharedTasksChain = makeChain({
+      data: [{ id: 't1', category_id: 'cat-photo', title: 'Send save-the-dates', offset_days: null, due_override: todayPlusDays(2), done_at: null, source: 'user', completes_on_booking: false }],
+      error: null,
+    });
+    sharedTasksChain.update = vi.fn(() => makeChain({ data: null, error: null }));
+    supabaseFrom.mockImplementation((table: string) => {
+      if (table === 'plan_tasks') return sharedTasksChain;
+      if (table === 'plans') return makeChain({ data: [PLAN_ROW], error: null }, { data: PLAN_ROW, error: null });
+      if (table === 'plan_categories') return makeChain({ data: CATEGORY_ROWS, error: null });
+      if (table === 'plan_assignments') return makeChain({ data: ASSIGNMENT_ROWS, error: null });
+      if (table === 'service_providers') return makeChain({ data: PROVIDER_ROWS, error: null });
+      return makeChain({ data: [], error: null });
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-tasks');
+    await flush();
+
+    const box = container!.querySelector('[data-testid="workspace-task-t1"]') as HTMLElement;
+    act(() => box.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(sharedTasksChain.update).toHaveBeenCalledWith(expect.objectContaining({ done_at: expect.any(String) }));
+
+    const undoBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Undo');
+    expect(undoBtn).toBeTruthy();
+    act(() => undoBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(sharedTasksChain.update).toHaveBeenCalledWith({ done_at: null });
+  });
+});
+
+describe('P18 Timeline tab', () => {
+  it('renders real milestones from plan_milestones with phase-relative real task counts', async () => {
+    mockWorkspaceTables({
+      plan_milestones: makeChain({
+        data: [
+          { id: 'm1', phase_key: 'lock_essentials', label: 'Lock the essentials', ends_offset_days: 70 },
+          { id: 'm2', phase_key: 'style', label: 'Style & entertainment', ends_offset_days: 41 },
+        ],
+        error: null,
+      }),
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-timeline');
+    await flush();
+
+    expect(container!.textContent).toContain('Lock the essentials');
+    expect(container!.textContent).toContain('Style & entertainment');
+    expect(container!.textContent).toContain('Event day');
+  });
+
+  it('shows the real "no timeline phases yet" empty state rather than fabricating milestones', async () => {
+    mockWorkspaceTables({ plan_milestones: makeChain({ data: [], error: null }) });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-timeline');
+    await flush();
+
+    expect(container!.textContent).toContain('No timeline phases yet for this plan.');
+  });
+});

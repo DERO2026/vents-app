@@ -245,7 +245,9 @@ describe('Suggestion vs direct change vs Undo (purple PlanUpdateCard, never the 
 
     expect(sendVentsAiMessage).toHaveBeenCalledTimes(2);
     expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toContain('Apply that change.');
-    expect(container!.textContent).toContain('PLAN UPDATED');
+    // P23's exact copy: a static "PLAN UPDATE" badge plus a separate green "✓ Applied · Undo" status line.
+    expect(container!.textContent).toContain('PLAN UPDATE');
+    expect(container!.textContent).toContain('✓ Applied');
     expect(container!.querySelector('[data-testid="ai-plan-update-undo"]')).toBeTruthy();
   });
 
@@ -304,6 +306,50 @@ describe('Provider recommendation and assignment (assigned is never booked)', ()
     expect(container!.textContent).toContain('Provider assigned');
     expect(container!.textContent).not.toContain('Provider booked');
     expect(container!.textContent).toMatch(/not booked yet/i);
+  });
+});
+
+describe('P15 No suitable provider: real numbers only, never a dead end', () => {
+  it('a price-ceiling no_match shows the real "N in {location} but all above ₦X" copy and a real "Raise to" amount', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{
+        type: 'recommend_providers',
+        data: [{ no_match: true, category: 'sound', location: 'Lagos', max_price_naira: 300000, total_in_location: 3, cheapest_above_ceiling_naira: 380000 }],
+      }],
+    });
+
+    mount();
+    setInputAndSend('find sound providers under 300k in lagos');
+    await flush();
+
+    expect(container!.textContent).toContain('There are 3 in Lagos, but all start above ₦300,000.');
+    expect(container!.textContent).toContain('Raise to ₦380,000');
+    expect(container!.textContent).toContain('Add your own vendor');
+
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'ok', cards: [] });
+    const raiseBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes('Raise to ₦380,000'));
+    act(() => raiseBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toContain('380,000');
+  });
+
+  it('zero providers in the location at all gets the "VENTS doesn\'t have" copy, not a misleading price comparison', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{ type: 'recommend_providers', data: [{ no_match: true, category: 'sound', location: 'Kano', max_price_naira: 300000, total_in_location: 0, cheapest_above_ceiling_naira: null }] }],
+    });
+
+    mount();
+    setInputAndSend('find sound providers in kano');
+    await flush();
+
+    expect(container!.textContent).toContain("VENTS doesn't have sound providers in Kano yet.");
+    expect(container!.textContent).not.toContain('Raise to'); // no real floor price to raise to
   });
 });
 

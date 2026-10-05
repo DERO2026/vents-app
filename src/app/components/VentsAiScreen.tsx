@@ -96,10 +96,13 @@ type WorkspaceTask = {
   completes_on_booking: boolean;
 };
 
+type WorkspaceMilestone = { id: string; phase_key: string; label: string; ends_offset_days: number };
+
 type PlanWorkspaceData = {
   plan: { id: string; title: string; event_type: string; status: string; event_date: string | null; city: string | null; guests: number | null; total_kobo: number | null };
   categories: WorkspaceCategory[];
   tasks: WorkspaceTask[];
+  milestones: WorkspaceMilestone[];
 };
 
 // Mirrors api/_lib/aiTools.ts's executeGetPlan query shape exactly (same
@@ -140,6 +143,12 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
     .from('plan_tasks')
     .select('id, category_id, title, offset_days, due_override, done_at, source, completes_on_booking')
     .eq('plan_id', planId);
+
+  const { data: milestones } = await supabase
+    .from('plan_milestones')
+    .select('id, phase_key, label, ends_offset_days')
+    .eq('plan_id', planId)
+    .order('ends_offset_days');
 
   const byCategory = new Map<string, any[]>();
   for (const a of assignments ?? []) {
@@ -182,6 +191,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
       source: t.source === 'si' ? 'si' : 'user',
       completes_on_booking: !!t.completes_on_booking,
     })),
+    milestones: (milestones ?? []).map((m: any) => ({ id: m.id, phase_key: m.phase_key, label: m.label, ends_offset_days: m.ends_offset_days })),
   };
 }
 
@@ -416,6 +426,10 @@ function PlanWorkspaceView({
           <WorkspaceBudgetTab data={data} onOpenCategory={setDetailCategoryId} />
         ) : tab === 'team' ? (
           <WorkspaceTeamTab data={data} onOpenCategory={setDetailCategoryId} />
+        ) : tab === 'tasks' ? (
+          <WorkspaceTasksTab data={data} onChanged={load} />
+        ) : tab === 'timeline' ? (
+          <WorkspaceTimelineTab data={data} onOpenTasks={() => setTab('tasks')} />
         ) : (
           <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>
             {TABS.find((t) => t.id === tab)?.label} isn't built yet in this pass — not a mockup frame it skips, just not reached yet.
@@ -1042,6 +1056,264 @@ function WorkspaceTeamTab({ data, onOpenCategory }: { data: PlanWorkspaceData; o
   );
 }
 
+// Shared due-date math for Tasks/Timeline -- offset_days counts back from
+// the plan's event_date (null when unset); due_override always wins when
+// present. Returns null when neither the event date nor an override gives
+// a real date to compute from (never fabricated).
+function taskDueDate(t: WorkspaceTask, eventDateIso: string | null): Date | null {
+  if (t.due_override) return new Date(t.due_override);
+  if (eventDateIso && t.offset_days != null) {
+    const d = new Date(eventDateIso);
+    d.setDate(d.getDate() - t.offset_days);
+    return d;
+  }
+  return null;
+}
+const fmtTaskDate = (d: Date) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+// P16 Tasks tab + P17's completed-task visual states folded into the same
+// rows (P17 is a state spec for P16's own rows, not a separate screen).
+// Buckets (Overdue/This week/Next 2 weeks/Later/Event week/Completed) are
+// computed from today against each task's real due date -- never a fixed
+// demo bucket. "Just completed" shows a 4s purple-tick + Undo toast (both
+// ends are real plan_tasks writes, never a frontend-only flip). A
+// completes_on_booking task can't be manually toggled, matching
+// CategoryDetailView's same rule, and "+ Add task" is a stated gap (no
+// create-task tool/UI exists yet), not a silent dead button.
+function WorkspaceTasksTab({ data, onChanged }: { data: PlanWorkspaceData; onChanged: () => void }) {
+  const [justCompleted, setJustCompleted] = useState<{ id: string; prevDoneAt: string | null } | null>(null);
+  const [showLater, setShowLater] = useState(false);
+  const [showCompleted, setShowCompleted] = useState(false);
+  const [addNote, setAddNote] = useState(false);
+
+  useEffect(() => {
+    if (!justCompleted) return;
+    const t = setTimeout(() => setJustCompleted(null), 4000);
+    return () => clearTimeout(t);
+  }, [justCompleted]);
+
+  const eventDateIso = data.plan.event_date;
+  const categoryLabel = (id: string | null) => data.categories.find((c) => c.id === id)?.label ?? null;
+
+  const withDue = data.tasks.map((t) => ({ t, due: taskDueDate(t, eventDateIso) }));
+  const done = withDue.filter((x) => !!x.t.done_at);
+  const open = withDue.filter((x) => !x.t.done_at);
+
+  const DAY = 86400000;
+  const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+  const endOfWeek = startOfToday.getTime() + 7 * DAY;
+  const endOf2Weeks = startOfToday.getTime() + 21 * DAY;
+  const eventDateMs = eventDateIso ? new Date(eventDateIso).getTime() : null;
+  const isEventWeek = (ms: number) => eventDateMs != null && ms >= eventDateMs - 7 * DAY && ms <= eventDateMs;
+
+  const overdue = open.filter((x) => x.due && x.due.getTime() < startOfToday.getTime());
+  const thisWeek = open.filter((x) => x.due && x.due.getTime() >= startOfToday.getTime() && x.due.getTime() < endOfWeek && !overdue.includes(x));
+  const next2Weeks = open.filter((x) => x.due && x.due.getTime() >= endOfWeek && x.due.getTime() < endOf2Weeks);
+  const eventWeek = open.filter((x) => x.due && isEventWeek(x.due.getTime()) && x.due.getTime() >= endOf2Weeks);
+  const later = open.filter((x) => (!x.due || x.due.getTime() >= endOf2Weeks) && !eventWeek.includes(x));
+
+  async function toggle(task: WorkspaceTask) {
+    if (task.completes_on_booking) return; // "the booking is the truth" -- same rule as CategoryDetailView
+    const wasDone = !!task.done_at;
+    const { error } = await supabase.from('plan_tasks').update({ done_at: wasDone ? null : new Date().toISOString() }).eq('id', task.id);
+    if (error) return;
+    if (!wasDone) setJustCompleted({ id: task.id, prevDoneAt: task.done_at });
+    else if (justCompleted?.id === task.id) setJustCompleted(null);
+    onChanged();
+  }
+
+  async function undo(taskId: string, prevDoneAt: string | null) {
+    const { error } = await supabase.from('plan_tasks').update({ done_at: prevDoneAt }).eq('id', taskId);
+    setJustCompleted(null);
+    if (!error) onChanged();
+  }
+
+  // Readiness-style progress bar, matching P16's own 18-segment look --
+  // segment count is real (total task count), not hardcoded to 18.
+  const total = data.tasks.length;
+
+  function TaskRow({ x, amber }: { x: { t: WorkspaceTask; due: Date | null }; amber?: boolean }) {
+    const isDoneRecently = justCompleted?.id === x.t.id;
+    const autoCompleted = !!x.t.done_at && x.t.completes_on_booking;
+    const label = categoryLabel(x.t.category_id);
+    return (
+      <div key={x.t.id} style={{ display: 'flex', gap: 12, alignItems: 'center', padding: '11px 0', borderBottom: '1px solid #1c1726' }}>
+        <span
+          onClick={() => toggle(x.t)}
+          role="button"
+          data-testid={`workspace-task-${x.t.id}`}
+          style={{
+            width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800, cursor: x.t.completes_on_booking ? 'default' : 'pointer',
+            background: autoCompleted ? '#34d399' : x.t.done_at ? '#a35cff' : 'transparent',
+            color: autoCompleted ? '#0a0810' : '#fff',
+            border: x.t.done_at ? 'none' : amber ? '1.5px solid #fbbf24' : '1.5px solid #4a3f56',
+          }}
+        >
+          {x.t.done_at ? '✓' : ''}
+        </span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, color: x.t.done_at ? '#a89db3' : '#f2eff6', textDecoration: x.t.done_at ? 'line-through' : 'none' }}>{x.t.title}</div>
+          <div style={{ fontSize: 11.5, color: autoCompleted ? '#34d399' : amber ? '#fbbf24' : '#8a7f97', marginTop: 2 }}>
+            {autoCompleted
+              ? 'Done via VENTS booking'
+              : [label, x.due ? (amber ? `was due ${fmtTaskDate(x.due)}` : fmtTaskDate(x.due)) : null].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        {isDoneRecently && (
+          <span onClick={() => undo(x.t.id, justCompleted!.prevDoneAt)} role="button" style={{ fontSize: 12, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Undo</span>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <span style={{ fontSize: 20, fontWeight: 800 }}>{done.length} / {total} done</span>
+          <span onClick={() => setAddNote(true)} role="button" style={{ fontSize: 12, color: '#d3b8ff', cursor: 'pointer' }}>+ Add task</span>
+        </div>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {Array.from({ length: Math.max(total, 1) }).map((_, i) => (
+            <span key={i} style={{ flex: 1, height: 5, borderRadius: 2, background: i < done.length ? '#a35cff' : '#2c2438' }} />
+          ))}
+        </div>
+        {addNote && <div style={{ fontSize: 11.5, color: '#8a7f97' }}>Adding a task from here isn't built yet -- ask SI to add it instead.</div>}
+      </div>
+
+      {overdue.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#fbbf24', marginBottom: 4 }}>OVERDUE · {overdue.length}</span>
+          {overdue.map((x) => <TaskRow key={x.t.id} x={x} amber />)}
+        </div>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97', marginBottom: 4 }}>THIS WEEK</span>
+        {thisWeek.length === 0 ? <div style={{ padding: '14px 0', borderRadius: 12, border: '1px dashed #2c2438', fontSize: 13, color: '#a89db3', textAlign: 'center' }}>✓ Nothing left this week</div> : thisWeek.map((x) => <TaskRow key={x.t.id} x={x} />)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97', marginBottom: 4 }}>NEXT 2 WEEKS</span>
+        {next2Weeks.length === 0 ? <div style={{ fontSize: 12.5, color: '#5e5470', padding: '8px 0' }}>Nothing due in this window.</div> : next2Weeks.map((x) => <TaskRow key={x.t.id} x={x} />)}
+      </div>
+      {!showLater ? (
+        <div onClick={() => setShowLater(true)} role="button" style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13, color: '#a89db3', cursor: 'pointer' }}>
+          <span>Later · {later.length} · Event week · {eventWeek.length}</span>
+          <span style={{ color: '#d3b8ff' }}>Show</span>
+        </div>
+      ) : (
+        <>
+          {later.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97', marginBottom: 4 }}>LATER</span>
+              {later.map((x) => <TaskRow key={x.t.id} x={x} />)}
+            </div>
+          )}
+          {eventWeek.length > 0 && (
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97', marginBottom: 4 }}>EVENT WEEK</span>
+              {eventWeek.map((x) => <TaskRow key={x.t.id} x={x} />)}
+            </div>
+          )}
+        </>
+      )}
+      {!showCompleted ? (
+        <div onClick={() => setShowCompleted(true)} role="button" style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: 13, color: '#8a7f97', cursor: 'pointer' }}>
+          <span>Completed · {done.length}</span>
+          <span style={{ color: '#d3b8ff' }}>Show</span>
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {done.map((x) => <TaskRow key={x.t.id} x={x} />)}
+        </div>
+      )}
+    </>
+  );
+}
+
+// P18 Timeline tab -- milestones (plan_milestones, now read by
+// fetchPlanWorkspace) mapped onto the real runway, each annotated with its
+// real open-task overdue/done counts. Read-only per the mockup's own spec
+// text ("dates move via tasks or the event date"); tapping a milestone
+// switches to Tasks rather than filtering it (a stated, smaller scope --
+// no per-phase filter state exists yet).
+function WorkspaceTimelineTab({ data, onOpenTasks }: { data: PlanWorkspaceData; onOpenTasks: () => void }) {
+  const eventDateIso = data.plan.event_date;
+  const now = Date.now();
+  const withDue = data.tasks.map((t) => ({ t, due: taskDueDate(t, eventDateIso) }));
+
+  if (data.milestones.length === 0) {
+    return <div style={{ fontSize: 12.5, color: '#786d87', textAlign: 'center', padding: 20 }}>No timeline phases yet for this plan.</div>;
+  }
+
+  const sorted = [...data.milestones].sort((a, b) => b.ends_offset_days - a.ends_offset_days); // furthest-from-event first = earliest phase
+  const eventDateMs = eventDateIso ? new Date(eventDateIso).getTime() : null;
+
+  function phaseEndsAt(m: WorkspaceMilestone): Date | null {
+    if (!eventDateMs) return null;
+    const d = new Date(eventDateMs);
+    d.setDate(d.getDate() - m.ends_offset_days);
+    return d;
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {sorted.map((m, i) => {
+        const endsAt = phaseEndsAt(m);
+        const isPast = endsAt ? endsAt.getTime() < now : false;
+        const nextUpcoming = !isPast && sorted.slice(0, i).every((pm) => {
+          const pe = phaseEndsAt(pm);
+          return pe ? pe.getTime() < now : false;
+        });
+        const inPhase = withDue.filter((x) => {
+          if (!x.due) return false;
+          const prevEnds = i > 0 ? phaseEndsAt(sorted[i - 1]) : null;
+          return x.due.getTime() <= (endsAt?.getTime() ?? Infinity) && (!prevEnds || x.due.getTime() > prevEnds.getTime());
+        });
+        const overdueInPhase = inPhase.filter((x) => !x.t.done_at && x.due && x.due.getTime() < now).length;
+        const doneInPhase = inPhase.filter((x) => !!x.t.done_at).length;
+
+        return (
+          <div key={m.id} onClick={onOpenTasks} role="button" style={{ display: 'flex', gap: 14, cursor: 'pointer' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 16 }}>
+              {isPast ? (
+                <span style={{ width: 14, height: 14, borderRadius: '50%', background: '#34d399' }} />
+              ) : nextUpcoming ? (
+                <span style={{ width: 16, height: 16, borderRadius: '50%', background: '#0a0810', border: '4px solid #a35cff', boxShadow: '0 0 0 5px rgba(163,92,255,.15)' }} />
+              ) : (
+                <span style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid #4a3f56', marginTop: 2 }} />
+              )}
+              {i < sorted.length - 1 && <span style={{ flex: 1, width: 2, background: isPast ? '#34d399' : nextUpcoming ? 'linear-gradient(#a35cff,#2c2438)' : '#2c2438' }} />}
+            </div>
+            <div style={{ flex: 1, paddingBottom: 20 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: isPast ? '#34d399' : nextUpcoming ? '#d3b8ff' : '#8a7f97' }}>
+                {isPast ? 'DONE' : nextUpcoming ? 'NOW' : 'UPCOMING'}{endsAt ? ` · BY ${fmtTaskDate(endsAt)}` : ''}
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>{m.label}</div>
+              {inPhase.length > 0 && (
+                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                  {overdueInPhase > 0 && <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: 'rgba(251,191,36,.1)', color: '#fbbf24' }}>{overdueInPhase} overdue</span>}
+                  <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, background: '#1c1726', color: '#c9c0d4' }}>{doneInPhase} of {inPhase.length} done</span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {eventDateMs && (
+        <div style={{ display: 'flex', gap: 14 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: 16 }}>
+            <span style={{ width: 16, height: 16, borderRadius: 4, background: GRADIENT, transform: 'rotate(45deg)' }} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#d3b8ff' }}>{fmtTaskDate(new Date(eventDateMs)).toUpperCase()}</div>
+            <div style={{ fontSize: 15, fontWeight: 700, marginTop: 4 }}>Event day</div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // SUGGESTED prompt chips -- export's `suggestedPrompts` derived from SCEN's
 // icon+prompt pairs (lines ~294-347, ~415).
 // Exact copy and order from P01.html's SUGGESTED list -- drops the emoji
@@ -1497,16 +1769,27 @@ function PlanUpdateCard({
   const changes: any[] = Array.isArray(data?.proposed_changes) ? data.proposed_changes : [];
   const [undone, setUndone] = useState(false);
   return (
-    <div style={{ marginTop: 10, background: 'rgba(163,92,255,.08)', border: '1px solid rgba(163,92,255,.35)', borderRadius: 12, padding: 14 }} data-testid="ai-plan-update-card">
-      <span style={{ fontSize: 9.5, fontWeight: 700, color: '#d3b8ff', background: 'rgba(163,92,255,.15)', padding: '3px 7px', borderRadius: 6 }}>
-        {applied ? (undone ? 'UNDONE' : 'PLAN UPDATED') : 'SUGGESTED CHANGE'}
-      </span>
-      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+    <div style={{ marginTop: 10, background: applied ? '#120e1a' : 'rgba(163,92,255,.08)', border: applied ? '1px solid #221d2d' : '1px solid rgba(163,92,255,.35)', borderRadius: 12, padding: applied ? '12px 14px' : 14 }} data-testid="ai-plan-update-card">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span style={{ fontSize: applied ? 9.5 : 9.5, fontWeight: 700, color: '#d3b8ff', background: 'rgba(163,92,255,.15)', padding: '3px 7px', borderRadius: 6 }}>
+          {applied ? 'PLAN UPDATE' : 'SUGGESTED CHANGE'}
+        </span>
+        {applied && (
+          <span style={{ fontSize: 11.5, color: '#34d399' }}>
+            {undone ? 'Undone' : data?.change_log_id && onUndo ? (
+              <>✓ Applied · <span onClick={() => { setUndone(true); onUndo(data.change_log_id); }} data-testid="ai-plan-update-undo" style={{ color: '#d3b8ff', fontWeight: 700, cursor: 'pointer' }}>Undo</span></>
+            ) : (
+              '✓ Applied'
+            )}
+          </span>
+        )}
+      </div>
+      <div style={{ marginTop: applied ? 6 : 8, display: 'flex', flexDirection: 'column', gap: 6, paddingTop: applied ? 6 : 0 }}>
         {changes.map((c, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#c9c0d4' }}>
-            <span>{c.label || c.key || c.category}</span>
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: applied ? 12.5 : 12, color: '#c9c0d4' }}>
+            <span style={{ color: '#a89db3' }}>{c.label || c.key || c.category}</span>
             <span>
-              <span style={{ color: '#786d87', textDecoration: applied ? 'line-through' : 'none' }}>{naira(c.before_naira)}</span>
+              <span style={{ color: '#786d87' }}>{naira(c.before_naira)}</span>
               {' → '}
               <span style={{ color: '#f0edf5', fontWeight: 700 }}>{naira(c.after_naira)}</span>
             </span>
@@ -1522,18 +1805,6 @@ function PlanUpdateCard({
           Apply
         </div>
       )}
-      {applied && !undone && data?.change_log_id && onUndo && (
-        <div
-          onClick={() => {
-            setUndone(true);
-            onUndo(data.change_log_id);
-          }}
-          data-testid="ai-plan-update-undo"
-          style={{ marginTop: 12, textAlign: 'center', padding: 9, borderRadius: 8, background: '#1c1726', border: '1px solid #2c2438', color: '#c9c0d4', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}
-        >
-          Undo
-        </div>
-      )}
       {undone && <div style={{ marginTop: 10, fontSize: 11, color: '#786d87' }}>Reverted to the previous allocation.</div>}
     </div>
   );
@@ -1544,6 +1815,53 @@ function PlanUpdateCard({
 // general search_services_or_providers ProviderCardRow above, since this
 // one always carries the "confirm availability" note and an Assign action
 // that goes through the real assign_provider tool, never a direct booking.
+// P15 "No suitable provider" -- real numbers from executeRecommendProviders'
+// own no_match branch (total_in_location/cheapest_above_ceiling_naira),
+// never fabricated. "Raise to ₦X" uses the real cheapest starting_price
+// above the ceiling. "Combine with..."/"Browse all" are stated gaps (no
+// cross-category combine logic or a Services-browse deep link exists from
+// this overlay) rather than fake buttons; "Add your own vendor" routes to
+// the real chat flow the same way other non-VENTS-provider actions do.
+function NoSuitableProviderCard({ data, onQuickAction }: { data: any; onQuickAction?: (text: string) => void }) {
+  const categoryLabel = data?.category ? titleCase(String(data.category)) : 'this category';
+  const zeroInLocation = data?.total_in_location === 0;
+  return (
+    <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 14 }} data-testid="ai-no-suitable-provider-card">
+      <div style={{ padding: '14px 4px 4px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.01em', lineHeight: 1.2 }}>
+          {zeroInLocation ? `VENTS doesn't have ${categoryLabel.toLowerCase()} providers in ${data?.location || 'this city'} yet.` : `No ${categoryLabel.toLowerCase()} providers on VENTS match yet.`}
+        </span>
+        {!zeroInLocation && (
+          <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>
+            There are {data.total_in_location} in {data?.location || 'this area'}, but all start above {naira(data.max_price_naira)}.
+          </span>
+        )}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {!zeroInLocation && data?.cheapest_above_ceiling_naira != null && (
+          <div onClick={() => onQuickAction?.(`Raise the budget for ${categoryLabel} to ${naira(data.cheapest_above_ceiling_naira)}.`)} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid rgba(163,92,255,.4)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Raise to {naira(data.cheapest_above_ceiling_naira)}</div>
+              <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Shows real matches at this price</div>
+            </div>
+            <span style={{ color: '#d3b8ff' }}>›</span>
+          </div>
+        )}
+        <div onClick={() => onQuickAction?.(`I want to add my own vendor for ${categoryLabel} instead of a VENTS provider.`)} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Add your own vendor</div>
+            <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Track someone you found off VENTS</div>
+          </div>
+          <span style={{ color: '#d3b8ff' }}>›</span>
+        </div>
+      </div>
+      <div style={{ fontSize: 11.5, color: '#5e5470' }}>
+        "Combine with another category" and browsing all providers without filters aren't built from here yet.
+      </div>
+    </div>
+  );
+}
+
 function ProviderRecCard({ providers, onAssign }: { providers: any[]; onAssign?: (p: any) => void }) {
   return (
     <div style={{ display: 'flex', gap: 10, overflowX: 'auto', marginTop: 10, paddingBottom: 4 }}>
@@ -2048,10 +2366,14 @@ function AssistantCards({
         }
         if (card.type === 'recommend_providers') {
           const providers = Array.isArray(card.data) ? card.data : [];
+          if (providers.length === 1 && providers[0]?.no_match) {
+            return <NoSuitableProviderCard key={i} data={providers[0]} onQuickAction={onQuickAction} />;
+          }
           if (!providers.length) {
-            // P15 "No suitable provider" -- an honest empty state, not
-            // silence, when the filters (category/location/max price)
-            // matched nothing real.
+            // Honest empty state, not silence, for a shape the no_match
+            // branch above doesn't cover (e.g. no price ceiling was given
+            // at all, so executeRecommendProviders had no ceiling to
+            // explain -- just zero real results).
             return (
               <div key={i} style={{ marginTop: 10, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: 14, fontSize: 11.5, color: '#786d87' }} data-testid="ai-no-providers-card">
                 No matching providers on VENTS right now — try a different category, location, or a higher budget.

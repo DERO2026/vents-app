@@ -316,7 +316,7 @@ export const PLAN_TOOLS = [
   {
     name: 'recommend_providers',
     description:
-      'Search real VENTS service providers to recommend for a plan category, optionally filtered by location and a maximum price. NEVER state or imply a provider is "available" on the event date -- VENTS has no availability data; always tell the user to confirm availability with the provider directly. Prices shown are only real starting_price data already on file -- never invent or estimate a provider\'s price.',
+      'Search real VENTS service providers to recommend for a plan category, optionally filtered by location and a maximum price. NEVER state or imply a provider is "available" on the event date -- VENTS has no availability data; always tell the user to confirm availability with the provider directly. Prices shown are only real starting_price data already on file -- never invent or estimate a provider\'s price. If a price ceiling filtered out everything, the result is a single {no_match: true, total_in_location, cheapest_above_ceiling_naira} object instead of a provider list -- describe this using exactly those real numbers (e.g. "there are N in {location} but all start above ₦X"), never invent your own count or price.',
     input_schema: {
       type: 'object',
       properties: {
@@ -1067,7 +1067,7 @@ export async function executeRecommendProviders(client: SupabaseClient, _userId:
   // stays match_score only. A future Featured Provider feature plugs in by
   // setting this per-row from real data; it must never affect `ORDER BY`
   // in search_services_fuzzy_filtered itself.
-  return (data ?? []).map((row: any) => ({
+  const results = (data ?? []).map((row: any) => ({
     provider_id: row.provider_id,
     business_name: row.business_name,
     category: row.provider_category,
@@ -1079,6 +1079,33 @@ export async function executeRecommendProviders(client: SupabaseClient, _userId:
     is_sponsored: false,
     availability_note: 'Confirm availability with provider.',
   }));
+
+  // P15 "No suitable provider" needs to say WHY, with real numbers: are
+  // there zero providers in this location/category at all, or did the
+  // price ceiling filter all of them out? Only runs the extra query when
+  // the first one came back empty with a price ceiling in play -- never
+  // on the happy path, and never guesses the count/floor price.
+  if (results.length === 0 && maxPriceNaira !== null) {
+    const { data: unfiltered } = await client.rpc('search_services_fuzzy_filtered', {
+      p_query: String(input?.query ?? ''),
+      p_category: input?.category ? String(input.category) : null,
+      p_limit: 50,
+      p_location: input?.location ? String(input.location) : null,
+      p_max_starting_price: null,
+    });
+    const rows = Array.isArray(unfiltered) ? unfiltered : [];
+    const prices = rows.map((r: any) => Number(r.starting_price)).filter((n: number) => isFinite(n) && n >= 0);
+    return [{
+      no_match: true as const,
+      category: input?.category ? String(input.category) : null,
+      location: input?.location ? String(input.location) : null,
+      max_price_naira: maxPriceNaira,
+      total_in_location: rows.length,
+      cheapest_above_ceiling_naira: prices.length ? Math.min(...prices) : null,
+    }];
+  }
+
+  return results;
 }
 
 export async function executeAssignProvider(client: SupabaseClient, _userId: string, input: any) {
