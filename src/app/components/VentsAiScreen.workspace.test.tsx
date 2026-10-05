@@ -32,6 +32,7 @@ beforeEach(() => {
   sendVentsAiMessage.mockReset();
   supabaseFrom.mockReset();
   supabaseRpc.mockReset();
+  sessionStorage.clear();
 });
 
 afterEach(() => {
@@ -382,5 +383,168 @@ describe('P18 Timeline tab', () => {
     await flush();
 
     expect(container!.textContent).toContain('No timeline phases yet for this plan.');
+  });
+});
+
+describe('P14 Provider-assigned success state', () => {
+  it('shows the real green receipt once for a freshly booked category, with real task/surplus/booking lines, then relaxes to a normal row', async () => {
+    mockWorkspaceTables({
+      plan_assignments: makeChain({
+        data: [{ id: 'asg-1', category_id: 'cat-photo', provider_id: 'prov-1', own_vendor_name: null, agreed_kobo: 45000000, status: 'booked', updated_at: new Date().toISOString() }],
+        error: null,
+      }),
+      plan_tasks: makeChain({
+        data: [{ id: 'task-1', category_id: 'cat-photo', title: 'Book photographer', offset_days: null, due_override: null, done_at: new Date().toISOString(), source: 'si', completes_on_booking: true }],
+        error: null,
+      }),
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+
+    expect(container!.textContent).toContain('Ade Studios');
+    expect(container!.textContent).toContain('Paid · just now');
+    expect(container!.textContent).toContain('Task "Book photographer" completed');
+    expect(container!.textContent).toContain('under — moved to Unallocated?'); // real surplus: ₦500k allocated - ₦450k paid
+    expect(container!.textContent).toContain('Booking added to your VENTS bookings');
+    // Real readiness toast -- computeReadiness(1 of 1 tasks done=50%, 1 of 2 categories assigned=17.5%, budget fully committed on the one category=5.6%) = 72%.
+    expect(container!.textContent).toContain('72% ready');
+  });
+
+  it('tapping "Move" on the freed surplus calls the real apply_plan_allocation_changes RPC, never a frontend-only balance change', async () => {
+    mockWorkspaceTables({
+      plan_assignments: makeChain({
+        data: [{ id: 'asg-1', category_id: 'cat-photo', provider_id: 'prov-1', own_vendor_name: null, agreed_kobo: 45000000, status: 'booked', updated_at: new Date().toISOString() }],
+        error: null,
+      }),
+    });
+    supabaseRpc.mockResolvedValue({ data: 'log-1', error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-team');
+    await flush();
+
+    clickTestId('workspace-team-move-surplus');
+    await flush();
+
+    const call = supabaseRpc.mock.calls.find((c) => c[0] === 'apply_plan_allocation_changes');
+    expect(call).toBeTruthy();
+    expect(call![1].p_changes).toEqual([{ category_id: 'cat-photo', new_allocated_kobo: 45000000 }]);
+  });
+});
+
+describe('P20 Budget exceeded', () => {
+  const OVER_CATEGORY_ROWS = [
+    { id: 'cat-decor', key: 'decoration', label: 'Decoration', allocated_kobo: 90000000, is_priority: false, sort: 1 },
+    { id: 'cat-conting', key: 'contingency', label: 'Contingency', allocated_kobo: 80000000, is_priority: false, sort: 2 },
+    { id: 'cat-catering', key: 'catering', label: 'Catering', allocated_kobo: 200000000, is_priority: false, sort: 3 },
+  ];
+  const OVER_ASSIGNMENT_ROWS = [
+    // Catering's real committed amount (240m kobo) exceeds its own allocation (200m) AND, combined
+    // with the rest, pushes total committed+paid above the plan's total_kobo -- a real plan-level overage.
+    { id: 'asg-1', category_id: 'cat-catering', provider_id: 'prov-2', own_vendor_name: null, agreed_kobo: 240000000, status: 'assigned', updated_at: '2026-01-01T00:00:00Z' },
+  ];
+
+  it('does NOT show the banner when real committed+paid stays within the real total_kobo (₦8m plan, ₦2.4m committed)', async () => {
+    mockWorkspaceTables({
+      plan_categories: makeChain({ data: OVER_CATEGORY_ROWS, error: null }),
+      plan_assignments: makeChain({ data: OVER_ASSIGNMENT_ROWS, error: null }),
+      service_providers: makeChain({ data: [{ id: 'prov-2', business_name: 'Ìdáná Kitchen', category: 'Catering', location: 'Lagos' }], error: null }),
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-budget');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-budget-exceeded-banner"]')).toBeFalsy();
+  });
+
+  it('a plan whose real committed+paid exceeds its real total_kobo shows the banner, and "Use contingency" reduces the real contingency allocation', async () => {
+    mockWorkspaceTables({
+      plans: makeChain({ data: [{ ...PLAN_ROW, total_kobo: 200000000 }], error: null }, { data: { ...PLAN_ROW, total_kobo: 200000000 }, error: null }),
+      plan_categories: makeChain({ data: OVER_CATEGORY_ROWS, error: null }),
+      plan_assignments: makeChain({ data: OVER_ASSIGNMENT_ROWS, error: null }),
+      service_providers: makeChain({ data: [{ id: 'prov-2', business_name: 'Ìdáná Kitchen', category: 'Catering', location: 'Lagos' }], error: null }),
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-tab-budget');
+    await flush();
+
+    expect(container!.querySelector('[data-testid="workspace-budget-exceeded-banner"]')).toBeTruthy();
+    expect(container!.textContent).toContain('OVER BUDGET');
+    // committed 240m - total 200m = 40m kobo = ₦400,000 real overage.
+    expect(container!.textContent).toContain('+₦400,000');
+
+    const useContingencyBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes('Use contingency'));
+    act(() => useContingencyBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    const call = supabaseRpc.mock.calls.find((c) => c[0] === 'apply_plan_allocation_changes');
+    expect(call).toBeTruthy();
+    // Contingency's own real allocation (80m) minus the real 40m overage = 40m left.
+    expect(call![1].p_changes).toEqual([{ category_id: 'cat-conting', new_allocated_kobo: 40000000 }]);
+  });
+});
+
+describe('P22 Date-change impact sheet', () => {
+  it('opens from the header ⋯ menu, previews real impact (booked providers, real runway), and confirming calls the real plans.update plus a real plan_tasks insert', async () => {
+    const plansChain = makeChain({ data: [PLAN_ROW], error: null }, { data: PLAN_ROW, error: null });
+    plansChain.update = vi.fn(() => makeChain({ data: null, error: null }));
+    const tasksInsertChain = makeChain({ data: [], error: null });
+    tasksInsertChain.insert = vi.fn(() => Promise.resolve({ data: null, error: null }));
+    supabaseFrom.mockImplementation((table: string) => {
+      if (table === 'plans') return plansChain;
+      if (table === 'plan_categories') return makeChain({ data: CATEGORY_ROWS, error: null });
+      if (table === 'plan_assignments') return makeChain({ data: ASSIGNMENT_ROWS, error: null });
+      if (table === 'service_providers') return makeChain({ data: PROVIDER_ROWS, error: null });
+      if (table === 'plan_tasks') return tasksInsertChain;
+      return makeChain({ data: [], error: null });
+    });
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-header-menu');
+    clickTestId('workspace-menu-change-date');
+    await flush();
+
+    const dateInput = container!.querySelector('[data-testid="ai-date-change-input"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(dateInput, '2026-12-19');
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      dateInput.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    expect(container!.textContent).toContain('provider was booked'); // real booked-provider count from ASSIGNMENT_ROWS
+    expect(container!.textContent).toContain('Ade Studios');
+
+    clickTestId('ai-date-change-confirm');
+    await flush();
+
+    expect(plansChain.update).toHaveBeenCalledWith({ event_date: '2026-12-19' });
+    expect(tasksInsertChain.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ plan_id: 'plan-1', category_id: 'cat-photo', title: expect.stringContaining('Ade Studios') }),
+    ]);
+  });
+
+  it('Cancel closes the sheet without writing anything', async () => {
+    mockWorkspaceTables();
+    supabaseRpc.mockResolvedValue({ data: [], error: null });
+
+    await openWorkspace();
+    clickTestId('workspace-header-menu');
+    clickTestId('workspace-menu-change-date');
+    await flush();
+
+    supabaseFrom.mockClear();
+    const cancelBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Cancel');
+    act(() => cancelBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    expect(supabaseFrom).not.toHaveBeenCalledWith('plans');
+    expect(container!.querySelector('[data-testid="ai-date-change-sheet-backdrop"]')).toBeFalsy();
   });
 });

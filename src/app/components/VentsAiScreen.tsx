@@ -66,6 +66,10 @@ type WorkspaceAssignment = {
   agreed_kobo: number | null;
   status: 'shortlisted' | 'assigned' | 'booked' | 'cancelled';
   provider: { business_name: string; category: string | null; location: string | null } | null;
+  // Real timestamp -- P14's "just now" receipt and its "relaxes to a
+  // normal row on next visit" rule are both read off this, never a
+  // frontend-only flag with no backing data.
+  updated_at: string;
 };
 
 type WorkspaceCategory = {
@@ -126,7 +130,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
   const categoryIds = (categories ?? []).map((c: any) => c.id);
 
   const { data: assignments } = categoryIds.length
-    ? await supabase.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status').in('category_id', categoryIds)
+    ? await supabase.from('plan_assignments').select('id, category_id, provider_id, own_vendor_name, agreed_kobo, status, updated_at').in('category_id', categoryIds)
     : { data: [] as any[] };
 
   // One extra join for the VENTS providers referenced by any assignment --
@@ -167,6 +171,7 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
         agreed_kobo: a.agreed_kobo,
         status: a.status,
         provider: a.provider_id ? providerById.get(a.provider_id) ?? null : null,
+        updated_at: a.updated_at,
       }));
       const active = all.filter((a) => a.status === 'assigned' || a.status === 'booked');
       return {
@@ -193,6 +198,23 @@ async function fetchPlanWorkspace(planId: string): Promise<PlanWorkspaceData> {
     })),
     milestones: (milestones ?? []).map((m: any) => ({ id: m.id, phase_key: m.phase_key, label: m.label, ends_offset_days: m.ends_offset_days })),
   };
+}
+
+// Readiness formula per P07's own spec text: tasks done (50%) + team slots
+// assigned (35%) + budget fully committed (15%). Shared by
+// ContinuePlanningCard, WorkspaceOverviewTab, and P14's "Plan is now X%
+// ready" toast -- one formula, never three slightly-different copies.
+function computeReadiness(data: PlanWorkspaceData): number {
+  const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
+  const tasksTotal = data.tasks.length;
+  const tasksPct = tasksTotal > 0 ? tasksDone / tasksTotal : 0;
+  const assignedCategories = data.categories.filter((c) => c.committed_kobo > 0 || c.paid_kobo > 0 || c.booked).length;
+  const categoriesTotal = data.categories.length;
+  const teamPct = categoriesTotal > 0 ? assignedCategories / categoriesTotal : 0;
+  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0);
+  const totalCommittedOrPaid = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
+  const budgetPct = totalAllocated > 0 ? Math.min(1, totalCommittedOrPaid / totalAllocated) : 0;
+  return Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
 }
 
 // P01's "NEW · SI PLANNER" promo card -- shown on the Chat tab only when
@@ -236,16 +258,7 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
 
   if (!data) return null;
 
-  const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
-  const tasksTotal = data.tasks.length;
-  const tasksPct = tasksTotal > 0 ? tasksDone / tasksTotal : 0;
-  const assignedCategories = data.categories.filter((c) => c.committed_kobo > 0 || c.paid_kobo > 0 || c.booked).length;
-  const categoriesTotal = data.categories.length;
-  const teamPct = categoriesTotal > 0 ? assignedCategories / categoriesTotal : 0;
-  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0);
-  const totalCommittedOrPaid = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
-  const budgetPct = totalAllocated > 0 ? Math.min(1, totalCommittedOrPaid / totalAllocated) : 0;
-  const readiness = Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
+  const readiness = computeReadiness(data);
   const daysToGo = data.plan.event_date ? Math.max(0, Math.round((new Date(data.plan.event_date).getTime() - Date.now()) / 86400000)) : null;
 
   function dueDate(t: WorkspaceTask): Date | null {
@@ -335,6 +348,8 @@ function PlanWorkspaceView({
   // a stacked screen over whichever tab is active, not a tab itself, so
   // its own Back returns to that same tab rather than always Overview.
   const [detailCategoryId, setDetailCategoryId] = useState<string | null>(null);
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const [showDateSheet, setShowDateSheet] = useState(false);
 
   const load = () => {
     setData(null);
@@ -385,7 +400,24 @@ function PlanWorkspaceView({
               {data?.plan.event_date ? data.plan.event_date : ''}{data?.plan.city ? ` · ${data.plan.city}` : ''}{data?.plan.guests ? ` · ${data.plan.guests} guests` : ''}
             </div>
           </div>
-          <span style={{ width: 34, height: 34, borderRadius: 10, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9c0d4' }}>⋯</span>
+          <span onClick={() => setShowHeaderMenu((v) => !v)} role="button" data-testid="workspace-header-menu" style={{ width: 34, height: 34, borderRadius: 10, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#c9c0d4', cursor: 'pointer', position: 'relative' }}>
+            ⋯
+            {showHeaderMenu && (
+              <div
+                onClick={(e) => e.stopPropagation()}
+                style={{ position: 'absolute', top: 40, right: 0, background: '#120e1a', border: '1px solid #2c2438', borderRadius: 10, padding: 6, zIndex: 970, boxShadow: '0 12px 30px rgba(0,0,0,.5)', minWidth: 160 }}
+              >
+                <div
+                  onClick={() => { setShowHeaderMenu(false); setShowDateSheet(true); }}
+                  role="button"
+                  data-testid="workspace-menu-change-date"
+                  style={{ padding: '10px 12px', borderRadius: 7, fontSize: 13, fontWeight: 600, color: '#e8e3ee', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  Change date
+                </div>
+              </div>
+            )}
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 20, fontSize: 13, fontWeight: 600, color: '#8a7f97' }}>
           {TABS.map((t) => (
@@ -423,9 +455,9 @@ function PlanWorkspaceView({
         ) : tab === 'overview' ? (
           <WorkspaceOverviewTab data={data} onOpenBudget={() => setTab('budget')} />
         ) : tab === 'budget' ? (
-          <WorkspaceBudgetTab data={data} onOpenCategory={setDetailCategoryId} />
+          <WorkspaceBudgetTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onAskSi={() => onAskSi(data.plan.title)} onChanged={load} />
         ) : tab === 'team' ? (
-          <WorkspaceTeamTab data={data} onOpenCategory={setDetailCategoryId} />
+          <WorkspaceTeamTab data={data} planId={planId} onOpenCategory={setDetailCategoryId} onChanged={load} />
         ) : tab === 'tasks' ? (
           <WorkspaceTasksTab data={data} onChanged={load} />
         ) : tab === 'timeline' ? (
@@ -450,6 +482,149 @@ function PlanWorkspaceView({
           <span onClick={sendComposer} role="button" aria-label="Send" style={{ width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 13, cursor: 'pointer' }}>↑</span>
         </div>
       </div>
+      {showDateSheet && data && (
+        <DateChangeSheet
+          planId={planId}
+          data={data}
+          onClose={() => setShowDateSheet(false)}
+          onChanged={load}
+        />
+      )}
+    </div>
+  );
+}
+
+// P22 "Event date changed" -- a bottom sheet previewing real impact before
+// confirming. Every line is computed from real data: open tasks that will
+// shift (offset_days-based tasks always move with the event date, by
+// construction -- just counted here, never recomputed fictionally),
+// the real runway in days, and the REAL booked/own-vendor assignments
+// that need a human to confirm with the provider. "Move to {date}" calls
+// the same direct plans.update() executeReschedulePlan's own backend
+// executor uses (same RLS-permitted pattern) and inserts one real
+// plan_tasks row per affected assignment ("Confirm new date with X"),
+// per the mockup's own spec text -- never auto-reschedules a real
+// booking, which this backend has no path to do at all.
+function DateChangeSheet({
+  planId,
+  data,
+  onClose,
+  onChanged,
+}: {
+  planId: string;
+  data: PlanWorkspaceData;
+  onClose: () => void;
+  onChanged: () => void;
+}) {
+  const [newDate, setNewDate] = useState(data.plan.event_date || '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const oldDateFmt = data.plan.event_date ? new Date(data.plan.event_date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : null;
+  const newDateFmt = newDate ? new Date(newDate).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : null;
+  const runwayDays = newDate ? Math.max(0, Math.round((new Date(newDate).getTime() - Date.now()) / 86400000)) : null;
+
+  const openTasksWithOffset = data.tasks.filter((t) => !t.done_at && t.offset_days != null && !t.due_override);
+  const bookedAssignments = data.categories
+    .flatMap((c) => c.assignments.filter((a) => a.status === 'booked').map((a) => ({ c, a })));
+  const ownVendorAssignments = data.categories
+    .flatMap((c) => c.assignments.filter((a) => a.status === 'assigned' && !a.provider_id && a.own_vendor_name).map((a) => ({ c, a })));
+
+  async function confirmMove() {
+    if (!newDate) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const { error: updateError } = await supabase.from('plans').update({ event_date: newDate }).eq('id', planId);
+      if (updateError) throw updateError;
+
+      const affected = [...bookedAssignments, ...ownVendorAssignments];
+      if (affected.length > 0) {
+        const rows = affected.map(({ c, a }) => ({
+          plan_id: planId,
+          category_id: c.id,
+          title: `Confirm new date with ${a.provider?.business_name || a.own_vendor_name}`,
+          source: 'si' as const,
+          completes_on_booking: false,
+        }));
+        await supabase.from('plan_tasks').insert(rows);
+      }
+      onChanged();
+      onClose();
+    } catch (e: any) {
+      setError(e?.message || "That didn't go through.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 950, background: 'rgba(5,4,8,.72)' }} onClick={onClose} data-testid="ai-date-change-sheet-backdrop">
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', left: 0, right: 0, bottom: 0, borderRadius: '24px 24px 0 0', background: '#120e1a', borderTop: '1px solid #2c2438', padding: '10px 20px 28px', display: 'flex', flexDirection: 'column', gap: 16 }}
+      >
+        <span style={{ width: 40, height: 4, borderRadius: 9, background: '#3a3048', alignSelf: 'center' }} />
+        <div>
+          <div style={{ fontSize: 12, color: '#8a7f97' }}>Change event date</div>
+          <div style={{ fontSize: 20, fontWeight: 800, marginTop: 4 }}>
+            {oldDateFmt && <span style={{ color: '#786d87', textDecoration: 'line-through', fontWeight: 600 }}>{oldDateFmt}</span>} {newDateFmt ? `→ ${newDateFmt}` : ''}
+          </div>
+        </div>
+        <input
+          type="date"
+          value={newDate}
+          min={todayIso}
+          onChange={(e) => setNewDate(e.target.value)}
+          data-testid="ai-date-change-input"
+          style={{ width: '100%', boxSizing: 'border-box', background: '#090514', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 12, padding: '12px 14px', fontSize: 14, color: '#f0f0ff', fontFamily: 'inherit' }}
+        />
+        {newDate && newDate !== data.plan.event_date && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, borderRadius: 12, background: '#0a0810', border: '1px solid #221d2d', padding: '4px 14px' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '11px 0', borderBottom: '1px solid #1c1726' }}>
+              <span style={{ color: '#34d399', fontSize: 13 }}>✓</span>
+              <div style={{ flex: 1, fontSize: 13.5 }}>{openTasksWithOffset.length} open task{openTasksWithOffset.length === 1 ? '' : 's'} move with the new date</div>
+            </div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '11px 0', borderBottom: (bookedAssignments.length > 0 || ownVendorAssignments.length > 0) ? '1px solid #1c1726' : 'none' }}>
+              <span style={{ color: '#34d399', fontSize: 13 }}>✓</span>
+              <div style={{ flex: 1, fontSize: 13.5 }}>Timeline re-flows · runway {runwayDays} days</div>
+            </div>
+            {bookedAssignments.length > 0 && (
+              <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '11px 0', borderBottom: ownVendorAssignments.length > 0 ? '1px solid #1c1726' : 'none' }}>
+                <span style={{ color: '#fbbf24', fontSize: 13 }}>!</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5 }}>{bookedAssignments.length} provider{bookedAssignments.length === 1 ? ' was' : 's were'} booked for {oldDateFmt}</div>
+                  <div style={{ fontSize: 12, color: '#a89db3', marginTop: 3 }}>{bookedAssignments.map(({ a }) => a.provider?.business_name || a.own_vendor_name).join(' · ')}</div>
+                </div>
+              </div>
+            )}
+            {ownVendorAssignments.map(({ c, a }) => (
+              <div key={a.id} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '11px 0' }}>
+                <span style={{ color: '#fbbf24', fontSize: 13 }}>!</span>
+                <div style={{ flex: 1, fontSize: 13.5 }}>{c.label} (own vendor) — check with them</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {newDate && newDate !== data.plan.event_date && (bookedAssignments.length > 0 || ownVendorAssignments.length > 0) && (
+          <div style={{ padding: '12px 14px', borderRadius: 11, background: 'rgba(251,191,36,.07)', border: '1px solid rgba(251,191,36,.3)', fontSize: 12.5, color: '#e8e3ee', lineHeight: 1.5 }}>
+            Bookings won't change automatically. I'll add a "Confirm new date" task for each.
+          </div>
+        )}
+        {error && <div style={{ fontSize: 12, color: '#fbbf24' }}>{error}</div>}
+        <div style={{ display: 'flex', gap: 10 }}>
+          <span onClick={onClose} role="button" style={{ flex: 1, height: 48, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Cancel</span>
+          <span
+            onClick={confirmMove}
+            role="button"
+            data-testid="ai-date-change-confirm"
+            style={{ flex: 1.6, height: 48, borderRadius: 12, background: newDate && newDate !== data.plan.event_date ? GRADIENT : '#2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 700, color: '#fff', cursor: saving ? 'default' : 'pointer', opacity: saving ? 0.6 : 1 }}
+          >
+            {saving ? 'Moving…' : newDateFmt ? `Move to ${newDateFmt.replace(/^\w+ /, '')}` : 'Choose a date'}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -461,17 +636,10 @@ function PlanWorkspaceView({
 function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData; onOpenBudget: () => void }) {
   const tasksDone = data.tasks.filter((t) => !!t.done_at).length;
   const tasksTotal = data.tasks.length;
-  const tasksPct = tasksTotal > 0 ? tasksDone / tasksTotal : 0;
-
   const assignedCategories = data.categories.filter((c) => c.committed_kobo > 0 || c.paid_kobo > 0 || c.booked).length;
   const categoriesTotal = data.categories.length;
-  const teamPct = categoriesTotal > 0 ? assignedCategories / categoriesTotal : 0;
 
-  const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0);
-  const totalCommittedOrPaid = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
-  const budgetPct = totalAllocated > 0 ? Math.min(1, totalCommittedOrPaid / totalAllocated) : 0;
-
-  const readiness = Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
+  const readiness = computeReadiness(data);
 
   const daysToGo = data.plan.event_date ? Math.max(0, Math.round((new Date(data.plan.event_date).getTime() - Date.now()) / 86400000)) : null;
 
@@ -537,14 +705,152 @@ function WorkspaceOverviewTab({ data, onOpenBudget }: { data: PlanWorkspaceData;
   );
 }
 
+// P20 "Budget exceeded" -- real numbers throughout: overKobo is the real
+// committed+paid shortfall, the contingency/over-category amounts are
+// real allocated_kobo values, never estimated. "Use contingency" and
+// "Raise total" call the exact same apply_plan_allocation_changes RPC
+// AllocationSheet uses and a direct plans.update() (same RLS-permitted
+// pattern executeReschedulePlan's own backend executor already uses),
+// respectively -- both real writes, never a frontend-only banner dismiss.
+// "Trim unbooked categories" is a stated, smaller scope: it opens the
+// first eligible category's own detail/allocation sheet rather than the
+// mockup's dedicated multi-category trim picker, which isn't built.
+function BudgetExceededBanner({
+  data,
+  planId,
+  overKobo,
+  onOpenCategory,
+  onAskSi,
+  onChanged,
+}: {
+  data: PlanWorkspaceData;
+  planId: string;
+  overKobo: number;
+  onOpenCategory: (categoryId: string) => void;
+  onAskSi: () => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+
+  const totalBudgetKobo = data.plan.total_kobo ?? 0;
+  const totalSpendKobo = data.categories.reduce((s, c) => s + c.committed_kobo + c.paid_kobo, 0);
+  const totalEstimateKobo = data.categories.filter((c) => c.committed_kobo === 0 && c.paid_kobo === 0).reduce((s, c) => s + c.allocated_kobo, 0);
+  const paidKobo = data.categories.reduce((s, c) => s + c.paid_kobo, 0);
+  const committedKobo = data.categories.reduce((s, c) => s + c.committed_kobo, 0);
+  const grandTotalKobo = totalSpendKobo + totalEstimateKobo;
+
+  const contingency = data.categories.find((c) => /conting/i.test(c.key) || /conting/i.test(c.label));
+  const trimCandidate = data.categories.find((c) => !c.is_priority && !c.booked && c.committed_kobo === 0 && c.paid_kobo === 0 && c.allocated_kobo > 0);
+
+  async function useContingency() {
+    if (!contingency) return;
+    setBusy(true);
+    try {
+      const { error } = await supabase.rpc('apply_plan_allocation_changes', {
+        p_plan_id: planId,
+        p_changes: [{ category_id: contingency.id, new_allocated_kobo: Math.max(0, contingency.allocated_kobo - overKobo) }],
+        p_actor: 'user',
+      });
+      if (!error) onChanged();
+      else setNote(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function raiseTotal() {
+    setBusy(true);
+    try {
+      const { error } = await supabase.from('plans').update({ total_kobo: grandTotalKobo }).eq('id', planId);
+      if (!error) onChanged();
+      else setNote(error.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div style={{ padding: 16, borderRadius: 14, background: 'rgba(248,113,113,.07)', border: '1px solid rgba(248,113,113,.4)', display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 14 }} data-testid="workspace-budget-exceeded-banner">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#f87171' }}>OVER BUDGET</span>
+        <span style={{ fontSize: 12, color: '#a89db3' }}>Paid + committed + estimates</span>
+      </div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+        <span style={{ fontSize: 26, fontWeight: 800 }}>{naira(grandTotalKobo / 100)}</span>
+        <span style={{ fontSize: 13, color: '#f87171', fontWeight: 700 }}>+{naira(overKobo / 100)}</span>
+      </div>
+      <div style={{ position: 'relative', display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', gap: 2 }}>
+        <span style={{ width: `${totalBudgetKobo > 0 ? Math.min(100, (paidKobo / totalBudgetKobo) * 100) : 0}%`, background: '#34d399' }} />
+        <span style={{ flex: 1, background: '#a35cff' }} />
+        <span style={{ width: `${totalBudgetKobo > 0 ? Math.min(100, (overKobo / totalBudgetKobo) * 100) : 3}%`, background: '#f87171' }} />
+      </div>
+      <span style={{ fontSize: 12.5, color: '#c9c0d4', lineHeight: 1.5 }}>
+        Real committed and paid amounts across all categories now total {naira((committedKobo + paidKobo) / 100)}, {naira(overKobo / 100)} over the plan's {naira(totalBudgetKobo / 100)} budget.
+      </span>
+      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>WAYS TO BALANCE</span>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {contingency && contingency.allocated_kobo > 0 && (
+          <div onClick={useContingency} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid rgba(163,92,255,.45)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: busy ? 'default' : 'pointer' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Use contingency</div>
+              <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>{naira(contingency.allocated_kobo / 100)} → {naira(Math.max(0, contingency.allocated_kobo - overKobo) / 100)} left</div>
+            </div>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff' }}>SI pick</span>
+          </div>
+        )}
+        {trimCandidate && (
+          <div onClick={() => onOpenCategory(trimCandidate.id)} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 700 }}>Trim unbooked categories</div>
+              <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Opens {trimCandidate.label}'s own budget editor</div>
+            </div>
+            <span style={{ color: '#d3b8ff' }}>›</span>
+          </div>
+        )}
+        <div onClick={raiseTotal} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: busy ? 'default' : 'pointer' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Raise total to {naira(grandTotalKobo / 100)}</div>
+            <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Keep everything as is</div>
+          </div>
+          <span style={{ color: '#d3b8ff' }}>›</span>
+        </div>
+        <div onClick={onAskSi} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Talk it through with SI</div>
+            <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Opens the plan thread</div>
+          </div>
+          <span style={{ color: '#d3b8ff' }}>›</span>
+        </div>
+      </div>
+      {note && <div style={{ fontSize: 11.5, color: '#fbbf24' }}>{note}</div>}
+    </div>
+  );
+}
+
 // Budget tab (P08). Rows sorted per P08's own spec text: over-budget first,
 // then committed, then estimates. "+N more" is not implemented here --
 // all categories are shown (an honest gap vs. the mockup's truncation,
 // not a fabricated count).
-function WorkspaceBudgetTab({ data, onOpenCategory }: { data: PlanWorkspaceData; onOpenCategory: (categoryId: string) => void }) {
-  const totalBudget = (data.plan.total_kobo ?? 0) / 100;
-  const totalCommitted = data.categories.reduce((s, c) => s + c.committed_kobo, 0) / 100;
-  const totalPaid = data.categories.reduce((s, c) => s + c.paid_kobo, 0) / 100;
+function WorkspaceBudgetTab({
+  data,
+  planId,
+  onOpenCategory,
+  onAskSi,
+  onChanged,
+}: {
+  data: PlanWorkspaceData;
+  planId: string;
+  onOpenCategory: (categoryId: string) => void;
+  onAskSi: () => void;
+  onChanged: () => void;
+}) {
+  const totalBudgetKobo = data.plan.total_kobo ?? 0;
+  const totalBudget = totalBudgetKobo / 100;
+  const totalCommittedKobo = data.categories.reduce((s, c) => s + c.committed_kobo, 0);
+  const totalPaidKobo = data.categories.reduce((s, c) => s + c.paid_kobo, 0);
+  const totalCommitted = totalCommittedKobo / 100;
+  const totalPaid = totalPaidKobo / 100;
   const totalEstimated = data.categories.filter((c) => c.committed_kobo === 0 && c.paid_kobo === 0).reduce((s, c) => s + c.allocated_kobo, 0) / 100;
   const totalAllocated = data.categories.reduce((s, c) => s + c.allocated_kobo, 0) / 100;
   const unallocated = Math.max(0, totalBudget - totalAllocated);
@@ -559,8 +865,24 @@ function WorkspaceBudgetTab({ data, onOpenCategory }: { data: PlanWorkspaceData;
   const sortRank: Record<string, number> = { over: 0, committed: 1, paid: 1, estimate: 2 };
   const sorted = [...data.categories].sort((a, b) => sortRank[status(a)] - sortRank[status(b)]);
 
+  // P20 "Budget exceeded" -- the mockup's own spec text: "Only
+  // commitments can trigger it," so this checks real committed+paid
+  // against the real total, never estimates alone.
+  const overBudgetKobo = Math.max(0, totalCommittedKobo + totalPaidKobo - totalBudgetKobo);
+  const isOverBudget = overBudgetKobo > 0;
+
   return (
     <>
+      {isOverBudget && (
+        <BudgetExceededBanner
+          data={data}
+          planId={planId}
+          overKobo={overBudgetKobo}
+          onOpenCategory={onOpenCategory}
+          onAskSi={onAskSi}
+          onChanged={onChanged}
+        />
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
           <span style={{ fontSize: 12, color: '#8a7f97' }}>Total budget</span>
@@ -940,10 +1262,73 @@ function CategoryDetailView({
 // (expanded) -> open. "N on VENTS · from ₦X" / "No matches" per open
 // category comes from the same real search_services_fuzzy_filtered RPC
 // P09 uses, run once per open category.
-function WorkspaceTeamTab({ data, onOpenCategory }: { data: PlanWorkspaceData; onOpenCategory: (categoryId: string) => void }) {
+// How long a fresh booking still gets P14's green receipt treatment --
+// after this (or after the tab has been shown once this session, see the
+// sessionStorage guard below), it "relaxes to a normal row" per the
+// mockup's own spec text.
+const JUST_BOOKED_WINDOW_MS = 10 * 60 * 1000;
+
+function WorkspaceTeamTab({ data, planId, onOpenCategory, onChanged }: { data: PlanWorkspaceData; planId: string; onOpenCategory: (categoryId: string) => void; onChanged: () => void }) {
   const [matchInfo, setMatchInfo] = useState<Record<string, { count: number; floor: number | null }>>({});
+  const [readiness, setReadiness] = useState<number | null>(null);
+  const [moving, setMoving] = useState(false);
+  const shownRef = useRef(false);
 
   const assignedCount = data.categories.filter((c) => c.assignments.some((a) => a.status === 'assigned' || a.status === 'booked')).length;
+
+  // The one real "just booked" assignment for THIS visit, if any -- real
+  // updated_at timestamp, real sessionStorage "already shown" guard, never
+  // a fabricated success state. Snapshotted into state exactly once on
+  // mount (never re-derived mid-visit) -- marking it "seen" in
+  // sessionStorage still triggers a re-render (the readiness toast's own
+  // setState below does), and re-deriving straight from sessionStorage on
+  // every render would make the receipt vanish the instant it's marked
+  // seen, rather than staying for this visit and only relaxing on the
+  // NEXT one.
+  const [justBookedAssignment, setJustBookedAssignment] = useState<{ c: WorkspaceCategory; a: WorkspaceAssignment } | null>(null);
+
+  useEffect(() => {
+    if (shownRef.current) return;
+    shownRef.current = true;
+    const candidates = data.categories
+      .map((c) => ({ c, a: c.assignments.find((a) => a.status === 'booked') }))
+      .filter((x): x is { c: WorkspaceCategory; a: WorkspaceAssignment } => {
+        if (!x.a) return false;
+        const seenKey = `vents_si_seen_booked_${x.a.id}`;
+        if (typeof sessionStorage !== 'undefined' && sessionStorage.getItem(seenKey)) return false;
+        return Date.now() - new Date(x.a.updated_at).getTime() < JUST_BOOKED_WINDOW_MS;
+      })
+      .sort((x, y) => new Date(y.a.updated_at).getTime() - new Date(x.a.updated_at).getTime());
+    const found = candidates[0] ?? null;
+    if (!found) return;
+    setJustBookedAssignment(found);
+    try { sessionStorage.setItem(`vents_si_seen_booked_${found.a.id}`, '1'); } catch { /* sessionStorage unavailable -- the receipt just won't persist across a reload, not a crash */ }
+    setReadiness(computeReadiness(data));
+    const t = setTimeout(() => setReadiness(null), 5000);
+    return () => clearTimeout(t);
+    // Runs once per mount (shownRef guards re-entry) -- intentionally not
+    // re-keyed off `data`, since that would re-arm the receipt every time
+    // fetchPlanWorkspace refreshes (e.g. after the surplus "Move" write).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const surplusKobo = justBookedAssignment ? Math.max(0, justBookedAssignment.c.allocated_kobo - (justBookedAssignment.a.agreed_kobo ?? 0)) : 0;
+  const bookedTask = justBookedAssignment ? data.tasks.find((t) => t.category_id === justBookedAssignment.c.id && t.completes_on_booking && !!t.done_at) : null;
+
+  async function moveSurplusToUnallocated() {
+    if (!justBookedAssignment || surplusKobo <= 0) return;
+    setMoving(true);
+    try {
+      const { error } = await supabase.rpc('apply_plan_allocation_changes', {
+        p_plan_id: planId,
+        p_changes: [{ category_id: justBookedAssignment.c.id, new_allocated_kobo: justBookedAssignment.a.agreed_kobo ?? 0 }],
+        p_actor: 'user',
+      });
+      if (!error) onChanged();
+    } finally {
+      setMoving(false);
+    }
+  }
 
   function slotState(c: WorkspaceCategory): 'booked' | 'committed' | 'own_vendor' | 'open' {
     const active = c.assignments.find((a) => a.status === 'assigned' || a.status === 'booked');
@@ -1001,6 +1386,40 @@ function WorkspaceTeamTab({ data, onOpenCategory }: { data: PlanWorkspaceData; o
         const isNextDue = c.id === nextDueCategory?.id;
         const info = matchInfo[c.id];
 
+        // P14 "Provider assigned state" -- the one real just-booked receipt
+        // this visit, not a generic success screen. Every line is real:
+        // the completed task (if any), the real surplus amount (offered,
+        // never auto-moved), and the real booking_id-backed "added to your
+        // VENTS bookings" fact.
+        if (justBookedAssignment && c.id === justBookedAssignment.c.id) {
+          const a = justBookedAssignment.a;
+          return (
+            <div key={c.id} style={{ padding: 14, borderRadius: 12, background: 'rgba(52,211,153,.06)', border: '1px solid rgba(52,211,153,.35)', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid={`workspace-team-row-${c.key}`}>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                <span style={{ width: 22, height: 22, borderRadius: '50%', background: '#34d399', color: '#0a0810', fontSize: 12, fontWeight: 800, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>✓</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12, color: '#8a7f97' }}>{c.label}</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{a.provider?.business_name || a.own_vendor_name}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 700 }}>{naira((a.agreed_kobo ?? 0) / 100)}</div>
+                  <div style={{ fontSize: 11, color: '#34d399' }}>Paid · just now</div>
+                </div>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 5, paddingTop: 10, borderTop: '1px solid rgba(52,211,153,.2)', fontSize: 12.5, color: '#c9c0d4' }}>
+                {bookedTask && <span>✓ Task "{bookedTask.title}" completed</span>}
+                {surplusKobo > 0 && (
+                  <span>
+                    ✓ {c.label} {naira(surplusKobo / 100)} under — moved to Unallocated?{' '}
+                    <span onClick={moveSurplusToUnallocated} role="button" data-testid="workspace-team-move-surplus" style={{ color: '#d3b8ff', fontWeight: 700, cursor: moving ? 'default' : 'pointer' }}>{moving ? 'Moving…' : 'Move'}</span>
+                  </span>
+                )}
+                <span>✓ Booking added to your VENTS bookings</span>
+              </div>
+            </div>
+          );
+        }
+
         if (isNextDue) {
           return (
             <div key={c.id} style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid={`workspace-team-row-${c.key}`}>
@@ -1052,6 +1471,14 @@ function WorkspaceTeamTab({ data, onOpenCategory }: { data: PlanWorkspaceData; o
           </div>
         );
       })}
+      {readiness != null && (
+        <div style={{ position: 'fixed', left: 18, right: 18, bottom: 92, padding: '12px 14px', borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 12px 30px rgba(0,0,0,.5)', zIndex: 960 }} data-testid="workspace-readiness-toast">
+          <span style={{ fontSize: 13, flex: 1 }}>Plan is now <b>{readiness}% ready</b></span>
+          <span style={{ width: 60, height: 5, borderRadius: 9, background: '#2c2438', overflow: 'hidden', display: 'flex' }}>
+            <span style={{ width: `${readiness}%`, background: '#a35cff' }} />
+          </span>
+        </div>
+      )}
     </>
   );
 }
