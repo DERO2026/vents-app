@@ -61,6 +61,9 @@ function escapeHtml(s) {
 // through postMessage instead of importing the app's Sentry module
 // directly (this page has no bundler/module graph of its own).
 window.gm_authFailure = function () {
+  if (window.__ventsAuthReject) {
+    window.__ventsAuthReject(new Error('Google Maps authentication failed'));
+  }
   postToParent({ type: 'vents:authFailure' });
 };
 
