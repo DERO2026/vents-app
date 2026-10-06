@@ -55,6 +55,15 @@ export function WelcomeScreen({ onGetStarted, onSignIn, onPickState: _onPickStat
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
+        // iPad portrait (verified at 820x1180pt, the 11" Air M3 Apple's Oct
+        // 2026 rejection reproduced on): this screen's real content is
+        // shorter than the viewport, and with no justifyContent it all
+        // top-pinned, leaving a large dead gap at the bottom -- exactly the
+        // "excessive empty space" Apple flagged. Centering is a no-op on
+        // phones (content already meets or exceeds the viewport there, so
+        // there's no slack to redistribute) and fixes the real gap on
+        // taller/tablet viewports without touching any card/button layout.
+        justifyContent: 'center',
         overflow: 'hidden',
         position: 'relative',
         color: ventsColors.ink1,

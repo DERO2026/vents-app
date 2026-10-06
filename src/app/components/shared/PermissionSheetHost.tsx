@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Camera, Bell, Settings } from 'lucide-react';
 import { registerPrimerHost } from '../../../lib/permissionPrimer';
 
-type PrimerState = { kind: 'primer'; icon: 'camera' | 'bell'; title: string; message: string; onContinue: () => void; onNotNow: () => void };
+type PrimerState = { kind: 'primer'; icon: 'camera' | 'bell'; title: string; message: string; onContinue: () => void; onNotNow: (() => void) | null };
 type DeniedState = { kind: 'denied'; icon: 'camera' | 'bell'; title: string; message: string; onOpenSettings: () => void; onDismiss: () => void };
 
 const ICONS = { camera: Camera, bell: Bell };
@@ -24,9 +24,17 @@ export function PermissionSheetHost() {
   if (!state) return null;
   const Icon = ICONS[state.icon];
 
+  // A non-dismissible primer (camera: copy.dismissible === false) has no
+  // onNotNow at all -- a backdrop tap must be a no-op, never a silent
+  // "skip the real permission request" escape hatch. Only "Continue"
+  // (which fires the actual OS prompt) can close that sheet.
   const close = () => {
-    if (state.kind === 'primer') state.onNotNow();
-    else state.onDismiss();
+    if (state.kind === 'primer') {
+      if (!state.onNotNow) return;
+      state.onNotNow();
+    } else {
+      state.onDismiss();
+    }
     setState(null);
   };
 
@@ -105,12 +113,14 @@ export function PermissionSheetHost() {
             >
               Continue
             </button>
-            <button
-              onClick={() => { state.onNotNow(); setState(null); }}
-              style={{ background: 'none', border: 'none', padding: '10px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
-            >
-              Not now
-            </button>
+            {state.onNotNow && (
+              <button
+                onClick={() => { state.onNotNow!(); setState(null); }}
+                style={{ background: 'none', border: 'none', padding: '10px', color: '#8B8FA8', fontSize: '14px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Not now
+              </button>
+            )}
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>

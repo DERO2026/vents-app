@@ -12,15 +12,21 @@ export async function pickImage(): Promise<File | null> {
   if (!Capacitor.isNativePlatform()) return null;
   const { Camera, CameraResultType, CameraSource } = await import('@capacitor/camera');
 
-  // Soft pre-ask, shown once per device before the very first camera prompt —
-  // skipped on every call after that (including this one, if the user already
-  // saw it), so this only ever adds one extra tap the first time.
-  const decision = await askPermission('camera', {
+  // Explanatory sheet, shown once per device before the very first camera
+  // prompt — skipped on every call after that (including this one, if the
+  // user already saw it). dismissible:false per Apple's Oct 2026 rejection
+  // of VENTS 1.0.2 (Guideline 5.1.1(iv)): this screen must not offer a
+  // close/"Not now" action that avoids the real OS permission dialog --
+  // "Continue" is the only button, and it leads straight into
+  // Camera.getPhoto() below, which is what actually fires the system
+  // prompt. The user's real "no" is the OS's own Don't Allow, handled in
+  // the catch block below, not a custom screen standing in front of it.
+  await askPermission('camera', {
     icon: 'camera',
     title: 'Allow Photo Access',
     message: 'VENTS uses your camera and photo library to let you add a profile picture, event cover, and share photos in chat.',
+    dismissible: false,
   });
-  if (decision === 'skip') return null;
 
   try {
     const photo = await Camera.getPhoto({

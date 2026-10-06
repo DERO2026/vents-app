@@ -2757,8 +2757,26 @@ export default function App() {
              header/stuck-crop-screen report. margin:auto with left/right
              achieves identical centering with no transform involved. */
           margin: 0 auto;
-          width: 390px;
-          max-width: 100vw;
+          /* Apple rejected VENTS 1.0.2 (Oct 2026, Guideline 4) for not being
+             optimized for all screen sizes -- reproduced on an 11" iPad Air
+             (M3, 820x1180pt portrait / 1180x820pt landscape): this frame was
+             hard-locked to 390px wide, so on any screen wider than a phone
+             the entire app rendered as a small phone-sized rectangle
+             stranded in a sea of empty black, with every screen's real
+             content (home, event details, booking, chats, SI, etc.) never
+             using the rest of the iPad's width. Nothing else in the app
+             hardcodes 390px (confirmed by search) -- every screen already
+             lays out with flex/percentage widths relative to this frame, so
+             widening the frame itself is the actual, sufficient fix, not a
+             per-screen redesign. min() keeps phones pixel-identical to
+             before (100vw never exceeds ~390-430px there) while giving
+             tablet-width viewports a readable, still phone-proportioned
+             column instead of either the old stranded 390px box or a
+             literally edge-to-edge iPad-width stretch (which would make
+             this app's existing card/list/chat layouts look broken, not
+             "optimized" -- an iPad still reads a ~560px single column more
+             comfortably than one over 800px wide). */
+          width: min(100vw, 560px);
           /* iOS Safari's address bar dynamically shows/hides, and a plain
              height:100% on a position:fixed element can be computed against
              a stale viewport size after a native UI interruption (the photo

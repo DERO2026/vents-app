@@ -12,6 +12,17 @@ export interface PrimerCopy {
   icon: 'camera' | 'bell';
   title: string;
   message: string;
+  // Apple Guideline 5.1.1(iv): a custom pre-permission screen must never
+  // let the user close/delay it without the real OS prompt firing --
+  // this is the exact behavior Apple's Oct 2026 rejection of VENTS 1.0.2
+  // cited for the camera primer. dismissible:false (used for 'camera')
+  // removes the "Not now" button and the backdrop-tap-to-close affordance
+  // entirely, so "Continue" -> the real OS permission dialog is the ONLY
+  // path out of the sheet. Defaults to true, so the notifications primer
+  // (not cited, not a hardware-permission gate the same way, and where a
+  // soft pre-ask the user can decline without ever seeing the system
+  // prompt is normal, encouraged practice) is completely unchanged.
+  dismissible?: boolean;
 }
 
 export interface DeniedCopy {
@@ -20,7 +31,7 @@ export interface DeniedCopy {
   message: string;
 }
 
-type PrimerRequest = PrimerCopy & { onContinue: () => void; onNotNow: () => void };
+type PrimerRequest = PrimerCopy & { onContinue: () => void; onNotNow: (() => void) | null };
 type DeniedRequest = DeniedCopy & { onOpenSettings: () => void; onDismiss: () => void };
 
 let showPrimer: ((req: PrimerRequest) => void) | null = null;
@@ -42,9 +53,19 @@ const primerShownKey = (permission: string) => `vents_permission_primer_shown_${
 
 /**
  * Shows the soft pre-ask sheet the first time this permission is requested on
- * this device, then gets out of the way on every later call. Resolves 'skip'
- * if the user taps "Not now" (caller should not fire the OS prompt that turn)
- * or 'proceed' otherwise (first-time "Continue", or every call after the first).
+ * this device, then gets out of the way on every later call.
+ *
+ * copy.dismissible === false (camera): there is no "skip" outcome at all --
+ * the returned promise only ever resolves 'proceed', and the host renders no
+ * "Not now" button and ignores a backdrop tap, so the real OS prompt is the
+ * only way the sheet ever closes. This is the fix for Apple's Oct 2026
+ * rejection (Guideline 5.1.1(iv)): a custom pre-permission screen must not
+ * offer a close/delay action that avoids the system dialog.
+ *
+ * Otherwise (notifications, or dismissible left true): resolves 'skip' if
+ * the user taps "Not now" (caller should not fire the OS prompt that turn)
+ * or 'proceed' otherwise (first-time "Continue", or every call after the
+ * first) -- unchanged from before.
  */
 export function askPermission(permission: 'camera' | 'notifications', copy: PrimerCopy): Promise<'proceed' | 'skip'> {
   let alreadyShown = true;
@@ -54,11 +75,12 @@ export function askPermission(permission: 'camera' | 'notifications', copy: Prim
   if (alreadyShown || !showPrimer) return Promise.resolve('proceed');
 
   try { localStorage.setItem(primerShownKey(permission), '1'); } catch { /* best-effort */ }
+  const dismissible = copy.dismissible !== false;
   return new Promise((resolve) => {
     showPrimer!({
       ...copy,
       onContinue: () => resolve('proceed'),
-      onNotNow: () => resolve('skip'),
+      onNotNow: dismissible ? () => resolve('skip') : null,
     });
   });
 }

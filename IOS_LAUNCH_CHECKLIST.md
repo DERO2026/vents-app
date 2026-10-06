@@ -23,7 +23,7 @@ Open `ios/App/App/Info.plist` in Xcode (or as source code) and add:
 
 | Key | Value | Why |
 |---|---|---|
-| `NSCameraUsageDescription` | "VENTS needs camera access to scan ticket QR codes at the door." | QR check-in scanner |
+| `NSCameraUsageDescription` | "VENTS needs camera access to scan ticket QR codes at the door, and to take photos for your profile picture, event cover, and chat." | QR check-in scanner **and** `pickImage.ts`'s `Camera.getPhoto()` (profile/event/chat photo capture) — the string must cover every real camera use, not just the first one added |
 | `NSMicrophoneUsageDescription` | "VENTS needs microphone access to record voice messages in chat." | Voice notes in Messages |
 | `NSLocationWhenInUseUsageDescription` | "VENTS needs your location to share it in chat and show nearby events." | Location share |
 | `NSPhotoLibraryUsageDescription` | "VENTS needs photo library access to upload event flyers and your profile picture." | Flyer/avatar picker |
