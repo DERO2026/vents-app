@@ -671,11 +671,11 @@ function SetTotalBudgetSheet({
       <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', background: '#120e1a', borderTop: '1px solid #2c2438', borderRadius: '18px 18px 0 0', padding: '18px 18px calc(18px + env(safe-area-inset-bottom, 0px))', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <span style={{ fontSize: 14, fontWeight: 700 }}>Set total budget</span>
         <input
-          type="number"
+          type="text"
           inputMode="numeric"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="e.g. 8000000"
+          value={value ? Number(value).toLocaleString('en-NG') : ''}
+          onChange={(e) => setValue(e.target.value.replace(/[^0-9]/g, ''))}
+          placeholder="e.g. 8,000,000"
           data-testid="workspace-budget-set-total-input"
           style={{ background: '#1c1726', border: '1px solid #2c2438', borderRadius: 10, padding: '10px 12px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
         />
@@ -2051,6 +2051,12 @@ function WorkspaceTasksTab({ data, onChanged }: { data: PlanWorkspaceData; onCha
 
   const eventDateIso = data.plan.event_date;
   const categoryLabel = (id: string | null) => data.categories.find((c) => c.id === id)?.label ?? null;
+  // P17-C's own copy includes the booked provider's name ("Done via VENTS
+  // booking · Ade Studios"), not just the fact of the booking.
+  const bookedProviderName = (categoryId: string | null) => {
+    const assignment = data.categories.find((c) => c.id === categoryId)?.assignments.find((a) => a.status === 'booked');
+    return assignment?.provider?.business_name || assignment?.own_vendor_name || null;
+  };
 
   const withDue = data.tasks.map((t) => ({ t, due: taskDueDate(t, eventDateIso) }));
   const done = withDue.filter((x) => !!x.t.done_at);
@@ -2112,7 +2118,7 @@ function WorkspaceTasksTab({ data, onChanged }: { data: PlanWorkspaceData; onCha
           <div style={{ fontSize: 14, color: x.t.done_at ? '#a89db3' : '#f2eff6', textDecoration: x.t.done_at ? 'line-through' : 'none' }}>{x.t.title}</div>
           <div style={{ fontSize: 11.5, color: autoCompleted ? '#34d399' : amber ? '#fbbf24' : '#8a7f97', marginTop: 2 }}>
             {autoCompleted
-              ? 'Done via VENTS booking'
+              ? ['Done via VENTS booking', bookedProviderName(x.t.category_id)].filter(Boolean).join(' · ')
               : [label, x.due ? (amber ? `was due ${fmtTaskDate(x.due)}` : fmtTaskDate(x.due)) : null].filter(Boolean).join(' · ')}
           </div>
         </div>
@@ -2821,9 +2827,9 @@ function PlanUpdateCard({
       </div>
       <div style={{ marginTop: applied ? 6 : 8, display: 'flex', flexDirection: 'column', gap: 6, paddingTop: applied ? 6 : 0 }}>
         {changes.map((c, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: applied ? 12.5 : 12, color: '#c9c0d4' }}>
-            <span style={{ color: '#a89db3' }}>{c.label || c.key || c.category}</span>
-            <span>
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 8, fontSize: applied ? 12.5 : 12, color: '#c9c0d4' }}>
+            <span style={{ color: '#a89db3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.label || c.key || c.category}</span>
+            <span style={{ flexShrink: 0 }}>
               <span style={{ color: '#786d87' }}>{naira(c.before_naira)}</span>
               {' → '}
               <span style={{ color: '#f0edf5', fontWeight: 700 }}>{naira(c.after_naira)}</span>

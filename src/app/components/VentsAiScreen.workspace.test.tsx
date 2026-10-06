@@ -385,7 +385,9 @@ describe('P16 Tasks tab (+ P17 completed-task states folded in)', () => {
     const showCompleted = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent?.includes('Completed · 1'));
     act(() => showCompleted!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(container!.textContent).toContain('Book photographer');
-    expect(container!.textContent).toContain('Done via VENTS booking');
+    // P17-C's own copy names the booked provider, not just the fact of
+    // the booking ("Done via VENTS booking · Ade Studios").
+    expect(container!.textContent).toContain('Done via VENTS booking · Ade Studios');
 
     supabaseFrom.mockClear();
     const lockedBox = container!.querySelector('[data-testid="workspace-task-t2"]') as HTMLElement;
@@ -659,6 +661,10 @@ describe('S4 Not-yet/draft states: genuinely missing data, never fabricated plac
       setter.call(input, '8000000');
       input.dispatchEvent(new Event('input', { bubbles: true }));
     });
+    // The field displays formatted currency ("8,000,000"), not the raw
+    // digits typed, matching the formatting convention verified against
+    // the Allocation sheet's own mockup frame (P09).
+    expect(input.value).toBe('8,000,000');
     clickTestId('workspace-budget-set-total-save');
     await flush();
 
