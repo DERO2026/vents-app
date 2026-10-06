@@ -172,8 +172,10 @@ describe('P10 Category detail', () => {
     clickTestId('workspace-budget-row-photography');
     await flush();
 
-    expect(container!.textContent).toContain('₦500,000'); // allocated
-    expect(container!.textContent).toContain('₦450,000'); // paid
+    // P10's own frame uses the compact form for this 3-tile stat grid
+    // (verified by rendered comparison against the mockup).
+    expect(container!.textContent).toContain('₦500k'); // allocated
+    expect(container!.textContent).toContain('₦450k'); // paid
     expect(container!.textContent).toContain('Book photographer');
     expect(container!.textContent).toContain('via VENTS');
     expect(container!.textContent).toContain('Confirm arrival time');
@@ -246,8 +248,24 @@ describe('P09 Allocation sheet: Save calls the real apply_plan_allocation_change
 
     expect(container!.textContent).toContain('2 found'); // the real floor-price/count line
     // The amount field renders as formatted currency ("₦900,000"), matching
-    // the mockup's P09 frame -- never a raw unformatted number.
-    expect(container!.textContent).toContain('₦900,000');
+    // the mockup's P09 frame -- never a raw unformatted number. An input's
+    // typed value isn't part of textContent, so this reads the real DOM
+    // input's own .value rather than (as a prior version of this
+    // assertion accidentally did) the still-mounted Category Detail view
+    // behind the sheet, which independently shows the same figure in its
+    // own compact form ("₦900k") since the P10 fix in this pass.
+    const amountInput = container!.querySelector('[data-testid="ai-allocation-amount-input"]') as HTMLInputElement;
+    expect(amountInput.value).toBe('₦900,000');
+
+    // R1 (360px) regression this pass found and fixed: the +/- stepper
+    // buttons had no flexShrink:0, so the flex row compressed them down
+    // to ~19px and pushed "+" entirely off-screen (confirmed by measuring
+    // the real rendered rect with Playwright; jsdom has no layout engine
+    // to re-prove the pixel position, so this guards the CSS fix itself).
+    const minusBtn = container!.querySelector('[data-testid="ai-allocation-minus"]') as HTMLElement;
+    const plusBtn = container!.querySelector('[data-testid="ai-allocation-plus"]') as HTMLElement;
+    expect(minusBtn.style.flexShrink).toBe('0');
+    expect(plusBtn.style.flexShrink).toBe('0');
 
     clickTestId('ai-allocation-plus');
     clickTestId('ai-allocation-plus'); // +₦100k (2 x ₦50k steps) over the ₦900,000 allocated

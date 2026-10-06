@@ -539,7 +539,7 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
       cards: [{
         type: 'preview_plan_brief',
         data: {
-          title: 'Beach Wedding', event_type: 'wedding', city: 'Lagos', setting: 'Outdoor', guests: 120,
+          title: 'Beach Wedding', event_type: 'wedding', event_date: '2026-12-12', city: 'Lagos', setting: 'Outdoor', guests: 120,
           total_budget_naira: 8000000, style: ['Elegant', 'Modern', 'Beach'], priorities: ['Great food', 'Photography', 'Live music'],
         },
       }],
@@ -550,6 +550,10 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
     await flush();
 
     expect(container!.textContent).toContain('Beach Wedding');
+    // P05's own frame shows the full weekday/day/month/year -- not a raw
+    // ISO string like "2026-12-12" (a real bug this pass found and fixed).
+    expect(container!.textContent).toContain('Sat, 12 Dec 2026');
+    expect(container!.textContent).not.toContain('2026-12-12');
     expect(container!.textContent).toContain('₦8,000,000');
     expect(container!.textContent).toContain('1 · Great food');
     expect(container!.textContent).toContain('Not booked yet'); // no venue_status given -- shown in amber, not fabricated.
@@ -656,6 +660,16 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
     const cityTrigger = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Choose a city');
     act(() => cityTrigger!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     expect(container!.textContent).toContain('Lagos'); // the real PickerSheet's own option list, not a fabricated one
+
+    // Render-verified bug this pass found: a long label+value pair (e.g.
+    // "Location" + "Lagos · Outdoor") could fill the row's available
+    // width with zero slack for justify-content:space-between to work
+    // with, leaving label and value touching with no gap at all. jsdom
+    // has no real layout engine to re-prove the pixel gap (confirmed by
+    // Playwright instead), but it can confirm the CSS fix itself is
+    // still in place.
+    const locationRow = container!.querySelector('[data-testid="ai-brief-row-location"]') as HTMLElement;
+    expect(locationRow.style.gap).toBe('8px');
   });
 
   it('P06: the "Build my plan." turn shows BuildingPlanLoader instead of the generic typing dots while it is in flight', async () => {
@@ -672,6 +686,32 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
 
     await act(async () => { resolveSend!({ type: 'message', text: 'Your plan is ready.', cards: [] }); await flush(); });
     expect(container!.querySelector('[data-testid="ai-building-plan-loader"]')).toBeFalsy();
+  });
+
+  it('P06: BuildingPlanLoader shows the real event title from the brief, not the raw chat message the conversation was named from', async () => {
+    supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
+    sendVentsAiMessage.mockResolvedValueOnce({
+      type: 'message',
+      text: '',
+      cards: [{ type: 'preview_plan_brief', data: { title: 'Beach Wedding', event_type: 'wedding' } }],
+    });
+
+    mount();
+    // The conversation's own title is titleFromText() of this literal
+    // message -- exactly the raw-text bug this fix avoids surfacing here.
+    setInputAndSend('I want to plan a wedding');
+    await flush();
+
+    let resolveSend: (v: any) => void;
+    sendVentsAiMessage.mockImplementation(() => new Promise((resolve) => { resolveSend = resolve; }));
+    const buildBtn = Array.from(container!.querySelectorAll('[role="button"]')).find((el) => el.textContent === 'Build my plan');
+    act(() => buildBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
+    await flush();
+
+    expect(container!.textContent).toContain('Beach Wedding');
+    expect(container!.textContent).not.toContain('I want to plan a wedding plan');
+
+    await act(async () => { resolveSend!({ type: 'message', text: 'Your plan is ready.', cards: [] }); await flush(); });
   });
 
   it('S3-A: a failed "Build my plan." turn shows the real error card, and "Try again" re-sends the exact same turn', async () => {

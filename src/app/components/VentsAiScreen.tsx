@@ -473,13 +473,22 @@ function PlanWorkspaceView({
             )}
           </span>
         </div>
-        <div style={{ display: 'flex', gap: 20, fontSize: 13, fontWeight: 600, color: '#8a7f97' }}>
+        {/* R1 (360px) regression this pass found: the mockup's own tab row
+            (fixed gap:20px, no overflow handling) is only ever rendered at
+            its native 390px design width, where it just fits -- at 360px
+            "Timeline" genuinely ran past both this row's own container and
+            the viewport edge (confirmed by measuring the real rendered
+            rect). overflowX:auto here is the same established pattern
+            Home's own filter-chip row already uses for this exact
+            narrow-viewport problem; flexShrink:0 keeps each tab's own
+            label from being squeezed instead of the row simply scrolling. */}
+        <div style={{ display: 'flex', gap: 20, fontSize: 13, fontWeight: 600, color: '#8a7f97', overflowX: 'auto', scrollbarWidth: 'none' }}>
           {TABS.map((t) => (
             <span
               key={t.id}
               onClick={() => setTabRemembered(t.id)}
               data-testid={`workspace-tab-${t.id}`}
-              style={{ padding: '10px 0', cursor: 'pointer', color: tab === t.id ? '#f2eff6' : '#8a7f97', borderBottom: tab === t.id ? '2px solid #a35cff' : 'none' }}
+              style={{ padding: '10px 0', cursor: 'pointer', flexShrink: 0, color: tab === t.id ? '#f2eff6' : '#8a7f97', borderBottom: tab === t.id ? '2px solid #a35cff' : 'none' }}
             >
               {t.label}
             </span>
@@ -1328,15 +1337,22 @@ function AllocationSheet({
           <span style={{ fontSize: 12, color: '#8a7f97' }}>{category.booked ? 'Paid via VENTS' : category.committed_kobo > 0 ? 'Committed' : 'Estimate · not booked'}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span onClick={() => step(-1)} role="button" data-testid="ai-allocation-minus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>−</span>
+          {/* R1 (360px) regression this pass found: with no flexShrink:0,
+              these 44px stepper buttons were compressed down to ~19px by
+              the flex row (confirmed by measuring the real rendered rect --
+              the "+" button ended up entirely off-screen, past x=400 in a
+              360px viewport). The buttons must stay full-size; the amount
+              input (flex:1) is the one with room to give. */}
+          <span onClick={() => step(-1)} role="button" data-testid="ai-allocation-minus" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>−</span>
           <input
             type="text"
             inputMode="numeric"
             value={naira(amountNaira)}
             onChange={(e) => setAmountNaira(Math.max(0, Number(e.target.value.replace(/[^0-9]/g, '')) || 0))}
-            style={{ flex: 1, height: 56, borderRadius: 12, background: '#0a0810', border: '1px solid rgba(163,92,255,.55)', textAlign: 'center', fontSize: 24, fontWeight: 800, color: '#f2eff6', fontFamily: 'inherit' }}
+            data-testid="ai-allocation-amount-input"
+            style={{ flex: 1, minWidth: 0, height: 56, borderRadius: 12, background: '#0a0810', border: '1px solid rgba(163,92,255,.55)', textAlign: 'center', fontSize: 24, fontWeight: 800, color: '#f2eff6', fontFamily: 'inherit' }}
           />
-          <span onClick={() => step(1)} role="button" data-testid="ai-allocation-plus" style={{ width: 44, height: 44, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>+</span>
+          <span onClick={() => step(1)} role="button" data-testid="ai-allocation-plus" style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 12, background: '#1c1726', border: '1px solid #2c2438', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20, cursor: 'pointer' }}>+</span>
         </div>
         <div style={{ fontSize: 12.5, color: '#a89db3', textAlign: 'center' }}>
           {matchCount == null ? 'Checking VENTS providers…' : matchCount === 0 ? 'No matching VENTS providers for this category yet' : `VENTS ${category.label.toLowerCase()} providers${planCity ? ` in ${planCity}` : ''} start from ${floorPrice != null ? naira(floorPrice) : '—'} · ${matchCount} found`}
@@ -1474,9 +1490,13 @@ function CategoryDetailView({
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d' }}>
-        <div style={{ padding: 12 }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Allocated</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(category.allocated_kobo / 100)}</div></div>
-        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#34d399' }}>Paid</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(category.paid_kobo / 100)}</div></div>
-        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Left</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{naira(left / 100)}</div></div>
+        {/* P10's own frame uses the compact "₦500k" form for all three
+            tiles here (a tight 3-column grid, unlike Budget tab's own
+            2x2 stat grid which stays full-precision) -- verified by
+            rendered comparison, not assumed from the general convention. */}
+        <div style={{ padding: 12 }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Allocated</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{compactNaira(category.allocated_kobo / 100)}</div></div>
+        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#34d399' }}>Paid</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{compactNaira(category.paid_kobo / 100)}</div></div>
+        <div style={{ padding: 12, borderLeft: '1px solid #1c1726' }}><div style={{ fontSize: 11, color: '#8a7f97' }}>Left</div><div style={{ fontSize: 15, fontWeight: 700, marginTop: 3 }}>{compactNaira(left / 100)}</div></div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '.5px', color: '#8a7f97' }}>ASSIGNED</span>
@@ -3096,10 +3116,10 @@ function PlanQuestionCard({ data, onAnswer }: { data: any; onAnswer?: (text: str
               key={o.id}
               onClick={() => pickSingle(o.label)}
               role="button"
-              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '13px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #2c2438', cursor: 'pointer' }}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '13px 14px', borderRadius: 12, background: '#120e1a', border: '1px solid #2c2438', cursor: 'pointer' }}
             >
-              <span style={{ fontSize: 13.5, fontWeight: 600 }}>{o.label}</span>
-              {o.hint && <span style={{ fontSize: 12, color: '#8a7f97' }}>{o.hint}</span>}
+              <span style={{ fontSize: 13.5, fontWeight: 600, flexShrink: 0 }}>{o.label}</span>
+              {o.hint && <span style={{ fontSize: 12, color: '#8a7f97', textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.hint}</span>}
             </div>
           ))}
         </div>
@@ -3186,7 +3206,11 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
   }
 
   const rows: { key: 'date' | 'location' | 'guests' | 'budget'; label: string; value: string }[] = [
-    { key: 'date', label: 'Date', value: brief.event_date || 'Not set yet' },
+    // P05's own frame shows the full "Sat 12 Dec 2026" (with year, unlike
+    // friendlyDate()'s other call sites elsewhere in this file, which never
+    // need one) -- a real review step before the plan is created, so
+    // ambiguity across a year boundary matters here specifically.
+    { key: 'date', label: 'Date', value: brief.event_date ? new Date(brief.event_date + 'T00:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : 'Not set yet' },
     { key: 'location', label: 'Location', value: [brief.city, brief.setting].filter(Boolean).join(' · ') || 'Not set yet' },
     { key: 'guests', label: 'Guests', value: brief.guests != null ? String(brief.guests) : 'Not set yet' },
     { key: 'budget', label: 'Total budget', value: brief.total_budget_naira != null ? naira(brief.total_budget_naira) : 'Not set yet' },
@@ -3206,10 +3230,10 @@ function PlanBriefCard({ data, onBuild }: { data: any; onBuild?: (brief: Editabl
               onClick={() => openRow(r.key)}
               role="button"
               data-testid={`ai-brief-row-${r.key}`}
-              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '13px 14px', cursor: 'pointer' }}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, padding: '13px 14px', cursor: 'pointer' }}
             >
-              <span style={{ fontSize: 13, color: '#8a7f97' }}>{r.label}</span>
-              <span style={{ fontSize: 14, fontWeight: 700 }}>{r.value} <span style={{ color: '#8a7f97', fontWeight: 500 }}>{editing === r.key ? '⌄' : '›'}</span></span>
+              <span style={{ fontSize: 13, color: '#8a7f97', flexShrink: 0 }}>{r.label}</span>
+              <span style={{ fontSize: 14, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.value} <span style={{ color: '#8a7f97', fontWeight: 500 }}>{editing === r.key ? '⌄' : '›'}</span></span>
             </div>
             {editing === r.key && (
               <div style={{ padding: '0 14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -4420,7 +4444,23 @@ function ConversationView({
 
           {streaming && (
             lastConvUserText.trim().toLowerCase().startsWith('build my plan') ? (
-              <BuildingPlanLoader title={conversation.title} />
+              // P06's own frame shows the real event title ("Beach Wedding
+              // plan"), not the conversation's own title -- which is just
+              // titleFromText() of the user's first raw message (e.g. "I
+              // want to plan a wedding plan", the same literal-text issue
+              // already flagged and deferred for P27's thread header, but
+              // fixable here specifically: the real title is sitting right
+              // there in this same conversation's own preview_plan_brief
+              // card, so there's no need to defer to SI-generated titles.
+              <BuildingPlanLoader
+                title={
+                  ([...conversation.messages].reverse()
+                    .flatMap((m) => m.cards || [])
+                    .find((c) => c.type === 'preview_plan_brief')
+                    ?.data as { title?: string } | undefined
+                  )?.title || conversation.title
+                }
+              />
             ) : (
               <div style={{ display: 'flex', gap: 9, marginBottom: 16 }}>
                 <div style={{ width: 26, height: 26, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
