@@ -312,8 +312,10 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
     // any Anthropic call -- a rejection here means no Anthropic request is
     // ever made and no usage is consumed for it (the reservation call
     // itself either fully succeeds, consuming exactly one unit, or throws
-    // without having consumed one; see check_and_reserve_ai_usage's own
-    // compensating-decrement step in the migration).
+    // without having consumed one -- any RAISE EXCEPTION inside
+    // check_and_reserve_ai_usage rolls back every write that single call
+    // made, including its own usage increment, as ordinary Postgres
+    // transaction semantics (see 0166_fix_ai_usage_expiry_transaction_semantics.sql).
     if (await isAiEntitlementEnforced(String(authHeader))) {
       try {
         await checkAndReserveAiUsage(session.userId, 'chat');

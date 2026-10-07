@@ -13,9 +13,17 @@ import { join } from 'node:path';
 // removes any of these is caught here, not discovered live in production.
 
 let sql: string;
+// Phase 4A (0166) replaces check_and_reserve_ai_usage() in place to fix the
+// expiry/compensating-decrement transaction-semantics bug found during live
+// Phase 4 verification -- see that migration's own comment for the full
+// explanation. 0165 is read for everything else (tables, grants, trial,
+// admin RPCs, seed data), none of which 0166 touches; fnBody166 reads the
+// CURRENT (post-fix) body of check_and_reserve_ai_usage specifically.
+let sql166: string;
 
 beforeAll(() => {
   sql = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0165_ai_subscription_foundation.sql'), 'utf8');
+  sql166 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0166_fix_ai_usage_expiry_transaction_semantics.sql'), 'utf8');
 });
 
 function fnBody(name: string): string {
@@ -24,6 +32,14 @@ function fnBody(name: string): string {
   expect(start, `function ${name} not found`).toBeGreaterThan(-1);
   const end = sql.indexOf('\n$function$;', start);
   return sql.slice(start, end);
+}
+
+function fnBody166(name: string): string {
+  const marker = `CREATE OR REPLACE FUNCTION public.${name}`;
+  const start = sql166.indexOf(marker);
+  expect(start, `function ${name} not found in 0166`).toBeGreaterThan(-1);
+  const end = sql166.indexOf('\n$function$;', start);
+  return sql166.slice(start, end);
 }
 
 describe('ai_entitlements / ai_usage_periods / ai_plans: no direct client access', () => {
@@ -51,29 +67,59 @@ describe('check_and_reserve_ai_usage: reachability and concurrency', () => {
   });
 
   it('locks the entitlement row (FOR UPDATE) before reading it, so two concurrent calls for the same user serialize', () => {
-    const fn = fnBody('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
     expect(fn).toMatch(/SELECT \* INTO v_ent FROM public\.ai_entitlements WHERE user_id = p_user_id FOR UPDATE;/);
     // The lock must happen before any usage-period mutation.
     expect(fn.indexOf('FOR UPDATE')).toBeLessThan(fn.indexOf('INSERT INTO public.ai_usage_periods'));
   });
 
-  it('reserves usage via a single atomic upsert (INSERT ... ON CONFLICT ... RETURNING), the same idiom as check_rate_limit', () => {
-    const fn = fnBody('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+  it('reserves usage via a single atomic upsert (INSERT ... ON CONFLICT ... RETURNING), the same idiom as check_rate_limit -- unchanged by the Phase 4A fix', () => {
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
     expect(fn).toMatch(/INSERT INTO public\.ai_usage_periods[\s\S]*?ON CONFLICT \(user_id, surface, period_start\)[\s\S]*?DO UPDATE SET used_units = public\.ai_usage_periods\.used_units \+ 1[\s\S]*?RETURNING used_units INTO v_used;/);
   });
 
-  it('compensates (decrements back) a reservation that pushed usage over the hard ceiling, before rejecting', () => {
-    const fn = fnBody('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+  // Phase 4A fix: the pre-0166 version wrote a compensating decrement
+  // before RAISEing on a ceiling violation. That write was dead code --
+  // an uncaught RAISE EXCEPTION rolls back the entire call, including the
+  // increment the decrement was "undoing", so Postgres was already
+  // discarding it for free. 0166 removes the decrement outright; this
+  // test proves it stays gone (a regression here would silently
+  // reintroduce dead code, not a bug, but exactly what Phase 4A set out
+  // to remove).
+  it('Phase 4A: does NOT contain a compensating decrement on the ceiling path -- the rollback already discards the increment', () => {
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    expect(fn).not.toMatch(/used_units = used_units - 1/);
     const ceilingCheckIdx = fn.indexOf('IF v_used > v_plan.hard_ceiling THEN');
-    const decrementIdx = fn.indexOf('SET used_units = used_units - 1');
     const raiseIdx = fn.indexOf("RAISE EXCEPTION 'usage_ceiling_exceeded'");
     expect(ceilingCheckIdx).toBeGreaterThan(-1);
-    expect(decrementIdx).toBeGreaterThan(ceilingCheckIdx);
-    expect(raiseIdx).toBeGreaterThan(decrementIdx);
+    expect(raiseIdx).toBeGreaterThan(ceilingCheckIdx);
+  });
+
+  // Phase 4A fix: the pre-0166 version also wrote status = 'expired'
+  // immediately before RAISEing entitlement_expired -- rolled back by the
+  // same mechanism, so it never reached disk. 0166 removes that write and
+  // relies entirely on re-deriving expiry from period_end on every call.
+  it('Phase 4A: does NOT attempt to persist status = \'expired\' before raising -- enforcement is derived from period_end, not a cached status', () => {
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    expect(fn).not.toMatch(/UPDATE public\.ai_entitlements SET status = 'expired'/);
+    expect(fn).toMatch(/v_ent\.period_end IS NOT NULL AND v_ent\.period_end < now\(\)/);
+    const periodCheckIdx = fn.indexOf('v_ent.period_end IS NOT NULL');
+    const raiseIdx = fn.indexOf("RAISE EXCEPTION 'entitlement_expired'");
+    expect(periodCheckIdx).toBeGreaterThan(-1);
+    expect(raiseIdx).toBeGreaterThan(periodCheckIdx);
+  });
+
+  // The grace transition is the one write on this path that genuinely
+  // persists -- it does NOT raise afterward in the same call (falls
+  // through to a normal successful return), so Phase 4A correctly leaves
+  // it in place.
+  it('still persists the grace-period status transition (that path never raises afterward, so it genuinely commits)', () => {
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    expect(fn).toMatch(/UPDATE public\.ai_entitlements SET status = 'grace'/);
   });
 
   it('rejects when the entitlement is missing, inactive, or expired, before ever touching the usage table', () => {
-    const fn = fnBody('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
     expect(fn).toMatch(/RAISE EXCEPTION 'no_entitlement'/);
     expect(fn).toMatch(/RAISE EXCEPTION 'entitlement_inactive'/);
     expect(fn).toMatch(/RAISE EXCEPTION 'entitlement_expired'/);
@@ -85,7 +131,7 @@ describe('check_and_reserve_ai_usage: reachability and concurrency', () => {
   it('separates chat/extraction/vision into independent usage buckets (surface is part of the table primary key and the function validates it)', () => {
     expect(sql).toMatch(/surface\s+text NOT NULL CHECK \(surface IN \('chat', 'extraction', 'vision'\)\)/);
     expect(sql).toMatch(/PRIMARY KEY \(user_id, surface, period_start\)/);
-    const fn = fnBody('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
+    const fn = fnBody166('check_and_reserve_ai_usage(p_user_id uuid, p_surface text)');
     expect(fn).toMatch(/IF p_surface NOT IN \('chat', 'extraction', 'vision'\) THEN/);
   });
 });
