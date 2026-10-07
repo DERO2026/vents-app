@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const {
   mockVerifyInsforgeSession,
   mockEnforceRateLimit,
+  mockIsAiDisabled,
   mockVerifyConfirmationToken,
   mockCreateConfirmationToken,
   mockBuildUserSupabaseClient,
@@ -23,6 +24,7 @@ const {
 } = vi.hoisted(() => ({
   mockVerifyInsforgeSession: vi.fn(),
   mockEnforceRateLimit: vi.fn(),
+  mockIsAiDisabled: vi.fn(),
   mockVerifyConfirmationToken: vi.fn(),
   mockCreateConfirmationToken: vi.fn(() => 'signed-token'),
   mockBuildUserSupabaseClient: vi.fn((accessToken: string) => ({ __fakeClient: true, accessToken })),
@@ -38,6 +40,7 @@ const {
 vi.mock('../../api/_lib/verifyAuth', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
+  isAiDisabled: mockIsAiDisabled,
 }));
 vi.mock('../../api/_lib/cors', () => ({ applyCors: vi.fn() }));
 vi.mock('../../api/_lib/aiConfirmation', () => ({
@@ -78,6 +81,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockVerifyInsforgeSession.mockResolvedValue(SESSION);
   mockEnforceRateLimit.mockResolvedValue(true);
+  mockIsAiDisabled.mockResolvedValue(false);
   process.env.ANTHROPIC_API_KEY = 'test-key';
 });
 
@@ -110,6 +114,127 @@ describe('handleAiAssistant: auth gating', () => {
     const res = makeRes();
     await handleAiAssistant(req, res);
     expect(res.status).toHaveBeenCalledWith(405);
+  });
+});
+
+// Emergency cost-hardening pass (production billing audit): the master
+// Anthropic kill switch, a hard per-message length cap, and a server-side
+// conversation-history cap. These prove the actual behavior, not just that
+// the mocks were called -- in particular that NO fetch to Anthropic ever
+// happens when the switch is off, and that the history sent upstream is
+// actually trimmed server-side regardless of what the client sent.
+describe('handleAiAssistant: emergency kill switch and cost ceilings', () => {
+  it('blocks the request with 503 and never calls Anthropic when the kill switch is on', async () => {
+    mockIsAiDisabled.mockResolvedValueOnce(true);
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'AI_UNAVAILABLE' }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('never leaks the API key or raw Anthropic error detail in the kill-switch response', async () => {
+    mockIsAiDisabled.mockResolvedValueOnce(true);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    const jsonBody = res.json.mock.calls[0][0];
+    expect(JSON.stringify(jsonBody)).not.toMatch(/test-key|sk-ant|anthropic\.com/i);
+  });
+
+  it('still allows confirming an already-proposed action while the kill switch is on (no new Anthropic call needed)', async () => {
+    mockIsAiDisabled.mockResolvedValueOnce(true);
+    mockVerifyConfirmationToken.mockReturnValueOnce({ ok: true });
+    mockExecuteStartTicketTransfer.mockResolvedValueOnce({ transfer_id: 't1' });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { confirmedAction: { action: 'start_ticket_transfer', params: { ticketId: 'x' }, token: 'tok' } },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).not.toHaveBeenCalledWith(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(mockExecuteStartTicketTransfer).toHaveBeenCalled();
+  });
+
+  it('rejects a single message over the hard length cap with 400, before any Anthropic call', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [{ role: 'user', content: 'x'.repeat(4001) }] },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('allows a message right at the length cap', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })));
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [{ role: 'user', content: 'x'.repeat(4000) }] },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).not.toHaveBeenCalledWith(400);
+  });
+
+  it('trims conversation history server-side to the most recent messages, regardless of how much the client sent', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    // 30 short prior turns (well under the per-message cap) plus the final
+    // message -- the client sent more than MAX_HISTORY_MESSAGES (20).
+    const longHistory = Array.from({ length: 30 }, (_, i) => ({ role: i % 2 === 0 ? 'user' : 'assistant', content: `turn ${i}` }));
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [...longHistory, { role: 'user', content: 'final question' }] },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    const call: any = fetchSpy.mock.calls[0];
+    const sentBody = JSON.parse(call[1].body as string);
+    expect(sentBody.messages.length).toBeLessThanOrEqual(20);
+    // The most recent message must survive the trim.
+    expect(sentBody.messages[sentBody.messages.length - 1].content).toBe('final question');
+  });
+
+  it('caps total history by character budget too, not just message count', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    // 15 messages (under the 20-message count cap) but each near the
+    // per-message cap -- well over the 20000-char total history budget.
+    const bigHistory = Array.from({ length: 15 }, (_, i) => ({ role: i % 2 === 0 ? 'user' : 'assistant', content: 'y'.repeat(3900) }));
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [...bigHistory, { role: 'user', content: 'final question' }] },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    const call: any = fetchSpy.mock.calls[0];
+    const sentBody = JSON.parse(call[1].body as string);
+    const totalChars = sentBody.messages.reduce((sum: number, m: any) => sum + (typeof m.content === 'string' ? m.content.length : 0), 0);
+    expect(totalChars).toBeLessThanOrEqual(20000);
+    expect(sentBody.messages[sentBody.messages.length - 1].content).toBe('final question');
+  });
+
+  it('enforces a global ceiling across all users on top of the per-user cap', async () => {
+    mockEnforceRateLimit.mockImplementation(async (_auth: string, key: string) => key !== 'ai_assistant_global');
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(429);
   });
 });
 

@@ -14,7 +14,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 //     extraction fields.
 //   - GET/OPTIONS behavior is untouched by the discriminator.
 
-const { mockHandleAiAssistant, mockVerifyInsforgeSession, mockEnforceRateLimit } = vi.hoisted(() => ({
+const { mockHandleAiAssistant, mockVerifyInsforgeSession, mockEnforceRateLimit, mockIsAiDisabled } = vi.hoisted(() => ({
   mockHandleAiAssistant: vi.fn(async (_req: any, res: any) => {
     res.status(200).json({ type: 'message', text: 'ai handled', cards: [] });
   }),
@@ -24,6 +24,10 @@ const { mockHandleAiAssistant, mockVerifyInsforgeSession, mockEnforceRateLimit }
   // always allow here so these routing-focused tests keep exercising the
   // mode-discriminator logic they were written for, not the rate limit.
   mockEnforceRateLimit: vi.fn(async () => true),
+  // Emergency cost-hardening pass: always allow here so these
+  // routing-focused tests keep exercising the mode-discriminator logic
+  // they were written for, not the kill switch.
+  mockIsAiDisabled: vi.fn(async () => false),
 }));
 
 vi.mock('../../api/_lib/aiAssistantHandler', () => ({
@@ -32,6 +36,7 @@ vi.mock('../../api/_lib/aiAssistantHandler', () => ({
 vi.mock('../../api/_lib/verifyAuth', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
+  isAiDisabled: mockIsAiDisabled,
 }));
 vi.mock('../../api/_lib/cors', () => ({
   applyCors: vi.fn(),

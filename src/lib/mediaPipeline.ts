@@ -69,7 +69,14 @@ async function uploadBlob(bucket: string, blob: Blob, filename: string, mimeType
   // 12s was tight enough to false-timeout that case on a slow connection
   // even though the upload was still genuinely in flight.
   const res = await withTimeoutFallback(
-    supabase.storage.from(bucket).upload(filename, blob, { contentType: mimeType, upsert: false }),
+    // cacheControl: safe to set a long max-age here specifically because
+    // every filename is unique per upload (`<base>-<timestamp>...`) and
+    // upsert is false -- an object at a given key is written exactly once
+    // and never overwritten, so there is no stale-cache risk from caching
+    // it aggressively. Closes the "every image view re-fetches from
+    // Storage origin, no caching at all" bandwidth-cost gap the production
+    // billing audit found.
+    supabase.storage.from(bucket).upload(filename, blob, { contentType: mimeType, upsert: false, cacheControl: '31536000' }),
     { timeoutMs: 30000, timeoutMessage: 'Upload is taking too long. Please check your connection and try again.' }
   );
   if (res.error) {
@@ -112,8 +119,34 @@ async function recordMetadata(a: MediaAsset, userId?: string | null, eventId?: s
   } catch { /* upload already succeeded — metadata is non-blocking */ }
 }
 
+// Emergency cost-hardening pass (production billing audit): no upload path
+// had any per-user/per-time-window cap on upload COUNT (only per-file size
+// caps at each call site). Best-effort, same residual limits as every
+// other check_rate_limit-backed gate already in this codebase -- it stops
+// the VENTS app's own JS from uploading past the limit, but can't stop a
+// caller who bypasses the app entirely and talks to Supabase Storage
+// directly with a valid session token (that would need a Storage-level
+// policy with its own counting table, a larger change). Throws with a
+// user-facing message on limit; swallows only a genuine misconfiguration
+// (missing RPC) so a backend hiccup doesn't block every legitimate upload.
+async function enforceUploadRateLimit(): Promise<void> {
+  const { error } = await supabase.rpc('check_media_upload_rate_limit');
+  if (error) {
+    // Exact message check_rate_limit raises on a genuine hit (P0429) --
+    // NOT a loose substring match, since e.g. a missing-function error
+    // ("function check_media_upload_rate_limit() does not exist") also
+    // contains the substring "rate_limit" and must NOT be misread as a
+    // real limit hit.
+    if ((error as any).code === 'P0429' || /rate_limited/i.test(error.message || '')) {
+      throw new Error('Too many uploads. Please wait a bit before uploading more.');
+    }
+    console.error('check_media_upload_rate_limit failed (non-fatal):', error.message);
+  }
+}
+
 /** Compress → responsive thumbnail → direct signed upload of both → record metadata. */
 export async function uploadImage(blob: Blob, opts: UploadOptions): Promise<MediaAsset> {
+  await enforceUploadRateLimit();
   const base = `${opts.filenameBase || 'img'}-${Date.now()}`;
   // Compress the full image (bandwidth) and build a responsive thumbnail.
   const full: CompressedImage = await compressImage(blob, 1600, 0.82);
@@ -176,6 +209,7 @@ function videoPosterAndDims(file: Blob): Promise<{ poster: Blob | null; width: n
 
 /** Direct signed upload of a raw video + an extracted poster thumbnail → metadata. */
 export async function uploadVideo(file: File, opts: UploadOptions): Promise<MediaAsset> {
+  await enforceUploadRateLimit();
   const base = `${opts.filenameBase || 'vid'}-${Date.now()}`;
   const ext = (file.name.split('.').pop() || 'mp4').toLowerCase();
   const { poster, width, height } = await videoPosterAndDims(file);

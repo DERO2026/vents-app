@@ -9,6 +9,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const {
   mockVerifyInsforgeSession,
   mockEnforceRateLimit,
+  mockIsAiDisabled,
   mockExecutePlanTool,
   mockBuildUserSupabaseClient,
   state,
@@ -40,6 +41,7 @@ const {
   return {
     mockVerifyInsforgeSession: vi.fn(),
     mockEnforceRateLimit: vi.fn(),
+    mockIsAiDisabled: vi.fn(async () => false),
     mockExecutePlanTool: vi.fn(),
     mockBuildUserSupabaseClient: vi.fn(() => makeFakeClient()),
     state,
@@ -49,6 +51,7 @@ const {
 vi.mock('../../api/_lib/verifyAuth', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
+  isAiDisabled: mockIsAiDisabled,
 }));
 vi.mock('../../api/_lib/cors', () => ({ applyCors: vi.fn() }));
 vi.mock('../../api/_lib/aiConfirmation', () => ({

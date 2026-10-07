@@ -163,6 +163,25 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!email || typeof email !== 'string' || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'A valid email is required' });
     }
+
+    // Emergency cost-hardening pass (production billing audit): this
+    // branch is deliberately unauthenticated (fires pre-signup, no session
+    // exists yet) and previously had NO rate limit at all -- a script could
+    // call it repeatedly with arbitrary addresses to spend Resend sends at
+    // will. check_verify_account_rate_limit (0163_emergency_cost_hardening.sql)
+    // is keyed per-email, project_admin-only (no anon/authenticated grant,
+    // since there's no session here to call it as), and FAILS CLOSED: any
+    // exception here -- a genuine limit hit OR an unexpected error -- stops
+    // the send. Never caught/softened into "send anyway".
+    try {
+      const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
+      await callProjectAdminRpc('check_verify_account_rate_limit', [email]);
+    } catch {
+      // Deliberately generic -- never reveal whether this is a rate limit,
+      // a config problem, or anything else about the backend to the caller.
+      return res.status(429).json({ error: 'Too many requests. Please try again later.' });
+    }
+
     const origin = (req.headers.origin as string) || 'https://getvents.com';
     const verifyUrl = `${origin}/?verify_email=${encodeURIComponent(email)}`;
     try {

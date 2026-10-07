@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession, enforceRateLimit } from './_lib/verifyAuth.js';
+import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './_lib/verifyAuth.js';
 import { applyCors } from './_lib/cors.js';
 import { handleAiAssistant } from './_lib/aiAssistantHandler.js';
 
@@ -54,6 +54,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // usage can't exhaust another's allowance.
   const rateOk = await enforceRateLimit(String(authHeader), `extract_events:${session.userId}`, 20, 3600);
   if (!rateOk) return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+
+  // Emergency Anthropic kill switch -- covers both branches below (text
+  // extraction and vision crop share this one gate). See isAiDisabled's
+  // own comment (api/_lib/verifyAuth.ts) for why this fails closed. Never
+  // leaks anything about the key, billing, or the underlying provider to
+  // the client -- just a plain, user-facing "temporarily unavailable".
+  if (await isAiDisabled(String(authHeader))) {
+    return res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI features are temporarily unavailable. Please try again later.' });
+  }
+
+  // Global ceiling across ALL users combined -- a backstop under the
+  // existing 20/hour/user cap above, not a replacement for it.
+  const globalOk = await enforceRateLimit(String(authHeader), 'extract_events_global', 2000, 3600);
+  if (!globalOk) return res.status(429).json({ error: 'Too many requests right now. Please try again shortly.' });
 
   // Vision branch: focus-aware flyer cropping. Folded into this (the existing
   // AI/Anthropic endpoint) to stay within the serverless-function limit — the

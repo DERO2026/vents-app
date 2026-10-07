@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { verifyInsforgeSession, enforceRateLimit } from './verifyAuth.js';
+import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './verifyAuth.js';
 import { applyCors } from './cors.js';
 import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -119,6 +119,46 @@ async function persistPlanTurn(client: SupabaseClient, planId: string, userText:
 const MAX_TOOL_ROUNDTRIPS = 5;
 const TIMEOUT_MS = 25000;
 
+// Emergency cost-hardening pass (following the production billing audit).
+// None of these change intended behavior for a normal conversation -- they
+// exist to put a hard, server-side ceiling under the two things the audit
+// found genuinely unbounded: a single message's length, and how much prior
+// conversation gets re-sent (and re-billed) on every new turn.
+const MAX_MESSAGE_CHARS = 4000; // one message's own text -- generous for real chat, well short of "paste a document"
+const MAX_HISTORY_MESSAGES = 20; // most recent N messages kept, oldest dropped first
+const MAX_HISTORY_CHARS = 20000; // total text budget across the kept messages, trimmed further if still over
+const AI_GLOBAL_RATE_KEY = 'ai_assistant_global';
+const AI_GLOBAL_RATE_MAX = 2000; // shared ceiling across ALL users combined, per hour -- a backstop under the per-user cap, not a replacement for it
+const AI_GLOBAL_RATE_WINDOW_SECONDS = 3600;
+
+function messageTextLength(content: unknown): number {
+  if (typeof content === 'string') return content.length;
+  if (Array.isArray(content)) {
+    return content.reduce((sum: number, b: any) => sum + (typeof b?.text === 'string' ? b.text.length : 0), 0);
+  }
+  return 0;
+}
+
+// Server-side history cap -- the client (VentsAiScreen.tsx) resends the
+// entire thread on every turn with no trimming of its own; this is the one
+// and only place that matters, since an old/malicious client can send
+// whatever it wants regardless of what the current app build would do.
+// Keeps the most recent messages (simple count cap first, since the client
+// array here is always plain {role, content:string} turns -- no tool_use/
+// tool_result blocks, those only ever get appended server-side further
+// below in THIS request's own loop, never persisted from a prior one), then
+// trims further from the oldest end if the kept window is still over the
+// character budget. Always keeps at least the single most recent message.
+function capConversationHistory(messages: any[]): any[] {
+  let kept = messages.slice(-MAX_HISTORY_MESSAGES);
+  let total = kept.reduce((sum, m) => sum + messageTextLength(m?.content), 0);
+  while (kept.length > 1 && total > MAX_HISTORY_CHARS) {
+    total -= messageTextLength(kept[0]?.content);
+    kept = kept.slice(1);
+  }
+  return kept;
+}
+
 const SYSTEM_PROMPT = `You are VENTS AI, the assistant built into the VENTS app (events, service bookings, tickets, wallet and VENTS Cents, for a primarily Nigerian audience).
 
 Ground rules:
@@ -228,13 +268,40 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
       return res.status(400).json({ error: 'messages array required' });
     }
 
+    // Hard per-message length cap -- the only one of these three checks that
+    // rejects outright rather than silently truncating, since a message
+    // this long is almost certainly not normal chat input and truncating it
+    // silently would answer a different question than the one actually
+    // asked.
+    for (const m of messages) {
+      if (messageTextLength(m?.content) > MAX_MESSAGE_CHARS) {
+        return res.status(400).json({ error: `Message too long (max ${MAX_MESSAGE_CHARS} characters).` });
+      }
+    }
+
+    // Emergency Anthropic kill switch. See isAiDisabled's own comment
+    // (api/_lib/verifyAuth.ts) for why this fails closed. Placed after the
+    // confirmedAction branch above (confirming an already-proposed action
+    // executes a real VENTS tool, never a new Anthropic call, so it stays
+    // available even with AI disabled) but before any model call below.
+    if (await isAiDisabled(String(authHeader))) {
+      return res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI features are temporarily unavailable. Please try again later.' });
+    }
+
+    // Global ceiling across ALL users combined -- a backstop under the
+    // existing 20/hour/user cap above, not a replacement for it. Fails
+    // open on an infra hiccup (same as the per-user cap), never closed --
+    // only the kill switch above is fail-closed.
+    const globalOk = await enforceRateLimit(String(authHeader), AI_GLOBAL_RATE_KEY, AI_GLOBAL_RATE_MAX, AI_GLOBAL_RATE_WINDOW_SECONDS);
+    if (!globalOk) return res.status(429).json({ error: 'VENTS AI is experiencing high demand right now. Please try again shortly.' });
+
     const apiKey = process.env.ANTHROPIC_API_KEY || '';
     if (!apiKey) {
       return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured on server' });
     }
 
     const client = buildUserSupabaseClient(accessToken);
-    const conversation: any[] = messages.map((m: any) => ({ role: m.role, content: m.content }));
+    const conversation: any[] = capConversationHistory(messages).map((m: any) => ({ role: m.role, content: m.content }));
     const cards: any[] = [];
     // Populated only from a plan tool that actually SUCCEEDED this request
     // (see the toolResults map below) -- never from a bare tool_use input,

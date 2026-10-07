@@ -9,15 +9,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // cap, a runaway-cost risk. Fixed by adding the same enforceRateLimit gate,
 // keyed per user, before either branch runs.
 
-const { mockVerifyInsforgeSession, mockEnforceRateLimit, mockHandleAiAssistant } = vi.hoisted(() => ({
+const { mockVerifyInsforgeSession, mockEnforceRateLimit, mockHandleAiAssistant, mockIsAiDisabled } = vi.hoisted(() => ({
   mockVerifyInsforgeSession: vi.fn(),
   mockEnforceRateLimit: vi.fn(),
   mockHandleAiAssistant: vi.fn(),
+  // Emergency cost-hardening pass: always allow here so these
+  // rate-limit-focused tests keep exercising enforceRateLimit, not the
+  // kill switch (that gets its own coverage in
+  // aiAssistantKillSwitch.security.test.ts).
+  mockIsAiDisabled: vi.fn(async () => false),
 }));
 
 vi.mock('../../api/_lib/verifyAuth.js', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
+  isAiDisabled: mockIsAiDisabled,
 }));
 vi.mock('../../api/_lib/cors.js', () => ({ applyCors: vi.fn() }));
 vi.mock('../../api/_lib/aiAssistantHandler.js', () => ({ handleAiAssistant: mockHandleAiAssistant }));
