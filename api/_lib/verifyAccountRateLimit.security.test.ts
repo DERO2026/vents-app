@@ -14,20 +14,20 @@ const { mockCallProjectAdminRpc, mockSendVerifyAccountEmail } = vi.hoisted(() =>
   mockSendVerifyAccountEmail: vi.fn(async () => true),
 }));
 
-vi.mock('../_lib/projectAdminDb.js', () => ({
+vi.mock('./projectAdminDb.js', () => ({
   callProjectAdminRpc: mockCallProjectAdminRpc,
 }));
-vi.mock('../_lib/mailer.js', () => ({
+vi.mock('./mailer.js', () => ({
   sendOrganizerRequestDecisionEmail: vi.fn(),
   sendOrganizerVerificationDecisionEmail: vi.fn(),
   sendPayoutDecisionEmail: vi.fn(),
   sendTicketRefundEmail: vi.fn(),
   sendVerifyAccountEmail: mockSendVerifyAccountEmail,
 }));
-vi.mock('../_lib/cors.js', () => ({ applyCors: vi.fn() }));
-vi.mock('../_lib/verifyAuth.js', () => ({ verifyInsforgeSession: vi.fn() }));
+vi.mock('./cors.js', () => ({ applyCors: vi.fn() }));
+vi.mock('./verifyAuth.js', () => ({ verifyInsforgeSession: vi.fn() }));
 
-import handler from './status-email';
+import handler from '../notify/status-email';
 
 function makeRes() {
   const res: any = {};
