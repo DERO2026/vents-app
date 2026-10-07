@@ -251,12 +251,29 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
 
   const sendImageMessage = useCallback(async (file: File) => {
     if (!imageSharingEnabled) { flash('Image sharing is temporarily unavailable.'); return; }
+    // Cost-hardening pass, round 2: this path uploads directly to
+    // Storage and never went through src/lib/mediaPipeline.ts's
+    // uploadImage() -- so it had none of that file's protections at all:
+    // no file-size cap (compressImage's own 3s-timeout fallback can still
+    // upload the ORIGINAL, uncompressed file, same residual risk already
+    // accepted for every other upload path), no check_media_upload_rate_limit
+    // call, no long-lived Cache-Control. Matches the 15MB convention used
+    // at every other upload call site (SettingsScreen, CreateEventScreen,
+    // ServiceProviderSetupScreen, etc).
+    if (file.size > 15 * 1024 * 1024) { flash('Image is too large (max 15MB).'); return; }
+    try {
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError && /rate_limited/i.test(limitError.message || '')) {
+        flash('Too many uploads. Please wait a bit before sending more images.');
+        return;
+      }
+    } catch { /* fail open on an unexpected RPC error -- same policy as mediaPipeline.ts */ }
     setUploadingImg(true);
     try {
       const { blob: compressedBlob, mimeType, extension } = await compressImage(file);
       const key = `dm-${Date.now()}-${crypto.randomUUID()}.${extension}`;
       const uploadRes = await withTimeoutFallback(
-        supabase.storage.from('direct_messages').upload(key, compressedBlob, { contentType: mimeType, upsert: false }),
+        supabase.storage.from('direct_messages').upload(key, compressedBlob, { contentType: mimeType, upsert: false, cacheControl: '31536000' }),
         { timeoutMs: 8000, timeoutMessage: 'Image upload is taking too long.' }
       );
       if (uploadRes.error) throw new Error('Upload failed');
