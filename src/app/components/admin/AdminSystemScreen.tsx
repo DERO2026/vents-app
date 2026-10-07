@@ -7,7 +7,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Zap, Wrench, ToggleLeft, ToggleRight, Mic, Image as ImageIcon, Activity,
-  Ticket, ScanLine, UserPlus, Banknote, MapPin, Megaphone, Trash2, Swords,
+  Ticket, ScanLine, UserPlus, Banknote, MapPin, Megaphone, Trash2, Swords, Bot,
 } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
@@ -17,18 +17,27 @@ import { appVersionLabel } from '../../../lib/appVersion';
 
 const ROOT_UID = 'c9eb5eb6-d4d3-4ecb-9cda-b6e8b9bf2832';
 
-interface KillSwitchDef { key: 'disable_purchases' | 'disable_bookings' | 'disable_deposits' | 'disable_scanning' | 'disable_signups' | 'disable_payouts' | 'disable_location_sharing'; label: string; desc: (v: boolean) => string; icon: React.ReactNode; financial?: boolean; }
+interface KillSwitchDef { key: 'disable_purchases' | 'disable_bookings' | 'disable_deposits' | 'disable_scanning' | 'disable_signups' | 'disable_payouts' | 'disable_location_sharing' | 'disable_ai'; label: string; desc: (v: boolean) => string; icon: React.ReactNode; financial?: boolean; }
 
 // Financial switches (financial: true) are enforced server-side at the
 // pre-payment entry point for that operation (create_pending_purchase/
 // purchase_ticket, create_service_booking, request_organizer_payout,
 // initiate_wallet_deposit — see 0124_emergency_kill_switches.sql) and fail
 // CLOSED (blocked) if app_config can't be read at all, never fail open.
+// disable_ai is the same fail-closed shape (see ai_disabled(),
+// 0163_emergency_cost_hardening.sql) but isn't a payment flow — it's here
+// under `financial` anyway because what it actually guards against is
+// runaway third-party (Anthropic) billing, not a payments bug. Covers all
+// three Anthropic call sites at once: VENTS AI chat, event-text
+// extraction, and flyer-vision crop (api/extract-events.ts /
+// api/_lib/aiAssistantHandler.ts) — there's no finer-grained switch
+// because all three share one API key and one cost exposure.
 const KILL_SWITCHES: KillSwitchDef[] = [
   { key: 'disable_purchases', label: 'Ticket Purchases', icon: <Ticket size={17} />, financial: true, desc: (v) => v ? 'Paused — "Buy Ticket" is blocked for every user' : 'Enabled — purchases are open' },
   { key: 'disable_bookings', label: 'Service Bookings', icon: <Ticket size={17} />, financial: true, desc: (v) => v ? 'Paused — new service bookings are blocked for every user' : 'Enabled — service bookings are open' },
   { key: 'disable_deposits', label: 'Wallet Deposits', icon: <Banknote size={17} />, financial: true, desc: (v) => v ? 'Paused — new VENTS Wallet top-ups are blocked' : 'Enabled — wallet deposits are open' },
   { key: 'disable_payouts', label: 'Organizer/Provider Payouts', icon: <Banknote size={17} />, financial: true, desc: (v) => v ? 'Paused — new withdrawal requests and approve/cancel/reject payout actions are blocked' : 'Enabled — payout actions are open' },
+  { key: 'disable_ai', label: 'VENTS AI (Anthropic)', icon: <Bot size={17} />, financial: true, desc: (v) => v ? 'Paused — VENTS AI chat, event-text extraction, and flyer-vision crop are all blocked; no request reaches Anthropic' : 'Enabled — VENTS AI and AI-assisted event extraction are open' },
   { key: 'disable_scanning', label: 'QR Scanning', icon: <ScanLine size={17} />, desc: (v) => v ? 'Paused — check-in scanners are blocked for every organizer' : 'Enabled — check-in scanning is open' },
   { key: 'disable_signups', label: 'New Sign-ups', icon: <UserPlus size={17} />, desc: (v) => v ? 'Paused — new account creation is blocked' : 'Enabled — sign-ups are open' },
   { key: 'disable_location_sharing', label: 'Location Sharing', icon: <MapPin size={17} />, desc: (v) => v ? 'Paused — sharing your location in chat is blocked' : 'Enabled — location sharing is open' },
@@ -50,7 +59,7 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
   useEffect(() => {
-    supabase.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_bookings, disable_deposits, disable_scanning, disable_signups, disable_payouts, disable_location_sharing').maybeSingle()
+    supabase.from('app_config').select('maintenance_mode, voice_notes_enabled, image_sharing_enabled, disable_purchases, disable_bookings, disable_deposits, disable_scanning, disable_signups, disable_payouts, disable_location_sharing, disable_ai').maybeSingle()
       .then(({ data }) => {
         if (!data) return;
         setMaintenanceMode(!!data.maintenance_mode);
@@ -60,7 +69,7 @@ export function AdminSystemScreen({ currentUser }: { currentUser: { id: string; 
           disable_purchases: !!data.disable_purchases, disable_bookings: !!data.disable_bookings,
           disable_deposits: !!data.disable_deposits, disable_scanning: !!data.disable_scanning,
           disable_signups: !!data.disable_signups, disable_payouts: !!data.disable_payouts,
-          disable_location_sharing: !!data.disable_location_sharing,
+          disable_location_sharing: !!data.disable_location_sharing, disable_ai: !!data.disable_ai,
         });
       });
   }, []);
