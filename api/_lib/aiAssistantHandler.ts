@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './verifyAuth.js';
 import { applyCors } from './cors.js';
 import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
+import { isAiEntitlementEnforced, checkAndReserveAiUsage, AiEntitlementError } from './aiEntitlement.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ALL_TOOLS,
@@ -298,6 +299,47 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
     // available even with AI disabled) but before any model call below.
     if (await isAiDisabled(String(authHeader))) {
       return res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI features are temporarily unavailable. Please try again later.' });
+    }
+
+    // Phase 4 -- AI subscription entitlement + usage enforcement (chat
+    // surface only; see aiEntitlement.ts and
+    // supabase/migrations/0165_ai_subscription_foundation.sql). Gated
+    // behind app_config.ai_entitlement_enforced, which defaults to false --
+    // until a Root admin turns it on (once real store purchases exist),
+    // this block is a no-op and behavior is unchanged from before Phase 4.
+    // When enabled: verifies the entitlement is active and within its
+    // period, then atomically reserves one usage unit against it, BEFORE
+    // any Anthropic call -- a rejection here means no Anthropic request is
+    // ever made and no usage is consumed for it (the reservation call
+    // itself either fully succeeds, consuming exactly one unit, or throws
+    // without having consumed one; see check_and_reserve_ai_usage's own
+    // compensating-decrement step in the migration).
+    if (await isAiEntitlementEnforced(String(authHeader))) {
+      try {
+        await checkAndReserveAiUsage(session.userId, 'chat');
+      } catch (entErr) {
+        if (entErr instanceof AiEntitlementError) {
+          if (entErr.code === 'usage_ceiling_exceeded') {
+            return res.status(429).json({
+              error: 'AI_USAGE_LIMIT_REACHED',
+              message: 'You have used up your VENTS AI allowance for this billing period.',
+            });
+          }
+          return res.status(402).json({
+            error: 'AI_SUBSCRIPTION_REQUIRED',
+            message: 'A VENTS AI subscription is required to use this feature.',
+            reason: entErr.code,
+          });
+        }
+        // Unexpected infra failure talking to the entitlement RPC -- fail
+        // closed on the ENTITLEMENT CHECK ITSELF (distinct from the
+        // enforcement flag above, which fails open). Once enforcement is
+        // turned on, an entitlement that cannot be verified must not be
+        // treated as entitled -- that would silently defeat the whole
+        // point of turning the flag on.
+        console.error('check_and_reserve_ai_usage failed unexpectedly:', (entErr as any)?.message || entErr);
+        return res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI features are temporarily unavailable. Please try again later.' });
+      }
     }
 
     // Global ceiling across ALL users combined -- a backstop under the

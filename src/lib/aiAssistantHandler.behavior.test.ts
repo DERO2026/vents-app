@@ -11,6 +11,8 @@ const {
   mockVerifyInsforgeSession,
   mockEnforceRateLimit,
   mockIsAiDisabled,
+  mockIsAiEntitlementEnforced,
+  mockCheckAndReserveAiUsage,
   mockVerifyConfirmationToken,
   mockCreateConfirmationToken,
   mockBuildUserSupabaseClient,
@@ -25,6 +27,8 @@ const {
   mockVerifyInsforgeSession: vi.fn(),
   mockEnforceRateLimit: vi.fn(),
   mockIsAiDisabled: vi.fn(),
+  mockIsAiEntitlementEnforced: vi.fn(),
+  mockCheckAndReserveAiUsage: vi.fn(),
   mockVerifyConfirmationToken: vi.fn(),
   mockCreateConfirmationToken: vi.fn(() => 'signed-token'),
   mockBuildUserSupabaseClient: vi.fn((accessToken: string) => ({ __fakeClient: true, accessToken })),
@@ -41,6 +45,17 @@ vi.mock('../../api/_lib/verifyAuth', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
   isAiDisabled: mockIsAiDisabled,
+}));
+vi.mock('../../api/_lib/aiEntitlement', () => ({
+  isAiEntitlementEnforced: mockIsAiEntitlementEnforced,
+  checkAndReserveAiUsage: mockCheckAndReserveAiUsage,
+  AiEntitlementError: class AiEntitlementError extends Error {
+    code: string;
+    constructor(code: string) {
+      super(code);
+      this.code = code;
+    }
+  },
 }));
 vi.mock('../../api/_lib/cors', () => ({ applyCors: vi.fn() }));
 vi.mock('../../api/_lib/aiConfirmation', () => ({
@@ -82,6 +97,8 @@ beforeEach(() => {
   mockVerifyInsforgeSession.mockResolvedValue(SESSION);
   mockEnforceRateLimit.mockResolvedValue(true);
   mockIsAiDisabled.mockResolvedValue(false);
+  mockIsAiEntitlementEnforced.mockResolvedValue(false);
+  mockCheckAndReserveAiUsage.mockResolvedValue({ allowed: true, plan_id: 'ai', status: 'active', used_units: 1, included_units: 50, hard_ceiling: 75, over_included: false });
   process.env.ANTHROPIC_API_KEY = 'test-key';
 });
 
@@ -243,6 +260,121 @@ describe('handleAiAssistant: emergency kill switch and cost ceilings', () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })));
     await handleAiAssistant(req, res);
     expect(mockEnforceRateLimit).toHaveBeenCalledWith('Bearer tok', 'ai_assistant_global', 500, 3600);
+  });
+});
+
+// Phase 4 -- AI subscription entitlement + usage enforcement. Gated behind
+// app_config.ai_entitlement_enforced (isAiEntitlementEnforced) so these
+// prove BOTH halves: the flag off means zero behavior change (every
+// existing/free user keeps working exactly as before Phase 4), and the
+// flag on means the entitlement check actually runs, blocks correctly, and
+// runs strictly after the kill switch / before any Anthropic call.
+describe('handleAiAssistant: AI subscription entitlement (Phase 4)', () => {
+  it('is a no-op when ai_entitlement_enforced is false -- checkAndReserveAiUsage is never even called', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(false);
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })));
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(mockCheckAndReserveAiUsage).not.toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(402);
+    expect(res.status).not.toHaveBeenCalledWith(429);
+  });
+
+  it('when enforced: no entitlement at all -> 402 AI_SUBSCRIPTION_REQUIRED, no Anthropic call', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockCheckAndReserveAiUsage.mockImplementationOnce(async () => {
+      throw new (await import('../../api/_lib/aiEntitlement')).AiEntitlementError('no_entitlement');
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'AI_SUBSCRIPTION_REQUIRED', reason: 'no_entitlement' }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('when enforced: an active entitlement with room left is allowed through to Anthropic', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockCheckAndReserveAiUsage.mockResolvedValueOnce({ allowed: true, plan_id: 'ai', status: 'active', used_units: 10, included_units: 50, hard_ceiling: 75, over_included: false });
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(mockCheckAndReserveAiUsage).toHaveBeenCalledWith('user-1', 'chat');
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalledWith(402);
+    expect(res.status).not.toHaveBeenCalledWith(429);
+  });
+
+  it('when enforced: an expired entitlement -> 402 AI_SUBSCRIPTION_REQUIRED (reason entitlement_expired), no Anthropic call', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockCheckAndReserveAiUsage.mockImplementationOnce(async () => {
+      throw new (await import('../../api/_lib/aiEntitlement')).AiEntitlementError('entitlement_expired');
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ reason: 'entitlement_expired' }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('when enforced: hitting the hard ceiling -> 429 AI_USAGE_LIMIT_REACHED, no Anthropic call', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockCheckAndReserveAiUsage.mockImplementationOnce(async () => {
+      throw new (await import('../../api/_lib/aiEntitlement')).AiEntitlementError('usage_ceiling_exceeded');
+    });
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(429);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ error: 'AI_USAGE_LIMIT_REACHED' }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('when enforced: an unexpected infra error from the entitlement RPC fails CLOSED (503), not open', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockCheckAndReserveAiUsage.mockRejectedValueOnce(new Error('ECONNRESET'));
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('the kill switch still short-circuits before the entitlement check even runs', async () => {
+    mockIsAiDisabled.mockResolvedValueOnce(true);
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(mockCheckAndReserveAiUsage).not.toHaveBeenCalled();
+  });
+
+  it('confirming an already-proposed action never touches entitlement/usage at all (no new Anthropic call)', async () => {
+    mockIsAiEntitlementEnforced.mockResolvedValueOnce(true);
+    mockVerifyConfirmationToken.mockReturnValueOnce({ ok: true });
+    mockExecuteStartTicketTransfer.mockResolvedValueOnce({ transfer_id: 't1' });
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { confirmedAction: { action: 'start_ticket_transfer', params: { ticketId: 'x' }, token: 'tok' } },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+    expect(mockCheckAndReserveAiUsage).not.toHaveBeenCalled();
+    expect(mockExecuteStartTicketTransfer).toHaveBeenCalled();
   });
 });
 
