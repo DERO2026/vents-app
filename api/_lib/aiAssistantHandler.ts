@@ -3,6 +3,7 @@ import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './verifyA
 import { applyCors } from './cors.js';
 import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
 import { isAiEntitlementEnforced, checkAndReserveAiUsage, AiEntitlementError } from './aiEntitlement.js';
+import { newAiRequestId, recordAiUsageEvent } from './aiTelemetry.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ALL_TOOLS,
@@ -372,6 +373,12 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
     // WEB_SEARCH_MAX_PER_REQUEST's own comment above for why this exists.
     let searchesUsedThisRequest = 0;
 
+    // Phase 5A telemetry -- groups this request's rounds together (via
+    // roundId + an incrementing roundIndex) without identifying who made
+    // the request. See aiTelemetry.ts: never derived from, and never
+    // stored alongside, session.userId or anything else user-identifying.
+    const aiTelemetryRoundId = newAiRequestId();
+
     for (let round = 0; round < MAX_TOOL_ROUNDTRIPS; round++) {
       // Shrink (never grow) the search budget actually offered to Anthropic
       // this round, down to whatever's left of the per-request cap -- once
@@ -433,11 +440,36 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
 
       if (!response.ok) {
         const errText = await response.text();
+        await recordAiUsageEvent({
+          surface: 'chat',
+          model: 'claude-sonnet-5',
+          roundId: aiTelemetryRoundId,
+          roundIndex: round,
+          status: 'error',
+          inputTokens: null,
+          outputTokens: null,
+          cacheCreationInputTokens: null,
+          cacheReadInputTokens: null,
+          webSearchRequests: null,
+        });
         return res.status(500).json({ error: `Anthropic error: ${errText.substring(0, 200)}` });
       }
 
       const data: any = await response.json();
-      searchesUsedThisRequest += data?.usage?.server_tool_use?.web_search_requests || 0;
+      const roundWebSearches = data?.usage?.server_tool_use?.web_search_requests ?? null;
+      searchesUsedThisRequest += roundWebSearches || 0;
+      await recordAiUsageEvent({
+        surface: 'chat',
+        model: 'claude-sonnet-5',
+        roundId: aiTelemetryRoundId,
+        roundIndex: round,
+        status: 'success',
+        inputTokens: data?.usage?.input_tokens ?? null,
+        outputTokens: data?.usage?.output_tokens ?? null,
+        cacheCreationInputTokens: data?.usage?.cache_creation_input_tokens ?? null,
+        cacheReadInputTokens: data?.usage?.cache_read_input_tokens ?? null,
+        webSearchRequests: roundWebSearches,
+      });
       const blocks: any[] = data.content || [];
       // web_search runs server-side on Anthropic's infrastructure -- its
       // tool_use/web_search_tool_result blocks arrive already resolved as

@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession, enforceRateLimit, isAiDisabled } from './_lib/verifyAuth.js';
 import { applyCors } from './_lib/cors.js';
 import { handleAiAssistant } from './_lib/aiAssistantHandler.js';
+import { newAiRequestId, recordAiUsageEvent } from './_lib/aiTelemetry.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   applyCors(req, res, 'GET, POST, OPTIONS');
@@ -156,10 +157,34 @@ ${text}`
 
     if (!response.ok) {
       const error = await response.text();
+      await recordAiUsageEvent({
+        surface: 'extraction',
+        model: 'claude-sonnet-5',
+        roundId: newAiRequestId(),
+        roundIndex: 0,
+        status: 'error',
+        inputTokens: null,
+        outputTokens: null,
+        cacheCreationInputTokens: null,
+        cacheReadInputTokens: null,
+        webSearchRequests: null,
+      });
       return res.status(500).json({ error: `Anthropic error: ${error.substring(0, 200)}` });
     }
 
     const data = await response.json();
+    await recordAiUsageEvent({
+      surface: 'extraction',
+      model: 'claude-sonnet-5',
+      roundId: newAiRequestId(),
+      roundIndex: 0,
+      status: 'success',
+      inputTokens: data?.usage?.input_tokens ?? null,
+      outputTokens: data?.usage?.output_tokens ?? null,
+      cacheCreationInputTokens: data?.usage?.cache_creation_input_tokens ?? null,
+      cacheReadInputTokens: data?.usage?.cache_read_input_tokens ?? null,
+      webSearchRequests: null,
+    });
     let content: string = data.content?.[0]?.text || '[]';
     // Despite the prompt explicitly saying "no markdown, no backticks",
     // Claude occasionally still wraps the array in a ```json fence anyway —
@@ -276,9 +301,33 @@ async function handleVisionCrop(req: VercelRequest, res: VercelResponse) {
     clearTimeout(timer);
     if (!response.ok) {
       const err = await response.text();
+      await recordAiUsageEvent({
+        surface: 'vision',
+        model: 'claude-haiku-4-5-20251001',
+        roundId: newAiRequestId(),
+        roundIndex: 0,
+        status: 'error',
+        inputTokens: null,
+        outputTokens: null,
+        cacheCreationInputTokens: null,
+        cacheReadInputTokens: null,
+        webSearchRequests: null,
+      });
       return res.status(502).json({ error: `Vision error: ${err.substring(0, 160)}` });
     }
     const data = await response.json();
+    await recordAiUsageEvent({
+      surface: 'vision',
+      model: 'claude-haiku-4-5-20251001',
+      roundId: newAiRequestId(),
+      roundIndex: 0,
+      status: 'success',
+      inputTokens: data?.usage?.input_tokens ?? null,
+      outputTokens: data?.usage?.output_tokens ?? null,
+      cacheCreationInputTokens: data?.usage?.cache_creation_input_tokens ?? null,
+      cacheReadInputTokens: data?.usage?.cache_read_input_tokens ?? null,
+      webSearchRequests: null,
+    });
     const content = data.content?.[0]?.text || '';
     let parsed: any = null;
     try { parsed = JSON.parse(content); }
