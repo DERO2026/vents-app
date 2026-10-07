@@ -236,6 +236,143 @@ describe('handleAiAssistant: emergency kill switch and cost ceilings', () => {
     await handleAiAssistant(req, res);
     expect(res.status).toHaveBeenCalledWith(429);
   });
+
+  it('Phase 3A: the global ceiling is now 500/hour, not 2000', async () => {
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    const res = makeRes();
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) })));
+    await handleAiAssistant(req, res);
+    expect(mockEnforceRateLimit).toHaveBeenCalledWith('Bearer tok', 'ai_assistant_global', 500, 3600);
+  });
+});
+
+// Phase 3A cost-optimization: prompt caching on the static system+tools
+// prefix, and a request-local web-search counter that caps the TRUE
+// per-HTTP-request total at 3 (previously 3-per-round x 5 rounds = up to
+// 15/request, since WEB_SEARCH_TOOL's own max_uses reset every round).
+describe('handleAiAssistant: prompt caching', () => {
+  function lastRequestBody(fetchSpy: any): any {
+    const call = fetchSpy.mock.calls[fetchSpy.mock.calls.length - 1] as any;
+    return JSON.parse(call[1].body as string);
+  }
+
+  it('sends the system prompt as a cache_control-marked block, not a bare string', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    await handleAiAssistant(req, makeRes());
+    const body = lastRequestBody(fetchSpy);
+    expect(Array.isArray(body.system)).toBe(true);
+    expect(body.system[0]).toMatchObject({ type: 'text', cache_control: { type: 'ephemeral' } });
+    expect(typeof body.system[0].text).toBe('string');
+    expect(body.system[0].text.length).toBeGreaterThan(0);
+  });
+
+  it('marks the last tool definition with cache_control (caches the whole static tools array)', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    await handleAiAssistant(req, makeRes());
+    const body = lastRequestBody(fetchSpy);
+    const lastTool = body.tools[body.tools.length - 1];
+    expect(lastTool.cache_control).toEqual({ type: 'ephemeral' });
+  });
+
+  it('never attaches cache_control to the dynamic messages/conversation array', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'hi' }] } };
+    await handleAiAssistant(req, makeRes());
+    const body = lastRequestBody(fetchSpy);
+    expect(JSON.stringify(body.messages)).not.toContain('cache_control');
+  });
+
+  it('keeps a valid, cache-marked request structure across multiple tool-calling rounds', async () => {
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ content: [{ type: 'tool_use', id: 't1', name: 'search_events', input: { query: 'afrobeats' } }] }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'done' }] }) });
+    vi.stubGlobal('fetch', fetchSpy);
+    mockExecuteReadOnlyTool.mockResolvedValueOnce([{ id: 'evt1' }]);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'find events' }] } };
+    await handleAiAssistant(req, makeRes());
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    for (const call of fetchSpy.mock.calls) {
+      const body = JSON.parse((call as any)[1].body as string);
+      expect(body.system[0].cache_control).toEqual({ type: 'ephemeral' });
+      expect(body.tools[body.tools.length - 1].cache_control).toEqual({ type: 'ephemeral' });
+    }
+  });
+});
+
+describe('handleAiAssistant: web search is capped per HTTP request, not per round', () => {
+  function requestBody(fetchSpy: any, callIndex: number): any {
+    const call = fetchSpy.mock.calls[callIndex] as any;
+    return JSON.parse(call[1].body as string);
+  }
+
+  it('offers the full budget (max_uses: 3) on the first round of a fresh request', async () => {
+    const fetchSpy = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }], usage: {} }) }));
+    vi.stubGlobal('fetch', fetchSpy);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'search the web' }] } };
+    await handleAiAssistant(req, makeRes());
+    const body = requestBody(fetchSpy, 0);
+    const searchTool = body.tools.find((t: any) => t.name === 'web_search');
+    expect(searchTool.max_uses).toBe(3);
+  });
+
+  it('shrinks the offered budget round-to-round as searches are consumed, and drops the tool once exhausted', async () => {
+    // Round 1: model uses all 3 searches in one go (server_tool_use reports 3).
+    const fetchSpy = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          content: [{ type: 'tool_use', id: 't1', name: 'search_events', input: {} }],
+          usage: { server_tool_use: { web_search_requests: 3 } },
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'done' }] }) });
+    vi.stubGlobal('fetch', fetchSpy);
+    mockExecuteReadOnlyTool.mockResolvedValueOnce([]);
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'search a lot' }] } };
+    await handleAiAssistant(req, makeRes());
+
+    const round1Body = requestBody(fetchSpy, 0);
+    expect(round1Body.tools.find((t: any) => t.name === 'web_search').max_uses).toBe(3);
+
+    // Round 2: budget is exhausted (3 used, cap is 3) -- web_search must be
+    // entirely absent from the tools offered, not just max_uses: 0.
+    const round2Body = requestBody(fetchSpy, 1);
+    expect(round2Body.tools.find((t: any) => t.name === 'web_search')).toBeUndefined();
+    // The model must still be able to use its other (non-search) tools --
+    // confirmed by the fact VENTS's own search_events tool is still present.
+    expect(round2Body.tools.find((t: any) => t.name === 'search_events')).toBeDefined();
+  });
+
+  it('a fresh HTTP request always starts with a full, unshared budget, even right after another request exhausted its own', async () => {
+    const exhaustedFetch = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ content: [{ type: 'text', text: 'done' }], usage: { server_tool_use: { web_search_requests: 3 } } }),
+      });
+    vi.stubGlobal('fetch', exhaustedFetch);
+    const req1: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'search a lot' }] } };
+    await handleAiAssistant(req1, makeRes());
+    vi.unstubAllGlobals();
+
+    // Second, independent call to the handler -- simulating a brand new
+    // HTTP request (possibly from the SAME user, possibly a different one;
+    // the counter is a local variable inside this one function call, so it
+    // cannot carry over either way).
+    const freshFetch = vi.fn(async () => ({ ok: true, json: async () => ({ content: [{ type: 'text', text: 'ok' }] }) }));
+    vi.stubGlobal('fetch', freshFetch);
+    const req2: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'search again' }] } };
+    await handleAiAssistant(req2, makeRes());
+    const body2 = requestBody(freshFetch, 0);
+    expect(body2.tools.find((t: any) => t.name === 'web_search').max_uses).toBe(3);
+  });
 });
 
 describe('handleAiAssistant: tool session forwarding (no service-role)', () => {

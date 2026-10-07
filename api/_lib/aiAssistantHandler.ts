@@ -128,8 +128,20 @@ const MAX_MESSAGE_CHARS = 4000; // one message's own text -- generous for real c
 const MAX_HISTORY_MESSAGES = 20; // most recent N messages kept, oldest dropped first
 const MAX_HISTORY_CHARS = 20000; // total text budget across the kept messages, trimmed further if still over
 const AI_GLOBAL_RATE_KEY = 'ai_assistant_global';
-const AI_GLOBAL_RATE_MAX = 2000; // shared ceiling across ALL users combined, per hour -- a backstop under the per-user cap, not a replacement for it
+const AI_GLOBAL_RATE_MAX = 500; // shared ceiling across ALL users combined, per hour -- a backstop under the per-user cap, not a replacement for it. Temporary safety ceiling (lowered from 2000 in the Phase 3A cost-optimization pass) until real production usage data exists -- raise it once demand actually justifies more headroom; see that commit for the exposure math behind this specific number.
 const AI_GLOBAL_RATE_WINDOW_SECONDS = 3600;
+
+// Phase 3A cost-optimization fix: WEB_SEARCH_TOOL's own `max_uses: 3`
+// (aiTools.ts) resets every time it's sent in a NEW request to Anthropic --
+// and this handler sends a new request every tool-calling round (up to
+// MAX_TOOL_ROUNDTRIPS=5), so the true ceiling was 3 x 5 = 15 searches in one
+// HTTP request, not 3. This constant is the REAL per-HTTP-request ceiling,
+// enforced by a request-local counter (searchesUsedThisRequest, declared
+// inside handleAiAssistant below) that persists across rounds within one
+// call to this function but is never stored anywhere -- a fresh call to
+// handleAiAssistant always starts this counter at 0, so it can never leak
+// between different users or different requests from the same user.
+const WEB_SEARCH_MAX_PER_REQUEST = 3;
 
 function messageTextLength(content: unknown): number {
   if (typeof content === 'string') return content.length;
@@ -311,7 +323,46 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
     const lastUserMessage = [...messages].reverse().find((m: any) => m.role === 'user');
     const lastUserText = lastUserMessage ? flattenContentToText(lastUserMessage.content) : '';
 
+    // Request-local only -- declared inside this function call, never
+    // written to any store, never read by any other request. See
+    // WEB_SEARCH_MAX_PER_REQUEST's own comment above for why this exists.
+    let searchesUsedThisRequest = 0;
+
     for (let round = 0; round < MAX_TOOL_ROUNDTRIPS; round++) {
+      // Shrink (never grow) the search budget actually offered to Anthropic
+      // this round, down to whatever's left of the per-request cap -- once
+      // it hits zero, web_search is dropped from `tools` entirely so the
+      // model has no way to call it, but every VENTS tool stays available
+      // and the conversation/tool loop continues normally without it.
+      const remainingSearches = Math.max(0, WEB_SEARCH_MAX_PER_REQUEST - searchesUsedThisRequest);
+      const toolsForRound: any[] = remainingSearches > 0
+        ? [...ALL_TOOLS, { ...WEB_SEARCH_TOOL, max_uses: remainingSearches }]
+        : [...ALL_TOOLS];
+      // Prompt caching: the system prompt and the tools schema are
+      // byte-identical on every round of every request, for every user --
+      // confirmed by reading this file, there is no per-user or per-request
+      // interpolation in SYSTEM_PROMPT or in any VENTS tool definition.
+      // Caching only this static prefix (never `conversation`, which is the
+      // whole point -- that's the part that actually changes every round)
+      // cuts the ~8,000+ tokens of system+tools overhead this handler
+      // previously resent and billed at full price on every single round
+      // down to cache-read pricing after the first hit. Because the cached
+      // content contains no user-specific data, a cache hit can occur
+      // across different users' requests too, not just within one
+      // conversation's own rounds -- that's safe specifically because
+      // nothing user-specific is in the cached bytes. cache_control goes on
+      // the LAST block of each cacheable section (tools, then system) --
+      // when the search budget hits zero and web_search is dropped from
+      // `tools`, that array's bytes change and its cache entry for this
+      // round misses (a minor, rare-tail inefficiency, not a correctness
+      // issue); the system-prompt cache entry is unaffected either way.
+      if (toolsForRound.length > 0) {
+        toolsForRound[toolsForRound.length - 1] = {
+          ...toolsForRound[toolsForRound.length - 1],
+          cache_control: { type: 'ephemeral' },
+        };
+      }
+
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
       let response: Response;
@@ -327,8 +378,8 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
           body: JSON.stringify({
             model: 'claude-sonnet-5',
             max_tokens: 2000,
-            system: SYSTEM_PROMPT,
-            tools: [...ALL_TOOLS, WEB_SEARCH_TOOL],
+            system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+            tools: toolsForRound,
             messages: conversation,
           }),
         });
@@ -342,6 +393,7 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
       }
 
       const data: any = await response.json();
+      searchesUsedThisRequest += data?.usage?.server_tool_use?.web_search_requests || 0;
       const blocks: any[] = data.content || [];
       // web_search runs server-side on Anthropic's infrastructure -- its
       // tool_use/web_search_tool_result blocks arrive already resolved as

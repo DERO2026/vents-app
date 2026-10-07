@@ -27,7 +27,7 @@ describe('web_search tool definition', () => {
     expect(toolsSrc).toMatch(/WEB_SEARCH_TOOL_NAME\s*=\s*'web_search'/);
   });
 
-  it('bounds max_uses per turn to a small, explicit number', () => {
+  it('aiTools.ts still declares its own small, explicit default max_uses (the per-round default Anthropic sees absent any override)', () => {
     const match = toolsSrc.match(/WEB_SEARCH_MAX_USES\s*=\s*(\d+)/);
     expect(match).not.toBeNull();
     const maxUses = Number(match?.[1]);
@@ -36,8 +36,22 @@ describe('web_search tool definition', () => {
     expect(toolsSrc).toMatch(/max_uses:\s*WEB_SEARCH_MAX_USES/);
   });
 
-  it('is added to the tools array sent to the Anthropic Messages API', () => {
-    expect(assistantSrc).toMatch(/tools:\s*\[\.\.\.ALL_TOOLS,\s*WEB_SEARCH_TOOL\]/);
+  // Phase 3A cost-optimization fix: WEB_SEARCH_TOOL's own max_uses (above)
+  // used to be sent as-is every round, resetting on each of up to 5 rounds
+  // per HTTP request -- a true ceiling of 3 x 5 = 15 searches/request, not
+  // 3. aiAssistantHandler.ts now enforces the real per-HTTP-request cap
+  // itself (WEB_SEARCH_MAX_PER_REQUEST + a request-local
+  // searchesUsedThisRequest counter, see aiAssistantHandler.behavior.test.ts
+  // for the dynamic proof), overriding max_uses down to whatever budget is
+  // actually left each round and dropping the tool entirely once exhausted.
+  it('is added to the tools array with a request-local, shrinking max_uses override, not the static WEB_SEARCH_TOOL object as-is', () => {
+    expect(assistantSrc).toMatch(/WEB_SEARCH_MAX_PER_REQUEST\s*=\s*3/);
+    expect(assistantSrc).toMatch(/searchesUsedThisRequest/);
+    expect(assistantSrc).toMatch(/\{\s*\.\.\.WEB_SEARCH_TOOL,\s*max_uses:\s*remainingSearches\s*\}/);
+    // The tools array passed to fetch is now the per-round-computed
+    // toolsForRound, not a static `[...ALL_TOOLS, WEB_SEARCH_TOOL]` literal.
+    expect(assistantSrc).toMatch(/tools:\s*toolsForRound/);
+    expect(assistantSrc).not.toMatch(/tools:\s*\[\.\.\.ALL_TOOLS,\s*WEB_SEARCH_TOOL\]/);
   });
 });
 
