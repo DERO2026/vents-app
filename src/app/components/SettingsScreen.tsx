@@ -433,6 +433,17 @@ export function CACVerificationScreen({ currentUser, onBack, onContactSupport }:
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Session expired. Please sign out and back in.');
 
+      // Financial-hardening: this upload went straight to the Storage REST
+      // endpoint via raw XHR with no VENTS-side count limit at all. Same
+      // check_media_upload_rate_limit RPC every other upload path uses,
+      // checked before the XHR fires.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) {
+        setError('Too many uploads. Please wait a bit before uploading more.');
+        setSubmitting(false);
+        return;
+      }
+
       // 2. Upload the certificate (real progress shown throughout) → get
       // back its secure storage key. Upload failures are never shown raw.
       setUploading(true);
@@ -866,6 +877,11 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
     setErrorMessage(null);
     try {
       await getAuthToken();
+      // Financial-hardening: same check_media_upload_rate_limit RPC every
+      // other upload path in this codebase uses (30/hr/user), called
+      // before any compression/network work -- this path had none at all.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressed], `avatar.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;
@@ -952,6 +968,9 @@ function ProfileDetailsScreen({ currentUser, onBack, onProfileUpdated, onDeleteA
     setErrorMessage(null);
     try {
       await getAuthToken();
+      // Financial-hardening: same check as the avatar path above.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
       const { blob: compressedCover, mimeType, extension } = await compressImage(croppedBlob);
       const croppedFile = new File([compressedCover], `cover.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;

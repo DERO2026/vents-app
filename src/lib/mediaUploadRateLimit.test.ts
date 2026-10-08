@@ -53,12 +53,10 @@ describe('uploadImage: server-side upload-count rate limit', () => {
     expect(mockStorageUpload).not.toHaveBeenCalled();
   });
 
-  it('does not block legitimate uploads on an unrelated RPC hiccup (fails open, logs, uploads proceed)', async () => {
-    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  it('fails CLOSED on an unrelated RPC error too -- an infra hiccup must not let uploads through unmetered', async () => {
     mockRpc.mockResolvedValue({ error: { code: '42883', message: 'function check_media_upload_rate_limit() does not exist' } });
     const blob = new Blob(['x'], { type: 'image/jpeg' });
-    await expect(uploadImage(blob, { bucket: 'avatars' })).resolves.toBeTruthy();
-    expect(mockStorageUpload).toHaveBeenCalled();
-    consoleErrorSpy.mockRestore();
+    await expect(uploadImage(blob, { bucket: 'avatars' })).rejects.toThrow(/too many uploads/i);
+    expect(mockStorageUpload).not.toHaveBeenCalled();
   });
 });

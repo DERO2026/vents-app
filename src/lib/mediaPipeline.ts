@@ -126,21 +126,14 @@ async function recordMetadata(a: MediaAsset, userId?: string | null, eventId?: s
 // the VENTS app's own JS from uploading past the limit, but can't stop a
 // caller who bypasses the app entirely and talks to Supabase Storage
 // directly with a valid session token (that would need a Storage-level
-// policy with its own counting table, a larger change). Throws with a
-// user-facing message on limit; swallows only a genuine misconfiguration
-// (missing RPC) so a backend hiccup doesn't block every legitimate upload.
+// policy with its own counting table, a larger change). Fails CLOSED: any
+// error from the RPC (a genuine limit hit or an infra/misconfiguration
+// error) blocks the upload, since silently letting uploads through on an
+// RPC failure is itself an unmetered path.
 async function enforceUploadRateLimit(): Promise<void> {
   const { error } = await supabase.rpc('check_media_upload_rate_limit');
   if (error) {
-    // Exact message check_rate_limit raises on a genuine hit (P0429) --
-    // NOT a loose substring match, since e.g. a missing-function error
-    // ("function check_media_upload_rate_limit() does not exist") also
-    // contains the substring "rate_limit" and must NOT be misread as a
-    // real limit hit.
-    if ((error as any).code === 'P0429' || /rate_limited/i.test(error.message || '')) {
-      throw new Error('Too many uploads. Please wait a bit before uploading more.');
-    }
-    console.error('check_media_upload_rate_limit failed (non-fatal):', error.message);
+    throw new Error('Too many uploads. Please wait a bit before uploading more.');
   }
 }
 

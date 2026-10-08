@@ -263,11 +263,17 @@ export function ConversationScreen({ currentUser, otherUser, eventId, eventTitle
     if (file.size > 15 * 1024 * 1024) { flash('Image is too large (max 15MB).'); return; }
     try {
       const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
-      if (limitError && /rate_limited/i.test(limitError.message || '')) {
+      if (limitError) {
         flash('Too many uploads. Please wait a bit before sending more images.');
         return;
       }
-    } catch { /* fail open on an unexpected RPC error -- same policy as mediaPipeline.ts */ }
+    } catch {
+      // Financial-hardening: fails CLOSED now -- same policy as
+      // mediaPipeline.ts's enforceUploadRateLimit. An unexpected error
+      // (thrown, not just an RPC error field) must still block the send.
+      flash('Too many uploads. Please wait a bit before sending more images.');
+      return;
+    }
     setUploadingImg(true);
     try {
       const { blob: compressedBlob, mimeType, extension } = await compressImage(file);

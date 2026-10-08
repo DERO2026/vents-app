@@ -566,6 +566,12 @@ export function AuthScreen({ initialMode, userRole, selectedState, selectedCount
     if (!signupAvatarFile) return signupAvatarUrl;
     setAvatarUploading(true);
     try {
+      // Financial-hardening: same check_media_upload_rate_limit RPC every
+      // other upload path uses (30/hr/user) -- safe here because this is
+      // only ever called once the signup call above has returned a real
+      // session (data?.session && data?.user), so auth.uid() is valid.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
       // Supabase's storage client has no InsForge-style uploadAuto() that
       // generates its own key — the object path/key must be supplied
       // explicitly. signupAvatarFile is always a freshly cropped JPEG (see

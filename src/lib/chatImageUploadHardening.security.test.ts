@@ -48,4 +48,17 @@ describe('ConversationScreen sendImageMessage: upload hardening', () => {
     const fn = fnBody('sendImageMessage');
     expect(fn).toMatch(/cacheControl:\s*'31536000'/);
   });
+
+  it('fails CLOSED on any rate-limit RPC error, including an unexpected thrown exception', () => {
+    const fn = fnBody('sendImageMessage');
+    // No bare "fail open" catch left -- every branch of the rate-limit
+    // check (an RPC error field, or an exception thrown reaching the
+    // catch block) must flash the limit message and return.
+    expect(fn).not.toMatch(/fail open/i);
+    const catchIdx = fn.indexOf('} catch {');
+    const catchBlockEnd = fn.indexOf('}', fn.indexOf('return;', catchIdx));
+    const catchBlock = fn.slice(catchIdx, catchBlockEnd + 1);
+    expect(catchBlock).toMatch(/flash\(.*too many uploads/i);
+    expect(catchBlock).toMatch(/return;/);
+  });
 });

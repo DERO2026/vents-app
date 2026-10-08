@@ -261,6 +261,12 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
     setError(null);
     try {
       await getAuthToken();
+      // Financial-hardening: this upload used to go straight to Storage
+      // with no VENTS-side count limit at all -- same check_media_upload_
+      // rate_limit RPC ConversationScreen/mediaPipeline already use (30/hr/
+      // user), called before any compression/network work.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) throw new Error('Too many uploads. Please wait a bit before uploading more.');
       const { blob: compressed, mimeType, extension } = await compressImage(croppedBlob);
       const file = new File([compressed], `photo.${extension}`, { type: mimeType });
       const key = `${crypto.randomUUID()}.${extension}`;

@@ -191,6 +191,16 @@ export function ServiceProviderVerificationScreen({ currentUser, onBack, onAppro
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Session expired. Please sign out and back in.');
 
+      // Financial-hardening: this upload went straight to the Storage REST
+      // endpoint via raw XHR with no VENTS-side count limit at all. Same
+      // check_media_upload_rate_limit RPC every other upload path uses,
+      // checked before the XHR fires.
+      const { error: limitError } = await supabase.rpc('check_media_upload_rate_limit');
+      if (limitError) {
+        setError('Too many uploads. Please wait a bit before uploading more.');
+        return;
+      }
+
       setUploading(true);
       setUploadProgress(0);
       let documentUrl: string;
