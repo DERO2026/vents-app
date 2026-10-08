@@ -28,6 +28,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: 'Payout system not configured' });
   }
 
+  // Billing-audit finding: this endpoint spends a Paystack API call per
+  // request (see the comment above) but had no server-side rate limit at
+  // all -- the only friction was WalletScreen.tsx's own debounce, which a
+  // caller hitting this endpoint directly simply doesn't go through.
+  // Reuses the same check_rate_limit primitive the ticket-resend fix
+  // (commit 39b5405) and the Paystack verify endpoints already use, via
+  // the trusted project_admin connection -- no new RPC, no migration.
+  // Deliberately calls check_rate_limit directly rather than
+  // enforceRateLimit (verifyAuth.ts): enforceRateLimit fails OPEN on a
+  // non-rate-limit error, which is right for a soft throttle but wrong
+  // here -- a Paystack-call gate must fail CLOSED (any error, not just a
+  // genuine limit hit, blocks the call) so an infra hiccup never becomes
+  // "spend anyway". Checked before the Paystack fetch below.
+  try {
+    const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
+    await callProjectAdminRpc('check_rate_limit', [`paystack_resolve_account:${session.userId}`, 30, 3600]);
+  } catch {
+    return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+  }
+
   try {
     const pRes = await fetch(
       `https://api.paystack.co/bank/resolve?account_number=${encodeURIComponent(account_number)}&bank_code=${encodeURIComponent(bank_code)}`,
