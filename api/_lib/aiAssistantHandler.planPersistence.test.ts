@@ -54,6 +54,7 @@ vi.mock('../../api/_lib/verifyAuth', () => ({
   isAiDisabled: mockIsAiDisabled,
 }));
 vi.mock('../../api/_lib/cors', () => ({ applyCors: vi.fn() }));
+vi.mock('../../api/_lib/aiBeta', () => ({ isAiBetaUser: vi.fn(async () => true) }));
 vi.mock('../../api/_lib/aiConfirmation', () => ({
   createConfirmationToken: vi.fn(() => 'signed-token'),
   verifyConfirmationToken: vi.fn(),

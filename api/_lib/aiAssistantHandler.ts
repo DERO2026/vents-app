@@ -4,6 +4,7 @@ import { applyCors } from './cors.js';
 import { createConfirmationToken, verifyConfirmationToken } from './aiConfirmation.js';
 import { isAiEntitlementEnforced, checkAndReserveAiUsage, AiEntitlementError } from './aiEntitlement.js';
 import { newAiRequestId, recordAiUsageEvent } from './aiTelemetry.js';
+import { isAiBetaUser } from './aiBeta.js';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   ALL_TOOLS,
@@ -215,6 +216,23 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
   const authHeader = req.headers.authorization;
   const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+  // Phase 7 -- temporary AI beta allowlist. Checked immediately after
+  // auth, before anything else (including the per-user rate limit below
+  // and the confirmedAction branch) -- a non-approved account is
+  // rejected before consuming any rate-limit quota, and before any
+  // Anthropic call could possibly occur. This is independent of, and
+  // does not alter, the kill switch or the entitlement foundation below
+  // -- an approved beta account still goes through isAiDisabled and
+  // (today, a no-op) isAiEntitlementEnforced exactly as before. See
+  // aiBeta.ts for why this fails closed (not approved) on any error.
+  const betaOk = await isAiBetaUser(session.userId);
+  if (!betaOk) {
+    return res.status(403).json({
+      error: 'AI_BETA_RESTRICTED',
+      message: 'VENTS AI is currently in a limited beta and not yet available on your account.',
+    });
+  }
 
   const accessToken = String(authHeader).replace(/^Bearer\s+/i, '');
 

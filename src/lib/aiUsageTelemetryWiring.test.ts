@@ -16,6 +16,7 @@ const {
   mockCheckAndReserveAiUsage,
   mockBuildUserSupabaseClient,
   mockRecordAiUsageEvent,
+  mockIsAiBetaUser,
 } = vi.hoisted(() => ({
   mockVerifyInsforgeSession: vi.fn(),
   mockEnforceRateLimit: vi.fn(),
@@ -24,6 +25,7 @@ const {
   mockCheckAndReserveAiUsage: vi.fn(),
   mockBuildUserSupabaseClient: vi.fn((accessToken: string) => ({ __fakeClient: true, accessToken })),
   mockRecordAiUsageEvent: vi.fn(),
+  mockIsAiBetaUser: vi.fn(),
 }));
 
 vi.mock('../../api/_lib/verifyAuth', () => ({
@@ -62,6 +64,7 @@ vi.mock('../../api/_lib/aiTelemetry', () => ({
   newAiRequestId: () => 'fixed-round-id-for-test',
   recordAiUsageEvent: mockRecordAiUsageEvent,
 }));
+vi.mock('../../api/_lib/aiBeta', () => ({ isAiBetaUser: mockIsAiBetaUser }));
 
 import { handleAiAssistant } from '../../api/_lib/aiAssistantHandler';
 
@@ -83,6 +86,7 @@ beforeEach(() => {
   mockIsAiDisabled.mockResolvedValue(false);
   mockIsAiEntitlementEnforced.mockResolvedValue(false);
   mockCheckAndReserveAiUsage.mockResolvedValue({ allowed: true });
+  mockIsAiBetaUser.mockResolvedValue(true);
   process.env.ANTHROPIC_API_KEY = 'test-key';
 });
 

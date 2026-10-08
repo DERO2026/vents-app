@@ -13,6 +13,7 @@ const {
   mockIsAiDisabled,
   mockIsAiEntitlementEnforced,
   mockCheckAndReserveAiUsage,
+  mockIsAiBetaUser,
   mockVerifyConfirmationToken,
   mockCreateConfirmationToken,
   mockBuildUserSupabaseClient,
@@ -29,6 +30,7 @@ const {
   mockIsAiDisabled: vi.fn(),
   mockIsAiEntitlementEnforced: vi.fn(),
   mockCheckAndReserveAiUsage: vi.fn(),
+  mockIsAiBetaUser: vi.fn(),
   mockVerifyConfirmationToken: vi.fn(),
   mockCreateConfirmationToken: vi.fn(() => 'signed-token'),
   mockBuildUserSupabaseClient: vi.fn((accessToken: string) => ({ __fakeClient: true, accessToken })),
@@ -58,6 +60,7 @@ vi.mock('../../api/_lib/aiEntitlement', () => ({
   },
 }));
 vi.mock('../../api/_lib/cors', () => ({ applyCors: vi.fn() }));
+vi.mock('../../api/_lib/aiBeta', () => ({ isAiBetaUser: mockIsAiBetaUser }));
 vi.mock('../../api/_lib/aiConfirmation', () => ({
   createConfirmationToken: mockCreateConfirmationToken,
   verifyConfirmationToken: mockVerifyConfirmationToken,
@@ -99,6 +102,7 @@ beforeEach(() => {
   mockIsAiDisabled.mockResolvedValue(false);
   mockIsAiEntitlementEnforced.mockResolvedValue(false);
   mockCheckAndReserveAiUsage.mockResolvedValue({ allowed: true, plan_id: 'ai', status: 'active', used_units: 1, included_units: 50, hard_ceiling: 75, over_included: false });
+  mockIsAiBetaUser.mockResolvedValue(true);
   process.env.ANTHROPIC_API_KEY = 'test-key';
 });
 
