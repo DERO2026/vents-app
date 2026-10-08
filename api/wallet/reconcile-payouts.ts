@@ -66,7 +66,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // `for...of` on a non-array throws and aborts the entire reconciliation
     // batch instead of processing any rows.
     const listJson = await listRes.json();
-    const rows: any[] = Array.isArray(listJson) ? listJson : listJson ? [listJson] : [];
+    const allRows: any[] = Array.isArray(listJson) ? listJson : listJson ? [listJson] : [];
+
+    // Paystack payout audit finding: admin_list_processing_payouts has no
+    // LIMIT -- one invocation of this endpoint would otherwise make one
+    // Paystack GET /transfer/:code call per row currently 'processing',
+    // with no ceiling. Slicing here (before the loop below ever fires a
+    // Paystack request) caps that per-invocation cost without touching the
+    // RPC, the payout state machine, or completion/failure semantics --
+    // rows beyond the ceiling are simply left 'processing' for a later,
+    // manually-triggered reconciliation run to pick up; nothing about their
+    // state changes by being deferred. 50 is a generous ceiling given this
+    // project's measured scale (production has never had more than a
+    // handful of payouts in flight at once) while still bounding the
+    // worst case of a single reconciliation call.
+    const MAX_RECONCILE_BATCH = 50;
+    const rows = allRows.slice(0, MAX_RECONCILE_BATCH);
+    const deferredCount = Math.max(0, allRows.length - MAX_RECONCILE_BATCH);
 
     const results: any[] = [];
     for (const row of rows) {
@@ -110,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    return res.status(200).json({ checked: rows.length, results });
+    return res.status(200).json({ checked: rows.length, deferred_count: deferredCount, results });
   } catch (err: any) {
     return res.status(500).json({ error: err?.message || 'Reconciliation failed' });
   }

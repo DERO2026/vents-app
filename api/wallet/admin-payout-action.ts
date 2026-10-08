@@ -1,6 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { sendPayoutDecisionEmail } from '../_lib/mailer.js';
 import { applyCors } from '../_lib/cors.js';
+import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
+import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 
 function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
@@ -54,6 +56,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const secret = process.env.PAYSTACK_SECRET_KEY;
       if (!secret) {
         return res.status(500).json({ error: 'Payout system not configured' });
+      }
+
+      // Paystack payout audit finding: approving a payout is single-admin-
+      // gated (is_admin() allows role 'admin' or 'sub-admin') with no
+      // pacing safeguard of its own -- the atomic claim below is the
+      // authoritative duplicate-transfer protection, but nothing stopped
+      // one admin session from approving many DIFFERENT, individually
+      // legitimate requests in rapid succession (a mis-click loop, or a
+      // compromised/scripted session). This is a defense-in-depth ceiling
+      // on APPROVAL RATE, not a duplicate-transfer fix -- that's already
+      // handled by admin_claim_payout_for_processing's compare-and-swap.
+      //
+      // Keyed per admin (auth.uid() of the APPROVER, not the organizer being
+      // paid), 20/hour: generous enough for a legitimate bulk payout day
+      // (one approval every ~3 minutes sustained for an hour) while still
+      // bounding a runaway approval loop. Calls check_rate_limit directly
+      // over the trusted project_admin connection (same as
+      // ticketResendRateLimit.security.test.ts / resolveAccountRateLimit.
+      // security.test.ts) rather than enforceRateLimit, because this sits
+      // directly in front of a real transfer and must fail CLOSED: ANY
+      // error here (a genuine rate-limit hit OR an infra/RPC failure) blocks
+      // the approval before admin_claim_payout_for_processing is ever
+      // called, so a rejected check can never reach Paystack.
+      const approverSession = await verifyInsforgeSession(authHeader);
+      if (!approverSession) return res.status(401).json({ error: 'Not authenticated' });
+      try {
+        await callProjectAdminRpc('check_rate_limit', [`payout_approve:${approverSession.userId}`, 20, 3600]);
+      } catch {
+        return res.status(429).json({ error: 'Too many payout approvals. Please wait before approving more.' });
       }
 
       // is_admin() is enforced inside this RPC. Critically, this ATOMICALLY
