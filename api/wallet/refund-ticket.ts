@@ -97,6 +97,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(502).json({ error: `Unexpected ${rpcNames.start} response` });
     }
 
+    // Paystack financial-exposure audit finding: no global ceiling existed
+    // on aggregate Paystack /refund volume across all authorized callers
+    // combined. Checked here, AFTER authorization/state validation above
+    // (the request is only rate-limited once it's a genuine, authorized,
+    // refund_pending case -- an unauthorized or ineligible call never
+    // reaches this check at all, so it can't consume refund capacity) and
+    // strictly BEFORE the Paystack call below. Fails CLOSED like every
+    // other global check added this engagement: a genuine limit hit or an
+    // RPC/infra failure both block the Paystack call. The RPC above already
+    // flipped this ticket/booking to 'refund_pending' -- a rejection here
+    // must release that claim (same revert path already used below for a
+    // Paystack-rejected refund) rather than leave it stranded with no
+    // provider attempt ever made.
+    try {
+      const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
+      await callProjectAdminRpc('check_rate_limit', ['paystack_refund_global', 100, 3600]);
+    } catch {
+      await fetch(`${baseUrl}/rest/v1/rpc/${rpcNames.revert}`, {
+        method: 'POST',
+        headers: supabaseHeaders,
+        body: JSON.stringify({ [idParam]: entityId, p_reason: 'Too many refund requests right now. Please try again in a bit.' }),
+      }).catch(() => {});
+      return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+    }
+
     // amount_kobo is already in kobo -- do NOT multiply by 100 again, that
     // would refund 100x the intended amount.
     const refundRes = await fetch('https://api.paystack.co/refund', {

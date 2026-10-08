@@ -178,7 +178,9 @@ describe('admin-payout-action: approval rate limit', () => {
     expect(res2.status).toHaveBeenCalledWith(200);
 
     expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('check_rate_limit', ['payout_approve:admin-1', 20, 3600]);
-    expect(mockCallProjectAdminRpc).toHaveBeenCalledTimes(2);
+    // 2 per approval since the global payout_approve_global ceiling (added
+    // in a later hardening pass) is checked right after the per-admin one.
+    expect(mockCallProjectAdminRpc).toHaveBeenCalledTimes(4);
     vi.unstubAllGlobals();
   });
 

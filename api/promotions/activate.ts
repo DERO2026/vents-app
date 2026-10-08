@@ -3,6 +3,18 @@ import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 
+// Paystack financial-exposure audit finding: this endpoint's Paystack
+// verification call had no rate limit at all -- an authenticated user
+// could repeatedly call it with arbitrary reference values, each one a
+// real Paystack API request. activate_event_promotion's own idempotency
+// (ON CONFLICT DO NOTHING on payment_ref) already prevents any duplicate
+// activation, so this was never a duplicate-money risk -- just unnecessary
+// provider exposure. Matches the existing bank-resolution ceiling
+// (resolve-account.ts: 30/hour/user) since both are a per-user-gated,
+// non-money-moving Paystack verification call of the same shape.
+const PROMOTION_VERIFY_RATE_MAX = 30;
+const PROMOTION_VERIFY_RATE_WINDOW_SECONDS = 3600;
+
 type Plan = 'spotlight' | 'featured' | 'trending';
 type Duration = 3 | 7 | 14 | 30;
 
@@ -62,6 +74,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const secret = process.env.PAYSTACK_SECRET_KEY;
   if (!secret) {
     return res.status(500).json({ error: 'Not configured' });
+  }
+
+  // Checked after every request/business validation above, strictly before
+  // the Paystack verify call below. Fails CLOSED: a genuine limit hit OR an
+  // RPC/infra failure both block the request here -- Paystack is never
+  // called after a rejection.
+  try {
+    await callProjectAdminRpc('check_rate_limit', [`paystack_promotion_verify:${session.userId}`, PROMOTION_VERIFY_RATE_MAX, PROMOTION_VERIFY_RATE_WINDOW_SECONDS]);
+  } catch {
+    return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
   }
 
   try {

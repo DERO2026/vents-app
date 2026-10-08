@@ -83,6 +83,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!approverSession) return res.status(401).json({ error: 'Not authenticated' });
       try {
         await callProjectAdminRpc('check_rate_limit', [`payout_approve:${approverSession.userId}`, 20, 3600]);
+        // Financial-exposure audit finding: the per-admin limit above caps
+        // one admin's own approval rate, but nothing capped AGGREGATE
+        // approval volume across all admins combined. Checked here, still
+        // before admin_claim_payout_for_processing and the Paystack
+        // transfer below -- purely an additional cost/volume ceiling, not
+        // a replacement for the per-admin limit or the atomic claim's own
+        // duplicate-transfer protection. Fails CLOSED like the check above.
+        await callProjectAdminRpc('check_rate_limit', ['payout_approve_global', 100, 3600]);
       } catch {
         return res.status(429).json({ error: 'Too many payout approvals. Please wait before approving more.' });
       }
