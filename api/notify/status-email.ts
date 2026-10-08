@@ -64,7 +64,13 @@ async function sendTicketEmailResend(to: string, subject: string, html: string):
       if (res.ok) return true;
       const body = await res.text().catch(() => '');
       console.warn('[ticket-email] Resend send failed', { to, status: res.status, body: body.slice(0, 300), attempt });
-      if (res.status === 429 && attempt === 0) { await new Promise((r) => setTimeout(r, 600)); continue; }
+      // Never retry a 429 -- Resend is telling us we're already over our
+      // rate limit, so retrying immediately just adds a second counted
+      // request into the same limit window instead of helping (this used
+      // to retry once here; billing audit flagged that as a cost-
+      // amplification risk under load). The transient-failure retry in the
+      // catch block below (network error) is unaffected -- that's a
+      // genuinely different, legitimate case.
       return false;
     } catch (e) {
       console.warn('[ticket-email] Resend send threw', { to, attempt, e: String(e) });
@@ -212,6 +218,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const session = await verifyInsforgeSession(authHeader);
     if (!session) return res.status(401).json({ error: 'Not authenticated' });
+
+    // Billing-audit finding: this path had no server-side cooldown at
+    // all -- a signed-in caller could hit it repeatedly and fan out to
+    // Resend (per attendee), Sendchamp SMS, generate_ticket_token (up to
+    // 3 retries each), and a Storage upload per ticket, every single
+    // time. Checked BEFORE any of that work starts, using the same
+    // check_rate_limit primitive every other cost-sensitive endpoint in
+    // this codebase already uses (via the trusted project_admin
+    // connection -- check_rate_limit has no anon/authenticated grant).
+    // Two keys, layered the same way the AI assistant's per-user +
+    // global caps are:
+    //   - a short per-user+event cooldown (1 per 120s) stops a double-
+    //     tap or a tight scripted retry loop for the SAME event, without
+    //     penalizing a buyer who genuinely has tickets to two different
+    //     events;
+    //   - a broader per-user hourly ceiling (5/hr) is the real backstop
+    //     against cycling through many event_ids to dodge the cooldown.
+    // FAILS CLOSED like check_verify_account_rate_limit above: a genuine
+    // limit hit OR any unexpected error (network blip, missing env var)
+    // both stop the send here -- never softened into "send anyway". A
+    // legitimate buyer who just bought tickets only ever needs one
+    // resend; 5/hour is generous headroom above that, not a trap.
+    try {
+      const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
+      await callProjectAdminRpc('check_rate_limit', [`ticket_resend_cooldown:${session.userId}:${event_id}`, 1, 120]);
+      await callProjectAdminRpc('check_rate_limit', [`ticket_resend_hourly:${session.userId}`, 5, 3600]);
+    } catch {
+      return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+    }
 
     const h = { Authorization: authHeader, apikey: anonKeyEarly } as Record<string, string>;
     try {
