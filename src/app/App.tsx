@@ -29,6 +29,7 @@ import { ServiceBookingsScreen } from './components/ServiceBookingsScreen';
 import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { VentsAiScreen } from './components/VentsAiScreen';
+import { AiAccessScreen } from './components/AiAccessScreen';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
@@ -205,6 +206,12 @@ export default function App() {
   useEffect(() => {
     if (screen === 'vents-ai') setVentsAiEverMounted(true);
   }, [screen]);
+  // VENTS AI subscription/entitlement foundation (AiAccessScreen) -- once
+  // granted for this session it stays granted (re-checking on every
+  // re-open would be pointless churn; the server remains the real
+  // authority on every actual AI request regardless of this flag).
+  // Starts false so a fresh session always re-verifies at least once.
+  const [ventsAiAccessGranted, setVentsAiAccessGranted] = useState(false);
   const [isDesktopWidth, setIsDesktopWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1200 : false));
   useEffect(() => {
     const onResize = () => setIsDesktopWidth(window.innerWidth >= 1200);
@@ -3179,7 +3186,12 @@ export default function App() {
           )}
 
           {/* ── VENTS AI ── */}
-          {ventsAiEverMounted && (
+          {ventsAiEverMounted && !ventsAiAccessGranted && (
+            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <AiAccessScreen onClose={goBack} onContinue={() => setVentsAiAccessGranted(true)} />
+            </div>
+          )}
+          {ventsAiEverMounted && ventsAiAccessGranted && (
             <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
               <VentsAiScreen
                 isDesktop={isDesktopWidth}
