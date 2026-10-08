@@ -8,6 +8,20 @@ function fmtNaira(kobo: number): string {
   return '₦' + (kobo / 100).toLocaleString('en-NG', { minimumFractionDigits: 2 });
 }
 
+// Resend/Sendchamp billing audit finding: every send path already had a
+// per-user (or per-email) ceiling, but nothing capped AGGREGATE volume
+// across all users combined -- these three are that backstop. Each is a
+// REQUEST-level ceiling, not an email-count one: the ticket-resend path can
+// still fan out to up to 20 Resend emails per passing request (see its own
+// per-attendee loop below), so this global cap's theoretical worst case is
+// TICKET_RESEND_GLOBAL_MAX_PER_HOUR * 20 Resend emails/hour -- 10,000 at the
+// starting value below. Deliberately conservative starting numbers, easy to
+// raise once real production volume justifies it (same philosophy as
+// AI_GLOBAL_RATE_MAX in aiAssistantHandler.ts).
+const TICKET_RESEND_GLOBAL_MAX_PER_HOUR = 500;
+const VERIFY_ACCOUNT_GLOBAL_MAX_PER_HOUR = 500;
+const ADMIN_NOTIFICATION_GLOBAL_MAX_PER_HOUR = 500;
+
 // Server-side-only SMS send. SENDCHAMP_API_KEY is a plain (non-VITE_) env var
 // so Vite never inlines it into the client bundle — the key that used to ship
 // in vercel.json's `env` block (and therefore in every client build) has been
@@ -182,6 +196,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
       const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
       await callProjectAdminRpc('check_verify_account_rate_limit', [email]);
+      // Global backstop (billing audit finding): the per-email check above
+      // is untouched -- this is an ADDITIONAL aggregate-across-all-callers
+      // ceiling, checked before the Resend send. Same fail-closed RPC call,
+      // same project_admin connection, so an RPC/infra failure here blocks
+      // the send exactly like a genuine limit hit does, below.
+      await callProjectAdminRpc('check_rate_limit', ['verify_account_global', VERIFY_ACCOUNT_GLOBAL_MAX_PER_HOUR, 3600]);
     } catch {
       // Deliberately generic -- never reveal whether this is a rate limit,
       // a config problem, or anything else about the backend to the caller.
@@ -244,6 +264,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
       await callProjectAdminRpc('check_rate_limit', [`ticket_resend_cooldown:${session.userId}:${event_id}`, 1, 120]);
       await callProjectAdminRpc('check_rate_limit', [`ticket_resend_hourly:${session.userId}`, 5, 3600]);
+      // Global backstop (billing audit finding): neither per-user check
+      // above caps AGGREGATE volume across all buyers combined. Checked
+      // last, still before any ticket lookup/QR/token/storage work or
+      // Resend/Sendchamp call below -- a REQUEST-level ceiling, not an
+      // email-count one (see this constant's own comment for the resulting
+      // worst-case email volume).
+      await callProjectAdminRpc('check_rate_limit', ['ticket_resend_global', TICKET_RESEND_GLOBAL_MAX_PER_HOUR, 3600]);
     } catch {
       return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
     }
@@ -369,6 +396,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
     const isAdmin = adminCheckRes.ok && (await adminCheckRes.json().catch(() => false)) === true;
     if (!isAdmin) return res.status(403).json({ error: 'Admin access required' });
+
+    // Global backstop (billing audit finding): this does not replace or
+    // weaken the is_admin() check above -- authorization is still
+    // mandatory and checked first. This only caps AGGREGATE admin-
+    // notification volume across all admins combined, before any
+    // Resend/Sendchamp call below. Fails closed like every other global
+    // check in this file: a genuine limit hit OR an RPC/infra failure both
+    // block the send, generically, without revealing which to the caller.
+    try {
+      const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
+      await callProjectAdminRpc('check_rate_limit', ['admin_notification_global', ADMIN_NOTIFICATION_GLOBAL_MAX_PER_HOUR, 3600]);
+    } catch {
+      return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+    }
 
     const table = request_type === 'organizer' ? 'organizer_requests'
       : request_type === 'cac' ? 'organizer_verification_requests'
