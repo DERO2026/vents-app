@@ -125,10 +125,13 @@ Given the size of this codebase (601 commits, ~2 months, dozens of subsystems), 
 
 Done this pass: advisor RLS findings (F6/F7), F2 gap recomputed (now 185,090, corrected from an earlier miscalculation), role-conflict architecture verified live (F9), auth/OTP/password-reset spot-checked, ticket check-in race-safety verified including an actually-executed test run (F10). Also surfaced one new item not on the original list: F8, a live unreversed "Test" VC admin-credit.
 
+**Admin Console review: COMPLETE (Part 5a, 20/20 screens).** GPS/Maps: COMPLETE (F12-F14). Wallet/withdrawal concurrency: payout request+approval, VC conversion, wallet deposit initiation all reviewed (F17, F20, F21).
+
 Remaining, in priority order:
-1. **F8**: the 100,000 VC "Test" admin credit to a real (developer) account, still live and uncorrected, with its lifetime-earned/badge-tier effect intact — needs a user decision on remediation, not a unilateral fix.
-2. **F2**: still unresolved at 185,090 VC — trace `vc_lifetime_grandfather_log` and any surviving pre-migration purchased-badge award records against the gap before concluding benign or bug.
-3. **F6/F7 cleanup migration**: drop `_ddl_probe_tmp`, enable RLS + revoke stray anon/authenticated grants on `vc_lifetime_final_reconciliation_log` — small, low-risk, queued, awaiting go-ahead.
-4. Admin Console: only the System screen's RPCs checked so far (F11) — Payouts, Verification, Users/Events, Organizers/Providers, VC screens still need the same server-side-authorization spot-check.
-5. GPS/Google Maps runtime behavior (distinct from the earlier key-exposure audit, which covered the key itself, not actual map/location behavior).
-6. Chat/notifications, VENTS AI tool-calling correctness, frontend layout/navigation — still entirely unaudited this session.
+1. **F8**: the 100,000 VC "Test" admin credit to a real (developer) account, still live and uncorrected — needs a user decision on remediation, not a unilateral fix.
+2. **F21**: `convert_vc_to_wallet()` never credits the pool back — needs authorization for both the forward-fix and the historical-backfill decision (7 live conversions, 362,000 VC).
+3. **F2**: still unresolved at 185,090 VC — trace `vc_lifetime_grandfather_log` and any surviving pre-migration purchased-badge award records against the gap.
+4. **F6/F7/F15/F16/F19 remediation**: all drafted/identified, none applied — `_ddl_probe_tmp`/reconciliation-log RLS cleanup, the dual-control VC executor fix + legacy overload drop (migration 0170, revised and ready for review), `service_providers`/`events` RLS tightening. All awaiting explicit authorization.
+5. **F18**: `AdminVCScreen`/`AdminVerificationScreen` missing `submitOrExecute` dual-control routing — a code fix (not a migration), not yet applied.
+6. Refund reconciliation beyond what F17 covered (the ticket/transfer-fee/service-booking refund webhook chain) — not yet traced end-to-end for a real refund's full lifecycle.
+7. Chat/notifications, VENTS AI tool-calling correctness, frontend layout/navigation, broader auth/OTP/password-reset/session/account-deletion coverage beyond the earlier spot-check — still entirely unaudited this session.
