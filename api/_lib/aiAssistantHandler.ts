@@ -244,9 +244,17 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
 
   const { messages, confirmedAction } = req.body || {};
 
-  const proto = (req.headers['x-forwarded-proto'] as string) || 'https';
-  const host = req.headers.host;
-  const origin = `${proto}://${host}`;
+  // Audit finding F29: this used to be built from req.headers['x-forwarded-proto']
+  // / req.headers.host -- both client-controllable on an inbound request. The
+  // only consumer is executeRequestTicketRefund's internal fetch to this same
+  // deployment's own /api/wallet/refund-ticket, carrying the caller's own
+  // bearer token -- a forged Host header could redirect that fetch (with the
+  // token attached) to an attacker-chosen domain. Fixed to a trusted,
+  // server-configured value instead of trusting any request header, reusing
+  // the exact same source of truth src/lib/apiBase.ts already uses for the
+  // identical "absolute origin for /api/*" purpose, so there is exactly one
+  // place this is configured app-wide, not a second one invented here.
+  const origin = process.env.VITE_API_BASE || 'https://getvents.com';
 
   try {
     // Confirmation path: verify the token, then execute exactly that one
