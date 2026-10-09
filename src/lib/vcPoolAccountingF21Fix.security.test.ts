@@ -70,9 +70,19 @@ describe('0171: convert_vc_to_wallet forward fix credits the pool exactly once p
 });
 
 describe('0172: historical pool-ledger backfill is scoped, idempotent, and leaves wallet balances untouched', () => {
-  it('list function is read-only (STABLE) and admin-gated', () => {
+  it('list function is read-only (STABLE) and ACTUALLY admin-gated by an internal check, not just by its grant', () => {
+    // Self-correction caught during review: an earlier draft of this
+    // function was LANGUAGE sql (no IF/RAISE possible) with no internal
+    // check at all, copying a pre-existing gap now tracked separately as
+    // F23 (list_service_provider_capability_desync, migration 0053, live
+    // in production, confirmed callable by any `authenticated` user). This
+    // test asserts the actual internal guard exists, not just the grant --
+    // a bare GRANT-to-authenticated assertion would have passed against
+    // that same flawed version and proven nothing.
     const fn = m0172.match(/CREATE OR REPLACE FUNCTION public\.list_vc_to_wallet_pool_backfill_candidates[\s\S]*?\$function\$;/)?.[0] ?? '';
     expect(fn).toMatch(/STABLE SECURITY DEFINER/);
+    expect(fn).toMatch(/LANGUAGE plpgsql/);
+    expect(fn).toMatch(/IF NOT public\.is_admin\(\) THEN/);
     expect(m0172).toMatch(/GRANT EXECUTE ON FUNCTION public\.list_vc_to_wallet_pool_backfill_candidates\(\) TO authenticated, project_admin;/);
   });
 

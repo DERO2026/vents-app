@@ -28,12 +28,30 @@
 -- Dry-run: exactly which historical conversions are missing a pool-ledger
 -- credit. Run this first and review the output before calling the apply
 -- function below.
+--
+-- SELF-CORRECTION during this audit's own review of this draft: the first
+-- version of this function was LANGUAGE sql with no internal role check,
+-- copying the pre-existing pattern in list_service_provider_capability_desync()
+-- (migration 0053) -- which, on checking, turns out to have the exact same
+-- gap LIVE in production today (confirmed via has_function_privilege: any
+-- `authenticated` user can call it, not just an admin -- tracked separately
+-- as a new finding, F23, since that is pre-existing live code this audit
+-- does not unilaterally change). Rather than carry that same gap forward
+-- into new code, this function is LANGUAGE plpgsql with an explicit
+-- is_admin() check, matching backfill_vc_to_wallet_pool_ledger()'s own
+-- pattern below.
 CREATE OR REPLACE FUNCTION public.list_vc_to_wallet_pool_backfill_candidates()
  RETURNS TABLE(vc_transaction_id uuid, user_id uuid, vc_amount integer, wallet_credit_kobo bigint, converted_at timestamptz)
- LANGUAGE sql
+ LANGUAGE plpgsql
  STABLE SECURITY DEFINER
  SET search_path TO ''
 AS $function$
+BEGIN
+  IF NOT public.is_admin() THEN
+    RAISE EXCEPTION 'Admin access required';
+  END IF;
+
+  RETURN QUERY
   SELECT vt.id, vt.user_id, vt.amount, (vt.metadata->>'wallet_credit_kobo')::bigint, vt.created_at
   FROM public.vc_transactions vt
   WHERE vt.type = 'spend'
@@ -42,6 +60,7 @@ AS $function$
       SELECT 1 FROM public.vc_pool_ledger pl WHERE pl.vc_transaction_id = vt.id
     )
   ORDER BY vt.created_at;
+END;
 $function$;
 
 REVOKE ALL ON FUNCTION public.list_vc_to_wallet_pool_backfill_candidates() FROM PUBLIC, anon, authenticated, project_admin;
