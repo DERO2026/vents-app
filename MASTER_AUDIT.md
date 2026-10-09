@@ -90,7 +90,7 @@ Inherited from this same conversation's earlier, already-completed work (not re-
 
 ## Part 5a — Admin Console screen-by-screen checklist
 
-Every `src/app/components/admin/*.tsx` + `AdminActionsTab.tsx`, tracked explicitly so none is silently skipped.
+**Complete: 20/20 screens/RPC-groups reviewed.** Every `src/app/components/admin/*.tsx` + `AdminActionsTab.tsx`, tracked explicitly so none was silently skipped. Confirmed findings from this sweep: F11 (System screen), F15/F16/F18 (VC screen), F18 (Verification screen), F19 (service_providers/events RLS bypass). Everything else verified-working.
 
 | Screen | Status | Finding |
 |---|---|---|
@@ -108,7 +108,7 @@ Every `src/app/components/admin/*.tsx` + `AdminActionsTab.tsx`, tracked explicit
 | `AdminProviderDetail.tsx` | ✅ Reviewed (RPC-level only) | `admin_decide_service_provider_request` correctly `is_super_admin()`-gated; same screen as `AdminProviderRequestsScreen`'s pattern — not independently re-checked for its own gate usage |
 | `AdminReportsScreen.tsx` | ✅ Reviewed | Verified-working — `admin_decide_report` is `is_admin()`-gated, no gate needed |
 | `AdminActionsTab.tsx` | ✅ Reviewed | Verified-working — `approve_admin_action`/`reject_admin_action` both `is_super_admin()`-gated server-side, correctly the only screen that executes queued requests |
-| `AdminDashboard.tsx` | ⏳ Not individually reviewed | Calls 3 read-only stat RPCs, not yet confirmed one-by-one |
+| `AdminDashboard.tsx` | ✅ Reviewed | All 3 stat RPCs (`admin_get_vc_aggregates`, `admin_pending_request_count`, `admin_get_verification_stats`) confirmed `is_admin()`/`is_super_admin()`-gated |
 | `AdminAnalyticsScreen.tsx` | ✅ Reviewed | `admin_get_new_user_stats` confirmed `is_admin()`-gated |
 | `AdminAuditLogScreen.tsx` | ✅ Reviewed | Direct `admin_logs` read; RLS `admin_select_logs` policy correctly gates on `is_admin()` — verified-working |
 | `AdminServiceBookingsScreen.tsx` | ✅ Reviewed | Explicitly view-only by design (own comment: "no mutation actions exist"); `admin_list_service_bookings` confirmed `is_admin()`-gated |
