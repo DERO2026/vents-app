@@ -40,6 +40,24 @@ dist-ssr
 
 .vercel
 
+# Local environment files — never commit real secrets. .env.production is
+# intentionally still tracked today (every real secret in it has been
+# blanked, matching the existing convention already used for
+# VITE_PAYSTACK_PUBLIC_KEY/VITE_SUPABASE_URL/VITE_SUPABASE_ANON_KEY) and is
+# NOT covered by this rule — .gitignore has no effect on a file that is
+# already tracked, so this only prevents a NEW .env-style file, or a NEW
+# real value re-added to an untracked copy, from ever being committed going
+# forward. .env.*.example files are explicitly un-ignored so a template can
+# still be checked in.
+.env
+.env.local
+.env.*.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+!.env*.example
+
 # Firebase native config — device-registration secrets for push
 # notifications (see IOS_LAUNCH_CHECKLIST.md §5). Download from the
 # Firebase Console, place them locally; never commit them. The iOS one is
