@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef, Component, ErrorInfo, ReactNode, Suspense, lazy } from 'react';
 import { Screen, TabId, AuthMode, Event, TicketType, PurchasedTicket, UserProfile, UserRole, ServiceProvider } from './components/types';
 import { supabase, getAuthToken } from '../lib/supabase';
 import { Sentry } from '../lib/sentry';
@@ -61,7 +61,18 @@ import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
-import { AdminConsoleShell } from './components/admin/AdminConsoleShell';
+// Audit finding F32 (perf): AdminConsoleShell pulls in all 20+ Admin Console
+// screens (System/VC/Verification/Payouts/Users/Events/etc., already audited
+// extensively in F11/F18/F19) -- code only an admin-tier account ever
+// renders, confirmed by the single `screen === 'admin-console'` conditional
+// this component is mounted behind below. Lazy-loading it keeps every
+// ordinary customer's initial bundle from paying for code they can never
+// reach, with zero behavior change: the Suspense fallback only ever shows
+// for the brief moment the chunk downloads the first time an admin actually
+// opens the console, not on the app's normal cold start.
+const AdminConsoleShell = lazy(() =>
+  import('./components/admin/AdminConsoleShell').then((m) => ({ default: m.AdminConsoleShell }))
+);
 import { CheckinScannerScreen } from './components/CheckinScannerScreen';
 import { DoorManagerScreen } from './components/DoorManagerScreen';
 import { ReferralScreen } from './components/ReferralScreen';
@@ -3160,10 +3171,12 @@ export default function App() {
               has been fully retired -- every function it exposed now lives
               here (see the migration's reconciliation report). */}
           {screen === 'admin-console' && (
-            <AdminConsoleShell
-              onBack={goBack}
-              currentUser={currentUser}
-            />
+            <Suspense fallback={null}>
+              <AdminConsoleShell
+                onBack={goBack}
+                currentUser={currentUser}
+              />
+            </Suspense>
           )}
 
           {screen === 'checkin-scanner' && (
