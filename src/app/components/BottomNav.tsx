@@ -1,4 +1,4 @@
-import { Home, Ticket, Store, MessageCircle, User, Sparkles } from 'lucide-react';
+import { Home, Ticket, LayoutGrid, MessageSquare, User, Sparkle } from 'lucide-react';
 import { TabId } from './types';
 import { haptics } from '../../lib/haptics';
 
@@ -25,173 +25,147 @@ interface BottomNavProps {
   onOpenSi?: () => void;
 }
 
+// Icon choices and exact colors/dimensions below are reverse-engineered
+// line-for-line from VentsPrototype.dc.html's own `dock` row (the
+// const P = {...} icon paths and the dock button's inline style string) --
+// not invented here. Services uses a 2x2 grid glyph (the prototype's own
+// `svc` path is four rounded squares, i.e. lucide's LayoutGrid, not a
+// storefront icon); Chat uses a square speech bubble (the prototype's
+// `chat` path matches lucide's MessageSquare, not the rounder
+// MessageCircle); VENTS AI uses a single four-point sparkle (the
+// prototype's `ai` path is one diamond-ish star, matching lucide's
+// Sparkle, not the three-dot Sparkles).
 const TABS: { id: TabId; label: string; Icon: typeof Home }[] = [
   { id: 'home',       label: 'Home',     Icon: Home },
   { id: 'my-tickets', label: 'Tix',      Icon: Ticket },
-  { id: 'services',   label: 'Services', Icon: Store },
-  { id: 'explore',    label: 'Chat',     Icon: MessageCircle },
+  { id: 'services',   label: 'Services', Icon: LayoutGrid },
+  { id: 'explore',    label: 'Chat',     Icon: MessageSquare },
   { id: 'profile',    label: 'You',      Icon: User },
 ];
 
-// A frosted-glass single bar holding all six approved destinations (Home /
-// Tix / Services / Chat / You / VENTS AI, per the approved redesign
-// prototype), replacing the earlier five-item bar -- a deliberate,
-// restrained VENTS surface rather than a generic icon-row tab bar. VENTS AI
-// sits last and gets a distinct purple-gradient glyph with a soft pulsing
-// glow so it reads as a first-class destination, not a seventh identical
-// icon.
+// Dock colors/dimensions below are the prototype's exact values (its own
+// `showDock` block's inline style and the `dock` array's per-item
+// bg/color), not a reinterpretation:
+//   container: left/right 10px, bottom 14px, height 68px, radius 34px,
+//     background rgba(28,22,56,.62), backdrop-filter blur(26px) saturate(1.5),
+//     border 1px solid rgba(255,255,255,.16),
+//     box-shadow: inset 0 1px 0 rgba(255,255,255,.14), 0 14px 34px rgba(0,0,0,.55)
+//   each button: flex:1, radius 28px, label font 600 9.5px Manrope
+//   inactive (non-AI): transparent bg, color #b4aecb
+//   active (non-AI): bg rgba(139,92,246,.55), color #fff
+//   inactive AI: transparent bg, color #c4b5fd (already purple-tinted,
+//     unlike the other four tabs' neutral inactive gray)
+//   active AI: bg linear-gradient(135deg,#8b5cf6,#6d28d9), color #fff
+// The one addition beyond the prototype's static markup is a restrained
+// pulsing glow on the active AI tab, which the Design Foundation's own
+// component spec calls for explicitly ("purple glow is reserved for one
+// thing per screen: the primary action or the AI entry") -- not a new
+// visual invented here, just the one glow the design docs already ask for.
 export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, siEnabled = true, onOpenSi }: BottomNavProps) {
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        left: '10px',
+        right: '10px',
+        bottom: `calc(14px + env(safe-area-inset-bottom, 0px))`,
+        height: '68px',
+        borderRadius: '34px',
+        background: 'rgba(28,22,56,0.62)',
+        backdropFilter: 'blur(26px) saturate(150%)',
+        WebkitBackdropFilter: 'blur(26px) saturate(150%)',
+        border: '1px solid rgba(255,255,255,0.16)',
+        boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.14), 0 14px 34px rgba(0,0,0,0.55)',
         display: 'flex',
-        justifyContent: 'center',
-        padding: `0 12px calc(10px + env(safe-area-inset-bottom, 6px))`,
+        padding: '5px',
+        gap: '2px',
         zIndex: 50,
-        pointerEvents: 'none',
+        maxWidth: '480px',
+        margin: '0 auto',
       }}
     >
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          width: '100%',
-          maxWidth: '390px',
-          background: 'rgba(14,11,22,0.72)',
-          backdropFilter: 'blur(28px) saturate(170%)',
-          WebkitBackdropFilter: 'blur(28px) saturate(170%)',
-          border: '1px solid rgba(255,255,255,0.08)',
-          borderRadius: '22px',
-          padding: '6px 4px',
-          boxShadow: '0 14px 40px -14px rgba(0,0,0,0.6)',
-          pointerEvents: 'auto',
-        }}
-      >
-        {TABS.map(({ id, label, Icon }) => {
-          const isActive = activeTab === id && !siActive;
-          return (
-            <button
-              key={id}
-              onClick={() => { if (!isActive) haptics.light(); onTabChange(id); }}
-              aria-label={label}
-              aria-current={isActive ? 'page' : undefined}
-              style={{
-                flex: 1,
-                minWidth: 0,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '3px',
-                padding: '8px 2px',
-                border: 'none',
-                background: 'transparent',
-                cursor: 'pointer',
-                WebkitTapHighlightColor: 'transparent',
-              }}
-            >
-              <div
-                style={{
-                  position: 'relative',
-                  width: '34px',
-                  height: '26px',
-                  borderRadius: '10px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: isActive ? 'rgba(142,92,247,0.18)' : 'transparent',
-                  transition: 'background 0.15s ease',
-                }}
-              >
-                <Icon size={19} strokeWidth={isActive ? 2.3 : 2} color={isActive ? '#B98CFF' : 'rgba(237,234,245,0.55)'} />
-                {id === 'explore' && hasUnreadChats && (
-                  <span style={{
-                    position: 'absolute', top: '1px', right: '3px',
-                    width: '7px', height: '7px', borderRadius: '9999px',
-                    background: '#8E5CF7', border: '1.5px solid #0B0912', display: 'block',
-                  }} />
-                )}
-              </div>
-              <span style={{
-                fontSize: '10px',
-                fontWeight: isActive ? 700 : 600,
-                letterSpacing: '0.01em',
-                color: isActive ? '#F3EEFF' : 'rgba(237,234,245,0.5)',
-                fontFamily: "'Inter', system-ui, sans-serif",
-              }}>{label}</span>
-            </button>
-          );
-        })}
-
-        <button
-          onClick={() => {
-            if (!siEnabled) return;
-            if (!siActive) haptics.light();
-            onOpenSi?.();
-          }}
-          aria-label="VENTS AI"
-          aria-current={siActive ? 'page' : undefined}
-          aria-disabled={!siEnabled || undefined}
-          style={{
-            flex: 1,
-            minWidth: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '3px',
-            padding: '8px 2px',
-            border: 'none',
-            background: 'transparent',
-            cursor: siEnabled ? 'pointer' : 'default',
-            opacity: siEnabled ? 1 : 0.35,
-            WebkitTapHighlightColor: 'transparent',
-          }}
-        >
-          <div
+      {TABS.map(({ id, label, Icon }) => {
+        const isActive = activeTab === id && !siActive;
+        return (
+          <button
+            key={id}
+            onClick={() => { if (!isActive) haptics.light(); onTabChange(id); }}
+            aria-label={label}
+            aria-current={isActive ? 'page' : undefined}
             style={{
-              width: '34px',
-              height: '26px',
-              borderRadius: '10px',
+              flex: 1,
+              minWidth: 0,
+              position: 'relative',
+              border: 'none',
+              borderRadius: '28px',
+              background: isActive ? 'rgba(139,92,246,0.55)' : 'transparent',
+              color: isActive ? '#fff' : '#b4aecb',
               display: 'flex',
+              flexDirection: 'column',
               alignItems: 'center',
               justifyContent: 'center',
-              background: siActive
-                ? 'linear-gradient(135deg,#c084fc,#7c3aed)'
-                : 'rgba(255,255,255,0.06)',
-              // Restrained glow, not a full animated orb: a soft pulsing
-              // purple shadow on the active destination's glyph only,
-              // flattened to a static glow under prefers-reduced-motion
-              // (see the <style> block below).
-              boxShadow: siActive ? '0 0 14px 2px rgba(139,92,246,0.55)' : 'none',
-              animation: siActive ? 'ventsAiTabGlow 2.4s ease-in-out infinite' : 'none',
+              gap: '3px',
+              padding: 0,
+              cursor: 'pointer',
               transition: 'background 0.15s ease',
+              WebkitTapHighlightColor: 'transparent',
             }}
           >
-            <Sparkles size={17} strokeWidth={siActive ? 2.3 : 2} color={siActive ? '#fff' : 'rgba(237,234,245,0.55)'} />
-          </div>
-          <span style={{
-            fontSize: '10px',
-            fontWeight: siActive ? 700 : 600,
-            letterSpacing: '0.01em',
-            color: siActive ? '#F3EEFF' : 'rgba(237,234,245,0.5)',
-            fontFamily: "'Inter', system-ui, sans-serif",
-          }}>VENTS AI</span>
-        </button>
-        <style>{`
-          @keyframes ventsAiTabGlow {
-            0%, 100% { box-shadow: 0 0 10px 1px rgba(139,92,246,0.45); }
-            50% { box-shadow: 0 0 18px 4px rgba(139,92,246,0.75); }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            @keyframes ventsAiTabGlow { 0%, 100% { box-shadow: 0 0 14px 2px rgba(139,92,246,0.55); } }
-          }
-        `}</style>
-      </div>
+            <Icon size={22} strokeWidth={1.8} color="currentColor" />
+            {id === 'explore' && hasUnreadChats && (
+              <span style={{
+                position: 'absolute', top: '6px', right: 'calc(50% - 15px)',
+                width: '7px', height: '7px', borderRadius: '9999px',
+                background: '#8E5CF7', border: '1.5px solid #1c1638', display: 'block',
+              }} />
+            )}
+            <span style={{ font: "600 9.5px 'Manrope', sans-serif", whiteSpace: 'nowrap' }}>{label}</span>
+          </button>
+        );
+      })}
+
+      <button
+        onClick={() => {
+          if (!siEnabled) return;
+          if (!siActive) haptics.light();
+          onOpenSi?.();
+        }}
+        aria-label="VENTS AI"
+        aria-current={siActive ? 'page' : undefined}
+        aria-disabled={!siEnabled || undefined}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          border: 'none',
+          borderRadius: '28px',
+          background: siActive ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : 'transparent',
+          color: siActive ? '#fff' : '#c4b5fd',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '3px',
+          padding: 0,
+          cursor: siEnabled ? 'pointer' : 'default',
+          opacity: siEnabled ? 1 : 0.35,
+          boxShadow: siActive ? '0 0 14px 2px rgba(139,92,246,0.55)' : 'none',
+          animation: siActive ? 'ventsAiTabGlow 2.4s ease-in-out infinite' : 'none',
+          transition: 'background 0.15s ease',
+          WebkitTapHighlightColor: 'transparent',
+        }}
+      >
+        <Sparkle size={22} strokeWidth={1.8} color="currentColor" fill={siActive ? 'currentColor' : 'none'} />
+        <span style={{ font: "600 9.5px 'Manrope', sans-serif", whiteSpace: 'nowrap' }}>VENTS AI</span>
+      </button>
+      <style>{`
+        @keyframes ventsAiTabGlow {
+          0%, 100% { box-shadow: 0 0 10px 1px rgba(139,92,246,0.45); }
+          50% { box-shadow: 0 0 18px 4px rgba(139,92,246,0.75); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes ventsAiTabGlow { 0%, 100% { box-shadow: 0 0 14px 2px rgba(139,92,246,0.55); } }
+        }
+      `}</style>
     </div>
   );
 }

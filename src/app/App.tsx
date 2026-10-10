@@ -30,6 +30,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { VentsAiScreen } from './components/VentsAiScreen';
 import { AiAccessScreen } from './components/AiAccessScreen';
+import { VentsAiUnlockedScreen } from './components/VentsAiUnlockedScreen';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
@@ -224,6 +225,13 @@ export default function App() {
   // authority on every actual AI request regardless of this flag).
   // Starts false so a fresh session always re-verifies at least once.
   const [ventsAiAccessGranted, setVentsAiAccessGranted] = useState(false);
+  // Approved prototype's `ai.ph.unlocked` orb screen -- shown exactly once
+  // per session, the instant AiAccessScreen's onContinue() fires with a
+  // REAL confirmed entitlement (never a simulated transition). Cleared by
+  // "Start planning" into the real VentsAiScreen; never re-shown on later
+  // opens within the same session since ventsAiAccessGranted already
+  // skips AiAccessScreen (and therefore this) on remount.
+  const [ventsAiJustUnlocked, setVentsAiJustUnlocked] = useState(false);
   // Contextual entry points (Home/Services search-bar sparkle, event
   // details "Ask VENTS AI to plan this night") hand off real context by
   // pre-filling VentsAiScreen's composer -- not a new backend call, just
@@ -3220,10 +3228,18 @@ export default function App() {
           {/* ── VENTS AI ── */}
           {ventsAiEverMounted && !ventsAiAccessGranted && (
             <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-              <AiAccessScreen onClose={goBack} onContinue={() => setVentsAiAccessGranted(true)} />
+              <AiAccessScreen
+                onClose={goBack}
+                onContinue={() => { setVentsAiAccessGranted(true); setVentsAiJustUnlocked(true); }}
+              />
             </div>
           )}
-          {ventsAiEverMounted && ventsAiAccessGranted && (
+          {ventsAiEverMounted && ventsAiAccessGranted && ventsAiJustUnlocked && (
+            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+              <VentsAiUnlockedScreen onStartPlanning={() => setVentsAiJustUnlocked(false)} />
+            </div>
+          )}
+          {ventsAiEverMounted && ventsAiAccessGranted && !ventsAiJustUnlocked && (
             <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
               <VentsAiScreen
                 isDesktop={isDesktopWidth}

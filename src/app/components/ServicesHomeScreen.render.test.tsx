@@ -165,7 +165,7 @@ describe('ServicesHomeScreen: 12-category grid (Batch 2 taxonomy)', () => {
       expect(container.textContent).toContain(cat);
     }
 
-    const firstButton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === categories[0])!;
+    const firstButton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(categories[0]))!;
     act(() => { firstButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(onCategoryPress).toHaveBeenCalledWith(categories[0]);
   });

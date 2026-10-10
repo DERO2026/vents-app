@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
-  ArrowLeft, Search, Camera, X, Plus, Sparkles,
+  ArrowLeft, Search, Camera, X, Plus,
 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { pickImage } from '../../lib/pickImage';
@@ -12,7 +12,7 @@ import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { CURRENCIES, CurrencyOption, servicesPayableCurrencyForCountry } from '../../lib/currencies';
 import {
-  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES, CATEGORY_ICONS,
+  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
   CATEGORY_SPECIALTY_SUGGESTIONS,
 } from '../../lib/servicesDesignTokens';
 import { fetchOwnServiceProvider, saveAndPublishServiceProvider, ServiceProviderInput } from '../../lib/serviceProviders';
@@ -492,11 +492,19 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         </div>
 
         {/* Category -- select up to 5. The first one selected is your
-            primary category (shown on your card and used for search). */}
+            primary category (shown on your card and used for search).
+            Row style (no icons, highlighted border on selection) matches
+            VentsPrototype.dc.html's registration step-0 category row
+            (`reg.s0`'s per-category div: 18px radius, 60px min-height,
+            1.5px highlighted border) -- this screen keeps the existing
+            real multi-select-up-to-5 behavior rather than the prototype's
+            single-category step wizard, since that's a materially
+            different interaction model this pass didn't rebuild, not
+            just a visual change, and risked regressing a form that
+            already handles real Supabase writes and edit-mode. */}
         <SectionLabel>Category (select up to 5, first is primary)</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: servicesSpacing.xl }}>
           {SERVICE_CATEGORIES.map((cat) => {
-            const Icon = CATEGORY_ICONS[cat] || Sparkles;
             const accent = categoryAccents[cat];
             const active = categories.includes(cat);
             const isPrimary = categories[0] === cat;
@@ -509,14 +517,13 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
                   return [...prev, cat];
                 })}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '10px', padding: '12px',
-                  borderRadius: servicesRadii.md, cursor: 'pointer', textAlign: 'left',
+                  display: 'flex', alignItems: 'center', gap: '10px', padding: '14px 16px', minHeight: '60px',
+                  borderRadius: '18px', cursor: 'pointer', textAlign: 'left',
                   background: active ? `${accent}1F` : servicesColors.cardBg,
-                  border: active ? `1.5px solid ${accent}` : `1px solid ${servicesColors.border}`,
+                  border: active ? `1.5px solid ${accent}` : '1.5px solid rgba(255,255,255,0.09)',
                 }}
               >
-                <Icon size={18} color={accent} />
-                <span style={{ color: servicesColors.textPrimary, fontSize: '13px', fontWeight: 700, flex: 1 }}>{cat}</span>
+                <span style={{ color: servicesColors.textPrimary, font: "700 15px/1.3 'Manrope', sans-serif", flex: 1 }}>{cat}</span>
                 {isPrimary && (
                   <span style={{ fontSize: '9px', fontWeight: 700, color: accent, textTransform: 'uppercase' as const }}>Primary</span>
                 )}

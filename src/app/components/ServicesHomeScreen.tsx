@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, AlertCircle, Search, ChevronDown, Sparkles } from 'lucide-react';
+import { ArrowLeft, AlertCircle, ChevronDown } from 'lucide-react';
 import { ServiceProvider } from './types';
 import {
-  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES, CATEGORY_ICONS,
+  servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
 import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings } from '../../lib/serviceProviders';
 import { useGeolocation } from '../../lib/useGeolocation';
@@ -166,13 +166,17 @@ export function ServicesHomeScreen({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '6px 6px 6px 14px' }}>
-          <Search size={16} color={servicesColors.textSecondary} style={{ flexShrink: 0 }} />
+        {/* Search bar -- exact dimensions/colors from VentsPrototype.dc.html's
+            Services search row (height 52px, radius 26px, bg #181330,
+            border rgba(139,92,246,.35)); the AI control is the prototype's
+            literal "✦" glyph button (44px, radius 22px, gradient 135deg
+            #a78bfa→#6d28d9), not a lucide icon. */}
+        <div style={{ display: 'flex', alignItems: 'center', height: '52px', borderRadius: '26px', background: '#181330', border: '1px solid rgba(139,92,246,0.35)', padding: '0 4px 0 18px', gap: '8px' }}>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search services or providers"
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Manrope, sans-serif', padding: '5px 0' }}
+            placeholder="Search a service, e.g. wedding MC"
+            style={{ flex: 1, minWidth: 0, height: '48px', border: 'none', outline: 'none', background: 'transparent', color: servicesColors.textPrimary, font: "500 15px 'Manrope', sans-serif" }}
           />
           {/* Same "one AI control lives inside the search bar" entry point
               as Home's compact search pill -- see onOpenVentsAi above. */}
@@ -181,12 +185,13 @@ export function ServicesHomeScreen({
               onClick={onOpenVentsAi}
               aria-label="Ask VENTS AI"
               style={{
-                flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
-                background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
-                border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, width: '44px', height: '44px', borderRadius: '22px',
+                background: 'linear-gradient(135deg,#a78bfa,#6d28d9)',
+                border: 'none', cursor: 'pointer', color: '#fff', fontSize: '18px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Sparkles size={13} color="#fff" />
+              ✦
             </button>
           )}
         </div>
@@ -205,36 +210,41 @@ export function ServicesHomeScreen({
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
-        {/* Category grid -- all 12 approved categories. auto-fill/minmax
-            (the same responsive grid pattern the approved prototypes use
-            throughout) gives 2 columns on a phone and naturally more on a
-            widened desktop shell, instead of a fixed '1fr 1fr' that would
-            leave 12 items looking sparse and narrow at 1200px. */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: servicesSpacing.md, marginBottom: servicesSpacing.xl }}>
-          {SERVICE_CATEGORIES.map((cat) => {
-            const Icon = CATEGORY_ICONS[cat] || Sparkles;
-            const accent = categoryAccents[cat];
-            return (
-              <button
-                key={cat}
-                onClick={() => onCategoryPress(cat)}
-                style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '10px',
-                  padding: '16px', borderRadius: servicesRadii.md, minHeight: '104px',
-                  background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`,
-                  cursor: 'pointer', transition: 'transform 0.15s ease',
-                }}
-                onPointerDown={(e) => { e.currentTarget.style.transform = 'scale(0.97)'; }}
-                onPointerUp={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-                onPointerLeave={(e) => { e.currentTarget.style.transform = 'scale(1)'; }}
-              >
-                <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: `${accent}26`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon size={22} color={accent} />
-                </div>
-                <span style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, textAlign: 'left' }}>{cat}</span>
-              </button>
-            );
-          })}
+        {/* "BROWSE BY PROFESSION · 12 CATEGORIES" grid -- reproduced
+            value-for-value from VentsPrototype.dc.html's own category card
+            (minHeight 112px, radius 22px, bg #100d1a, border
+            rgba(255,255,255,.09), a two-digit index in small purple
+            JetBrains Mono caps, then the name). The prototype's own grid
+            is a fixed 2-column 1fr/1fr -- not responsive -- and the
+            Design Foundation doc explicitly leaves desktop undesigned, so
+            this stays exactly 1fr/1fr rather than widening on desktop.
+            No icons: the prototype's card has none. The prototype's own
+            card also shows a provider count per category, which isn't
+            reproduced here -- that would need a live per-category count
+            query this screen doesn't otherwise make, and showing a
+            plausible-looking number without one would be exactly the
+            fabricated business information this redesign must not add. */}
+        <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 10px', font: "600 10px 'JetBrains Mono', monospace" }}>
+          BROWSE BY PROFESSION · 12 CATEGORIES
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: servicesSpacing.xl }}>
+          {SERVICE_CATEGORIES.map((cat, i) => (
+            <button
+              key={cat}
+              onClick={() => onCategoryPress(cat)}
+              style={{
+                minHeight: '112px', padding: '14px', borderRadius: '22px',
+                background: '#100d1a', border: '1px solid rgba(255,255,255,0.09)',
+                display: 'flex', flexDirection: 'column', justifyContent: 'space-between', gap: '8px',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{ font: "600 12px 'JetBrains Mono', monospace", color: '#a78bfa', letterSpacing: '0.1em' }}>
+                {String(i + 1).padStart(2, '0')}
+              </span>
+              <span style={{ display: 'block', font: "700 15px/1.25 'Manrope', sans-serif", color: servicesColors.textPrimary }}>{cat}</span>
+            </button>
+          ))}
         </div>
 
         {/* Providers near you */}
