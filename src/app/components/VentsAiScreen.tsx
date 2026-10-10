@@ -4047,19 +4047,44 @@ function HomeView({
           Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
         </div>
 
-        {(() => {
-          const pill = resolveStatusPill(entitlement);
-          return (
-            <div
-              onClick={onViewPlans}
-              role="button"
-              style={{ display: 'flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', height: 32, padding: '0 12px', borderRadius: 16, background: pill.bg, border: `1px solid ${pill.border}`, marginBottom: 14, cursor: 'pointer', width: 'fit-content' }}
-            >
-              <span style={{ width: 7, height: 7, borderRadius: 4, background: pill.dot, flexShrink: 0 }} />
-              <span style={{ fontSize: 12, fontWeight: 600, color: pill.color, fontFamily: "'Manrope',sans-serif" }}>{pill.label}</span>
-            </div>
-          );
-        })()}
+        {/* Two things, same destination: the pill (real status, small by
+            design -- a status indicator shouldn't shout) and an explicit,
+            unmistakable "View Plans" action next to it, so the only
+            subscription entry point on this screen isn't a 32px dot a
+            user could plausibly miss. Both call onViewPlans -- there is
+            exactly one way this screen opens AiPlansScreen, just two
+            visible affordances for it. Reachable regardless of
+            app_config.ai_entitlement_enforced -- this row isn't gated on
+            that flag at all, only on get_my_ai_entitlement() actually
+            resolving (or still loading, which the pill's own "Checking
+            access…" label already covers). */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
+          {(() => {
+            const pill = resolveStatusPill(entitlement);
+            return (
+              <div
+                onClick={onViewPlans}
+                role="button"
+                style={{ display: 'flex', alignItems: 'center', gap: 7, height: 32, padding: '0 12px', borderRadius: 16, background: pill.bg, border: `1px solid ${pill.border}`, cursor: 'pointer', width: 'fit-content' }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: 4, background: pill.dot, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: pill.color, fontFamily: "'Manrope',sans-serif" }}>{pill.label}</span>
+              </div>
+            );
+          })()}
+          <button
+            onClick={onViewPlans}
+            data-testid="vents-ai-view-plans"
+            aria-label="View VENTS AI plans"
+            style={{
+              height: 32, padding: '0 14px', borderRadius: 16, border: '1px solid rgba(139,92,246,0.5)',
+              background: 'rgba(139,92,246,0.14)', color: '#d3b8ff', fontSize: 12, fontWeight: 700,
+              fontFamily: "'Manrope',sans-serif", cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+            }}
+          >
+            View Plans <span style={{ fontSize: 13 }}>›</span>
+          </button>
+        </div>
 
         <div style={{ display: 'flex', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
           {([['chat', 'Chat'], ['plans', plans && plans.length > 0 ? `Plans · ${plans.length}` : 'Plans']] as const).map(([id, label]) => (

@@ -107,6 +107,63 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     });
     expect(container!.textContent).toContain('VENTS AI Plans');
   });
+
+  // Regression test: a prior report claimed AiPlansScreen was imported but
+  // never rendered, and that opening it required subscription enforcement
+  // to be on. Neither was true on inspection (the import already had a
+  // real `{showPlans && <AiPlansScreen .../>}` render and an unconditional
+  // onClick), but this test pins down exactly the two things that report
+  // was actually right to ask for: (1) an explicit, unmistakable "View
+  // Plans" action distinct from the small status pill, not just the pill
+  // alone, and (2) it must be reachable with no enforcement/entitlement
+  // mock at all -- this test's own rpc mock never references
+  // ai_entitlement_enforced or any "enforcement on" state, because
+  // HomeView's plans entry point was never gated on that flag to begin
+  // with. If AiPlansScreen is ever imported again without being rendered,
+  // or this button stops calling onViewPlans, this test fails.
+  it('a visible "View Plans" button (not just the status pill) opens AiPlansScreen, with no enforcement flag involved', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'get_ai_plans_public') return Promise.resolve({ data: [], error: null });
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+
+    const viewPlansButton = container!.querySelector('button[data-testid="vents-ai-view-plans"]') as HTMLButtonElement;
+    expect(viewPlansButton).toBeTruthy();
+    expect(viewPlansButton.textContent).toContain('View Plans');
+    expect(container!.textContent).not.toContain('VENTS AI Plans');
+
+    await act(async () => {
+      viewPlansButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container!.textContent).toContain('VENTS AI Plans');
+    // No RPC call this test made ever referenced enforcement -- the path
+    // from "View Plans" tap to AiPlansScreen rendering never checked it.
+    expect(rpc.mock.calls.some(([name]) => name === 'ai_entitlement_enforced')).toBe(false);
+  });
+
+  it('closing AiPlansScreen returns to the real VENTS AI Home screen, not a blank or stuck state', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'get_ai_plans_public') return Promise.resolve({ data: [], error: null });
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+
+    const viewPlansButton = container!.querySelector('button[data-testid="vents-ai-view-plans"]') as HTMLButtonElement;
+    await act(async () => { viewPlansButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); await Promise.resolve(); });
+    expect(container!.textContent).toContain('VENTS AI Plans');
+
+    const closeButton = Array.from(container!.querySelectorAll('button')).find((b) => b.getAttribute('aria-label') === 'Close')!;
+    expect(closeButton).toBeTruthy();
+    act(() => { closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(container!.textContent).not.toContain('VENTS AI Plans');
+    expect(container!.querySelector('input[placeholder="Ask VENTS AI anything…"]')).toBeTruthy();
+  });
 });
 
 describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
