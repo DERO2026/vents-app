@@ -4,6 +4,7 @@ import BadgeChip from './BadgeChip';
 import {
   ArrowLeft,
   Share2,
+  Link as LinkIcon,
   MapPin,
   Calendar,
   Clock,
@@ -427,17 +428,39 @@ export function EventDetailsScreen({
     // to anyone the link is shared with. Same pattern PaymentSuccessScreen's
     // ticket-share link already uses.
     const deepLink = `https://getvents.com/?event=${event.id}`;
+    // The deep link is embedded in `text` only -- `url` is intentionally
+    // omitted from the shareLink() call below. Capacitor's Android Share
+    // plugin (and iOS's UIActivityViewController) fold a separate `text` +
+    // `url` into one combined payload for share targets that only accept a
+    // single string (e.g. the OS "Copy to clipboard" resolver), which
+    // duplicated the URL when both were passed. Keeping it in `text` once
+    // is enough for every real share target (WhatsApp, Messages, etc.) to
+    // see the link exactly once.
     const text =
       `🎟️ ${event.title}\n` +
       `📅 ${event.date} · ${event.time}\n` +
       `📍 ${event.venue}, ${event.city}\n` +
       `\nGet tickets on Vents 👇\n${deepLink}`;
 
-    await shareLink({ title: event.title, text, url: deepLink });
-    // Always copy to clipboard silently so users can paste the link
-    navigator.clipboard.writeText(deepLink).catch(() => {});
-    setShared(true);
-    setTimeout(() => setShared(false), 2000);
+    await shareLink({ title: event.title, text });
+  };
+
+  // Dedicated, OS-share-sheet-independent "Copy Link" action. Writes ONLY
+  // the canonical URL to the clipboard directly, never routed through
+  // shareLink()/Share.share()/navigator.share() -- those hand control to
+  // OS/plugin chrome (the native share sheet's own "Copy" resolver, or an
+  // async clipboard overwrite racing against it) that this app cannot
+  // reliably control cross-platform, which is what produced the
+  // promo-text + duplicated-URL clipboard bug this replaces.
+  const handleCopyLink = async () => {
+    const deepLink = `https://getvents.com/?event=${event.id}`;
+    try {
+      await navigator.clipboard.writeText(deepLink);
+      setShared(true);
+      setTimeout(() => setShared(false), 2000);
+    } catch {
+      // ignore -- no toast on failure
+    }
   };
 
   const allReviews = [...userReviews];
@@ -741,6 +764,25 @@ export function EventDetailsScreen({
               }}
             >
               <Share2 size={17} color="#fff" />
+            </button>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCopyLink(); }}
+              title="Copy Link"
+              style={{
+                background: 'rgba(255,255,255,0.1)',
+                backdropFilter: 'blur(16px) saturate(180%)',
+                WebkitBackdropFilter: 'blur(16px) saturate(180%)',
+                border: '1px solid rgba(255,255,255,0.16)',
+                borderRadius: '50%',
+                width: '38px',
+                height: '38px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <LinkIcon size={17} color="#fff" />
             </button>
             <button
               onClick={(e) => { e.stopPropagation(); onToggleSave(); }}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { CheckCircle, Download, Share2, Home, Calendar, MapPin, Ticket, Send, AlertCircle, X } from 'lucide-react';
+import { CheckCircle, Download, Share2, Link as LinkIcon, Home, Calendar, MapPin, Ticket, Send, AlertCircle, X } from 'lucide-react';
 import { PurchasedTicket } from './types';
 import { ticketDisplayCode } from '../../lib/ticketCode';
 import { formatPrice } from './data';
@@ -147,11 +147,31 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
 
   const handleShare = async () => {
     const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
+    // The link is embedded in `text` only -- `url` is intentionally omitted
+    // below. Passing both let Capacitor's native share layer fold them
+    // together into a single payload, duplicating the URL for share
+    // targets (e.g. the OS "Copy to clipboard" resolver) that only accept
+    // one combined string. `text` already carries the link exactly once,
+    // which is all real share targets (WhatsApp, Messages, etc.) need.
     const text = `🎟️ I just booked "${ticket.event.title}" on VENTS!\n📅 ${ticket.event.date} | 📍 ${ticket.event.venue}, ${ticket.event.city}\nTicket Reference: ${ticketDisplayCode(ticket.ticketId)}\n${eventUrl}`;
-    const result = await shareLink({ title: 'My VENTS Ticket', text, url: eventUrl });
-    if (result === 'copied' && mountedRef.current) {
-      setShareToast(true);
-      setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
+    await shareLink({ title: 'My VENTS Ticket', text });
+  };
+
+  // Dedicated, OS-share-sheet-independent "Copy Link" action -- writes
+  // ONLY the canonical event URL to the clipboard directly, never via
+  // shareLink()/Share.share(). See EventDetailsScreen.handleCopyLink for
+  // the full rationale (OS share-sheet "Copy" resolvers and async
+  // clipboard overwrites can't be relied on cross-platform).
+  const handleCopyLink = async () => {
+    const eventUrl = `https://getvents.com/?event=${ticket.event.id}`;
+    try {
+      await navigator.clipboard.writeText(eventUrl);
+      if (mountedRef.current) {
+        setShareToast(true);
+        setTimeout(() => { if (mountedRef.current) setShareToast(false); }, 2500);
+      }
+    } catch {
+      // ignore -- no toast on failure
     }
   };
 
@@ -479,6 +499,25 @@ export function PaymentSuccessScreen({ ticket, onViewTickets, onGoHome }: Paymen
           >
             <Share2 size={16} color={ventsColors.accentSoft} />
             <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Share</span>
+          </button>
+          <button
+            onClick={handleCopyLink}
+            title="Copy Link"
+            style={{
+              flex: 1,
+              background: ventsColors.surface,
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '14px',
+              padding: '13px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '7px',
+              cursor: 'pointer',
+            }}
+          >
+            <LinkIcon size={16} color={ventsColors.accentSoft} />
+            <span style={{ color: ventsColors.accentSoft, fontSize: '13px', fontWeight: 600 }}>Copy Link</span>
           </button>
         </div>
 

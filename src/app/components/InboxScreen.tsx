@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, X, Check } from 'lucide-react';
+import { ArrowLeft, MessageCircle, MoreVertical, Eraser, Trash2, Ban, Share2, Link as LinkIcon, X, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { haptics } from '../../lib/haptics';
 import { shareLink } from '../../lib/shareLink';
@@ -218,9 +218,27 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
     // (capacitor://localhost on iOS, https://localhost on Android),
     // meaningless to anyone the link is shared with.
     const deepLink = `https://getvents.com/?user=${thread.otherUserId}`;
+    // The link is embedded in `text` only -- `url` is intentionally
+    // omitted below so Capacitor's native share layer doesn't fold a
+    // second copy of the link into share targets that collapse text+url
+    // into one string (e.g. the OS "Copy to clipboard" resolver).
     const text = `Check out ${thread.otherUserName} on Vents 👇\n${deepLink}`;
-    const result = await shareLink({ title: thread.otherUserName, text, url: deepLink });
-    if (result === 'copied') flash('Profile link copied.');
+    await shareLink({ title: thread.otherUserName, text });
+    setMenuThread(null);
+  }
+
+  // Dedicated, OS-share-sheet-independent "Copy Link" action -- writes
+  // ONLY the canonical profile URL to the clipboard directly, never via
+  // shareLink()/Share.share(). See EventDetailsScreen.handleCopyLink for
+  // the full rationale.
+  async function handleCopyLink(thread: Thread) {
+    const deepLink = `https://getvents.com/?user=${thread.otherUserId}`;
+    try {
+      await navigator.clipboard.writeText(deepLink);
+      flash('Profile link copied.');
+    } catch {
+      // ignore -- no toast on failure
+    }
     setMenuThread(null);
   }
 
@@ -411,6 +429,7 @@ export function InboxScreen({ currentUser, onBack, onOpenConversation }: InboxSc
               { icon: <Trash2 size={18} />, label: 'Delete Chat', color: '#EF4444', action: () => setConfirmAction('delete') },
               { icon: <Ban size={18} />, label: 'Block User', color: '#EF4444', action: () => setConfirmAction('block') },
               { icon: <Share2 size={18} />, label: 'Share User', color: '#3B82F6', action: () => handleShare(menuThread) },
+              { icon: <LinkIcon size={18} />, label: 'Copy Link', color: '#3B82F6', action: () => handleCopyLink(menuThread) },
             ].map((item) => (
               <button key={item.label} onClick={item.action} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: '14px', padding: '14px 20px', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                 <span style={{ color: item.color, display: 'flex' }}>{item.icon}</span>

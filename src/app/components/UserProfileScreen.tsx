@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import BadgeChip from './BadgeChip';
-import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Ban } from 'lucide-react';
+import { ArrowLeft, MapPin, BadgeCheck, Flag, MessageCircle, Share2, Link as LinkIcon, Ban } from 'lucide-react';
 import { UserProfile } from './types';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { ReportModal } from './ReportModal';
@@ -291,6 +291,31 @@ export function UserProfileScreen({
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           >
             <Share2 size={15} color="#f6f4f9" />
+          </button>
+          <button
+            onClick={async () => {
+              // Dedicated, OS-share-sheet-independent "Copy Link" action --
+              // writes ONLY the canonical profile URL to the clipboard
+              // directly, never via shareLink()/Share.share()/
+              // navigator.share(). The Share button above already passes
+              // url-only (no text) to shareLink(), so it has no duplicate-
+              // URL bug, but it still hands the "copy" outcome to the OS
+              // share sheet's own resolver on native, which this app can't
+              // control. See EventDetailsScreen.handleCopyLink for the
+              // full rationale.
+              const shareUrl = `https://getvents.com/?user=${user.id}`;
+              try {
+                await navigator.clipboard.writeText(shareUrl);
+                setCopiedToast(true);
+                setTimeout(() => setCopiedToast(false), 2000);
+              } catch {
+                // ignore -- no toast on failure
+              }
+            }}
+            title="Copy Link"
+            style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <LinkIcon size={15} color="#f6f4f9" />
           </button>
           {!isOwnProfile && currentUserId && (
             <button
