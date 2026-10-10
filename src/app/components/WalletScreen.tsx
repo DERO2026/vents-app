@@ -194,6 +194,14 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   // commits. This ref closes that window; `withdrawing` still drives the
   // visible disabled/loading UI.
   const withdrawingRef = useRef(false);
+  // Synchronous re-entrancy lock for every confirm-gated wallet mutation
+  // (Add Bank Account among them) -- confirmBusy below is React state, so
+  // a fast double-tap (two clicks in the same event-loop turn, before
+  // React re-renders the disabled button) could still invoke runConfirm
+  // twice before setConfirmBusy(true) ever takes visible effect. Same
+  // pattern withdrawingRef/payingRef already use elsewhere in this app
+  // for the identical class of bug.
+  const confirmBusyRef = useRef(false);
   // A fresh key per withdrawal attempt, reused across retries of that same
   // attempt (e.g. a network timeout) so the server-side idempotency check
   // in request_organizer_payout recognizes a resubmit as the same logical
@@ -341,7 +349,9 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
   };
 
   const runConfirm = async (password: string) => {
+    if (confirmBusyRef.current) return;
     if (!password) { setConfirmError('Please enter your password to continue.'); return; }
+    confirmBusyRef.current = true;
     setConfirmBusy(true);
     setConfirmError('');
     try {
@@ -352,6 +362,7 @@ export function WalletScreen({ currentUser, onBack }: WalletScreenProps) {
     } catch (e: any) {
       setConfirmError(e?.message || 'Confirmation failed. Please try again.');
     } finally {
+      confirmBusyRef.current = false;
       setConfirmBusy(false);
     }
   };

@@ -41,11 +41,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // here -- a Paystack-call gate must fail CLOSED (any error, not just a
   // genuine limit hit, blocks the call) so an infra hiccup never becomes
   // "spend anyway". Checked before the Paystack fetch below.
+  //
+  // Wallet rate-limit investigation: this used to catch EVERYTHING here
+  // (a genuine rate_limited exception from check_rate_limit itself, a
+  // missing PROJECT_ADMIN_DATABASE_URL, a dropped Postgres connection, any
+  // other unrelated error) and report every one of them to the user as
+  // "Too many requests" -- so a real infra/config problem looked
+  // identical to actually hitting the limit, and users reported being
+  // "repeatedly" rate-limited when the true cause could have been
+  // something failing on every single call, not request volume at all.
+  // check_rate_limit() raises specifically with ERRCODE 'P0429' for a
+  // genuine limit hit (supabase/migrations -- see check_rate_limit's own
+  // definition); the pg driver surfaces that as err.code === 'P0429'.
+  // Still fails CLOSED either way (neither branch lets the Paystack call
+  // below proceed), but now tells the truth about which failure occurred.
   try {
     const { callProjectAdminRpc } = await import('../_lib/projectAdminDb.js');
     await callProjectAdminRpc('check_rate_limit', [`paystack_resolve_account:${session.userId}`, 30, 3600]);
-  } catch {
-    return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+  } catch (err: any) {
+    // Match both the real pg driver's SQLSTATE surfacing (err.code,
+    // 'P0429' -- check_rate_limit's own RAISE EXCEPTION ... USING ERRCODE)
+    // and a plain message match, the same convention aiEntitlement.ts
+    // already uses for its own RAISE EXCEPTION 'code_name' pattern --
+    // genuinely matters here since callProjectAdminRpc's real pg error
+    // objects may not always preserve .code through every driver/pooling
+    // path, and this must never under-detect a real rate-limit hit.
+    if (err?.code === 'P0429' || /rate_limited/.test(String(err?.message))) {
+      return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
+    }
+    // eslint-disable-next-line no-console
+    console.error('[resolve-account] rate-limit check failed (not a genuine rate limit -- failing closed):', err?.message || err);
+    return res.status(503).json({ error: 'Account verification is temporarily unavailable. Please try again shortly.' });
   }
 
   try {
@@ -55,6 +81,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     );
     const pJson = await pRes.json();
     if (!pRes.ok || !pJson.status) {
+      // Distinguish PAYSTACK's own throttling (their HTTP 429, a real
+      // provider rate limit, nothing to do with VENTS's own check_rate_limit
+      // above) from an actual invalid-account response -- folding both into
+      // the same generic "check the number and bank" message told a
+      // throttled user their bank details were wrong, which they weren't.
+      if (pRes.status === 429) {
+        return res.status(429).json({ error: 'Our banking provider is temporarily busy. Please try again in a moment.' });
+      }
       return res.status(422).json({ error: pJson.message || 'Could not verify account. Check the number and bank.' });
     }
     return res.status(200).json({ account_name: pJson.data.account_name, account_number: pJson.data.account_number });

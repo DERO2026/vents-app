@@ -139,13 +139,24 @@ describe('resolve-account: rate-limit gate', () => {
     vi.unstubAllGlobals();
   });
 
-  it('8. an unexpected rate-limit infrastructure failure fails CLOSED (429), not open', async () => {
+  // Wallet "Add Bank Account: Too Many Requests" investigation: this used
+  // to assert 429 here too -- failing closed (never calling Paystack) is
+  // still correct and still tested below, but reporting an unrelated
+  // infra failure (a dropped Postgres connection, nothing to do with
+  // request volume) as "Too many requests" told users something false
+  // about why they were blocked. See resolveAccountRateLimitClassification
+  // .security.test.ts for the full investigation and fix -- this specific
+  // test is updated to the corrected, honest status code rather than left
+  // asserting the bug.
+  it('8. an unexpected rate-limit infrastructure failure still fails CLOSED (Paystack never called), but is reported as 503, never as "Too many requests"', async () => {
     mockCallProjectAdminRpc.mockRejectedValue(new Error('connection terminated'));
-    const { fn } = makePaystackFetchMock();
+    const { fn, getCalls } = makePaystackFetchMock();
     vi.stubGlobal('fetch', fn);
     const res = makeRes();
     await handler(req(VALID_BODY), res);
-    expect(res.status).toHaveBeenCalledWith(429);
+    expect(getCalls()).toBe(0);
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).not.toHaveBeenCalledWith({ error: 'Too many requests. Please try again in a bit.' });
     vi.unstubAllGlobals();
   });
 
