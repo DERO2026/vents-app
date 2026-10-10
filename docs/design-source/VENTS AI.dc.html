@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+  body{margin:0;background:#0a0810;}
+  ::-webkit-scrollbar{width:8px;} ::-webkit-scrollbar-thumb{background:#2a2438;border-radius:6px;} ::-webkit-scrollbar-track{background:transparent;}
+  a{color:#b892ff;} a:hover{color:#d3b8ff;}
+  @keyframes pulseGlow{0%,100%{box-shadow:0 0 0 0 rgba(163,92,255,.45);}50%{box-shadow:0 0 0 10px rgba(163,92,255,0);}}
+  @keyframes dotFade{0%,80%,100%{opacity:.25;}40%{opacity:1;}}
+</style>
+</helmet>
+
+<div style="width:100%;height:100vh;background:#0a0810;color:#f2eff6;font-family:'Inter',system-ui,sans-serif;display:flex;flex-direction:column;overflow:hidden;position:relative;">
+
+  <div style="position:absolute;top:10px;right:10px;z-index:40;display:flex;align-items:center;gap:1px;background:#161020;border:1px solid #2a2438;border-radius:8px;padding:2px;box-shadow:0 4px 12px rgba(0,0,0,.4);">
+    <sc-for list="{{ viewportPicker }}" as="vp" hint-placeholder-count="3">
+      <div onClick="{{ vp.onClick }}" style="{{ vp.style }}">{{ vp.label }}</div>
+    </sc-for>
+  </div>
+
+  <div style="flex:1;display:flex;overflow:hidden;">
+
+    <sc-if value="{{ isDesktop }}" hint-placeholder-val="{{ false }}">
+      <div style="width:260px;flex-shrink:0;background:#0d0a15;border-right:1px solid #211c2c;display:flex;flex-direction:column;">
+        <div style="padding:20px 18px 14px;display:flex;align-items:center;gap:8px;">
+          <img src="assets/vents-logo.png" style="height:20px;width:auto;"></img>
+          <span style="font-size:11px;font-weight:700;letter-spacing:1.2px;color:#786d87;">AI</span>
+        </div>
+        <div onClick="{{ goHome }}" style="margin:4px 14px 14px;padding:10px 12px;border-radius:9px;background:rgba(163,92,255,.12);border:1px solid rgba(163,92,255,.3);color:#e4d4ff;font-size:12.5px;font-weight:700;cursor:pointer;text-align:center;">+ New chat</div>
+        <div style="padding:0 16px;font-size:10.5px;font-weight:700;letter-spacing:.5px;color:#5e5470;margin-bottom:6px;">RECENT</div>
+        <div style="flex:1;overflow-y:auto;padding:0 10px;">
+          <sc-for list="{{ recentList }}" as="r" hint-placeholder-count="4">
+            <div onClick="{{ r.onClick }}" style="cursor:pointer;padding:10px 10px;border-radius:8px;margin-bottom:2px;background:{{ r.activeBg }};">
+              <div style="font-size:12.5px;font-weight:600;color:#e8e3ee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ r.title }}</div>
+              <div style="font-size:11px;color:#786d87;margin-top:2px;">{{ r.time }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </sc-if>
+
+    <div style="flex:1;display:flex;min-width:0;position:relative;">
+    <div style="flex:1;display:flex;flex-direction:column;min-width:0;position:relative;">
+
+      <!-- ENTRY POINT -->
+      <sc-if value="{{ v_entry }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:1;overflow-y:auto;padding:24px;">
+          <div style="max-width:420px;margin:0 auto;">
+            <div style="font-size:13px;color:#a89db3;margin-bottom:14px;text-align:center;">VENTS AI lives as a persistent floating orb over Home, Discover and Bookings — never replacing Chat, never blocking the tab bar.</div>
+            <div style="position:relative;border-radius:24px;overflow:hidden;border:1px solid #221d2d;box-shadow:0 20px 50px rgba(0,0,0,.5);">
+              <img src="assets/vents-app-reference.png" style="display:block;width:100%;height:520px;object-fit:cover;object-position:top;"></img>
+              <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 60%,rgba(0,0,0,.35) 100%);"></div>
+              <div onClick="{{ goHome }}" style="position:absolute;bottom:96px;right:16px;width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;box-shadow:0 6px 24px rgba(124,58,237,.6);cursor:pointer;animation:pulseGlow 2.4s infinite;">
+                <span style="font-size:21px;color:#fff;">✦</span>
+              </div>
+            </div>
+            <div style="margin-top:16px;font-size:11.5px;color:#786d87;line-height:1.7;">
+              First launch: gentle pulse + one-time tooltip "Ask VENTS AI anything." After first tap it settles to a static icon. Tapping opens VENTS AI as a full-screen sheet over the current tab, not a separate app.
+            </div>
+            <div onClick="{{ goHome }}" style="margin-top:18px;text-align:center;padding:12px;border-radius:10px;background:rgba(163,92,255,.12);border:1px solid rgba(163,92,255,.3);color:#d3b8ff;font-size:13px;font-weight:700;cursor:pointer;">Open VENTS AI →</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- HOME -->
+      <sc-if value="{{ v_home }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:1;overflow-y:auto;padding:{{ homePadding }};">
+          <div style="max-width:640px;margin:0 auto;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px;">
+              <div style="width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:15px;color:#fff;">✦</span></div>
+              <div style="font-size:19px;font-weight:800;color:#f5f2f8;">VENTS AI</div>
+            </div>
+            <div style="font-size:13px;color:#a89db3;margin:6px 0 18px;">Ask about events, services, tickets, wallet or bookings — answered from real VENTS data.</div>
+
+            <div style="position:relative;margin-bottom:24px;">
+              <input value="{{ inputText }}" onChange="{{ onInputChange }}" onKeyDown="{{ onInputKeyDown }}" placeholder="Ask VENTS AI anything…" style="width:100%;box-sizing:border-box;background:#120e1a;border:1px solid #2a2438;border-radius:14px;padding:15px 52px 15px 16px;font-size:13.5px;color:#e8e3ee;outline:none;font-family:inherit;"></input>
+              <div onClick="{{ onSend }}" style="position:absolute;right:8px;top:8px;width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:14px;">↑</div>
+            </div>
+
+            <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#5e5470;margin-bottom:10px;">SUGGESTED</div>
+            <div style="display:grid;grid-template-columns:{{ promptGrid }};gap:10px;margin-bottom:26px;">
+              <sc-for list="{{ suggestedPrompts }}" as="p" hint-placeholder-count="8">
+                <div onClick="{{ p.onClick }}" style="cursor:pointer;background:#120e1a;border:1px solid #221d2d;border-radius:12px;padding:13px 14px;font-size:12.5px;color:#d6cfe0;display:flex;align-items:center;gap:10px;">
+                  <span style="font-size:14px;flex-shrink:0;">{{ p.icon }}</span>{{ p.label }}
+                </div>
+              </sc-for>
+            </div>
+
+            <sc-if value="{{ !isDesktop }}" hint-placeholder-val="{{ true }}">
+              <div style="font-size:11px;font-weight:700;letter-spacing:.5px;color:#5e5470;margin-bottom:10px;">RECENT CONVERSATIONS</div>
+              <sc-for list="{{ recentList }}" as="r" hint-placeholder-count="4">
+                <div onClick="{{ r.onClick }}" style="cursor:pointer;background:#120e1a;border:1px solid #221d2d;border-radius:12px;padding:13px 14px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
+                  <div><div style="font-size:12.5px;font-weight:600;color:#e8e3ee;">{{ r.title }}</div><div style="font-size:11px;color:#786d87;margin-top:2px;">{{ r.preview }}</div></div>
+                  <div style="font-size:10.5px;color:#5e5470;flex-shrink:0;margin-left:10px;">{{ r.time }}</div>
+                </div>
+              </sc-for>
+            </sc-if>
+
+            <div onClick="{{ goStates }}" style="margin-top:8px;text-align:center;font-size:11.5px;color:#5e5470;cursor:pointer;">View all AI states (empty · error · confirmation) →</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- CONVERSATION -->
+      <sc-if value="{{ v_conversation }}" hint-placeholder-val="{{ false }}">
+        <div style="height:56px;flex-shrink:0;border-bottom:1px solid #1c1726;display:flex;align-items:center;gap:12px;padding:0 16px;background:#0b0812;">
+          <div onClick="{{ goHome }}" style="font-size:19px;color:#e4d4ff;cursor:pointer;">←</div>
+          <div style="flex:1;font-size:13.5px;font-weight:700;color:#f2eff6;">{{ scenarioTitle }}</div>
+          <div style="font-size:9.5px;font-weight:700;letter-spacing:.4px;color:#34d399;background:rgba(52,211,153,.1);border:1px solid rgba(52,211,153,.3);padding:4px 8px;border-radius:6px;">● LIVE DATA</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:18px 16px 8px;">
+          <div style="max-width:640px;margin:0 auto;">
+            <sc-for list="{{ messages }}" as="m" hint-placeholder-count="3">
+              <sc-if value="{{ m.isUser }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+                  <div style="max-width:78%;background:rgba(163,92,255,.16);border:1px solid rgba(163,92,255,.3);color:#f0e8ff;border-radius:14px 14px 3px 14px;padding:11px 14px;font-size:13px;line-height:1.5;">{{ m.text }}</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ m.isAi }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;gap:9px;margin-bottom:16px;align-items:flex-start;">
+                  <div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;"><span style="font-size:11px;color:#fff;">✦</span></div>
+                  <div style="max-width:82%;">
+                    <div style="background:#120e1a;border:1px solid #221d2d;border-radius:3px 14px 14px 14px;padding:11px 14px;font-size:13px;line-height:1.55;color:#e4dfeb;">{{ m.text }}</div>
+
+                    <sc-if value="{{ m.cardEvents }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;gap:10px;overflow-x:auto;margin-top:10px;padding-bottom:4px;">
+                        <sc-for list="{{ m.items }}" as="it" hint-placeholder-count="3">
+                          <div style="flex-shrink:0;width:190px;background:#120e1a;border:1px solid #221d2d;border-radius:12px;overflow:hidden;">
+                            <div style="height:90px;background:repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4a3f56;">EVENT PHOTO</div>
+                            <div style="padding:10px;">
+                              <sc-if value="{{ it.badge }}" hint-placeholder-val="{{ false }}"><span style="font-size:9px;font-weight:700;color:#d3b8ff;background:rgba(163,92,255,.15);padding:2px 6px;border-radius:5px;">{{ it.badge }}</span></sc-if>
+                              <div style="font-size:12.5px;font-weight:700;color:#f0edf5;margin-top:6px;">{{ it.name }}</div>
+                              <div style="font-size:10.5px;color:#a89db3;margin-top:4px;">{{ it.date }}</div>
+                              <div style="font-size:10.5px;color:#a89db3;margin-top:2px;">{{ it.loc }}</div>
+                              <div style="font-size:12px;font-weight:700;color:#e8e3ee;margin-top:6px;">{{ it.price }}</div>
+                              <div style="margin-top:8px;text-align:center;padding:6px;border-radius:7px;background:rgba(163,92,255,.14);color:#d3b8ff;font-size:11px;font-weight:700;">View Event</div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ m.cardProviders }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;gap:10px;overflow-x:auto;margin-top:10px;padding-bottom:4px;">
+                        <sc-for list="{{ m.items }}" as="it" hint-placeholder-count="2">
+                          <div style="flex-shrink:0;width:190px;background:#120e1a;border:1px solid #221d2d;border-radius:12px;overflow:hidden;">
+                            <div style="height:90px;background:repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px);display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:9px;color:#4a3f56;">PROVIDER PHOTO</div>
+                            <div style="padding:10px;">
+                              <div style="font-size:12.5px;font-weight:700;color:#f0edf5;">{{ it.name }}</div>
+                              <div style="font-size:10.5px;color:#a89db3;margin-top:3px;">{{ it.service }} · ★ {{ it.rating }}</div>
+                              <div style="font-size:10.5px;color:#a89db3;margin-top:2px;">{{ it.loc }}</div>
+                              <div style="font-size:12px;font-weight:700;color:#e8e3ee;margin-top:6px;">{{ it.price }}</div>
+                              <div style="display:flex;gap:6px;margin-top:8px;">
+                                <div style="flex:1;text-align:center;padding:6px;border-radius:7px;background:#1c1726;border:1px solid #2c2438;color:#c9c0d4;font-size:10.5px;font-weight:700;">Profile</div>
+                                <div style="flex:1;text-align:center;padding:6px;border-radius:7px;background:rgba(163,92,255,.14);color:#d3b8ff;font-size:10.5px;font-weight:700;">Book</div>
+                              </div>
+                            </div>
+                          </div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ m.cardInfo }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;background:#120e1a;border:1px solid #221d2d;border-radius:12px;padding:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+                          <div style="font-size:12.5px;font-weight:700;color:#f0edf5;">{{ m.info.title }}</div>
+                          <span style="font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;background:{{ m.info.badgeBg }};color:{{ m.info.badgeFg }};">{{ m.info.badgeLabel }}</span>
+                        </div>
+                        <sc-for list="{{ m.info.rows }}" as="row" hint-placeholder-count="3">
+                          <div style="display:flex;justify-content:space-between;font-size:12px;color:#c9c0d4;padding:6px 0;border-top:1px solid #1c1726;">
+                            <div style="color:#8a7f97;">{{ row.k }}</div><div style="color:#e8e3ee;font-weight:600;">{{ row.v }}</div>
+                          </div>
+                        </sc-for>
+                        <div style="margin-top:10px;font-size:10.5px;color:#5e5470;display:flex;align-items:center;gap:5px;"><span style="width:5px;height:5px;border-radius:50%;background:#34d399;display:inline-block;"></span>Synced from VENTS · just now</div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ m.cardConfirm }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;background:#120e1a;border:1px solid rgba(251,191,36,.3);border-radius:12px;padding:14px;">
+                        <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+                          <span style="font-size:9.5px;font-weight:700;color:#fbbf24;background:rgba(251,191,36,.1);padding:3px 7px;border-radius:6px;">CONFIRMATION REQUIRED</span>
+                        </div>
+                        <div style="font-size:12.5px;font-weight:700;color:#f0edf5;margin-bottom:6px;">{{ m.confirm.title }}</div>
+                        <sc-for list="{{ m.confirm.rows }}" as="row" hint-placeholder-count="3">
+                          <div style="display:flex;justify-content:space-between;font-size:12px;color:#c9c0d4;padding:6px 0;border-top:1px solid #1c1726;">
+                            <div style="color:#8a7f97;">{{ row.k }}</div><div style="color:#e8e3ee;font-weight:600;">{{ row.v }}</div>
+                          </div>
+                        </sc-for>
+                        <div style="display:flex;gap:8px;margin-top:12px;">
+                          <div onClick="{{ m.confirm.onCancel }}" style="flex:1;text-align:center;padding:9px;border-radius:8px;background:#1c1726;border:1px solid #2c2438;color:#c9c0d4;font-size:12px;font-weight:700;cursor:pointer;">Cancel</div>
+                          <div onClick="{{ m.confirm.onConfirm }}" style="flex:1;text-align:center;padding:9px;border-radius:8px;background:linear-gradient(135deg,#c084fc,#7c3aed);color:#fff;font-size:12px;font-weight:700;cursor:pointer;">{{ m.confirm.confirmLabel }}</div>
+                        </div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ m.cardSuccess }}" hint-placeholder-val="{{ false }}">
+                      <div style="margin-top:10px;background:rgba(52,211,153,.08);border:1px solid rgba(52,211,153,.3);border-radius:12px;padding:14px;display:flex;gap:10px;align-items:flex-start;">
+                        <span style="font-size:16px;color:#34d399;">✓</span>
+                        <div>
+                          <div style="font-size:12.5px;font-weight:700;color:#f0edf5;">{{ m.success.title }}</div>
+                          <div style="font-size:11.5px;color:#a89db3;margin-top:4px;line-height:1.5;">{{ m.success.detail }}</div>
+                        </div>
+                      </div>
+                    </sc-if>
+
+                    <sc-if value="{{ m.followUps }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;gap:7px;flex-wrap:wrap;margin-top:10px;">
+                        <sc-for list="{{ m.followUps }}" as="f" hint-placeholder-count="2">
+                          <div onClick="{{ f.onClick }}" style="cursor:pointer;padding:7px 12px;border-radius:8px;background:#161020;border:1px solid #2a2438;color:#c9b8ea;font-size:11.5px;font-weight:600;">{{ f.label }}</div>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                  </div>
+                </div>
+              </sc-if>
+            </sc-for>
+
+            <sc-if value="{{ streaming }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:9px;margin-bottom:16px;">
+                <div style="width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;flex-shrink:0;"><span style="font-size:11px;color:#fff;">✦</span></div>
+                <div style="background:#120e1a;border:1px solid #221d2d;border-radius:3px 14px 14px 14px;padding:13px 16px;display:flex;gap:4px;">
+                  <span style="width:6px;height:6px;border-radius:50%;background:#8a7f97;animation:dotFade 1.2s infinite;"></span>
+                  <span style="width:6px;height:6px;border-radius:50%;background:#8a7f97;animation:dotFade 1.2s infinite .15s;"></span>
+                  <span style="width:6px;height:6px;border-radius:50%;background:#8a7f97;animation:dotFade 1.2s infinite .3s;"></span>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </div>
+        <div style="flex-shrink:0;padding:10px 16px 16px;background:#0b0812;border-top:1px solid #1c1726;">
+          <div style="max-width:640px;margin:0 auto;position:relative;">
+            <input value="{{ inputText }}" onChange="{{ onInputChange }}" onKeyDown="{{ onInputKeyDown }}" placeholder="Ask a follow-up…" style="width:100%;box-sizing:border-box;background:#161020;border:1px solid #2a2438;border-radius:12px;padding:12px 48px 12px 14px;font-size:13px;color:#e8e3ee;outline:none;font-family:inherit;"></input>
+            <div onClick="{{ onSend }}" style="position:absolute;right:6px;top:6px;width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,#c084fc,#7c3aed);display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;font-size:13px;">↑</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- STATES SHOWCASE -->
+      <sc-if value="{{ v_states }}" hint-placeholder-val="{{ false }}">
+        <div style="height:56px;flex-shrink:0;border-bottom:1px solid #1c1726;display:flex;align-items:center;gap:12px;padding:0 16px;background:#0b0812;">
+          <div onClick="{{ goHome }}" style="font-size:19px;color:#e4d4ff;cursor:pointer;">←</div>
+          <div style="flex:1;font-size:13.5px;font-weight:700;color:#f2eff6;">AI states reference</div>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:20px 16px;">
+          <div style="max-width:640px;margin:0 auto;display:grid;grid-template-columns:{{ promptGrid }};gap:12px;">
+            <sc-for list="{{ stateCards }}" as="st" hint-placeholder-count="7">
+              <div style="background:#120e1a;border:1px solid #221d2d;border-radius:12px;padding:16px;">
+                <div style="font-size:22px;">{{ st.icon }}</div>
+                <div style="font-size:12.5px;font-weight:700;color:#f0edf5;margin-top:8px;">{{ st.title }}</div>
+                <div style="font-size:11.5px;color:#a89db3;margin-top:5px;line-height:1.5;">{{ st.desc }}</div>
+                <sc-if value="{{ st.cta }}" hint-placeholder-val="{{ false }}">
+                  <div style="margin-top:10px;display:inline-block;padding:6px 12px;border-radius:7px;background:rgba(163,92,255,.14);color:#d3b8ff;font-size:11px;font-weight:700;">{{ st.cta }}</div>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <!-- RIGHT CONTEXTUAL PANEL (desktop/tablet) -->
+    <sc-if value="{{ showRightPanel }}" hint-placeholder-val="{{ false }}">
+      <div style="width:300px;flex-shrink:0;border-left:1px solid #211c2c;background:#0d0a15;padding:20px;overflow-y:auto;">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.5px;color:#5e5470;margin-bottom:12px;">DETAILS</div>
+        <div style="height:150px;background:repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px);border-radius:12px;display:flex;align-items:center;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10px;color:#4a3f56;">{{ rightPanel.photoLabel }}</div>
+        <div style="font-size:15px;font-weight:800;color:#f5f2f8;margin-top:14px;">{{ rightPanel.title }}</div>
+        <div style="font-size:12px;color:#a89db3;margin-top:6px;line-height:1.6;">{{ rightPanel.subtitle }}</div>
+        <sc-for list="{{ rightPanel.rows }}" as="row" hint-placeholder-count="3">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#c9c0d4;padding:8px 0;border-top:1px solid #1c1726;">
+            <div style="color:#8a7f97;">{{ row.k }}</div><div style="color:#e8e3ee;font-weight:600;">{{ row.v }}</div>
+          </div>
+        </sc-for>
+        <div style="margin-top:14px;text-align:center;padding:10px;border-radius:9px;background:rgba(163,92,255,.14);color:#d3b8ff;font-size:12.5px;font-weight:700;">{{ rightPanel.cta }}</div>
+      </div>
+    </sc-if>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const G = { purple:'linear-gradient(135deg,#c084fc,#7c3aed)' };
+const PLACEHOLDER = 'repeating-linear-gradient(45deg,#1c1726,#1c1726 8px,#181322 8px,#181322 16px)';
+
+const SCEN = {
+  events: { title:'Events in Abuja', icon:'🎫', prompt:'Find concerts in Abuja this weekend', steps:[
+    {who:'user', text:'Find concerts in Abuja this weekend'},
+    {who:'ai', text:"Here's what's happening in Abuja this weekend — 3 live events from verified organizers.", card:'events', items:[
+      {name:'Abuja Tech Summit', date:'Nov 12 · 10:00 AM', loc:'Transcorp Hilton, Abuja', price:'From ₦15,000', badge:'Selling fast'},
+      {name:'Naija Live Sessions', date:'Sep 20 · 7:00 PM', loc:'Old Parade Ground, Abuja', price:'From ₦8,000', badge:'Featured'},
+      {name:'Comedy Under The Stars', date:'Sep 21 · 8:00 PM', loc:'Millennium Park, Abuja', price:'From ₦5,000', badge:null},
+    ], followUps:[{label:'Filter under ₦10,000', to:2}]},
+    {who:'user', text:'Filter under ₦10,000'},
+    {who:'ai', text:'Narrowed to 2 events in Abuja this weekend under ₦10,000.', card:'events', items:[
+      {name:'Naija Live Sessions', date:'Sep 20 · 7:00 PM', loc:'Old Parade Ground, Abuja', price:'From ₦8,000', badge:'Featured'},
+      {name:'Comedy Under The Stars', date:'Sep 21 · 8:00 PM', loc:'Millennium Park, Abuja', price:'From ₦5,000', badge:null},
+    ]},
+  ]},
+  services: { title:'Wedding decorator', icon:'💐', prompt:'I need a wedding decorator under ₦300k in Lagos', steps:[
+    {who:'user', text:'I need a wedding decorator under ₦300k in Lagos'},
+    {who:'ai', text:'Found 2 verified decorators in Lagos within your budget.', card:'providers', items:[
+      {name:'Elite Decor Co.', service:'Decor & Design', rating:'4.6', loc:'Abuja · 2.1km', price:'From ₦180,000'},
+      {name:'Blush & Bloom Events', service:'Decor & Design', rating:'4.8', loc:'Lagos · 4.4km', price:'From ₦220,000'},
+    ], followUps:[{label:'Book Blush & Bloom Events', to:2}]},
+    {who:'user', text:'Book Blush & Bloom Events'},
+    {who:'ai', text:'Sending a booking request to Blush & Bloom Events for review — you\'ll get a confirmation once they accept.', card:'success', success:{title:'Booking request sent', detail:'Blush & Bloom Events typically responds within 2 hours.'}},
+  ]},
+  ticket: { title:'Ticket status', icon:'🎟️', prompt:'Where is my ticket for Lagos Afrobeats Night?', steps:[
+    {who:'user', text:'Where is my ticket for Lagos Afrobeats Night?'},
+    {who:'ai', text:'Found it — your ticket is valid and ready to use.', card:'info', info:{title:'Lagos Afrobeats Night', badgeLabel:'VALID', badgeBg:'rgba(52,211,153,.12)', badgeFg:'#34d399', rows:[{k:'Ticket tier',v:'Regular'},{k:'Date',v:'Oct 4, 2026'},{k:'Order ref',v:'VT-88213'}]}, followUps:[{label:'Transfer this ticket', gotoScenario:'transfer'},{label:'Get a refund', gotoScenario:'refund'}]},
+  ]},
+  payment: { title:'Payment status', icon:'💳', prompt:'Has my payment gone through?', steps:[
+    {who:'user', text:'Has my payment gone through for Kaptured Photography?'},
+    {who:'ai', text:'Yes — your payment was successful.', card:'info', info:{title:'Payment · PSK-7712A410', badgeLabel:'SUCCESSFUL', badgeBg:'rgba(52,211,153,.12)', badgeFg:'#34d399', rows:[{k:'Amount',v:'₦45,000'},{k:'Method',v:'Paystack · Card'},{k:'Date',v:'Sep 17, 2026 · 4:12 PM'}]}, followUps:[{label:'View receipt'}]},
+  ]},
+  wallet: { title:'Wallet & VENTS Cents', icon:'👛', prompt:'How much is in my VENTS Wallet?', steps:[
+    {who:'user', text:'How much is in my VENTS Wallet and VENTS Cents?'},
+    {who:'ai', text:'Here\'s your current balance.', card:'info', info:{title:'Your balances', badgeLabel:'LIVE', badgeBg:'rgba(163,92,255,.14)', badgeFg:'#d3b8ff', rows:[{k:'VENTS Wallet',v:'₦45,200'},{k:'VENTS Cents',v:'1,280 VC'},{k:'VC ≈',v:'₦1,024'}]}, followUps:[{label:'Top up wallet'},{label:'View transaction history'}]},
+  ]},
+  refund: { title:'Refund request', icon:'↩️', prompt:'Can I get a refund for Port Harcourt Comedy Jam?', steps:[
+    {who:'user', text:'Can I get a refund for Port Harcourt Comedy Jam?'},
+    {who:'ai', text:'You\'re eligible — the event allows refunds up to 48 hours before start. Here\'s what I\'ll submit:', card:'confirm', confirm:{title:'Request Refund', rows:[{k:'Event',v:'Port Harcourt Comedy Jam'},{k:'Amount',v:'₦6,000'},{k:'Est. timeline',v:'3–5 business days'}], confirmLabel:'Confirm Refund', confirmTo:2, cancelTo:3}},
+    {who:'ai', text:'', card:'success', success:{title:'Refund requested', detail:'₦6,000 will be credited to your VENTS Wallet within 3–5 business days.'}},
+    {who:'ai', text:'No problem — I\'ve cancelled that. Let me know if you need anything else.'},
+  ]},
+  transfer: { title:'Ticket transfer', icon:'🔁', prompt:'How do I transfer my ticket?', steps:[
+    {who:'user', text:'I want to transfer my Lagos Afrobeats Night ticket'},
+    {who:'ai', text:'I can send this instantly to another VENTS user. Confirm the details:', card:'confirm', confirm:{title:'Transfer Ticket', rows:[{k:'Event',v:'Lagos Afrobeats Night'},{k:'Ticket',v:'Regular · VT-88213'},{k:'Recipient',v:'@zainablawal'}], confirmLabel:'Confirm Transfer', confirmTo:2, cancelTo:3}},
+    {who:'ai', text:'', card:'success', success:{title:'Ticket transferred', detail:'Zainab Lawal (@zainablawal) received the ticket instantly.'}},
+    {who:'ai', text:'Transfer cancelled — your ticket stays with you.'},
+  ]},
+  support: { title:'Support case', icon:'🛟', prompt:'My refund never arrived', steps:[
+    {who:'user', text:'My refund for the comedy show never arrived after 6 days'},
+    {who:'ai', text:'I couldn\'t resolve this automatically — this needs a human agent. I\'ll open a support case now:', card:'confirm', confirm:{title:'Create Support Case', rows:[{k:'Category',v:'Refund not received'},{k:'Priority',v:'Normal'},{k:'Attached',v:'Order VT-88213'}], confirmLabel:'Create Case', confirmTo:2, cancelTo:3}},
+    {who:'ai', text:'', card:'success', success:{title:'Support case #SC-4821 created', detail:'Escalated to human support — expect a response within 24 hours.'}},
+    {who:'ai', text:'Okay, I won\'t open a case. Ask me anything else in the meantime.'},
+  ]},
+};
+
+const STATE_CARDS = [
+  {icon:'🔍',title:'No results found',desc:'"Find events on the moon" — no matching events. Try a different search or location.',cta:'Try a different search'},
+  {icon:'🤔',title:'AI cannot answer',desc:'"What\'s the meaning of life?" — I can only help with VENTS events, services, tickets and payments.'},
+  {icon:'⚠️',title:'Something went wrong',desc:'We hit a temporary error reaching VENTS data. Nothing was charged or changed.',cta:'Try again'},
+  {icon:'🔒',title:'Sign in required',desc:'Log in to check ticket, wallet or booking details tied to your account.',cta:'Log in'},
+  {icon:'✅',title:'Action requires confirmation',desc:'Sensitive actions (refunds, transfers, payments) always show a summary before anything happens.'},
+  {icon:'✕',title:'Action failed',desc:'Your refund request couldn\'t be submitted — the event\'s refund window has closed.',cta:'Contact support'},
+  {icon:'🚫',title:'Service/event unavailable',desc:'This event is no longer available for booking — it may be sold out or cancelled.'},
+];
+
+class Component extends DCLogic {
+  state = { view:'entry', scenario:null, step:0, streaming:false, inputText:'', width: typeof window!=='undefined'?window.innerWidth:390, viewportOverride:'mobile' };
+
+  componentDidMount(){ this._onResize = ()=>this.setState({width:window.innerWidth}); window.addEventListener('resize', this._onResize); }
+  componentWillUnmount(){ window.removeEventListener('resize', this._onResize); }
+
+  goHome(){ this.setState({view:'home'}); }
+  goEntry(){ this.setState({view:'entry'}); }
+  goStates(){ this.setState({view:'states'}); }
+  startScenario(key){
+    this.setState({view:'conversation', scenario:key, step:0, streaming:true, inputText:''});
+    setTimeout(()=>this.setState(s=> s.scenario===key ? {step:1, streaming:false} : {}), 650);
+  }
+  advanceTo(idx){
+    this.setState({streaming:true});
+    setTimeout(()=>this.setState({step:idx, streaming:false}), 550);
+  }
+  onInputChange(e){ this.setState({inputText:e.target.value}); }
+  onInputKeyDown(e){ if(e.key==='Enter') this.onSend(); }
+  onSend(){
+    const q = (this.state.inputText||'').toLowerCase().trim();
+    if(!q) return;
+    const SYN = {
+      events: ['event','concert','show','party','festival','gig','happening','fun','abuja','lagos','weekend','tonight'],
+      services: ['service','provider','photographer','decorator','caterer','vendor','wedding','makeup','dj','budget'],
+      ticket: ['ticket','tix','my ticket','attend','entry pass'],
+      payment: ['payment','paid','pay','charge','transaction','paystack'],
+      wallet: ['wallet','balance','cents','vc ','vents cents','fund'],
+      refund: ['refund','money back','cancel my ticket','reimburse'],
+      transfer: ['transfer','send my ticket','give my ticket'],
+      support: ['support','help','issue','problem','complaint','never arrived','not working','stuck'],
+    };
+    let hit = Object.keys(SCEN).find(k => q.includes(k));
+    if (!hit) hit = Object.keys(SYN).find(k => SYN[k].some(w => q.includes(w)));
+    if (!hit) hit = Object.keys(SCEN).find(k => SCEN[k].prompt.toLowerCase().split(' ').some(w => w.length>3 && q.includes(w)));
+    if (hit) this.startScenario(hit);
+    else { this.setState({view:'conversation', scenario:'__fallback', step:1, inputText:'', streaming:false}); }
+  }
+
+  renderVals(){
+    const s = this.state;
+    const effWidth = s.viewportOverride==='mobile' ? 390 : s.viewportOverride==='tablet' ? 900 : s.viewportOverride==='desktop' ? 1440 : s.width;
+    const isMobile = effWidth < 768, isTablet = effWidth>=768 && effWidth<1200, isDesktop = effWidth>=1200;
+    const viewportPicker = ['mobile','tablet','desktop'].map(v=>({label:v==='mobile'?'📱':v==='tablet'?'▭':'🖥', onClick:()=>this.setState({viewportOverride:v}), style:`cursor:pointer;padding:5px 8px;border-radius:6px;font-size:11px;background:${s.viewportOverride===v?'rgba(163,92,255,.25)':'transparent'};color:${s.viewportOverride===v?'#e4d4ff':'#8a7f97'};`}));
+
+    const out = {
+      isMobile, isTablet, isDesktop, viewportPicker,
+      v_entry: s.view==='entry', v_home: s.view==='home', v_conversation: s.view==='conversation', v_states: s.view==='states',
+      goHome: ()=>this.goHome(), goEntry: ()=>this.goEntry(), goStates: ()=>this.goStates(),
+      inputText: s.inputText, onInputChange: (e)=>this.onInputChange(e), onInputKeyDown: (e)=>this.onInputKeyDown(e), onSend: ()=>this.onSend(),
+      homePadding: isMobile ? '18px 16px 30px' : '32px 30px 40px',
+      promptGrid: isMobile ? '1fr' : 'repeat(2,minmax(0,1fr))',
+      streaming: s.streaming,
+      stateCards: STATE_CARDS,
+    };
+
+    out.suggestedPrompts = Object.keys(SCEN).map(k=>({ icon: SCEN[k].icon, label: SCEN[k].prompt, onClick: ()=>this.startScenario(k) }));
+
+    out.recentList = Object.keys(SCEN).slice(0,4).map((k,i)=>{
+      const sc = SCEN[k];
+      const lastAi = [...sc.steps].reverse().find(st=>st.who==='ai');
+      return { title: sc.title, time: ['2h ago','5h ago','1d ago','2d ago'][i], preview: lastAi ? (lastAi.text || 'View details').slice(0,42) : '',
+        activeBg: s.scenario===k ? 'rgba(163,92,255,.14)' : 'transparent',
+        onClick: ()=>{ this.setState({view:'conversation', scenario:k, step: sc.steps.length-1, streaming:false}); } };
+    });
+
+    // conversation
+    if (s.view==='conversation'){
+      if (s.scenario === '__fallback'){
+        out.scenarioTitle = 'New question';
+        out.messages = [
+          { isUser:true, text: 'That question' },
+          { isAi:true, text: "I'm not able to help with that yet — I can answer questions about events, services, tickets, payments, wallet, refunds and transfers on VENTS." },
+        ];
+      } else {
+        const sc = SCEN[s.scenario];
+        out.scenarioTitle = sc.title;
+        const visible = sc.steps.slice(0, s.step+1);
+        out.messages = visible.map((st, idx) => {
+          const isLast = idx === visible.length - 1;
+          const m = { isUser: st.who==='user', isAi: st.who==='ai', text: st.text };
+          if (st.who==='ai'){
+            m.cardEvents = st.card==='events'; m.cardProviders = st.card==='providers'; m.cardInfo = st.card==='info'; m.cardConfirm = st.card==='confirm'; m.cardSuccess = st.card==='success';
+            if (st.items) m.items = st.items;
+            if (st.info) m.info = st.info;
+            if (st.success) m.success = st.success;
+            if (st.confirm) m.confirm = { ...st.confirm,
+              onConfirm: ()=>this.advanceTo(st.confirm.confirmTo),
+              onCancel: ()=>this.advanceTo(st.confirm.cancelTo) };
+            if (isLast && st.followUps){
+              m.followUps = st.followUps.map(f=>({ label:f.label, onClick: f.gotoScenario ? ()=>this.startScenario(f.gotoScenario) : (f.to!=null ? ()=>this.advanceTo(f.to) : ()=>{}) }));
+            }
+          }
+          return m;
+        });
+
+        // right panel context (desktop/tablet) from last card with items/info
+        const lastWithCard = [...visible].reverse().find(st=>st.who==='ai' && (st.card==='events'||st.card==='providers'||st.card==='info'));
+        if (lastWithCard && !isMobile){
+          if (lastWithCard.card==='events'){
+            const it = lastWithCard.items[0];
+            out.rightPanel = { photoLabel:'EVENT PHOTO', title: it.name, subtitle: it.loc, rows:[{k:'Date',v:it.date},{k:'Price',v:it.price}], cta:'View full event page' };
+          } else if (lastWithCard.card==='providers'){
+            const it = lastWithCard.items[0];
+            out.rightPanel = { photoLabel:'PROVIDER PHOTO', title: it.name, subtitle: it.service, rows:[{k:'Rating',v:'★ '+it.rating},{k:'Location',v:it.loc},{k:'From',v:it.price}], cta:'View provider profile' };
+          } else {
+            out.rightPanel = { photoLabel:'DETAILS', title: lastWithCard.info.title, subtitle:'Synced from live VENTS data', rows: lastWithCard.info.rows, cta:'Open in VENTS' };
+          }
+        }
+      }
+    }
+    out.showRightPanel = !isMobile && !!out.rightPanel;
+
+    return out;
+  }
+}
+
+</script>
+</body>
+</html>
