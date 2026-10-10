@@ -38,13 +38,13 @@ const { mockCallProjectAdminRpc, mockVerifyInsforgeSession } = vi.hoisted(() => 
   mockVerifyInsforgeSession: vi.fn(),
 }));
 
-vi.mock('../_lib/projectAdminDb.js', () => ({
+vi.mock('./projectAdminDb.js', () => ({
   callProjectAdminRpc: mockCallProjectAdminRpc,
 }));
-vi.mock('../_lib/verifyAuth.js', () => ({ verifyInsforgeSession: mockVerifyInsforgeSession }));
-vi.mock('../_lib/cors.js', () => ({ applyCors: vi.fn() }));
+vi.mock('./verifyAuth.js', () => ({ verifyInsforgeSession: mockVerifyInsforgeSession }));
+vi.mock('./cors.js', () => ({ applyCors: vi.fn() }));
 
-import handler from './resolve-account';
+import handler from '../wallet/resolve-account';
 
 function makeRes() {
   const res: any = {};
