@@ -299,28 +299,32 @@ describe('ServicesHomeScreen: real search (not a client-side filter over the cap
   });
 });
 
-describe('ServicesHomeScreen: "Offer your services" provider-setup entry point', () => {
-  it('renders the prototype\'s row and calls onOfferServices when tapped', async () => {
+describe('ServicesHomeScreen: "Offer Your Services" provider-setup entry point (compact header button)', () => {
+  it('renders a compact button at the top, next to the country selector, and calls onOfferServices when tapped', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     fetchApprovedServiceProviders.mockResolvedValueOnce([]);
     const onOfferServices = vi.fn();
     await renderScreen({ onOfferServices });
 
-    expect(container.textContent).toContain('Offer your services');
-    expect(container.textContent).toContain('Register as a provider under your profession');
+    const button = container.querySelector('[data-testid="services-offer-your-services"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+    expect(button.textContent).toBe('Offer Your Services');
+    // The long sentence-style CTA ("Register as a provider under your
+    // profession") further down the screen is removed -- this compact
+    // button is the only entry point now.
+    expect(container.textContent).not.toContain('Register as a provider under your profession');
 
-    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Offer your services'))!;
     act(() => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(onOfferServices).toHaveBeenCalledTimes(1);
   });
 
-  it('does not render the row when no handler is passed', async () => {
+  it('does not render the button when no handler is passed', async () => {
     container = document.createElement('div');
     document.body.appendChild(container);
     fetchApprovedServiceProviders.mockResolvedValueOnce([]);
     await renderScreen();
 
-    expect(container.textContent).not.toContain('Offer your services');
+    expect(container.querySelector('[data-testid="services-offer-your-services"]')).toBeFalsy();
   });
 });

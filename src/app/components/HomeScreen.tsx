@@ -3,7 +3,7 @@ import { useState, useEffect, memo, useMemo, useRef, useCallback } from 'react';
 import {
   Search, Bell, MapPin, X, SlidersHorizontal, Plus,
   Clock, Calendar, CalendarDays, LayoutGrid, Music, Cpu, UtensilsCrossed, Laugh, Palette,
-  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond, Store,
+  Dumbbell, Presentation, Heart, Moon, Sparkles, Activity, BookOpen, Diamond,
   Gamepad2, TrendingUp, Sun, Gift, Film, Landmark, Compass, Star, Image, Mic, Wrench,
   ChevronDown,
 } from 'lucide-react';
@@ -1581,10 +1581,15 @@ export function HomeScreen({
               search bar" spec -- a <div> wrapper with two inner buttons
               rather than a nested <button>, which HTML disallows. */}
           <div
+            // Modest refinement only: a faint purple-tinted border and a
+            // soft outer glow (matching the accent used throughout the
+            // rest of the app) so this pill reads as a live, tappable
+            // control rather than a flat grey bar -- same blur/pill shape,
+            // same copy, same tap target and accessibility as before.
             style={{
               flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '2px',
               background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
-              border: '1px solid rgba(255,255,255,0.12)',
+              border: '1px solid rgba(139,92,246,0.22)', boxShadow: '0 0 0 1px rgba(139,92,246,0.06), 0 2px 10px rgba(139,92,246,0.10)',
               borderRadius: '999px', padding: '3px 3px 3px 14px',
             }}
           >
@@ -1595,8 +1600,8 @@ export function HomeScreen({
                 background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer',
               }}
             >
-              <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
-              <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>Search</span>
+              <Search size={14} color={ventsColors.ink2} style={{ flexShrink: 0 }} />
+              <span style={{ color: ventsColors.ink2, fontSize: '13px', fontWeight: 500 }}>Search people and events</span>
             </button>
             {onOpenVentsAi && (
               <button
@@ -1612,21 +1617,16 @@ export function HomeScreen({
               </button>
             )}
           </div>
-          {/* Services entry point -- the export's Home has no Services
-              affordance at all, but removing this would make the entire
-              Services vertical (ServicesHomeScreen and everything under
-              it) unreachable from anywhere in the app; this is the only
-              call site for onServicesPress. Kept as a single header icon
-              instead of the old two-card Events/Services row below. */}
-          {onServicesPress && (
-            <button
-              onClick={onServicesPress}
-              aria-label="Services"
-              style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-            >
-              <Store size={16} color={ventsColors.ink2} />
-            </button>
-          )}
+          {/* Services header icon removed -- it duplicated BottomNav's own
+              "services" tab (BottomNav.tsx, confirmed present and tested,
+              see BottomNav.test.tsx's activeTab="services" case), which is
+              already reachable from every screen that shows the bottom
+              nav. onServicesPress itself is NOT removed: the "Providers
+              Near You" section further down this screen still uses it
+              (its "See all" link and provider-card press), and
+              App.tsx:3089 still wires it to handleTabChange('services') --
+              so Services navigation stays intact, this was only the
+              redundant second entry point at the very top of Home. */}
           <button
             onClick={onNotificationsPress}
             style={{ width: '36px', height: '36px', borderRadius: '50%', background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)', border: '1px solid rgba(255,255,255,0.13)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', flexShrink: 0 }}

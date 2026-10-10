@@ -196,7 +196,7 @@ export function ServicesHomeScreen({
 
       {/* Header */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
           <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
             <ArrowLeft size={16} color={servicesColors.textSecondary} />
           </button>
@@ -204,19 +204,47 @@ export function ServicesHomeScreen({
               while the rest of the redesign standardized on Manrope --
               same type-stack fix already applied to HomeScreen/VentsLogo. */}
           <h1 style={{ color: servicesColors.textPrimary, fontSize: '26px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', letterSpacing: '-0.02em', margin: 0 }}>Services</h1>
+          <div style={{ width: '36px', flexShrink: 0 }} />
+        </div>
+
+        {/* Country selector (left) + compact "Offer Your Services" action
+            (right) -- moved up from a full-sentence CTA card further down
+            the screen (removed entirely below, near the category grid) to
+            this single row at the top, so provider sign-up is visible
+            without scrolling. Each half shrinks independently (minWidth:0
+            + flex-shrink text) so neither clips the other on a narrow
+            phone -- the country pill's name truncates with an ellipsis,
+            and the Offer Your Services button stays a fixed compact pill
+            rather than stretching. */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '14px' }}>
           <button
             onClick={() => setPickerOpen(true)}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px', background: servicesColors.cardBgAlt,
               border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.pill, padding: '7px 12px', cursor: 'pointer',
+              minWidth: 0, flexShrink: 1,
             }}
           >
             {activeCountry ? <CountryMark country={activeCountry} size={14} /> : null}
-            <span style={{ color: servicesColors.textPrimary, fontSize: '12px', fontWeight: 600, maxWidth: '80px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{ color: servicesColors.textPrimary, fontSize: '12px', fontWeight: 600, maxWidth: '110px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {activeCountry?.name || 'Everywhere'}
             </span>
             <ChevronDown size={13} color={servicesColors.textSecondary} />
           </button>
+          {onOfferServices && (
+            <button
+              onClick={onOfferServices}
+              data-testid="services-offer-your-services"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                background: 'rgba(139,92,246,0.14)', border: '1px solid rgba(139,92,246,0.35)',
+                borderRadius: servicesRadii.pill, padding: '8px 14px', cursor: 'pointer',
+                font: "700 12.5px 'Manrope', sans-serif", color: servicesColors.textPrimary, whiteSpace: 'nowrap',
+              }}
+            >
+              Offer Your Services
+            </button>
+          )}
         </div>
 
         {/* Search bar -- exact dimensions/colors from VentsPrototype.dc.html's
@@ -364,33 +392,6 @@ export function ServicesHomeScreen({
             </button>
           ))}
         </div>
-
-        {/* "Offer your services" -- VentsPrototype.dc.html's own row right
-            here, under the category grid (min-height 60px, radius 18px,
-            bg rgba(139,92,246,.14), border rgba(139,92,246,.35), a bold
-            title line + a lighter subtitle line + a trailing ›). This was
-            the actual missing provider-setup entry point: ProfileScreen's
-            "Set Up Your Service Profile" button existed, but Services
-            itself -- where someone browsing categories would naturally
-            think "I could offer this" -- had no path into the same,
-            already-working ServiceProviderSetupScreen at all. */}
-        {onOfferServices && (
-          <button
-            onClick={onOfferServices}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-              padding: '0 16px', minHeight: '60px', borderRadius: '18px',
-              background: 'rgba(139,92,246,0.14)', border: '1px solid rgba(139,92,246,0.35)',
-              cursor: 'pointer', textAlign: 'left', marginBottom: servicesSpacing.xl,
-            }}
-          >
-            <span style={{ flex: 1 }}>
-              <span style={{ display: 'block', font: "700 15px 'Manrope', sans-serif", color: servicesColors.textPrimary }}>Offer your services</span>
-              <span style={{ display: 'block', fontSize: '12px', color: servicesColors.textSecondary, marginTop: '2px' }}>Register as a provider under your profession</span>
-            </span>
-            <span style={{ color: servicesColors.textSecondary, fontSize: '18px' }}>&rsaquo;</span>
-          </button>
-        )}
 
         {/* Providers near you */}
         <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 12px' }}>
