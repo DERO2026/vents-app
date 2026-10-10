@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
 import { supabase } from '../../lib/supabase';
 import { PickerSheet, PickerField } from './shared/PickerSheet';
+import { COUNTRY_CODES } from '../../lib/countries';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -3825,6 +3826,7 @@ export function VentsAiScreen({
                 onOpenWorkspace={(planId) => setWorkspacePlanId(planId)}
                 onQuickSend={(text) => sendText(text)}
                 errorText={errorText}
+                isDesktop={isDesktop}
               />
             ) : (
               <ConversationView
@@ -3858,6 +3860,58 @@ export function VentsAiScreen({
 // own spec text, plan threads now appear inline in RECENT CONVERSATIONS
 // (marked with a ◆), and the Plans tab shows a live count badge -- neither
 // is filtered out or static.
+// "VENTS AI Home Review.dc.html" (refined variant 1b/1c) -- the full-width
+// "access: active" row from the originally-approved "1a" screen becomes a
+// small header status pill. Real data only: sourced from the same
+// get_my_ai_entitlement() RPC AiAccessScreen.tsx already reads (STABLE,
+// SECURITY DEFINER, scoped to auth.uid() -- no way to ask for someone
+// else's status), never fabricated or derived from local state. Colors
+// mirror AiAccessScreen's own state semantics (green = usable right now,
+// amber = needs attention, grey = still loading) without duplicating its
+// full gating logic here -- this pill is informational, not a gate; actual
+// enforcement still happens server-side in check_and_reserve_ai_usage().
+type AiStatusPill = { label: string; dot: string; bg: string; border: string; color: string };
+
+function resolveStatusPill(ent: {
+  plan_id: string | null;
+  status: string;
+  used_units?: number;
+  hard_ceiling?: number;
+  period_end?: string | null;
+  grace_until?: string | null;
+} | null): AiStatusPill {
+  if (!ent) return { label: 'Checking access…', dot: '#5e5470', bg: 'rgba(255,255,255,.06)', border: 'rgba(255,255,255,.12)', color: '#b4aecb' };
+  const periodEndPassed = !!ent.period_end && new Date(ent.period_end).getTime() < Date.now();
+  if (!ent.plan_id || ent.status === 'inactive') {
+    return { label: 'VENTS AI access: not subscribed', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
+  }
+  if (ent.status === 'expired' || ent.status === 'canceled' || (periodEndPassed && !ent.grace_until)) {
+    return { label: 'VENTS AI access: expired', dot: '#f87171', bg: 'rgba(248,113,113,.08)', border: 'rgba(248,113,113,.3)', color: '#f87171' };
+  }
+  if (ent.hard_ceiling && (ent.used_units ?? 0) >= ent.hard_ceiling) {
+    return { label: 'VENTS AI access: limit reached', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
+  }
+  if (ent.status === 'trialing') {
+    return { label: 'VENTS AI access: trial', dot: '#34d399', bg: 'rgba(52,211,153,.08)', border: 'rgba(52,211,153,.3)', color: '#34d399' };
+  }
+  if (ent.status === 'grace') {
+    return { label: 'VENTS AI access: renewal pending', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
+  }
+  return { label: 'VENTS AI access: active', dot: '#34d399', bg: 'rgba(52,211,153,.08)', border: 'rgba(52,211,153,.3)', color: '#34d399' };
+}
+
+// Mood/Budget/Area -- the design's "tune a search" card condensed to three
+// menu chips opening iOS-style sheets (same PickerSheet component used
+// throughout the rest of the app, e.g. ServicesHomeScreen's country
+// picker). These are real, functional controls: a selection composes into
+// the actual composer text the user still has to tap Send on -- never an
+// auto-sent or fabricated AI response, same seed-then-send pattern the
+// contextual entry points (Home/Services sparkle) already use elsewhere
+// in this file. Option sets are plain, generic presets (not AI-generated
+// or scraped data) -- nothing here claims to be live inventory.
+const MOOD_OPTIONS = ['Chill', 'Fun', 'Romantic', 'Energetic', 'Family-friendly'];
+const BUDGET_OPTIONS = ['Under ₦10,000', '₦10,000–₦50,000', '₦50,000–₦150,000', 'Over ₦150,000'];
+
 function HomeView({
   inputText,
   onInputChange,
@@ -3869,6 +3923,7 @@ function HomeView({
   onOpenWorkspace,
   onQuickSend,
   errorText,
+  isDesktop,
 }: {
   inputText: string;
   onInputChange: (v: string) => void;
@@ -3880,8 +3935,31 @@ function HomeView({
   onOpenWorkspace: (planId: string) => void;
   onQuickSend: (text: string) => void;
   errorText: string | null;
+  isDesktop?: boolean;
 }) {
   const [room, setRoom] = useState<'chat' | 'plans'>('chat');
+  const [entitlement, setEntitlement] = useState<any>(null);
+  const [tuneSheet, setTuneSheet] = useState<'mood' | 'budget' | 'area' | null>(null);
+  const [tuneValues, setTuneValues] = useState<{ mood: string; budget: string; area: string }>({ mood: '', budget: '', area: '' });
+  const [planNotice, setPlanNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc('get_my_ai_entitlement').then(({ data, error }) => {
+      if (!cancelled && !error) setEntitlement(data);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  function applyTuneSelection(field: 'mood' | 'budget' | 'area', value: string) {
+    setTuneValues((prev) => ({ ...prev, [field]: value }));
+    setTuneSheet(null);
+    const next = { ...tuneValues, [field]: value };
+    const parts = [next.mood, next.budget, next.area].filter(Boolean);
+    if (parts.length > 0) {
+      onInputChange(`Something ${parts.join(', ').toLowerCase()}`);
+    }
+  }
   // Lifted up from PlansListView so both the Plans-tab badge/list and the
   // Chat tab's promo/"Continue planning" card (P01/P24) can read the same
   // real `plans` rows without two independent, possibly-inconsistent fetches.
@@ -3941,9 +4019,29 @@ function HomeView({
             @keyframes ventsAiOrbGlow { 0%, 100% { box-shadow: 0 0 0 3px rgba(163,92,255,0.25); } }
           }
         `}</style>
-        <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 16px' }}>
+        <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 12px' }}>
           Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
         </div>
+
+        {(() => {
+          const pill = resolveStatusPill(entitlement);
+          return (
+            <div
+              onClick={() => setPlanNotice('VENTS AI plans aren’t purchasable yet — check back shortly.')}
+              role="button"
+              style={{ display: 'flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', height: 32, padding: '0 12px', borderRadius: 16, background: pill.bg, border: `1px solid ${pill.border}`, marginBottom: 14, cursor: 'pointer', width: 'fit-content' }}
+            >
+              <span style={{ width: 7, height: 7, borderRadius: 4, background: pill.dot, flexShrink: 0 }} />
+              <span style={{ fontSize: 12, fontWeight: 600, color: pill.color, fontFamily: "'Manrope',sans-serif" }}>{pill.label}</span>
+            </div>
+          );
+        })()}
+        {planNotice && (
+          <div style={{ marginBottom: 14, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+            <span>{planNotice}</span>
+            <span onClick={() => setPlanNotice(null)} role="button" style={{ cursor: 'pointer', flexShrink: 0 }}>✕</span>
+          </div>
+        )}
 
         <div style={{ display: 'flex', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
           {([['chat', 'Chat'], ['plans', plans && plans.length > 0 ? `Plans · ${plans.length}` : 'Plans']] as const).map(([id, label]) => (
@@ -3964,16 +4062,52 @@ function HomeView({
 
         {room === 'chat' ? (
           <>
-            <div style={{ position: 'relative', marginBottom: 24 }}>
+            <div style={{ position: 'relative', marginBottom: 12 }}>
               <input
                 value={inputText}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && onSend()}
                 placeholder="Ask VENTS AI anything…"
-                style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 13.5, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+                // 16px, not 13.5px -- mobile Safari zooms the whole page on
+                // focus for any text input under 16px, which this screen's
+                // fixed full-viewport layout has no graceful recovery from.
+                // Matches the design review's own note ("Inputs are
+                // 16px-equivalent to avoid Safari zoom on focus").
+                style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 16, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
               />
               <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
             </div>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
+              {([
+                ['mood', 'Mood', tuneValues.mood],
+                ['budget', 'Budget', tuneValues.budget],
+                ['area', 'Area', tuneValues.area],
+              ] as const).map(([key, label, selected]) => (
+                <div
+                  key={key}
+                  onClick={() => setTuneSheet(key)}
+                  role="button"
+                  style={{ height: 36, padding: '0 14px', borderRadius: 18, background: selected ? 'rgba(163,92,255,.16)' : '#161020', border: `1px solid ${selected ? 'rgba(163,92,255,.4)' : '#2a2438'}`, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: selected ? '#d3b8ff' : '#e8e3ee', cursor: 'pointer', fontFamily: "'Manrope',sans-serif" }}
+                >
+                  {selected || label} <span style={{ fontSize: 10, color: '#8a7f97' }}>⌄</span>
+                </div>
+              ))}
+            </div>
+            {tuneSheet && (
+              <PickerSheet
+                title={tuneSheet === 'mood' ? 'Mood' : tuneSheet === 'budget' ? 'Budget' : 'Area'}
+                searchable={tuneSheet === 'area'}
+                value={tuneValues[tuneSheet]}
+                options={
+                  tuneSheet === 'mood' ? MOOD_OPTIONS.map((v) => ({ value: v, label: v }))
+                  : tuneSheet === 'budget' ? BUDGET_OPTIONS.map((v) => ({ value: v, label: v }))
+                  : COUNTRY_CODES.map((c) => ({ value: c.name, label: c.name }))
+                }
+                onSelect={(v) => applyTuneSelection(tuneSheet, v)}
+                onClose={() => setTuneSheet(null)}
+              />
+            )}
 
             {errorText && (
               <div style={{ marginBottom: 18, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
@@ -3992,7 +4126,7 @@ function HomeView({
             ) : null}
 
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>SUGGESTED</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10, marginBottom: 26 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: isDesktop ? 'repeat(3, minmax(0, 1fr))' : '1fr', gap: 10, marginBottom: 26 }}>
               {SUGGESTED_PROMPTS.map((p, i) => (
                 <div
                   key={i}
@@ -4004,26 +4138,31 @@ function HomeView({
               ))}
             </div>
 
-            <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>RECENT CONVERSATIONS</div>
-            {recentConversations.length === 0 ? (
-              <div style={{ fontSize: 12, color: '#5e5470' }}>No conversations yet this session.</div>
-            ) : (
-              recentConversations.map((c) => {
-                const lastAi = [...c.messages].reverse().find((m) => m.role === 'assistant');
-                return (
-                  <div
-                    key={c.id}
-                    onClick={() => onOpenConversation(c.id)}
-                    style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-                  >
-                    <div>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.planId ? '◆ ' : ''}{c.title}</div>
-                      <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{lastAi ? lastAi.text.slice(0, 42) : ''}</div>
+            {/* Recent is real-or-absent -- fed only by this session's saved
+                conversations (see this file's own comment on why that's
+                in-memory, not a backend table). With none, the whole
+                section is omitted, not an empty-state filler line -- per
+                the design review's own note #6. */}
+            {recentConversations.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: '#5e5470', marginBottom: 10 }}>RECENT CONVERSATIONS</div>
+                {recentConversations.map((c) => {
+                  const lastAi = [...c.messages].reverse().find((m) => m.role === 'assistant');
+                  return (
+                    <div
+                      key={c.id}
+                      onClick={() => onOpenConversation(c.id)}
+                      style={{ cursor: 'pointer', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 12, padding: '13px 14px', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: '#e8e3ee' }}>{c.planId ? '◆ ' : ''}{c.title}</div>
+                        <div style={{ fontSize: 11, color: '#786d87', marginTop: 2 }}>{lastAi ? lastAi.text.slice(0, 42) : ''}</div>
+                      </div>
+                      <div style={{ fontSize: 10.5, color: '#5e5470', flexShrink: 0, marginLeft: 10 }}>{new Date(c.updatedAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}</div>
                     </div>
-                    <div style={{ fontSize: 10.5, color: '#5e5470', flexShrink: 0, marginLeft: 10 }}>{new Date(c.updatedAt).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}</div>
-                  </div>
-                );
-              })
+                  );
+                })}
+              </>
             )}
           </>
         ) : (
