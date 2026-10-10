@@ -26,72 +26,85 @@ function clickLabel(label: string) {
 }
 
 describe('BottomNav', () => {
-  it('shows the five renamed destinations: Home, Passes, Chats, Profile, SI', () => {
+  it('shows the six approved destinations: Home, Tix, Services, Chat, You, VENTS AI', () => {
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={() => {}} />);
     });
     expect(container!.textContent).toContain('Home');
-    expect(container!.textContent).toContain('Passes');
-    expect(container!.textContent).toContain('Chats');
-    expect(container!.textContent).toContain('Profile');
-    expect(container!.textContent).toContain('SI');
+    expect(container!.textContent).toContain('Tix');
+    expect(container!.textContent).toContain('Services');
+    expect(container!.textContent).toContain('Chat');
+    expect(container!.textContent).toContain('You');
+    expect(container!.textContent).toContain('VENTS AI');
     // The old labels must be gone, not just supplemented.
-    expect(container!.textContent).not.toContain('Tix');
-    expect(container!.textContent).not.toMatch(/\bYou\b/);
+    expect(container!.textContent).not.toContain('Passes');
+    expect(container!.textContent).not.toContain('Profile');
   });
 
-  it('calls onTabChange with the right TabId for Passes/Chats/Profile (not renamed internally)', () => {
+  it('calls onTabChange with the right TabId for Tix/Services/Chat/You', () => {
     const onTabChange = vi.fn();
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={onTabChange} />);
     });
-    clickLabel('Passes');
+    clickLabel('Tix');
     expect(onTabChange).toHaveBeenCalledWith('my-tickets');
-    clickLabel('Chats');
+    clickLabel('Services');
+    expect(onTabChange).toHaveBeenCalledWith('services');
+    clickLabel('Chat');
     expect(onTabChange).toHaveBeenCalledWith('explore');
-    clickLabel('Profile');
+    clickLabel('You');
     expect(onTabChange).toHaveBeenCalledWith('profile');
   });
 
-  it('tapping SI calls onOpenSi when SI is enabled', () => {
+  it('tapping VENTS AI calls onOpenSi when enabled', () => {
     const onOpenSi = vi.fn();
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={() => {}} siEnabled onOpenSi={onOpenSi} />);
     });
-    clickLabel('SI');
+    clickLabel('VENTS AI');
     expect(onOpenSi).toHaveBeenCalledTimes(1);
   });
 
-  it('tapping SI does nothing when SI is disabled (Settings toggle off) -- never a broken destination', () => {
+  it('tapping VENTS AI does nothing when disabled (Settings toggle off) -- never a broken destination', () => {
     const onOpenSi = vi.fn();
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={() => {}} siEnabled={false} onOpenSi={onOpenSi} />);
     });
-    clickLabel('SI');
+    clickLabel('VENTS AI');
     expect(onOpenSi).not.toHaveBeenCalled();
 
-    const siButton = container!.querySelector('button[aria-label="SI"]') as HTMLButtonElement;
-    expect(siButton.getAttribute('aria-disabled')).toBe('true');
+    const aiButton = container!.querySelector('button[aria-label="VENTS AI"]') as HTMLButtonElement;
+    expect(aiButton.getAttribute('aria-disabled')).toBe('true');
   });
 
-  it('marks SI as the current page via aria-current when siActive, and no regular tab as active at the same time', () => {
+  it('marks VENTS AI as the current page via aria-current when siActive, and no regular tab as active at the same time', () => {
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={() => {}} siActive siEnabled onOpenSi={() => {}} />);
     });
-    const siButton = container!.querySelector('button[aria-label="SI"]') as HTMLButtonElement;
+    const aiButton = container!.querySelector('button[aria-label="VENTS AI"]') as HTMLButtonElement;
     const homeButton = container!.querySelector('button[aria-label="Home"]') as HTMLButtonElement;
-    expect(siButton.getAttribute('aria-current')).toBe('page');
+    expect(aiButton.getAttribute('aria-current')).toBe('page');
     expect(homeButton.getAttribute('aria-current')).toBeNull();
   });
 
-  it('shows an unread-chats indicator only on Chats', () => {
+  it('marks the active regular tab via aria-current, e.g. Services', () => {
+    act(() => {
+      root!.render(<BottomNav activeTab="services" onTabChange={() => {}} />);
+    });
+    const servicesButton = container!.querySelector('button[aria-label="Services"]') as HTMLButtonElement;
+    const homeButton = container!.querySelector('button[aria-label="Home"]') as HTMLButtonElement;
+    expect(servicesButton.getAttribute('aria-current')).toBe('page');
+    expect(homeButton.getAttribute('aria-current')).toBeNull();
+  });
+
+  it('shows an unread-chats indicator only on Chat', () => {
     act(() => {
       root!.render(<BottomNav activeTab="home" onTabChange={() => {}} hasUnreadChats />);
     });
-    // The dot renders as a sibling span inside the Chats button's icon well.
-    const chatsButton = container!.querySelector('button[aria-label="Chats"]') as HTMLButtonElement;
+    // The dot renders as a sibling span inside the Chat button's icon well.
+    const chatButton = container!.querySelector('button[aria-label="Chat"]') as HTMLButtonElement;
     const homeButton = container!.querySelector('button[aria-label="Home"]') as HTMLButtonElement;
-    expect(chatsButton.querySelectorAll('span').length).toBeGreaterThan(1);
+    expect(chatButton.querySelectorAll('span').length).toBeGreaterThan(1);
     expect(homeButton.querySelectorAll('span').length).toBe(1);
   });
 });

@@ -351,7 +351,7 @@ export type Screen =
   | 'provider-service-bookings'
   | 'ticket-refund';
 
-export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile';
+export type TabId = 'home' | 'explore' | 'my-tickets' | 'profile' | 'services';
 export type AuthMode = 'login' | 'signup' | 'forgot' | 'reset';
 export type UserRole = 'attendee' | 'organizer';
 

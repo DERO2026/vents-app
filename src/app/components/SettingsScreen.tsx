@@ -1909,14 +1909,14 @@ export function SettingsScreen({
           <Divider />
           <SettingRow icon={Moon} label="Dark Mode" toggle={isDark} onToggle={onToggleDark} />
           <Divider />
-          {/* Device-local on/off switch for the SI bottom-nav destination --
-              see src/lib/ventsAiPreference.ts. onToggle only fires the
-              real toggle() handler below (not a bare SyntheticEvent-leak
-              pattern, same guard as every other row here -- see
-              SettingRow's own comment). */}
+          {/* Device-local on/off switch for the VENTS AI bottom-nav
+              destination -- see src/lib/ventsAiPreference.ts. onToggle only
+              fires the real toggle() handler below (not a bare
+              SyntheticEvent-leak pattern, same guard as every other row
+              here -- see SettingRow's own comment). */}
           <SettingRow
             icon={Sparkles}
-            label="VENTS SI"
+            label="VENTS AI"
             toggle={ventsAiEnabled}
             onToggle={(v) => onToggleVentsAi?.(v)}
           />

@@ -46,7 +46,7 @@ describe('App.tsx: owns the live ventsAiEnabled state and gates the orb on it', 
   });
 });
 
-describe('SettingsScreen.tsx: renders a real, working VENTS SI toggle row', () => {
+describe('SettingsScreen.tsx: renders a real, working VENTS AI toggle row', () => {
   it('accepts ventsAiEnabled/onToggleVentsAi as props, defaulting enabled when unset (e.g. the QA harness)', () => {
     expect(settingsScreenSrc).toMatch(/ventsAiEnabled\?: boolean;/);
     expect(settingsScreenSrc).toMatch(/onToggleVentsAi\?: \(enabled: boolean\) => void;/);
@@ -54,13 +54,13 @@ describe('SettingsScreen.tsx: renders a real, working VENTS SI toggle row', () =
   });
 
   it('renders a SettingRow with the toggle wired to the real handler, not a no-op stub (unlike Dark Mode)', () => {
-    expect(settingsScreenSrc).toMatch(/icon=\{Sparkles\}\s*\n\s*label="VENTS SI"\s*\n\s*toggle=\{ventsAiEnabled\}\s*\n\s*onToggle=\{\(v\) => onToggleVentsAi\?\.\(v\)\}/);
+    expect(settingsScreenSrc).toMatch(/icon=\{Sparkles\}\s*\n\s*label="VENTS AI"\s*\n\s*toggle=\{ventsAiEnabled\}\s*\n\s*onToggle=\{\(v\) => onToggleVentsAi\?\.\(v\)\}/);
   });
 
   it('is placed in the PREFERENCES section alongside Push Notifications and Dark Mode, not a new ad-hoc section', () => {
     const prefsSection = settingsScreenSrc.match(/<Section title="PREFERENCES">[\s\S]*?<\/Section>/)?.[0] ?? '';
     expect(prefsSection).toContain('Push Notifications');
     expect(prefsSection).toContain('Dark Mode');
-    expect(prefsSection).toContain('VENTS SI');
+    expect(prefsSection).toContain('VENTS AI');
   });
 });

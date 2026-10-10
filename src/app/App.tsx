@@ -100,6 +100,7 @@ const TAB_SCREENS: Record<TabId, Screen> = {
   explore: 'explore',
   'my-tickets': 'my-tickets',
   profile: 'profile',
+  services: 'services-home',
 };
 
 interface ErrorBoundaryProps {
@@ -2654,7 +2655,7 @@ export default function App() {
   // Screens where the bottom nav is visible for both roles.
   // Guests browse these screens too (home-first flow) — the nav must stay
   // visible for them; individual screens handle their own auth prompts.
-  const navScreens = ['home', 'explore', 'my-tickets', 'profile'];
+  const navScreens = ['home', 'explore', 'my-tickets', 'profile', 'services-home'];
   const showBottomNav = navScreens.includes(screen);
 
   if (updateRequired) {
@@ -3059,7 +3060,7 @@ export default function App() {
               selectedState={selectedState}
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
-              onServicesPress={() => navigateTo('services-home')}
+              onServicesPress={() => handleTabChange('services')}
               onProviderPress={(provider) => {
                 setSelectedServiceProvider(provider);
                 navigateTo('service-provider-profile');
@@ -3693,22 +3694,29 @@ export default function App() {
             )}
           </div>
 
-        {/* Bottom navigation — Home / Passes / Chats / Profile / SI, shared
-            by every role. It has no FAB (see BottomNav.tsx) and is never
-            mounted on create-event (see navScreens above), so it cannot be
-            the source of a stray floating button on the event wizard.
-            SI replaces the earlier standalone floating orb (VentsAiOrb.tsx)
-            as the one global entry point into VENTS SI -- the orb component
-            itself is left intact (its drag/persist/clamp behavior has its
-            own tests) but is no longer mounted here, since a dedicated nav
-            tab and a floating button would otherwise compete as two global
-            ways to reach the same destination. Disabled (not hidden) when
-            the user's own Settings > SI toggle (ventsAiEnabled, see
+        {/* Bottom navigation — Home / Tix / Services / Chat / You / VENTS AI,
+            the approved six-item redesign prototype's navigation, shared by
+            every role. It has no FAB (see BottomNav.tsx) and is never
+            mounted on create-event (see
+            navScreens above), so it cannot be the source of a stray
+            floating button on the event wizard. VENTS AI replaces the
+            earlier standalone floating orb (VentsAiOrb.tsx) as the one
+            global entry point into VENTS AI -- the orb component itself is
+            left intact (its drag/persist/clamp behavior has its own tests)
+            but is no longer mounted here, since a dedicated nav tab and a
+            floating button would otherwise compete as two global ways to
+            reach the same destination. Disabled (not hidden) when the
+            user's own Settings > SI toggle (ventsAiEnabled, see
             src/lib/ventsAiPreference.ts) is off, so it never becomes a
-            broken destination. */}
+            broken destination. activeTab is overridden to 'services' while
+            screen === 'services-home' because Home's own "Services" entry
+            point and this tab share one destination (see onServicesPress
+            above, which now calls handleTabChange('services') directly for
+            exactly this reason) -- same pattern as siActive below, derived
+            from `screen` rather than trusting stored activeTab. */}
         {showBottomNav && (
           <BottomNav
-            activeTab={activeTab}
+            activeTab={screen === 'services-home' ? 'services' : activeTab}
             onTabChange={handleTabChange}
             siActive={screen === 'vents-ai'}
             siEnabled={ventsAiEnabled}
