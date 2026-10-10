@@ -1,0 +1,34 @@
+-- Root cause of "new row violates row-level security policy for table
+-- rate_limits" (confirmed directly from Vercel production runtime logs,
+-- recurring on /api/extract-events since 2026-10-07 and newly surfaced on
+-- /api/wallet/resolve-account on 2026-10-10 once that endpoint's error
+-- handling was fixed to no longer mislabel this as "Too many requests").
+--
+-- rate_limits has had ROW LEVEL SECURITY enabled with ZERO policies the
+-- whole time check_rate_limit() has existed. project_admin (the role
+-- callProjectAdminRpc connects as -- NOT a superuser, rolbypassrls=false)
+-- already has ordinary table GRANTs (INSERT/SELECT/UPDATE/DELETE), but a
+-- GRANT and an RLS policy are orthogonal: with RLS on and no matching
+-- policy, every write from a non-bypassing role is default-denied
+-- regardless of its table privileges. This has been silently breaking
+-- check_rate_limit() for every caller that goes through
+-- callProjectAdminRpc (enforceRateLimit, the resolve-account gate, the
+-- promotion-verify gate, etc.) -- enforceRateLimit's callers failed OPEN
+-- on this (no visible symptom, just no real rate limiting), while
+-- resolve-account's deliberately-fail-CLOSED gate is the first place this
+-- became user-visible.
+--
+-- This table is never exposed to anon/authenticated at all (confirmed:
+-- no such grants exist) -- it is purely internal bookkeeping written only
+-- by the trusted project_admin connection, so a single permissive policy
+-- scoped to that one role is the correct, minimal fix; it does not open
+-- this table to anyone who couldn't already write to it via the existing
+-- table grants.
+--
+-- Applied directly to production (slrtjxtzhowhwhebjprv) via
+-- mcp__Supabase__apply_migration before this file was committed; this
+-- file is the durable record, same convention as every other migration
+-- in this history.
+CREATE POLICY project_admin_full_access ON public.rate_limits
+  FOR ALL TO project_admin
+  USING (true) WITH CHECK (true);
