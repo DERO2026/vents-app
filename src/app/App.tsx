@@ -473,6 +473,21 @@ export default function App() {
   // as an explicit $pageview keyed to the screen name. The ref dedupes so a
   // re-render that doesn't change the screen doesn't double-count.
   const lastPageviewRef = useRef<string>('');
+  // Release-blocker fix: ?event=/?user=/?provider= deep links used to be
+  // stripped from the URL via history.replaceState(pathname + hash) the
+  // instant they were parsed -- BEFORE the fetch even resolved. That wasn't
+  // Safari's collapsed address-bar display; it genuinely erased the query
+  // string from browser history, so refreshing the page, tapping the
+  // address bar, or copying it manually afterward all lost the shared
+  // destination and landed back on the bare getvents.com homepage. The fix
+  // is to stop touching history on a successful deep link at all -- the
+  // query string IS the canonical shareable URL, so leaving it alone is
+  // correct, not an oversight. The one thing the old strip legitimately
+  // guarded against is this effect re-running on a bfcache restore
+  // (see hydrateAuth's own pageshow-rerun note) and re-processing the same
+  // id a second time -- this ref guards that instead, keyed per type so
+  // 'event:<id>'/'user:<id>'/'provider:<id>' can never collide.
+  const processedDeepLinkIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     if (screen === 'splash') return;
     if (lastPageviewRef.current === screen) return;
@@ -657,9 +672,8 @@ export default function App() {
 
         // Intercept event deep links: ?event=<eventId>
         const eventDeepLink = params.get('event');
-        if (eventDeepLink) {
-          const cleanUrl = window.location.pathname + window.location.hash;
-          window.history.replaceState({}, document.title, cleanUrl);
+        if (eventDeepLink && !processedDeepLinkIdsRef.current.has(`event:${eventDeepLink}`)) {
+          processedDeepLinkIdsRef.current.add(`event:${eventDeepLink}`);
           setDeepLinkPending(true);
           // Fetch event from DB and navigate (mapDbEventToFrontend is
           // statically imported). Wrapped in Promise.resolve — the
@@ -677,6 +691,8 @@ export default function App() {
                 console.error('Failed to load event from deep link:', evtError);
                 Sentry.captureException(evtError);
                 setAppToastError('Could not open that event link. Please try again.');
+                // Nothing valid to keep in the address bar for a failed lookup.
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
                 return;
               }
               // A deleted event is still readable by its own organizer/admin
@@ -685,13 +701,20 @@ export default function App() {
               if (evtData && !evtData.deleted_at) {
                 setSelectedEvent(mapDbEventToFrontend(evtData));
                 setScreen('event-details');
+                // Deliberately NOT stripping ?event= here -- it's the
+                // canonical shareable URL for this screen, so refresh,
+                // tapping the address bar, or copying it manually all stay
+                // correct. See processedDeepLinkIdsRef above for why this
+                // is still safe against being re-processed.
               } else {
                 setAppToastError('This event is no longer available.');
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
               }
             }, (err: any) => {
               console.error('Deep link event fetch failed:', err);
               Sentry.captureException(err);
               setAppToastError('Could not open that event link. Please try again.');
+              window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
             })
             .finally(() => { setDeepLinkPending(false); });
         }
@@ -702,9 +725,8 @@ export default function App() {
         // insforge_error/insforge_status/token/verify_email/ref/event), so
         // every shared profile link opened the app to the home screen.
         const userDeepLink = params.get('user');
-        if (userDeepLink) {
-          const cleanUrl = window.location.pathname + window.location.hash;
-          window.history.replaceState({}, document.title, cleanUrl);
+        if (userDeepLink && !processedDeepLinkIdsRef.current.has(`user:${userDeepLink}`)) {
+          processedDeepLinkIdsRef.current.add(`user:${userDeepLink}`);
           setDeepLinkPending(true);
           Promise.resolve(
             supabase
@@ -716,14 +738,18 @@ export default function App() {
             .then(({ data: userData, error: userError }: any) => {
               if (userError || !userData) {
                 setAppToastError('This profile is no longer available.');
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
                 return;
               }
               setSelectedUser(mapDbUserToUserProfile(userData));
               setScreen('user-profile');
+              // ?user= deliberately left in place -- see the event handler's
+              // comment above for why (canonical, refresh-safe, re-share-safe).
             }, (err: any) => {
               console.error('Deep link user fetch failed:', err);
               Sentry.captureException(err);
               setAppToastError('Could not open that profile link. Please try again.');
+              window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
             })
             .finally(() => { setDeepLinkPending(false); });
         }
@@ -732,22 +758,23 @@ export default function App() {
         // -- distinct from both ?event= (events.id) and ?user= (users.id):
         // service_providers has its own id space, and ServiceProviderProfileScreen
         // is navigated to with a providerId prop, never reachable via ?user=.
-        // Same safe shape as the ?event=/?user= handlers above: clean the URL
-        // immediately, fetch public-only fields, and fall back to a friendly
-        // toast (never a crash or blank screen) for a missing/unapproved/
-        // deleted listing. fetchServiceProviderById already restricts to
-        // status='approved' via its own query (mirrors RLS), so an
-        // unapproved/removed listing resolves to null here exactly like a
-        // deleted event resolves to evtData.deleted_at above.
+        // Same safe shape as the ?event=/?user= handlers above: fetch
+        // public-only fields and fall back to a friendly toast (never a
+        // crash or blank screen) for a missing/unapproved/deleted listing.
+        // fetchServiceProviderById already restricts to status='approved'
+        // via its own query (mirrors RLS), so an unapproved/removed listing
+        // resolves to null here exactly like a deleted event resolves to
+        // evtData.deleted_at above. ?provider= is deliberately left in the
+        // URL on success -- see the event handler's comment above.
         const providerDeepLink = params.get('provider');
-        if (providerDeepLink) {
-          const cleanUrl = window.location.pathname + window.location.hash;
-          window.history.replaceState({}, document.title, cleanUrl);
+        if (providerDeepLink && !processedDeepLinkIdsRef.current.has(`provider:${providerDeepLink}`)) {
+          processedDeepLinkIdsRef.current.add(`provider:${providerDeepLink}`);
           setDeepLinkPending(true);
           Promise.resolve(fetchServiceProviderById(providerDeepLink))
             .then(async (providerData) => {
               if (!providerData) {
                 setAppToastError('This provider is no longer available.');
+                window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
                 return;
               }
               const [rated] = await withProviderRatings([providerData]);
@@ -757,6 +784,7 @@ export default function App() {
               console.error('Deep link provider fetch failed:', err);
               Sentry.captureException(err);
               setAppToastError('Could not open that provider link. Please try again.');
+              window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
             })
             .finally(() => { setDeepLinkPending(false); });
         }
