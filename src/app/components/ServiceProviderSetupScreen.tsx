@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
 import {
-  ArrowLeft, Search, Camera, X, Plus, Scissors, PartyPopper, Shirt, Wrench, Sparkles,
-  Heart, UtensilsCrossed, Music, Palette, Car,
+  ArrowLeft, Search, Camera, X, Plus, Sparkles,
 } from 'lucide-react';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { pickImage } from '../../lib/pickImage';
@@ -13,7 +12,8 @@ import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { CURRENCIES, CurrencyOption, servicesPayableCurrencyForCountry } from '../../lib/currencies';
 import {
-  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
+  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES, CATEGORY_ICONS,
+  CATEGORY_SPECIALTY_SUGGESTIONS,
 } from '../../lib/servicesDesignTokens';
 import { fetchOwnServiceProvider, saveAndPublishServiceProvider, ServiceProviderInput } from '../../lib/serviceProviders';
 import { fetchServiceProviderCategories, setServiceProviderCategories } from '../../lib/serviceProviderCategories';
@@ -22,19 +22,6 @@ import { ServiceProvider } from './types';
 
 const MAX_PHOTOS = 5;
 const DESCRIPTION_LIMIT = 500;
-
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  'Beauty & Grooming': Scissors,
-  'Weddings': Heart,
-  'Events': PartyPopper,
-  'Photography': Camera,
-  'Fashion': Shirt,
-  'Home Services': Wrench,
-  'Catering & Food': UtensilsCrossed,
-  'Entertainment': Music,
-  'Decor & Design': Palette,
-  'Transportation': Car,
-};
 
 interface ServiceProviderSetupScreenProps {
   currentUser: { id: string; country?: string };
@@ -301,6 +288,27 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
     setServicesOffered((prev) => prev.filter((s) => s !== chip));
   };
 
+  // Tap-to-add suggestions from CATEGORY_SPECIALTY_SUGGESTIONS, scoped to
+  // whichever categories are currently selected -- a shortcut into this
+  // SAME servicesOffered array, not a new field. Already-added or
+  // already-suggested-elsewhere duplicates are filtered out so the list
+  // only ever offers something new to add.
+  const specialtySuggestions = useMemo(() => {
+    const seen = new Set(servicesOffered);
+    const out: string[] = [];
+    for (const cat of categories) {
+      for (const s of CATEGORY_SPECIALTY_SUGGESTIONS[cat] || []) {
+        if (!seen.has(s)) { seen.add(s); out.push(s); }
+      }
+    }
+    return out;
+  }, [categories, servicesOffered]);
+
+  const addSuggestedChip = (value: string) => {
+    if (servicesOffered.includes(value)) return;
+    setServicesOffered((prev) => [...prev, value]);
+  };
+
   const missingFields: string[] = [];
   if (!businessName.trim()) missingFields.push('Business name');
   if (categories.length === 0) missingFields.push('Category');
@@ -486,7 +494,7 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         {/* Category -- select up to 5. The first one selected is your
             primary category (shown on your card and used for search). */}
         <SectionLabel>Category (select up to 5, first is primary)</SectionLabel>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
           {SERVICE_CATEGORIES.map((cat) => {
             const Icon = CATEGORY_ICONS[cat] || Sparkles;
             const accent = categoryAccents[cat];
@@ -586,6 +594,23 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         {/* Services offered */}
         <SectionLabel>Services Offered</SectionLabel>
         <div style={{ marginBottom: servicesSpacing.xl }}>
+          {/* Category-scoped specialty suggestions -- tap to add instead
+              of typing; purely a convenience over the same free-text
+              servicesOffered array below, never its own field. */}
+          {specialtySuggestions.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: servicesSpacing.sm }}>
+              {specialtySuggestions.slice(0, 12).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => addSuggestedChip(s)}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11.5px', fontWeight: 600, padding: '5px 10px', borderRadius: servicesRadii.pill, background: 'transparent', border: `1px dashed ${servicesColors.border}`, color: servicesColors.textSecondary, cursor: 'pointer' }}
+                >
+                  <Plus size={10} />
+                  {s}
+                </button>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'flex', gap: servicesSpacing.sm, marginBottom: servicesOffered.length ? servicesSpacing.sm : 0 }}>
             <input
               value={serviceInput}

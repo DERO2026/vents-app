@@ -6,6 +6,17 @@
 
 import { supabase } from './supabase';
 import { ServiceProvider } from '../app/components/types';
+import { LEGACY_CATEGORY_ALIASES } from './servicesDesignTokens';
+
+// Expands an approved-taxonomy category into itself plus whichever
+// earlier-taxonomy category name(s) it absorbed (see
+// LEGACY_CATEGORY_ALIASES's own comment in servicesDesignTokens.ts) --
+// so a real provider who registered under the old 10-category list keeps
+// showing up under the new category it now maps to, with no backend
+// change and no re-registration needed.
+export function resolveCategoryAliases(category: string): string[] {
+  return [category, ...(LEGACY_CATEGORY_ALIASES[category] || [])];
+}
 
 export function mapDbServiceProviderToFrontend(row: any): ServiceProvider {
   return {
@@ -87,11 +98,14 @@ export async function fetchApprovedServiceProviders(opts: {
     // would hide a provider under every category EXCEPT the first one they
     // picked. Resolve the full set of matching provider ids first, then
     // filter on that, so a provider appears under every category they
-    // actually selected.
+    // actually selected. Matches against the full alias set (see
+    // resolveCategoryAliases) so a provider still registered under an
+    // earlier-taxonomy category name keeps showing up under the approved
+    // category it now maps to.
     const { data: catRows, error: catError } = await supabase
       .from('service_provider_categories')
       .select('provider_id')
-      .eq('category', opts.category);
+      .in('category', resolveCategoryAliases(opts.category));
     if (catError) throw catError;
     const providerIds = (catRows || []).map((r: any) => r.provider_id);
     if (providerIds.length === 0) return [];

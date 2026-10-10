@@ -132,3 +132,41 @@ describe('ServicesHomeScreen: VENTS AI search-bar entry point', () => {
     expect(container.querySelector('button[aria-label="Ask VENTS AI"]')).toBeNull();
   });
 });
+
+describe('ServicesHomeScreen: 12-category grid (Batch 2 taxonomy)', () => {
+  it('renders all 12 approved categories, each opening via onCategoryPress', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const onCategoryPress = vi.fn();
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    root = createRoot(container);
+    await act(async () => {
+      root!.render(
+        <ServicesHomeScreen
+          onBack={() => {}}
+          onCategoryPress={onCategoryPress}
+          onProviderPress={() => {}}
+          discoveryCountryIso="NG"
+          onDiscoveryCountryChange={() => {}}
+        />
+      );
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    const categories = [
+      'Entertainment & Talent', 'Photography & Videography', 'Beauty & Styling',
+      'Event Planning & Decoration', 'Food, Drinks & Catering', 'Event Equipment & Production',
+      'Venues & Spaces', 'Transport & Logistics', 'Fashion & Custom Design',
+      'Event Support & Professional Services', 'Marketing & Creative Services', 'Celebrations & Special Occasions',
+    ];
+    for (const cat of categories) {
+      expect(container.textContent).toContain(cat);
+    }
+
+    const firstButton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === categories[0])!;
+    act(() => { firstButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onCategoryPress).toHaveBeenCalledWith(categories[0]);
+  });
+});

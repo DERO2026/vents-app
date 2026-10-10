@@ -9,6 +9,7 @@ import { createServiceBooking, verifyServiceBookingPayment, logServiceMarketplac
 import { openPaystackPopup } from '../../lib/paystack';
 import { fetchMyWalletBalanceKobo, payServiceBookingWithWallet } from '../../lib/userWallet';
 import { formatServiceAmount } from '../../lib/currencies';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 
 interface ServiceProviderProfileScreenProps {
   providerId: string;
@@ -58,6 +59,7 @@ function ProfileSkeleton({ onBack }: { onBack: () => void }) {
 }
 
 export function ServiceProviderProfileScreen({ providerId, initialProvider, onBack, currentUserId, currentUserEmail, onContactProvider, isSaved, onToggleSave }: ServiceProviderProfileScreenProps) {
+  useDesktopWideShell();
   const [provider, setProvider] = useState<ServiceProvider | null | undefined>(initialProvider);
   const [notFound, setNotFound] = useState(false);
   const [services, setServices] = useState<ProviderService[] | null>(null);
@@ -495,6 +497,7 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             )}
             {provider.servicesOffered.length > 0 && (
               <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Specialties</p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                   {provider.servicesOffered.map((s) => (
                     <span key={s} style={{ fontSize: '12px', fontWeight: 600, padding: '6px 12px', borderRadius: servicesRadii.pill, background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, color: servicesColors.textPrimary }}>

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, AlertCircle, Home, Truck, Zap } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Home, Truck, Zap, Sparkles } from 'lucide-react';
 import { ServiceProvider } from './types';
-import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
+import { servicesColors, servicesRadii, servicesSpacing, categoryAccents, CATEGORY_ICONS } from '../../lib/servicesDesignTokens';
 import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import { ServiceProviderCard } from './ServiceProviderCard';
 
 interface ServiceCategoryScreenProps {
@@ -40,6 +41,7 @@ function ListSkeleton() {
 }
 
 export function ServiceCategoryScreen({ category, onBack, onProviderPress, countryIso }: ServiceCategoryScreenProps) {
+  useDesktopWideShell();
   const [providers, setProviders] = useState<ServiceProvider[] | null>(null);
   const [loadError, setLoadError] = useState(false);
   // Bumped by the Retry button to re-run the effect below without
@@ -90,7 +92,9 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress, count
           <ArrowLeft size={16} color={servicesColors.textSecondary} />
         </button>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
-          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${accent}26`, flexShrink: 0 }} />
+          <div style={{ width: '34px', height: '34px', borderRadius: '50%', background: `${accent}26`, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {(() => { const Icon = CATEGORY_ICONS[category] || Sparkles; return <Icon size={16} color={accent} />; })()}
+          </div>
           <h1 style={{ color: servicesColors.textPrimary, fontSize: '22px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>{category}</h1>
         </div>
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 14px' }}>

@@ -1,29 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, AlertCircle, Search, ChevronDown, Sparkles, Scissors, PartyPopper, Shirt, Wrench, Heart, Camera, UtensilsCrossed, Music, Palette, Car } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Search, ChevronDown, Sparkles } from 'lucide-react';
 import { ServiceProvider } from './types';
 import {
-  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES,
+  servicesColors, servicesRadii, servicesSpacing, categoryAccents, SERVICE_CATEGORIES, CATEGORY_ICONS,
 } from '../../lib/servicesDesignTokens';
 import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings } from '../../lib/serviceProviders';
 import { useGeolocation } from '../../lib/useGeolocation';
+import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 import { ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { PickerSheet } from './shared/PickerSheet';
 import { AmbientGlow } from './shared/AmbientGlow';
-
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  'Beauty & Grooming': Scissors,
-  'Weddings': Heart,
-  'Events': PartyPopper,
-  'Photography': Camera,
-  'Fashion': Shirt,
-  'Home Services': Wrench,
-  'Catering & Food': UtensilsCrossed,
-  'Entertainment': Music,
-  'Decor & Design': Palette,
-  'Transportation': Car,
-};
 
 interface ServicesHomeScreenProps {
   onBack: () => void;
@@ -77,6 +65,12 @@ function DiscoveryCountryPicker({ selectedIso, onSelect, onClose }: { selectedIs
 export function ServicesHomeScreen({
   onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress, onOpenVentsAi,
 }: ServicesHomeScreenProps) {
+  // Same desktop-shell widening HomeScreen already uses (src/lib/
+  // useDesktopWideShell.ts) -- reuses the one approved responsive
+  // mechanism this app has, rather than inventing a separate desktop
+  // layout the prototypes don't define (the Design Foundation doc itself
+  // marks a bespoke desktop nav/layout as "not yet designed").
+  useDesktopWideShell();
   const [search, setSearch] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [providers, setProviders] = useState<ServiceProvider[] | null>(null);
@@ -211,8 +205,12 @@ export function ServicesHomeScreen({
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
-        {/* Category grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: servicesSpacing.md, marginBottom: servicesSpacing.xl }}>
+        {/* Category grid -- all 12 approved categories. auto-fill/minmax
+            (the same responsive grid pattern the approved prototypes use
+            throughout) gives 2 columns on a phone and naturally more on a
+            widened desktop shell, instead of a fixed '1fr 1fr' that would
+            leave 12 items looking sparse and narrow at 1200px. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: servicesSpacing.md, marginBottom: servicesSpacing.xl }}>
           {SERVICE_CATEGORIES.map((cat) => {
             const Icon = CATEGORY_ICONS[cat] || Sparkles;
             const accent = categoryAccents[cat];
