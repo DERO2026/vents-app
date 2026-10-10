@@ -31,6 +31,7 @@ import { HomeScreen, mapDbEventToFrontend } from './components/HomeScreen';
 import { VentsAiScreen } from './components/VentsAiScreen';
 import { AiAccessScreen } from './components/AiAccessScreen';
 import { VentsAiUnlockedScreen } from './components/VentsAiUnlockedScreen';
+import { AiPlansScreen } from './components/AiPlansScreen';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
@@ -232,6 +233,11 @@ export default function App() {
   // opens within the same session since ventsAiAccessGranted already
   // skips AiAccessScreen (and therefore this) on remount.
   const [ventsAiJustUnlocked, setVentsAiJustUnlocked] = useState(false);
+  // Real paywall (AiPlansScreen), opened from AiAccessScreen's "Upgrade"
+  // CTA when subscription enforcement is actually on (currently off in
+  // production -- see ai_entitlement_enforced -- so this path is unreached
+  // today, but wired correctly for when it is).
+  const [ventsAiShowPlans, setVentsAiShowPlans] = useState(false);
   // Contextual entry points (Home/Services search-bar sparkle, event
   // details "Ask VENTS AI to plan this night") hand off real context by
   // pre-filling VentsAiScreen's composer -- not a new backend call, just
@@ -3232,7 +3238,14 @@ export default function App() {
               <AiAccessScreen
                 onClose={goBack}
                 onContinue={() => { setVentsAiAccessGranted(true); setVentsAiJustUnlocked(true); }}
+                onUpgrade={() => setVentsAiShowPlans(true)}
               />
+              {ventsAiShowPlans && (
+                <AiPlansScreen
+                  onClose={() => setVentsAiShowPlans(false)}
+                  onSubscribed={() => setVentsAiShowPlans(false)}
+                />
+              )}
             </div>
           )}
           {ventsAiEverMounted && ventsAiAccessGranted && ventsAiJustUnlocked && (

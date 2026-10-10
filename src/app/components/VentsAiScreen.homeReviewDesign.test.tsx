@@ -17,6 +17,7 @@ vi.mock('../../lib/ventsAi', () => ({
 const rpc = vi.fn();
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: null } }) },
     from: () => ({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) }),
     rpc: (...args: any[]) => rpc(...args),
   },
@@ -91,12 +92,20 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     expect(container.textContent).toContain('VENTS AI access: expired');
   });
 
-  it('tapping the pill shows an honest "not purchasable yet" notice rather than a fake purchase flow', async () => {
+  it('tapping the pill opens the real AiPlansScreen paywall (not a dead-end notice)', async () => {
+    rpc.mockImplementation((name: string) => {
+      if (name === 'get_ai_plans_public') return Promise.resolve({ data: [], error: null });
+      if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
     await mount();
     const pill = Array.from(container!.querySelectorAll('div[role="button"]')).find((d) => d.textContent?.includes('Checking access'))!;
     expect(pill).toBeTruthy();
-    act(() => { pill.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    expect(container!.textContent).toContain('aren’t purchasable yet');
+    await act(async () => {
+      pill.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container!.textContent).toContain('VENTS AI Plans');
   });
 });
 

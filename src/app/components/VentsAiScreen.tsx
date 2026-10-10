@@ -3,6 +3,7 @@ import { sendVentsAiMessage, type VentsAiMessage } from '../../lib/ventsAi';
 import { supabase } from '../../lib/supabase';
 import { PickerSheet, PickerField } from './shared/PickerSheet';
 import { COUNTRY_CODES } from '../../lib/countries';
+import { AiPlansScreen } from './AiPlansScreen';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -3609,6 +3610,12 @@ export function VentsAiScreen({
   // a plan's chat thread (P24: "Ask SI opens the plan thread; Open plan
   // opens Overview"). null means neither workspace tab is open.
   const [workspacePlanId, setWorkspacePlanId] = useState<string | null>(null);
+  // Real paywall (AiPlansScreen) -- opened from HomeView's status pill.
+  // entitlementRefreshKey is bumped on a verified purchase so HomeView's
+  // own get_my_ai_entitlement() re-fetch (keyed on this value) picks up
+  // the new access state immediately, without a logout/reload.
+  const [showPlans, setShowPlans] = useState(false);
+  const [entitlementRefreshKey, setEntitlementRefreshKey] = useState(0);
   const nextId = useRef(1);
 
   const active = conversations.find((c) => c.id === activeId) || null;
@@ -3827,6 +3834,8 @@ export function VentsAiScreen({
                 onQuickSend={(text) => sendText(text)}
                 errorText={errorText}
                 isDesktop={isDesktop}
+                onViewPlans={() => setShowPlans(true)}
+                entitlementRefreshKey={entitlementRefreshKey}
               />
             ) : (
               <ConversationView
@@ -3851,6 +3860,16 @@ export function VentsAiScreen({
           {isDesktop && inConversation && <RightPanel conversation={active!} />}
         </div>
       </div>
+      {showPlans && (
+        <AiPlansScreen
+          onClose={() => setShowPlans(false)}
+          onSubscribed={() => {
+            // Bumping this re-runs HomeView's get_my_ai_entitlement() fetch
+            // -- the real post-purchase refresh, not a client-side flag.
+            setEntitlementRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -3924,6 +3943,8 @@ function HomeView({
   onQuickSend,
   errorText,
   isDesktop,
+  onViewPlans,
+  entitlementRefreshKey,
 }: {
   inputText: string;
   onInputChange: (v: string) => void;
@@ -3936,12 +3957,13 @@ function HomeView({
   onQuickSend: (text: string) => void;
   errorText: string | null;
   isDesktop?: boolean;
+  onViewPlans: () => void;
+  entitlementRefreshKey: number;
 }) {
   const [room, setRoom] = useState<'chat' | 'plans'>('chat');
   const [entitlement, setEntitlement] = useState<any>(null);
   const [tuneSheet, setTuneSheet] = useState<'mood' | 'budget' | 'area' | null>(null);
   const [tuneValues, setTuneValues] = useState<{ mood: string; budget: string; area: string }>({ mood: '', budget: '', area: '' });
-  const [planNotice, setPlanNotice] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -3949,7 +3971,9 @@ function HomeView({
       if (!cancelled && !error) setEntitlement(data);
     });
     return () => { cancelled = true; };
-  }, []);
+    // Re-fetches after a verified purchase (AiPlansScreen bumps this via
+    // onSubscribed) -- the real post-purchase refresh, no logout needed.
+  }, [entitlementRefreshKey]);
 
   function applyTuneSelection(field: 'mood' | 'budget' | 'area', value: string) {
     setTuneValues((prev) => ({ ...prev, [field]: value }));
@@ -4027,7 +4051,7 @@ function HomeView({
           const pill = resolveStatusPill(entitlement);
           return (
             <div
-              onClick={() => setPlanNotice('VENTS AI plans aren’t purchasable yet — check back shortly.')}
+              onClick={onViewPlans}
               role="button"
               style={{ display: 'flex', alignItems: 'center', gap: 7, alignSelf: 'flex-start', height: 32, padding: '0 12px', borderRadius: 16, background: pill.bg, border: `1px solid ${pill.border}`, marginBottom: 14, cursor: 'pointer', width: 'fit-content' }}
             >
@@ -4036,12 +4060,6 @@ function HomeView({
             </div>
           );
         })()}
-        {planNotice && (
-          <div style={{ marginBottom: 14, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-            <span>{planNotice}</span>
-            <span onClick={() => setPlanNotice(null)} role="button" style={{ cursor: 'pointer', flexShrink: 0 }}>✕</span>
-          </div>
-        )}
 
         <div style={{ display: 'flex', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
           {([['chat', 'Chat'], ['plans', plans && plans.length > 0 ? `Plans · ${plans.length}` : 'Plans']] as const).map(([id, label]) => (

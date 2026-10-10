@@ -20,6 +20,7 @@ const supabaseFrom = vi.fn();
 const supabaseRpc = vi.fn();
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: null } }) },
     from: (...args: any[]) => supabaseFrom(...args),
     rpc: (...args: any[]) => supabaseRpc(...args),
   },

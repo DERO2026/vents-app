@@ -234,6 +234,9 @@ async function handleClientVerify(req, res) {
   // Customer wallet deposits (0065_user_wallets.sql) -- distinct prefix,
   // cannot collide with either of the above.
   const isWalletDepositRef = reference.startsWith('wdep_');
+  // VENTS AI subscription payment (0175_ai_subscription_payments.sql) --
+  // initiate_ai_subscription_payment() always generates this exact prefix.
+  const isAiSubRef = reference.startsWith('aisub_');
   // Resolved below (ticket-purchase branch only) from the incoming
   // reference -- which since 0060 may be a disposable per-attempt
   // paystack_ref, not pending_purchases' own stable payment_ref -- to the
@@ -263,6 +266,11 @@ async function handleClientVerify(req, res) {
       }
     } else if (isWalletDepositRef) {
       const ownerId = await callProjectAdminRpc('get_wallet_deposit_owner', [reference]);
+      if (ownerId && ownerId !== session.userId) {
+        return res.status(403).json({ error: 'Not authorized for this payment reference' });
+      }
+    } else if (isAiSubRef) {
+      const ownerId = await callProjectAdminRpc('get_ai_subscription_payment_owner', [reference]);
       if (ownerId && ownerId !== session.userId) {
         return res.status(403).json({ error: 'Not authorized for this payment reference' });
       }
@@ -406,6 +414,26 @@ async function handleClientVerify(req, res) {
       return res.status(200).json({ status: 'success' });
     }
 
+    if (isAiSubRef) {
+      // confirm_ai_subscription_payment reconciles amountKobo (Paystack's
+      // own verified amount) against the price locked in at
+      // initiate_ai_subscription_payment() time -- never trusts a
+      // client-supplied amount for what plan/price this grants.
+      const subStatus = await callProjectAdminRpc<{ status: string; plan_id?: string; expected_kobo?: number; got_kobo?: number }>('confirm_ai_subscription_payment', [reference, amountKobo]);
+
+      if (subStatus?.status === 'amount_mismatch') {
+        console.error('[webhook/paystack?action=verify] AI SUBSCRIPTION AMOUNT MISMATCH for reference', reference, '-', subStatus.expected_kobo, 'vs', subStatus.got_kobo);
+        return res.status(200).json({ status: 'error', error: 'Payment amount did not match the selected plan price.' });
+      }
+      if (subStatus?.status === 'not_found') {
+        return res.status(200).json({ status: 'error', error: 'No matching subscription payment was found for this reference.' });
+      }
+
+      // 'confirmed' or 'already_confirmed' -- either way the entitlement is
+      // granted exactly once for this reference.
+      return res.status(200).json({ status: 'success', planId: subStatus?.plan_id });
+    }
+
     const result = await finalizeAndConfirmPurchase(ticketPurchasePaymentRef, amountKobo);
 
     if (result.status === 'amount_mismatch') {
@@ -520,6 +548,27 @@ async function handleWebhook(req, res) {
         }
       } catch (err: any) {
         console.error('[Paystack webhook] Error calling confirm_service_booking_payment:', err?.message || err);
+      }
+      return res.status(200).json({ received: true });
+    }
+
+    if (reference.startsWith('aisub_')) {
+      // Same authoritative-webhook recovery reasoning as every other
+      // branch here: this is what still grants the subscription if the
+      // client's own ?action=verify call never fired (app closed,
+      // network drop). confirm_ai_subscription_payment is idempotent
+      // (status='confirmed' short-circuits to 'already_confirmed'), so
+      // whichever of this webhook or the client verify call runs first
+      // grants it; the other is a guaranteed no-op.
+      try {
+        const subStatus = await callProjectAdminRpc<{ status: string }>('confirm_ai_subscription_payment', [reference, amountKobo]);
+        if (subStatus?.status === 'amount_mismatch') {
+          console.error('[Paystack webhook] AI SUBSCRIPTION AMOUNT MISMATCH for reference', reference, '-', JSON.stringify(subStatus));
+        } else {
+          console.log('[Paystack webhook] ai subscription', subStatus?.status, 'for reference', reference);
+        }
+      } catch (err: any) {
+        console.error('[Paystack webhook] Error calling confirm_ai_subscription_payment:', err?.message || err);
       }
       return res.status(200).json({ received: true });
     }

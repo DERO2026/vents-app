@@ -18,6 +18,7 @@ vi.mock('../../lib/ventsAi', () => ({
 // these tests open the Plans room, so a harmless empty response is enough.
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: null } }) },
     from: () => ({
       select: () => ({
         order: () => Promise.resolve({ data: [], error: null }),
