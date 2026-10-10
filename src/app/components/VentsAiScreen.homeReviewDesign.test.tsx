@@ -162,7 +162,7 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     act(() => { closeButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
     expect(container!.textContent).not.toContain('VENTS AI Plans');
-    expect(container!.querySelector('input[placeholder="Ask VENTS AI anything…"]')).toBeTruthy();
+    expect(container!.querySelector('input[placeholder="Ask about events or plans"]')).toBeTruthy();
   });
 });
 
@@ -176,7 +176,7 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
     expect(option).toBeTruthy();
     act(() => { option.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     expect(input.value.toLowerCase()).toContain('chill');
   });
 
@@ -185,7 +185,7 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
     const moodChip = Array.from(container!.querySelectorAll('div[role="button"]')).find((d) => d.textContent?.includes('Mood'))!;
     act(() => { moodChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     act(() => {
-      Array.from(container!.querySelectorAll('div,span')).find((el) => el.textContent?.trim() === 'Fun')!
+      Array.from(container!.querySelectorAll('div,span')).find((el) => el.textContent?.trim() === 'Adventure')!
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
@@ -196,7 +196,7 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
         .dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     expect(input.value.toLowerCase()).toContain('under ₦10,000');
   });
 });
@@ -204,7 +204,7 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
 describe('VentsAiScreen Home: composer avoids mobile Safari zoom-on-focus', () => {
   it('the Home composer input is 16px (not under the 16px Safari-zoom threshold)', async () => {
     await mount();
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     expect(input.style.fontSize).toBe('16px');
   });
 });
@@ -220,7 +220,7 @@ describe('VentsAiScreen Home: Recent Conversations omitted (not empty-filler) wh
     sendVentsAiMessage.mockResolvedValueOnce({ type: 'text', text: 'Here you go.', cards: [] });
     await mount();
 
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
       setter.call(input, 'Plan a birthday');

@@ -1,3 +1,6 @@
+import { useEffect, useState } from 'react';
+import { supabase } from '../../lib/supabase';
+
 // Exact reproduction of VentsPrototype.dc.html's `ai.ph.unlocked` state --
 // the one place the approved prototype actually specifies an animated
 // "orb" (every other VENTS AI view uses a plain text/glyph header, no
@@ -5,12 +8,59 @@
 // highlight) and the prototype's own vglow/vfloat keyframes, reproduced
 // value-for-value from its <style> block and this screen's inline styles.
 //
-// Shown once per session, exactly when AiAccessScreen's onContinue()
-// fires with a REAL confirmed entitlement (App.tsx's
-// ventsAiJustUnlocked) -- not a simulated transition. "Start planning"
-// (ai.start in the prototype) dismisses it into the real VentsAiScreen.
+// Shown once per session when AiAccessScreen's onContinue() fires --
+// which today means EITHER a real confirmed entitlement (enforcement on)
+// OR simply that app_config.ai_entitlement_enforced is off (production's
+// current default), in which case onContinue() fires for literally every
+// signed-in user regardless of whether they have ever paid for anything.
+// The previous version of this screen unconditionally said "VENTS AI is
+// unlocked" for both cases -- which is a false claim for a user with no
+// real entitlement. This component now does its own lightweight
+// get_my_ai_entitlement() read (the same STABLE, SECURITY DEFINER,
+// auth.uid()-scoped RPC the status pill and AiAccessScreen itself use) to
+// show the real "unlocked" copy only when a genuine, currently-valid
+// entitlement exists (trialing/active/grace, not expired past any grace
+// window) -- and an honest preview/upgrade message otherwise. This never
+// blocks access (enforcement being off means the real chat screen is
+// still reachable either way), it only stops claiming something false
+// about the user's subscription state.
 
-export function VentsAiUnlockedScreen({ onStartPlanning }: { onStartPlanning: () => void }) {
+type RealAccessState = 'checking' | 'has_access' | 'no_access';
+
+function resolveHasRealAccess(ent: {
+  plan_id: string | null;
+  status: string;
+  period_end?: string | null;
+  grace_until?: string | null;
+} | null): boolean {
+  if (!ent || !ent.plan_id || ent.status === 'inactive') return false;
+  if (ent.status === 'expired' || ent.status === 'canceled') return false;
+  if (ent.status !== 'trialing' && ent.status !== 'active' && ent.status !== 'grace') return false;
+  const periodEndPassed = !!ent.period_end && new Date(ent.period_end).getTime() < Date.now();
+  if (periodEndPassed && (!ent.grace_until || new Date(ent.grace_until).getTime() < Date.now())) return false;
+  return true;
+}
+
+export function VentsAiUnlockedScreen({
+  onStartPlanning,
+  onViewPlans,
+}: {
+  onStartPlanning: () => void;
+  onViewPlans?: () => void;
+}) {
+  const [realAccess, setRealAccess] = useState<RealAccessState>('checking');
+
+  useEffect(() => {
+    let cancelled = false;
+    supabase.rpc('get_my_ai_entitlement').then(({ data, error }) => {
+      if (cancelled) return;
+      setRealAccess(!error && resolveHasRealAccess(data) ? 'has_access' : 'no_access');
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  const hasRealAccess = realAccess === 'has_access';
+
   return (
     <div
       style={{
@@ -49,19 +99,45 @@ export function VentsAiUnlockedScreen({ onStartPlanning }: { onStartPlanning: ()
           }}
         />
       </div>
-      <div style={{ font: "800 26px 'Manrope', sans-serif", color: '#f4f2fa' }}>VENTS AI is unlocked</div>
+      {realAccess === 'checking' ? (
+        <div style={{ font: "800 26px 'Manrope', sans-serif", color: '#f4f2fa' }}>VENTS AI</div>
+      ) : hasRealAccess ? (
+        <div style={{ font: "800 26px 'Manrope', sans-serif", color: '#f4f2fa' }}>VENTS AI is unlocked</div>
+      ) : (
+        <div style={{ font: "800 26px 'Manrope', sans-serif", color: '#f4f2fa' }}>Welcome to VENTS AI</div>
+      )}
       <div style={{ fontSize: '15px', color: '#b4aecb', lineHeight: 1.55 }}>
-        Tell it a mood, a budget or an event.
+        {realAccess === 'checking'
+          ? 'Checking your access…'
+          : hasRealAccess
+            ? 'Tell it a mood, a budget or an event.'
+            : 'Subscribe to chat with VENTS AI about events, services and planning — or take a look around first.'}
       </div>
-      <div style={{ width: '100%', maxWidth: '360px', marginTop: '12px' }}>
+      <div style={{ width: '100%', maxWidth: '360px', marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        {!hasRealAccess && realAccess !== 'checking' && onViewPlans && (
+          <button
+            onClick={onViewPlans}
+            data-testid="vents-ai-unlocked-view-plans"
+            style={{
+              width: '100%', height: '52px', borderRadius: '26px', border: 0,
+              background: '#8b5cf6', color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
+            }}
+          >
+            View Plans
+          </button>
+        )}
         <button
           onClick={onStartPlanning}
+          data-testid="vents-ai-unlocked-continue"
           style={{
-            width: '100%', height: '52px', borderRadius: '26px', border: 0,
-            background: '#8b5cf6', color: '#fff', font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
+            width: '100%', height: '52px', borderRadius: '26px',
+            border: !hasRealAccess && realAccess !== 'checking' ? '1px solid rgba(255,255,255,.18)' : 0,
+            background: !hasRealAccess && realAccess !== 'checking' ? 'transparent' : '#8b5cf6',
+            color: !hasRealAccess && realAccess !== 'checking' ? '#e4d4ff' : '#fff',
+            font: "700 15px 'Manrope', sans-serif", cursor: 'pointer',
           }}
         >
-          Start planning
+          {!hasRealAccess && realAccess !== 'checking' ? 'Continue to VENTS AI' : 'Start planning'}
         </button>
       </div>
       <style>{`

@@ -211,7 +211,7 @@ describe('VentsAiScreen: AI_BETA_RESTRICTED error surfacing (regression)', () =>
     sendVentsAiMessage.mockRejectedValueOnce(err);
     mount(null);
 
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
       setter.call(input, 'Find me a concert tonight');
@@ -238,7 +238,7 @@ describe('VentsAiScreen: AI_BETA_RESTRICTED error surfacing (regression)', () =>
     sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Here are 3 concerts tonight.', cards: [] });
     mount(null);
 
-    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     act(() => {
       const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
       setter.call(input, 'Find me a concert tonight');

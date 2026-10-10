@@ -3240,17 +3240,25 @@ export default function App() {
                 onContinue={() => { setVentsAiAccessGranted(true); setVentsAiJustUnlocked(true); }}
                 onUpgrade={() => setVentsAiShowPlans(true)}
               />
-              {ventsAiShowPlans && (
-                <AiPlansScreen
-                  onClose={() => setVentsAiShowPlans(false)}
-                  onSubscribed={() => setVentsAiShowPlans(false)}
-                />
-              )}
             </div>
+          )}
+          {/* Reachable from any of the three VENTS AI sub-states above
+              (AiAccessScreen's Upgrade CTA, VentsAiUnlockedScreen's View
+              Plans CTA when the user has no real entitlement, and
+              VentsAiScreen's own status pill/error banner) -- one overlay,
+              not duplicated per state. */}
+          {ventsAiEverMounted && ventsAiShowPlans && (
+            <AiPlansScreen
+              onClose={() => setVentsAiShowPlans(false)}
+              onSubscribed={() => setVentsAiShowPlans(false)}
+            />
           )}
           {ventsAiEverMounted && ventsAiAccessGranted && ventsAiJustUnlocked && (
             <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-              <VentsAiUnlockedScreen onStartPlanning={() => setVentsAiJustUnlocked(false)} />
+              <VentsAiUnlockedScreen
+                onStartPlanning={() => setVentsAiJustUnlocked(false)}
+                onViewPlans={() => setVentsAiShowPlans(true)}
+              />
             </div>
           )}
           {ventsAiEverMounted && ventsAiAccessGranted && !ventsAiJustUnlocked && (
@@ -3259,6 +3267,7 @@ export default function App() {
                 isDesktop={isDesktopWidth}
                 onClose={goBack}
                 seedPrompt={ventsAiSeedPrompt}
+                currentUserCountryIso={currentUser?.country}
                 onOpenEvent={(eventId) => {
                   supabase
                     .from('events')

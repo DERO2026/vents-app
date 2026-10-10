@@ -3575,6 +3575,7 @@ export function VentsAiScreen({
   onOpenProvider,
   isDesktop,
   seedPrompt,
+  currentUserCountryIso,
 }: {
   onClose: () => void;
   onOpenEvent?: (id: string) => void;
@@ -3591,6 +3592,11 @@ export function VentsAiScreen({
   // they'd otherwise have typed into. `nonce` lets the same text be
   // reapplied if the user asks about the same event twice in a row.
   seedPrompt?: { text: string; nonce: number } | null;
+  // Default for the Area control -- the authenticated user's own saved
+  // profile country (App.tsx's currentUser?.country), never a GPS-derived
+  // one substituted silently. Undefined for a signed-out/no-country
+  // account, in which case Area simply starts unset.
+  currentUserCountryIso?: string;
 }) {
   const [conversations, setConversations] = useState<LocalConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -3845,6 +3851,7 @@ export function VentsAiScreen({
                 isDesktop={isDesktop}
                 onViewPlans={() => setShowPlans(true)}
                 entitlementRefreshKey={entitlementRefreshKey}
+                currentUserCountryIso={currentUserCountryIso}
               />
             ) : (
               <ConversationView
@@ -3939,8 +3946,13 @@ function resolveStatusPill(ent: {
 // contextual entry points (Home/Services sparkle) already use elsewhere
 // in this file. Option sets are plain, generic presets (not AI-generated
 // or scraped data) -- nothing here claims to be live inventory.
-const MOOD_OPTIONS = ['Chill', 'Fun', 'Romantic', 'Energetic', 'Family-friendly'];
+const MOOD_OPTIONS = ['Chill', 'Romantic', 'Adventure', 'Nightlife', 'Luxury', 'Family-friendly'];
 const BUDGET_OPTIONS = ['Under ₦10,000', '₦10,000–₦50,000', '₦50,000–₦150,000', 'Over ₦150,000'];
+
+// Rotating Home headline -- cut to short, bold phrases per the approved
+// design review, rotating every ~2.5s (HomeView's own effect, skipped
+// entirely under prefers-reduced-motion).
+const HOME_HEADLINES = ['What are we planning?', 'Where are we going?', "What's the vibe?", 'What experience are you looking for?'];
 
 function HomeView({
   inputText,
@@ -3957,6 +3969,7 @@ function HomeView({
   isDesktop,
   onViewPlans,
   entitlementRefreshKey,
+  currentUserCountryIso,
 }: {
   inputText: string;
   onInputChange: (v: string) => void;
@@ -3972,11 +3985,21 @@ function HomeView({
   isDesktop?: boolean;
   onViewPlans: () => void;
   entitlementRefreshKey: number;
+  currentUserCountryIso?: string;
 }) {
   const [room, setRoom] = useState<'chat' | 'plans'>('chat');
   const [entitlement, setEntitlement] = useState<any>(null);
   const [tuneSheet, setTuneSheet] = useState<'mood' | 'budget' | 'area' | null>(null);
-  const [tuneValues, setTuneValues] = useState<{ mood: string; budget: string; area: string }>({ mood: '', budget: '', area: '' });
+  // Area defaults from the user's own saved profile country (never a
+  // GPS-derived one substituted silently) -- initialized once, lazily, so
+  // a user who then explicitly clears/changes it isn't fought by this
+  // default re-applying on every render.
+  const profileCountry = currentUserCountryIso ? COUNTRY_CODES.find((c) => c.iso === currentUserCountryIso) : undefined;
+  const [tuneValues, setTuneValues] = useState<{ mood: string; budget: string; area: string }>({
+    mood: '', budget: '', area: profileCountry?.name || '',
+  });
+  const [areaCity, setAreaCity] = useState('');
+  const [budgetCustom, setBudgetCustom] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -3997,6 +4020,17 @@ function HomeView({
       onInputChange(`Something ${parts.join(', ').toLowerCase()}`);
     }
   }
+
+  // "What are we planning?" / "Where are we going?" etc, rotating every
+  // 2.5s -- pure text swap, no layout shift or motion beyond the fade
+  // itself, and skipped entirely under prefers-reduced-motion (the
+  // headline just shows the first phrase, static).
+  const [headlineIndex, setHeadlineIndex] = useState(0);
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => setHeadlineIndex((i) => (i + 1) % HOME_HEADLINES.length), 2500);
+    return () => clearInterval(id);
+  }, []);
   // Lifted up from PlansListView so both the Plans-tab badge/list and the
   // Chat tab's promo/"Continue planning" card (P01/P24) can read the same
   // real `plans` rows without two independent, possibly-inconsistent fetches.
@@ -4030,35 +4064,30 @@ function HomeView({
   return (
     <div style={{ flex: 1, overflowY: 'auto', padding: '18px 16px 30px' }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* Approved prototype's "animated purple AI orb" -- integrated
-                here as a restrained pulsing glow on the existing header
-                glyph rather than porting in VentsAiOrb.tsx's full
-                floating/draggable component, which was built as a
-                screen-level entry point (fixed position, drag, a
-                first-launch tooltip) and would fight this static header
-                layout rather than fit it. Pure CSS (no new state, no
-                layout/perf cost), flattened under reduced-motion. */}
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, animation: 'ventsAiOrbGlow 2.6s ease-in-out infinite' }}>
-              <span style={{ fontSize: 15, color: '#fff' }}>✦</span>
-            </div>
-            <div style={{ fontSize: 19, fontWeight: 800, color: '#f5f2f8' }}>VENTS AI</div>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '.08em', color: '#c4b5fd', textTransform: 'uppercase' as const }}>VENTS AI</div>
           <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS AI" role="button">✕</div>
         </div>
-        <style>{`
-          @keyframes ventsAiOrbGlow {
-            0%, 100% { box-shadow: 0 0 0 0 rgba(163,92,255,0.45); }
-            50% { box-shadow: 0 0 0 8px rgba(163,92,255,0); }
-          }
-          @media (prefers-reduced-motion: reduce) {
-            @keyframes ventsAiOrbGlow { 0%, 100% { box-shadow: 0 0 0 3px rgba(163,92,255,0.25); } }
-          }
-        `}</style>
-        <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 12px' }}>
-          Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
+
+        {/* Centered dimensional orb -- layered radial gradients (lit
+            sphere + offset highlight + a rotating glassy sheen + outer
+            glow halo) rather than a flat circle with a glyph. Pure CSS,
+            no new dependency, frozen to a static single frame under
+            prefers-reduced-motion (handled inside Vents3DOrb itself). */}
+        <Vents3DOrb size={76} />
+
+        {/* Rotating headline -- plain text swap every ~2.5s (see the
+            effect above), frozen on the first phrase under
+            prefers-reduced-motion. */}
+        <div style={{ textAlign: 'center', marginTop: 14 }}>
+          <div data-testid="vents-ai-headline" style={{ fontSize: 24, fontWeight: 800, color: '#f5f2f8', letterSpacing: '-.01em' }}>
+            {HOME_HEADLINES[headlineIndex]}
+          </div>
+          <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 0' }}>
+            Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
+          </div>
         </div>
+        <div style={{ height: 16 }} />
 
         {/* Two things, same destination: the pill (real status, small by
             design -- a status indicator shouldn't shout) and an explicit,
@@ -4123,7 +4152,7 @@ function HomeView({
                 value={inputText}
                 onChange={(e) => onInputChange(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && onSend()}
-                placeholder="Ask VENTS AI anything…"
+                placeholder="Ask about events or plans"
                 // 16px, not 13.5px -- mobile Safari zooms the whole page on
                 // focus for any text input under 16px, which this screen's
                 // fixed full-viewport layout has no graceful recovery from.
@@ -4134,36 +4163,43 @@ function HomeView({
               <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
             </div>
 
+            {/* Mood/Budget/Area -- compact popovers anchored directly under
+                each chip, never a fullscreen sheet (PickerSheet, used
+                elsewhere in this app, is a position:fixed/inset:0 overlay
+                -- wrong for three small filter controls). Each chip's
+                wrapper is position:relative so its popover anchors to it. */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap' }}>
-              {([
-                ['mood', 'Mood', tuneValues.mood],
-                ['budget', 'Budget', tuneValues.budget],
-                ['area', 'Area', tuneValues.area],
-              ] as const).map(([key, label, selected]) => (
-                <div
-                  key={key}
-                  onClick={() => setTuneSheet(key)}
-                  role="button"
-                  style={{ height: 36, padding: '0 14px', borderRadius: 18, background: selected ? 'rgba(163,92,255,.16)' : '#161020', border: `1px solid ${selected ? 'rgba(163,92,255,.4)' : '#2a2438'}`, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: selected ? '#d3b8ff' : '#e8e3ee', cursor: 'pointer', fontFamily: "'Manrope',sans-serif" }}
-                >
-                  {selected || label} <span style={{ fontSize: 10, color: '#8a7f97' }}>⌄</span>
-                </div>
-              ))}
+              {(['mood', 'budget', 'area'] as const).map((key) => {
+                const label = key === 'mood' ? 'Mood' : key === 'budget' ? 'Budget' : 'Area';
+                const selected = tuneValues[key];
+                return (
+                  <div key={key} style={{ position: 'relative' }}>
+                    <div
+                      onClick={() => setTuneSheet(tuneSheet === key ? null : key)}
+                      role="button"
+                      data-testid={`vents-ai-tune-${key}`}
+                      style={{ height: 36, padding: '0 14px', borderRadius: 18, background: selected ? 'rgba(163,92,255,.16)' : '#161020', border: `1px solid ${selected ? 'rgba(163,92,255,.4)' : '#2a2438'}`, display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, fontWeight: 600, color: selected ? '#d3b8ff' : '#e8e3ee', cursor: 'pointer', fontFamily: "'Manrope',sans-serif" }}
+                    >
+                      {selected || label} <span style={{ fontSize: 10, color: '#8a7f97' }}>⌄</span>
+                    </div>
+                    {tuneSheet === key && (
+                      <TunePopover
+                        field={key}
+                        value={tuneValues[key]}
+                        onSelect={(v) => applyTuneSelection(key, v)}
+                        onClose={() => setTuneSheet(null)}
+                        areaCity={areaCity}
+                        onAreaCityChange={setAreaCity}
+                        budgetCustom={budgetCustom}
+                        onBudgetCustomChange={setBudgetCustom}
+                        profileCountryName={profileCountry?.name}
+                        preferredRegionIso={(currentUserCountryIso || 'NG').toLowerCase()}
+                      />
+                    )}
+                  </div>
+                );
+              })}
             </div>
-            {tuneSheet && (
-              <PickerSheet
-                title={tuneSheet === 'mood' ? 'Mood' : tuneSheet === 'budget' ? 'Budget' : 'Area'}
-                searchable={tuneSheet === 'area'}
-                value={tuneValues[tuneSheet]}
-                options={
-                  tuneSheet === 'mood' ? MOOD_OPTIONS.map((v) => ({ value: v, label: v }))
-                  : tuneSheet === 'budget' ? BUDGET_OPTIONS.map((v) => ({ value: v, label: v }))
-                  : COUNTRY_CODES.map((c) => ({ value: c.name, label: c.name }))
-                }
-                onSelect={(v) => applyTuneSelection(tuneSheet, v)}
-                onClose={() => setTuneSheet(null)}
-              />
-            )}
 
             {errorText && (
               <div style={{ marginBottom: 18, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
@@ -4233,6 +4269,248 @@ function HomeView({
         ) : (
           <PlansListView plans={plans} plansError={plansError} onOpenPlan={onOpenPlan} onOpenWorkspace={onOpenWorkspace} onStartNewPlan={(prompt) => { setRoom('chat'); onInputChange(prompt); }} onPlansChanged={loadPlans} />
         )}
+      </div>
+    </div>
+  );
+}
+
+// Dimensional purple "glass" orb for the Home header -- layered radial
+// gradients (a soft outer halo, a lit sphere with its own inner shadow/
+// highlight, a glossy sheen) rather than a flat circle or a star glyph, per
+// the design review's explicit "no flat star / no 2D illustration"
+// requirement. Reuses the exact ventsAiOrbGlow/ventsAiOrbFloat keyframes
+// already defined in VentsAiUnlockedScreen.tsx (same values, so the two
+// screens' orbs read as the same visual object) and the same
+// prefers-reduced-motion override pattern. `size` controls everything
+// proportionally so this one component serves every call site.
+function Vents3DOrb({ size }: { size: number }) {
+  return (
+    <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }}>
+      <div
+        style={{
+          position: 'absolute', inset: -size * 0.2, borderRadius: '50%',
+          background: 'radial-gradient(closest-side, rgba(139,92,246,.45), transparent)',
+          animation: 'ventsAiOrbGlow 4.5s ease-in-out infinite',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute', inset: 0, borderRadius: '50%',
+          background: 'radial-gradient(circle at 32% 28%, #e9ddff 0%, #a78bfa 22%, #6d28d9 58%, #1b1140 100%)',
+          boxShadow: 'inset 0 -10px 24px rgba(0,0,0,.45), inset 0 8px 18px rgba(255,255,255,.28)',
+          animation: 'ventsAiOrbFloat 6s ease-in-out infinite',
+        }}
+      />
+      <div
+        style={{
+          position: 'absolute', left: '24%', top: '16%', width: '34%', height: '20%',
+          borderRadius: '50%', background: 'rgba(255,255,255,.35)', filter: 'blur(5px)',
+        }}
+      />
+      <style>{`
+        @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .55; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
+        @keyframes ventsAiOrbFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @media (prefers-reduced-motion: reduce) {
+          @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .8; transform: scale(1); } }
+          @keyframes ventsAiOrbFloat { 0%, 100% { transform: translateY(0); } }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// Compact popover for Mood/Budget/Area, anchored directly under its chip
+// (position:absolute within the chip's position:relative wrapper) -- never
+// the fullscreen PickerSheet used elsewhere in this app. Mood/Budget are
+// simple option lists; Budget additionally takes a free-typed NGN amount;
+// Area takes a typed location with real Google Places geocoding
+// (loadGoogleMaps() + AutocompleteSuggestion.fetchAutocompleteSuggestions,
+// the same API LocationPicker.tsx already uses -- GPS is intentionally not
+// requested here since a typed location must stay fully usable without any
+// permission prompt) plus the profile-country default and full country list.
+function TunePopover({
+  field,
+  value,
+  onSelect,
+  onClose,
+  areaCity,
+  onAreaCityChange,
+  budgetCustom,
+  onBudgetCustomChange,
+  profileCountryName,
+  preferredRegionIso,
+}: {
+  field: 'mood' | 'budget' | 'area';
+  value: string;
+  onSelect: (v: string) => void;
+  onClose: () => void;
+  areaCity: string;
+  onAreaCityChange: (v: string) => void;
+  budgetCustom: string;
+  onBudgetCustomChange: (v: string) => void;
+  profileCountryName?: string;
+  preferredRegionIso: string;
+}) {
+  const [areaSuggestions, setAreaSuggestions] = useState<{ key: string; mainText: string; secondaryText: string }[]>([]);
+  const sessionTokenRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (field !== 'area' || !areaCity.trim()) {
+      setAreaSuggestions([]);
+      return;
+    }
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      (async () => {
+        try {
+          const { loadGoogleMaps } = await import('../../lib/googleMaps');
+          await loadGoogleMaps();
+          const google = (window as any).google;
+          if (typeof google?.maps?.places?.AutocompleteSuggestion?.fetchAutocompleteSuggestions !== 'function') return;
+          if (!sessionTokenRef.current) sessionTokenRef.current = new google.maps.places.AutocompleteSessionToken();
+          const response = await google.maps.places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+            input: areaCity,
+            includedRegionCodes: [preferredRegionIso],
+            sessionToken: sessionTokenRef.current,
+          });
+          if (cancelled) return;
+          const mapped = (response?.suggestions || [])
+            .filter((s: any) => s.placePrediction)
+            .map((s: any, i: number) => {
+              const p = s.placePrediction;
+              return { key: p.placeId || String(i), mainText: p.mainText?.text ?? p.text?.text ?? '', secondaryText: p.secondaryText?.text ?? '' };
+            });
+          setAreaSuggestions(mapped);
+        } catch {
+          // Geocoding is a convenience, not a requirement -- a denied key,
+          // offline device, or SDK failure just means no suggestions; the
+          // plain typed value in areaCity remains fully usable either way.
+          setAreaSuggestions([]);
+        }
+      })();
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [field, areaCity, preferredRegionIso]);
+
+  return (
+    <div
+      role="dialog"
+      aria-label={`${field} options`}
+      style={{
+        position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 20,
+        width: field === 'area' ? 280 : 220, maxHeight: 320, overflowY: 'auto',
+        background: '#161020', border: '1px solid #2a2438', borderRadius: 14,
+        boxShadow: '0 12px 32px rgba(0,0,0,.5)', padding: 10,
+        fontFamily: "'Manrope',sans-serif",
+      }}
+    >
+      {field === 'mood' && (
+        <>
+          {MOOD_OPTIONS.map((m) => (
+            <div
+              key={m}
+              onClick={() => onSelect(m)}
+              data-testid={`vents-ai-tune-option-${m}`}
+              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, color: value === m ? '#d3b8ff' : '#e8e3ee', background: value === m ? 'rgba(163,92,255,.14)' : 'transparent', cursor: 'pointer' }}
+            >
+              {m}
+            </div>
+          ))}
+        </>
+      )}
+
+      {field === 'budget' && (
+        <>
+          {BUDGET_OPTIONS.map((b) => (
+            <div
+              key={b}
+              onClick={() => onSelect(b)}
+              data-testid={`vents-ai-tune-option-${b}`}
+              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, color: value === b ? '#d3b8ff' : '#e8e3ee', background: value === b ? 'rgba(163,92,255,.14)' : 'transparent', cursor: 'pointer' }}
+            >
+              {b}
+            </div>
+          ))}
+          <div style={{ borderTop: '1px solid #2a2438', margin: '8px 0', paddingTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#8a7f97', marginBottom: 6 }}>Or enter an amount (₦)</div>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              value={budgetCustom}
+              onChange={(e) => onBudgetCustomChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && budgetCustom.trim()) onSelect(`₦${Number(budgetCustom).toLocaleString()}`);
+              }}
+              placeholder="e.g. 75000"
+              data-testid="vents-ai-tune-budget-custom"
+              style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: '1px solid #2a2438', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: '#e8e3ee', outline: 'none' }}
+            />
+            <button
+              onClick={() => budgetCustom.trim() && onSelect(`₦${Number(budgetCustom).toLocaleString()}`)}
+              disabled={!budgetCustom.trim()}
+              data-testid="vents-ai-tune-budget-custom-apply"
+              style={{ marginTop: 6, width: '100%', border: 0, borderRadius: 8, padding: '7px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: budgetCustom.trim() ? GRADIENT : '#2a2438', cursor: budgetCustom.trim() ? 'pointer' : 'default' }}
+            >
+              Use this amount
+            </button>
+          </div>
+        </>
+      )}
+
+      {field === 'area' && (
+        <>
+          <input
+            value={areaCity}
+            onChange={(e) => onAreaCityChange(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter' && areaCity.trim()) onSelect(areaCity.trim()); }}
+            placeholder={profileCountryName ? `City, state or area in ${profileCountryName}` : 'Type a city, state or area'}
+            data-testid="vents-ai-tune-area-input"
+            style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: '1px solid #2a2438', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: '#e8e3ee', outline: 'none', marginBottom: 8 }}
+          />
+          {areaSuggestions.length > 0 && (
+            <div style={{ marginBottom: 8 }}>
+              {areaSuggestions.map((s) => (
+                <div
+                  key={s.key}
+                  onClick={() => onSelect(s.mainText)}
+                  style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12.5, color: '#e8e3ee', cursor: 'pointer' }}
+                >
+                  {s.mainText}
+                  {s.secondaryText && <span style={{ color: '#8a7f97' }}> · {s.secondaryText}</span>}
+                </div>
+              ))}
+            </div>
+          )}
+          <div style={{ fontSize: 11, color: '#8a7f97', margin: '2px 0 6px' }}>Or choose a country</div>
+          {profileCountryName && (
+            <div
+              onClick={() => onSelect(profileCountryName)}
+              data-testid="vents-ai-tune-area-profile-country"
+              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, fontWeight: 700, color: value === profileCountryName ? '#d3b8ff' : '#e8e3ee', background: value === profileCountryName ? 'rgba(163,92,255,.14)' : 'rgba(255,255,255,.04)', cursor: 'pointer', marginBottom: 4 }}
+            >
+              {profileCountryName} (your profile)
+            </div>
+          )}
+          {COUNTRY_CODES.filter((c) => c.name !== profileCountryName).map((c) => (
+            <div
+              key={c.iso}
+              onClick={() => onSelect(c.name)}
+              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, color: value === c.name ? '#d3b8ff' : '#e8e3ee', background: value === c.name ? 'rgba(163,92,255,.14)' : 'transparent', cursor: 'pointer' }}
+            >
+              {c.name}
+            </div>
+          ))}
+        </>
+      )}
+
+      <div
+        onClick={onClose}
+        role="button"
+        data-testid="vents-ai-tune-close"
+        style={{ marginTop: 8, textAlign: 'center', fontSize: 11.5, color: '#8a7f97', cursor: 'pointer', paddingTop: 8, borderTop: '1px solid #2a2438' }}
+      >
+        Close
       </div>
     </div>
   );
