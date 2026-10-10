@@ -118,6 +118,45 @@ export async function buildUserPreview(userId: string, canonicalUrl: string): Pr
   }
 }
 
+// Same safety contract as buildEventPreview/buildUserPreview: only public,
+// non-sensitive fields (never payout/contact info), and the
+// status=approved filter mirrors both service_providers_public_select_
+// approved (RLS) and fetchServiceProviderById's own query -- an
+// unapproved, removed, or unknown provider id resolves to the safe
+// site-default here exactly like App.tsx's own ?provider= handler treats
+// a null fetchServiceProviderById result.
+export async function buildProviderPreview(providerId: string, canonicalUrl: string): Promise<PreviewMeta> {
+  const env = getSupabaseEnv();
+  if (!env) return { ...SITE_DEFAULT, canonicalUrl };
+  try {
+    const restUrl =
+      `${env.url}/rest/v1/service_providers?id=eq.${encodeURIComponent(providerId)}` +
+      `&select=business_name,category,location,photo_urls,status&limit=1`;
+    const res = await fetch(restUrl, {
+      headers: { apikey: env.anonKey, Authorization: `Bearer ${env.anonKey}` },
+    });
+    if (!res.ok) return { ...SITE_DEFAULT, canonicalUrl };
+    const rows = (await res.json()) as Array<{
+      business_name?: string;
+      category?: string;
+      location?: string;
+      photo_urls?: string[];
+      status?: string;
+    }>;
+    const provider = rows?.[0];
+    if (!provider || provider.status !== 'approved') return { ...SITE_DEFAULT, canonicalUrl };
+    const location = [provider.category, provider.location].filter(Boolean).join(' · ');
+    return {
+      title: provider.business_name ? `${provider.business_name} | VENTS` : SITE_DEFAULT.title,
+      description: location ? `${location} · Book on VENTS` : SITE_DEFAULT.description,
+      image: provider.photo_urls?.[0] || FALLBACK_IMAGE,
+      canonicalUrl,
+    };
+  } catch {
+    return { ...SITE_DEFAULT, canonicalUrl };
+  }
+}
+
 // Renders the full HTML document a crawler receives, with per-content
 // og/twitter meta swapped in. Deliberately minimal (no app bundle, no
 // script tag) -- crawlers don't execute JS anyway, and this must never
