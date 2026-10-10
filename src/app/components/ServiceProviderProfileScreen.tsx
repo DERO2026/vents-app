@@ -517,6 +517,19 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
                 </div>
               </div>
             )}
+            {/* Approved prototype's "Availability" section -- static,
+                honest copy about how booking actually works here
+                (request -> provider confirms), not a calendar this app
+                doesn't have. Always shown in the About tab since it's
+                true for every provider, not provider-supplied data. */}
+            <div style={{ padding: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px` }}>
+              <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.06em', margin: '0 0 10px' }}>Availability</p>
+              <div style={{ padding: '14px 16px', borderRadius: servicesRadii.lg, border: `1px dashed ${servicesColors.border}` }}>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', lineHeight: 1.55, margin: 0 }}>
+                  Calendars aren't shown. The provider confirms your date after you send a booking request.
+                </p>
+              </div>
+            </div>
             {!provider.description && provider.servicesOffered.length === 0 && provider.photoUrls.length <= 1 && (
               <div style={{ margin: `0 ${servicesSpacing.lg}px ${servicesSpacing.lg}px`, padding: '20px', textAlign: 'center' }}>
                 <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: 0 }}>This provider hasn't added an About section yet.</p>
