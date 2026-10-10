@@ -140,7 +140,7 @@ describe('Plans room (P01 entry)', () => {
     await flush();
 
     expect(container!.textContent).toContain('No plans yet');
-    expect(container!.textContent).toContain("Tell SI about an event and it'll build the plan with you.");
+    expect(container!.textContent).toContain("Tell VENTS AI about an event and it'll build the plan with you.");
     expect(container!.textContent).toContain('Plan a wedding');
     expect(container!.textContent).toContain('Plan a birthday');
     expect(container!.textContent).toContain('Plan a conference');
@@ -198,7 +198,7 @@ describe('Plan thread (one pinned SI thread per plan)', () => {
 
     expect(container!.textContent).toContain('Decoration');
     expect(container!.textContent).toContain('₦650,000');
-    expect(container!.textContent).toContain('Plan thread · SI sees this plan');
+    expect(container!.textContent).toContain('Plan thread · VENTS AI sees this plan');
   });
 
   it('reopening an already-open plan thread reuses it instead of starting a second competing one', async () => {
@@ -425,7 +425,7 @@ describe('P15 No suitable provider: real numbers only, never a dead end', () => 
 });
 
 describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, no plan row until the end', () => {
-  it('offer_plan_intent renders the extracted-field tiles and "Plan this event with SI" sends a real follow-up turn', async () => {
+  it('offer_plan_intent renders the extracted-field tiles and "Plan this event with VENTS AI" sends a real follow-up turn', async () => {
     supabaseFrom.mockReturnValue({ select: () => ({ order: () => Promise.resolve({ data: [], error: null }) }) });
     sendVentsAiMessage.mockResolvedValueOnce({
       type: 'message',
@@ -445,11 +445,11 @@ describe('Pre-plan guided flow (P02-P06): offer -> question -> brief -> build, n
 
     sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'First question...', cards: [] });
     clickTestId('ai-plan-offer-card'); // no-op click on the card itself, just confirming it's present
-    const acceptBtn = Array.from(container!.querySelectorAll('span')).find((s) => s.textContent === 'Plan this event with SI');
+    const acceptBtn = Array.from(container!.querySelectorAll('span')).find((s) => s.textContent === 'Plan this event with VENTS AI');
     act(() => acceptBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })));
     await flush();
 
-    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Yes, plan this event with SI.');
+    expect(sendVentsAiMessage.mock.calls[1][0].at(-1).content).toBe('Yes, plan this event with VENTS AI.');
   });
 
   it('"Just chat" dismisses the offer card locally without sending anything', async () => {
@@ -935,7 +935,7 @@ describe('P27 Plan disambiguation: picking a plan attaches THIS thread to it, ne
 
     const secondCallMessages = sendVentsAiMessage.mock.calls[1][0];
     expect(secondCallMessages.at(-1).content).toBe('[plan_id: plan-mum] Use my "Mum\'s 60th" plan for this.');
-    expect(container!.textContent).toContain('Plan thread · SI sees this plan');
+    expect(container!.textContent).toContain('Plan thread · VENTS AI sees this plan');
   });
 
   it('a disambiguate_plans result with zero candidates renders no card -- the model\'s own prose explains why instead', async () => {

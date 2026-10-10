@@ -3,11 +3,14 @@ import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { ServiceProviderSetupScreen } from './ServiceProviderSetupScreen';
 
-// Batch 2.1: verifies the category-scoped specialty-suggestion chips added
-// in Batch 2 (tap-to-add shortcuts into the EXISTING servicesOffered
-// array) actually work end to end, and that selecting a category still
-// satisfies the real validation (missingFields' "Category" check) --
-// nothing about the existing save-gating logic was touched.
+// Batch 2.1 / Batch "Finish the remaining prototype gaps": verifies the
+// category-scoped specialty-suggestion chips (tap-to-add shortcuts into
+// the EXISTING servicesOffered array) actually work end to end through
+// the now-5-step registration wizard (Category -> Specialties ->
+// Provider details -> Review), and that selecting a category still
+// satisfies the real validation gate before Continue is enabled --
+// nothing about the existing save-gating logic was touched, just which
+// step surfaces each check.
 
 const fetchOwnServiceProvider = vi.fn();
 const saveAndPublishServiceProvider = vi.fn();
@@ -55,54 +58,110 @@ async function mountForNewRegistration() {
   });
 }
 
-describe('ServiceProviderSetupScreen: category-scoped specialty suggestions', () => {
-  it('shows no suggestions before any category is selected, and real category-specific chips after one is', async () => {
+function clickButtonContaining(text: string) {
+  const button = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes(text))!;
+  expect(button).toBeTruthy();
+  act(() => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+}
+
+describe('ServiceProviderSetupScreen: 5-step wizard (Category -> Specialties -> Details -> Review)', () => {
+  it('step 0 shows the category grid; Continue is disabled until one is selected', async () => {
     await mountForNewRegistration();
+    expect(container!.textContent).toContain('STEP 1 OF 4 · CATEGORY');
 
-    // Before selecting a category: no suggestion chips, no categories
-    // required error blocking save beyond the real "Category" gate.
-    expect(container!.textContent).not.toContain('Makeup artist');
+    const continueBtn = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Continue') as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(true);
 
-    const categoryButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes('Beauty & Styling'))!;
-    expect(categoryButton).toBeTruthy();
-    act(() => { categoryButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    clickButtonContaining('Beauty & Styling');
+    expect(continueBtn.disabled).toBe(false);
+  });
 
+  it('step 1 (Specialties) shows real category-scoped suggestion chips, and tapping one adds it', async () => {
+    await mountForNewRegistration();
+    clickButtonContaining('Beauty & Styling');
+    clickButtonContaining('Continue');
+
+    expect(container!.textContent).toContain('STEP 2 OF 4 · SPECIALTIES');
     // Beauty & Styling's real suggestion list (servicesDesignTokens.ts),
     // not a fabricated one.
     expect(container!.textContent).toContain('Makeup artist');
     expect(container!.textContent).toContain('Hairstylist');
-  });
-
-  it('tapping a suggestion chip adds it to servicesOffered as a real chip, and it stops being suggested again', async () => {
-    await mountForNewRegistration();
-
-    const categoryButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes('Beauty & Styling'))!;
-    act(() => { categoryButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
     const suggestionChip = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Makeup artist')!;
-    expect(suggestionChip).toBeTruthy();
     act(() => { suggestionChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
 
-    // Now rendered as an added chip (with a remove X), not just a
-    // suggestion -- and no longer offered as a suggestion.
     const addedChips = Array.from(container!.querySelectorAll('span')).filter((s) => s.textContent?.includes('Makeup artist'));
     expect(addedChips.length).toBeGreaterThan(0);
     const remainingSuggestions = Array.from(container!.querySelectorAll('button')).filter((b) => b.textContent === 'Makeup artist');
     expect(remainingSuggestions.length).toBe(0);
   });
 
-  it('selecting a second category merges in its suggestions without duplicating the first category\'s', async () => {
+  it('step 2 (Provider details) gates Continue on business name + country, same as the original single-page form', async () => {
     await mountForNewRegistration();
+    clickButtonContaining('Beauty & Styling');
+    clickButtonContaining('Continue');
+    clickButtonContaining('Continue'); // -> step 2
 
-    const beauty = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes('Beauty & Styling'))!;
-    act(() => { beauty.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
-    const photography = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent?.includes('Photography & Videography'))!;
-    act(() => { photography.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container!.textContent).toContain('STEP 3 OF 4 · PROVIDER DETAILS');
+    const continueBtn = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Continue') as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(true);
+
+    const nameInput = container!.querySelector('input[placeholder="e.g. Glow Beauty Studio"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(nameInput, 'Glow Studio');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    // Country defaults from currentUser.country ('NG'), so business name
+    // alone should now satisfy the gate.
+    expect(continueBtn.disabled).toBe(false);
+  });
+
+  it('step 3 (Review) shows a real summary built from entered data and the actual Save & Publish action, not fabricated content', async () => {
+    await mountForNewRegistration();
+    clickButtonContaining('Beauty & Styling');
+    clickButtonContaining('Continue');
+    clickButtonContaining('Continue'); // -> step 2
+
+    const nameInput = container!.querySelector('input[placeholder="e.g. Glow Beauty Studio"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(nameInput, 'Glow Studio');
+      nameInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    clickButtonContaining('Continue'); // -> step 3 (Review)
+
+    expect(container!.textContent).toContain('STEP 4 OF 4 · REVIEW');
+    expect(container!.textContent).toContain('Glow Studio');
+    expect(container!.textContent).toContain('Beauty & Styling');
+    expect(container!.textContent).toContain('No description added');
+
+    const saveBtn = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Save & Publish') as HTMLButtonElement;
+    expect(saveBtn).toBeTruthy();
+    expect(saveBtn.disabled).toBe(false);
+  });
+
+  it('selecting a second category on step 0 merges in its suggestions on step 1 without duplicating the first category\'s', async () => {
+    await mountForNewRegistration();
+    clickButtonContaining('Beauty & Styling');
+    clickButtonContaining('Photography & Videography');
+    clickButtonContaining('Continue');
 
     expect(container!.textContent).toContain('Makeup artist');
     expect(container!.textContent).toContain('Photographer');
-    // Count, not just presence -- never offered twice.
     const hairstylistChips = Array.from(container!.querySelectorAll('button')).filter((b) => b.textContent === 'Hairstylist');
     expect(hairstylistChips.length).toBe(1);
+  });
+
+  it('Back from step 1 returns to step 0 with the category selection preserved', async () => {
+    await mountForNewRegistration();
+    clickButtonContaining('Beauty & Styling');
+    clickButtonContaining('Continue');
+    expect(container!.textContent).toContain('STEP 2 OF 4 · SPECIALTIES');
+
+    clickButtonContaining('Back');
+    expect(container!.textContent).toContain('STEP 1 OF 4 · CATEGORY');
+    // Still selected -- real state preserved across wizard navigation.
+    expect(container!.textContent).toContain('Primary');
   });
 });

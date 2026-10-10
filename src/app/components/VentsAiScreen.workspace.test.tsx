@@ -689,7 +689,7 @@ describe('S4 Not-yet/draft states: genuinely missing data, never fabricated plac
     expect(plansUpdate).toHaveBeenCalledWith({ total_kobo: 800000000 });
   });
 
-  it('S4-B: Team shows "no team slots yet" when the plan has zero categories, with a real "Finish brief with SI" action', async () => {
+  it('S4-B: Team shows "no team slots yet" when the plan has zero categories, with a real "Finish brief with VENTS AI" action', async () => {
     mockWorkspaceTables({ plan_categories: makeChain({ data: [], error: null }) });
     mockRpc({ data: [DRAFT_OVERVIEW_ROW], error: null });
 
@@ -699,7 +699,7 @@ describe('S4 Not-yet/draft states: genuinely missing data, never fabricated plac
 
     expect(container!.querySelector('[data-testid="workspace-team-not-yet"]')).toBeTruthy();
     expect(container!.textContent).toContain('No team slots yet');
-    expect(container!.textContent).toContain('Finish brief with SI');
+    expect(container!.textContent).toContain('Finish brief with VENTS AI');
   });
 
   it('S4-C: Tasks shows "tasks appear once the brief is confirmed" for a draft plan with zero tasks', async () => {

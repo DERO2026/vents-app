@@ -128,9 +128,27 @@ function OverlayPicker<T>({
   );
 }
 
+// Approved prototype's 5-step registration wizard (reg.s0..s4: Category,
+// Subcategory, Specialties/tags, Provider details, Review). This app's
+// real data model has no separate "subcategory" field distinct from the
+// specialty/service-type strings already stored in servicesOffered (no
+// schema change was identified/approved to add one), so the prototype's
+// steps 1 ("choose the specific service you offer") and 2 ("specialties,
+// optional") collapse into this screen's single existing Specialties
+// step -- both already draw from the exact same
+// CATEGORY_SPECIALTY_SUGGESTIONS/servicesOffered mechanism, so nothing
+// about that data is invented or duplicated, just not split across two
+// steps that would otherwise edit the same array. This app's own working
+// fields the prototype doesn't show at registration at all (starting
+// price, photos, Home/Delivery/Same-day) are kept in Details rather than
+// dropped, since removing working fields is explicitly out of scope.
+const WIZARD_STEPS = ['Category', 'Specialties', 'Provider details', 'Review'] as const;
+type WizardStep = 0 | 1 | 2 | 3;
+
 export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onManageServices }: ServiceProviderSetupScreenProps) {
   const [loading, setLoading] = useState(true);
   const [existing, setExisting] = useState<ServiceProvider | null>(null);
+  const [step, setStep] = useState<WizardStep>(0);
 
   const [photos, setPhotos] = useState<string[]>([]);
   const [businessName, setBusinessName] = useState('');
@@ -319,6 +337,15 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
 
   const canSave = missingFields.length === 0 && !saving && !uploading;
 
+  // Per-step Continue gates -- the same underlying checks as
+  // missingFields above, just scoped to what each step actually asks
+  // for, so a user can't continue past Category with none picked, or
+  // past Details with an invalid price, exactly as the single-page form
+  // already required before saving.
+  const canContinueFromCategory = categories.length > 0;
+  const canContinueFromDetails = !!businessName.trim() && !!countryIso
+    && (!startingPrice.trim() || (!!currencyCode && !Number.isNaN(priceValue) && (priceValue as number) >= 0));
+
   const handleSave = async () => {
     if (!canSave) return;
     setSaving(true);
@@ -431,16 +458,27 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         />
       )}
 
-      {/* Header */}
+      {/* Header -- back button steps back through the wizard (step > 0)
+          or exits to onBack() on the first step, same as the prototype's
+          reg wizard. */}
       <div style={{ padding: 'calc(20px + env(safe-area-inset-top)) 20px 12px', flexShrink: 0 }}>
-        <button onClick={onBack} style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}>
+        <button
+          onClick={() => (step > 0 ? setStep((s) => (s - 1) as WizardStep) : onBack())}
+          style={{ background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}`, borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', marginBottom: '14px' }}
+        >
           <ArrowLeft size={16} color={ventsColors.ink2} />
         </button>
+        <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' as const, letterSpacing: '0.08em', margin: '0 0 6px', font: "600 10px 'JetBrains Mono', monospace" }}>
+          STEP {step + 1} OF {WIZARD_STEPS.length} · {WIZARD_STEPS[step].toUpperCase()}
+        </p>
         <h1 style={{ color: servicesColors.textPrimary, fontSize: '24px', fontWeight: 800, fontFamily: 'Manrope, sans-serif', margin: 0 }}>
           {existing ? 'Edit Service Profile' : 'Set Up Your Service Profile'}
         </h1>
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '6px 0 0' }}>
-          This is your public listing in VENTS Services.
+          {step === 0 && 'Pick the category that best fits your profession. Customers find you here, in search and when they book.'}
+          {step === 1 && 'Optional. Specialties help customers find the right fit.'}
+          {step === 2 && 'This is your public listing in VENTS Services.'}
+          {step === 3 && "Review your listing before it's submitted."}
         </p>
         {existing && onManageServices && (
           <button
@@ -453,6 +491,8 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(120px + env(safe-area-inset-bottom))` }}>
+        {step === 2 && (
+        <>
         {/* Photos */}
         <SectionLabel>Photos</SectionLabel>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
@@ -490,18 +530,22 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
         <div style={{ marginBottom: servicesSpacing.xl }}>
           <TextField value={businessName} onChange={setBusinessName} placeholder="e.g. Glow Beauty Studio" />
         </div>
+        </>
+        )}
 
+        {step === 0 && (
+        <>
         {/* Category -- select up to 5. The first one selected is your
             primary category (shown on your card and used for search).
             Row style (no icons, highlighted border on selection) matches
             VentsPrototype.dc.html's registration step-0 category row
             (`reg.s0`'s per-category div: 18px radius, 60px min-height,
-            1.5px highlighted border) -- this screen keeps the existing
-            real multi-select-up-to-5 behavior rather than the prototype's
-            single-category step wizard, since that's a materially
-            different interaction model this pass didn't rebuild, not
-            just a visual change, and risked regressing a form that
-            already handles real Supabase writes and edit-mode. */}
+            1.5px highlighted border). The prototype's wizard is
+            single-category; this keeps the existing real
+            multi-select-up-to-5 behavior as step 1 of this wizard, since
+            that's the real, already-working capability (a provider under
+            several professions) and changing it to single-select would
+            be removing working behavior, not matching the design. */}
         <SectionLabel>Category (select up to 5, first is primary)</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: servicesSpacing.xl }}>
           {SERVICE_CATEGORIES.map((cat) => {
@@ -531,7 +575,11 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             );
           })}
         </div>
+        </>
+        )}
 
+        {step === 2 && (
+        <>
         {/* Description */}
         <SectionLabel>Description</SectionLabel>
         <div style={{ marginBottom: servicesSpacing.xl }}>
@@ -597,7 +645,11 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             {selectedCurrency?.code || currencyCode || 'Currency'}
           </button>
         </div>
+        </>
+        )}
 
+        {step === 1 && (
+        <>
         {/* Services offered */}
         <SectionLabel>Services Offered</SectionLabel>
         <div style={{ marginBottom: servicesSpacing.xl }}>
@@ -643,7 +695,11 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
             </div>
           )}
         </div>
+        </>
+        )}
 
+        {step === 2 && (
+        <>
         {/* Toggles */}
         <SectionLabel>What You Offer</SectionLabel>
         <div style={{ display: 'flex', flexDirection: 'column', gap: servicesSpacing.sm, marginBottom: servicesSpacing.xl }}>
@@ -651,31 +707,96 @@ export function ServiceProviderSetupScreen({ currentUser, onBack, onSaved, onMan
           <ToggleRow label="Delivery" sub="You can deliver goods/orders" on={offersDelivery} onChange={setOffersDelivery} />
           <ToggleRow label="Same-day" sub="You can fulfil on short notice" on={offersSameDay} onChange={setOffersSameDay} />
         </div>
+        </>
+        )}
+
+        {/* Review -- matches the prototype's reg.s4 review card shape
+            (name, specialties, category · location, then a plain-text
+            summary), built entirely from the same real state every other
+            step already edits. No verification badge, matching the
+            prototype's own note that none is shown until VENTS verifies
+            a provider -- this app has no such field either. */}
+        {step === 3 && (
+          <div style={{ padding: '16px', borderRadius: '20px', background: '#100d1a', border: '1px solid rgba(255,255,255,0.09)', display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: servicesSpacing.xl }}>
+            <div style={{ font: "800 20px 'Manrope', sans-serif", color: servicesColors.textPrimary }}>{businessName || 'Untitled listing'}</div>
+            {servicesOffered.length > 0 && (
+              <div style={{ fontSize: '14px', color: '#c4b5fd' }}>{servicesOffered.join(', ')}</div>
+            )}
+            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {categories.join(', ') || 'No category selected'}{location ? ` · ${location}` : ''}
+            </div>
+            <div style={{ height: '1px', background: 'rgba(255,255,255,0.1)' }} />
+            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {startingPrice.trim() ? `From ${currencyCode} ${startingPrice}` : 'No starting price set'}
+            </div>
+            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {description || 'No description added'}
+            </div>
+            <div style={{ fontSize: '13px', color: servicesColors.textSecondary }}>
+              {photos.length} photo{photos.length === 1 ? '' : 's'} · {[
+                offersHomeService && 'Home service',
+                offersDelivery && 'Delivery',
+                offersSameDay && 'Same-day',
+              ].filter(Boolean).join(', ') || 'No extra offerings selected'}
+            </div>
+          </div>
+        )}
 
         {error && <p style={{ color: servicesColors.error, fontSize: '13px', margin: '0 0 12px' }}>{error}</p>}
       </div>
 
-      {/* Sticky CTA */}
-      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 65%, transparent)' }}>
-        {!canSave && missingFields.length > 0 && (
-          <p style={{ color: servicesColors.textTertiary, fontSize: '11px', textAlign: 'center', margin: '0 0 8px' }}>
-            Required: {missingFields.join(', ')}
-          </p>
+      {/* Sticky CTA -- Back/Continue through the wizard, Save & Publish
+          only on the final Review step. Continue gates reuse the exact
+          same validation as the final save (canContinueFromCategory/
+          Details, canSave) -- nothing about what's required to publish
+          changed, just when each check is surfaced to the user. */}
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: `${servicesSpacing.lg}px 20px calc(24px + env(safe-area-inset-bottom))`, background: 'linear-gradient(to top, #020005 65%, transparent)', display: 'flex', gap: servicesSpacing.sm }}>
+        {step > 0 && (
+          <button
+            onClick={() => setStep((s) => (s - 1) as WizardStep)}
+            style={{ flex: 1, padding: '16px', borderRadius: servicesRadii.md, border: `1px solid ${servicesColors.border}`, background: 'transparent', color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, fontFamily: 'Manrope, sans-serif', cursor: 'pointer' }}
+          >
+            Back
+          </button>
         )}
-        <button
-          onClick={handleSave}
-          disabled={!canSave}
-          style={{
-            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-            background: canSave ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
-            border: 'none', borderRadius: servicesRadii.md, padding: '16px',
-            color: canSave ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', fontWeight: 700,
-            fontFamily: 'Manrope, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',
-            boxShadow: canSave ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
-          }}
-        >
-          {saving ? 'Saving…' : 'Save & Publish'}
-        </button>
+        {step < 3 ? (
+          <button
+            onClick={() => setStep((s) => (s + 1) as WizardStep)}
+            disabled={step === 0 ? !canContinueFromCategory : step === 2 ? !canContinueFromDetails : false}
+            style={{
+              flex: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              background: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
+              border: 'none', borderRadius: servicesRadii.md, padding: '16px',
+              color: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? '#fff' : 'rgba(255,255,255,0.4)',
+              fontSize: '16px', fontWeight: 700, fontFamily: 'Manrope, sans-serif',
+              cursor: (step === 0 ? canContinueFromCategory : step === 2 ? canContinueFromDetails : true) ? 'pointer' : 'not-allowed',
+            }}
+          >
+            Continue
+          </button>
+        ) : (
+          <div style={{ flex: 2 }}>
+            {!canSave && missingFields.length > 0 && (
+              <p style={{ color: servicesColors.textTertiary, fontSize: '11px', textAlign: 'center', margin: '0 0 8px' }}>
+                Required: {missingFields.join(', ')}
+              </p>
+            )}
+            <button
+              onClick={handleSave}
+              disabled={!canSave}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                background: canSave ? 'linear-gradient(135deg, #7B2FBE, #4F46E5)' : 'rgba(123,47,190,0.25)',
+                border: 'none', borderRadius: servicesRadii.md, padding: '16px',
+                color: canSave ? '#fff' : 'rgba(255,255,255,0.4)', fontSize: '16px', fontWeight: 700,
+                fontFamily: 'Manrope, sans-serif', cursor: canSave ? 'pointer' : 'not-allowed',
+                boxShadow: canSave ? '0 8px 28px rgba(123,47,190,0.45)' : 'none',
+              }}
+            >
+              {saving ? 'Saving…' : 'Save & Publish'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

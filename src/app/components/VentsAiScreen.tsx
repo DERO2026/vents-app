@@ -238,7 +238,7 @@ function computeReadiness(data: PlanWorkspaceData): number {
   return Math.round((tasksPct * 0.5 + teamPct * 0.35 + budgetPct * 0.15) * 100);
 }
 
-// P01's "NEW · SI PLANNER" promo card -- shown on the Chat tab only when
+// P01's "NEW · VENTS AI PLANNER" promo card -- shown on the Chat tab only when
 // the user has no plan yet. Exact copy/colors/radii from P01.html. Type
 // chips prefill AND immediately send ("Help me plan a {type}"), per that
 // frame's own spec text ("Type chips prefill ... and send").
@@ -246,9 +246,9 @@ function NewPlannerPromoCard({ onPickType }: { onPickType: (text: string) => voi
   const TYPES = ['Wedding', 'Birthday', 'Conference', 'Something else'];
   return (
     <div style={{ padding: 16, borderRadius: 14, background: 'linear-gradient(160deg, rgba(163,92,255,.16), rgba(18,14,26,1) 70%)', border: '1px solid rgba(163,92,255,.35)', display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
-      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>NEW · SI PLANNER</span>
-      <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.01em' }}>Plan an event with SI</span>
-      <span style={{ fontSize: 13, color: '#c9c0d4', lineHeight: 1.5 }}>Tell SI what you're hosting. Get a budget, a team of VENTS providers, tasks and a timeline.</span>
+      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: 10, letterSpacing: '.16em', color: '#d3b8ff' }}>NEW · VENTS AI PLANNER</span>
+      <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-.01em' }}>Plan an event with VENTS AI</span>
+      <span style={{ fontSize: 13, color: '#c9c0d4', lineHeight: 1.5 }}>Tell VENTS AI what you're hosting. Get a budget, a team of VENTS providers, tasks and a timeline.</span>
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
         {TYPES.map((t) => (
           <span
@@ -332,7 +332,7 @@ function ContinuePlanningCard({ plan, onAskSi, onOpenWorkspace }: { plan: PlanSu
         </div>
       )}
       <div style={{ display: 'flex', gap: 8 }}>
-        <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Ask SI</span>
+        <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Ask VENTS AI</span>
         <span onClick={onOpenWorkspace} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Open plan</span>
       </div>
     </div>
@@ -432,7 +432,7 @@ function PlanWorkspaceView({
   ];
 
   const composerPlaceholder =
-    tab === 'budget' ? '"Move ₦300k from décor to photos"' : tab === 'team' ? '"Find a band under ₦350k"' : `Ask SI about ${data?.plan.title || 'this plan'}…`;
+    tab === 'budget' ? '"Move ₦300k from décor to photos"' : tab === 'team' ? '"Find a band under ₦350k"' : `Ask VENTS AI about ${data?.plan.title || 'this plan'}…`;
 
   function sendComposer() {
     const t = composerText.trim();
@@ -1044,7 +1044,7 @@ function BudgetExceededBanner({
               <div style={{ fontSize: 14, fontWeight: 700 }}>Use contingency</div>
               <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>{naira(contingency.allocated_kobo / 100)} → {naira(Math.max(0, contingency.allocated_kobo - overKobo) / 100)} left</div>
             </div>
-            <span style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff' }}>SI pick</span>
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#d3b8ff' }}>VENTS AI pick</span>
           </div>
         )}
         {trimCandidate && (
@@ -1065,7 +1065,7 @@ function BudgetExceededBanner({
         </div>
         <div onClick={onAskSi} role="button" style={{ padding: 14, borderRadius: 12, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}>
           <div>
-            <div style={{ fontSize: 14, fontWeight: 700 }}>Talk it through with SI</div>
+            <div style={{ fontSize: 14, fontWeight: 700 }}>Talk it through with VENTS AI</div>
             <div style={{ fontSize: 12, color: '#a89db3', marginTop: 2 }}>Opens the plan thread</div>
           </div>
           <span style={{ color: '#d3b8ff' }}>›</span>
@@ -1105,7 +1105,7 @@ function WorkspaceBudgetTab({
       <>
         <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="workspace-budget-not-yet">
           <span style={{ fontSize: 16, fontWeight: 800 }}>Set a total to see your budget</span>
-          <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>SI splits it across categories as planning estimates — not quotes.</span>
+          <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>VENTS AI splits it across categories as planning estimates — not quotes.</span>
           <div style={{ display: 'flex', gap: 8 }}>
             <span onClick={onAskSi} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Not sure yet</span>
             <span onClick={() => setShowSetTotal(true)} role="button" data-testid="workspace-budget-set-total" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Set total</span>
@@ -1745,9 +1745,9 @@ function WorkspaceTeamTab({ data, planId, onOpenCategory, onAskSi, onChanged }: 
       <div style={{ padding: 16, borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 10 }} data-testid="workspace-team-not-yet">
         <span style={{ fontSize: 16, fontWeight: 800 }}>No team slots yet</span>
         <span style={{ fontSize: 13, color: '#a89db3', lineHeight: 1.5 }}>
-          Confirm the brief and SI suggests categories{data.plan.guests ? ` for a ${titleCase(data.plan.event_type)} of ${data.plan.guests}` : ` for your ${titleCase(data.plan.event_type)}`}.
+          Confirm the brief and VENTS AI suggests categories{data.plan.guests ? ` for a ${titleCase(data.plan.event_type)} of ${data.plan.guests}` : ` for your ${titleCase(data.plan.event_type)}`}.
         </span>
-        <span onClick={onAskSi} role="button" data-testid="workspace-team-finish-brief" style={{ fontSize: 13, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Finish brief with SI ›</span>
+        <span onClick={onAskSi} role="button" data-testid="workspace-team-finish-brief" style={{ fontSize: 13, fontWeight: 700, color: '#d3b8ff', cursor: 'pointer' }}>Finish brief with VENTS AI ›</span>
       </div>
     );
   }
@@ -3041,7 +3041,7 @@ function PlanOfferCard({ data, onAccept }: { data: any; onAccept?: () => void })
       )}
       <div style={{ display: 'flex', gap: 8 }}>
         <span onClick={() => setDismissed(true)} role="button" style={{ flex: 1, textAlign: 'center', padding: 10, borderRadius: 9, background: '#1c1726', border: '1px solid #2c2438', fontSize: 12.5, fontWeight: 700, color: '#c9c0d4', cursor: 'pointer' }}>Just chat</span>
-        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with SI</span>
+        <span onClick={onAccept} role="button" style={{ flex: 1.4, textAlign: 'center', padding: 10, borderRadius: 9, background: GRADIENT, fontSize: 12.5, fontWeight: 700, color: '#fff', cursor: 'pointer' }}>Plan this event with VENTS AI</span>
       </div>
     </div>
   );
@@ -3529,7 +3529,7 @@ function AssistantCards({
           return <PlanActionCard key={i} type={card.type} data={card.data} />;
         }
         if (card.type === 'offer_plan_intent') {
-          return <PlanOfferCard key={i} data={card.data} onAccept={() => onQuickAction?.('Yes, plan this event with SI.')} />;
+          return <PlanOfferCard key={i} data={card.data} onAccept={() => onQuickAction?.('Yes, plan this event with VENTS AI.')} />;
         }
         if (card.type === 'ask_plan_question') {
           return <PlanQuestionCard key={i} data={card.data} onAnswer={(text) => onQuickAction?.(text)} />;
@@ -4152,7 +4152,7 @@ function PlansListView({
 
         {p.status === 'draft' ? (
           <div style={{ fontSize: 12, color: '#a89db3' }}>
-            Brief incomplete · <span onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ color: '#d3b8ff', fontWeight: 700, cursor: 'pointer' }}>Finish with SI</span>
+            Brief incomplete · <span onClick={() => onOpenPlan(p.id, p.title)} role="button" style={{ color: '#d3b8ff', fontWeight: 700, cursor: 'pointer' }}>Finish with VENTS AI</span>
           </div>
         ) : (
           <>
@@ -4203,7 +4203,7 @@ function PlansListView({
         // plan" CTA that enters the existing plan-creation flow (never a fake navigation).
         <div style={{ padding: '24px 18px', borderRadius: 14, background: '#120e1a', border: '1px solid #221d2d', display: 'flex', flexDirection: 'column', gap: 12 }}>
           <span style={{ fontSize: 19, fontWeight: 800, letterSpacing: '-.01em' }}>No plans yet</span>
-          <span style={{ fontSize: 13.5, color: '#a89db3', lineHeight: 1.5 }}>Tell SI about an event and it'll build the plan with you.</span>
+          <span style={{ fontSize: 13.5, color: '#a89db3', lineHeight: 1.5 }}>Tell VENTS AI about an event and it'll build the plan with you.</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[['Plan a wedding', 'Help me plan a wedding'], ['Plan a birthday', 'Help me plan a birthday'], ['Plan a conference', 'Help me plan a conference']].map(([label, prompt]) => (
               <span
@@ -4379,7 +4379,7 @@ function ConversationView({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13.5, fontWeight: 700, color: '#f2eff6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{conversation.title}</div>
           {conversation.planId && (
-            <div style={{ fontSize: 10, color: '#d3b8ff', marginTop: 1 }}>◆ Plan thread · SI sees this plan</div>
+            <div style={{ fontSize: 10, color: '#d3b8ff', marginTop: 1 }}>◆ Plan thread · VENTS AI sees this plan</div>
           )}
         </div>
         <div style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4, color: '#34d399', background: 'rgba(52,211,153,.1)', border: '1px solid rgba(52,211,153,.3)', padding: '4px 8px', borderRadius: 6, flexShrink: 0 }}>
@@ -4516,7 +4516,7 @@ function ConversationView({
             value={inputText}
             onChange={(e) => onInputChange(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && onSend()}
-            placeholder={conversation.planId ? `Ask SI about ${conversation.title}…` : 'Ask a follow-up…'}
+            placeholder={conversation.planId ? `Ask VENTS AI about ${conversation.title}…` : 'Ask a follow-up…'}
             style={{ width: '100%', boxSizing: 'border-box', background: '#161020', border: '1px solid #2a2438', borderRadius: 12, padding: '12px 48px 12px 14px', fontSize: 13, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
           />
           <div onClick={onSend} style={{ position: 'absolute', right: 6, top: 6, width: 30, height: 30, borderRadius: 8, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 13 }}>↑</div>
