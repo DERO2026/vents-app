@@ -203,3 +203,56 @@ describe('VentsAiScreen: contextual seedPrompt (Home/Services sparkle, event det
     expect(input.value).toBe('Help me plan my night around "Afrobeats Fest".');
   });
 });
+
+describe('VentsAiScreen: AI_BETA_RESTRICTED error surfacing (regression)', () => {
+  it('shows the real server message (not the raw error code) and a "View Plans" action, for a user who lacks access', async () => {
+    const err: any = new Error('VENTS AI requires an active subscription. Subscribe to VENTS AI or VENTS AI+ to start chatting.');
+    err.code = 'AI_BETA_RESTRICTED';
+    sendVentsAiMessage.mockRejectedValueOnce(err);
+    mount(null);
+
+    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'Find me a concert tonight');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const sendBtn = Array.from(container!.querySelectorAll('div')).find((d) => d.textContent === '↑' && d.style.position === 'absolute') as HTMLDivElement;
+    await act(async () => {
+      sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    // The literal error code must never be shown to the user as the message.
+    expect(container!.textContent).not.toContain('AI_BETA_RESTRICTED');
+    expect(container!.textContent).toContain('VENTS AI requires an active subscription');
+    const viewPlansLink = container!.querySelector('[data-testid="vents-ai-error-view-plans"]') as HTMLElement;
+    expect(viewPlansLink).toBeTruthy();
+
+    act(() => { viewPlansLink.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(container!.textContent).toContain('VENTS AI Plans');
+  });
+
+  it('a legitimate, authorized user never sees the restricted error at all -- a normal response renders normally', async () => {
+    sendVentsAiMessage.mockResolvedValueOnce({ type: 'message', text: 'Here are 3 concerts tonight.', cards: [] });
+    mount(null);
+
+    const input = container!.querySelector('input[placeholder="Ask VENTS AI anything…"]') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, 'Find me a concert tonight');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    const sendBtn = Array.from(container!.querySelectorAll('div')).find((d) => d.textContent === '↑' && d.style.position === 'absolute') as HTMLDivElement;
+    await act(async () => {
+      sendBtn.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 0));
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(container!.textContent).not.toContain('AI_BETA_RESTRICTED');
+    expect(container!.textContent).not.toContain('requires an active subscription');
+    expect(container!.textContent).toContain('Here are 3 concerts tonight.');
+  });
+});

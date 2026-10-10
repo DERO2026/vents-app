@@ -217,20 +217,22 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
   const session = await verifyInsforgeSession(authHeader);
   if (!session) return res.status(401).json({ error: 'Not authenticated' });
 
-  // Phase 7 -- temporary AI beta allowlist. Checked immediately after
-  // auth, before anything else (including the per-user rate limit below
-  // and the confirmedAction branch) -- a non-approved account is
-  // rejected before consuming any rate-limit quota, and before any
-  // Anthropic call could possibly occur. This is independent of, and
-  // does not alter, the kill switch or the entitlement foundation below
-  // -- an approved beta account still goes through isAiDisabled and
-  // (today, a no-op) isAiEntitlementEnforced exactly as before. See
-  // aiBeta.ts for why this fails closed (not approved) on any error.
+  // Access gate -- checked immediately after auth, before anything else
+  // (including the per-user rate limit below and the confirmedAction
+  // branch) -- a non-approved account is rejected before consuming any
+  // rate-limit quota, and before any Anthropic call could possibly occur.
+  // isAiBetaUser() (see aiBeta.ts) now checks has_ai_chat_access(), true
+  // for the original legacy beta allowlist OR a real, currently-valid
+  // paid/trial ai_entitlements row -- so a genuine subscriber is let
+  // through here, not just a hand-seeded tester account. Independent of,
+  // and does not alter, the kill switch or the entitlement-enforcement
+  // flag below -- an approved account still goes through isAiDisabled and
+  // (today, a no-op) isAiEntitlementEnforced exactly as before.
   const betaOk = await isAiBetaUser(session.userId);
   if (!betaOk) {
     return res.status(403).json({
       error: 'AI_BETA_RESTRICTED',
-      message: 'VENTS AI is currently in a limited beta and not yet available on your account.',
+      message: 'VENTS AI requires an active subscription. Subscribe to VENTS AI or VENTS AI+ to start chatting.',
     });
   }
 

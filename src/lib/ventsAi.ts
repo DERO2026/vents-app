@@ -46,7 +46,15 @@ export async function sendVentsAiMessage(
 
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(body?.error || `VENTS AI request failed (${res.status})`);
+    // Prefer the server's human-readable `message` (e.g. "VENTS AI
+    // requires an active subscription...") over the raw `error` code
+    // (e.g. "AI_BETA_RESTRICTED") -- the code alone was being shown to
+    // users verbatim as the error text, which is exactly the kind of
+    // unfriendly/cryptic message this screen's own errorText banner is
+    // supposed to avoid.
+    const err: any = new Error(body?.message || body?.error || `VENTS AI request failed (${res.status})`);
+    err.code = body?.error;
+    throw err;
   }
   return body as VentsAiResponse;
 }

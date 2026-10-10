@@ -3606,6 +3606,12 @@ export function VentsAiScreen({
   }, [seedPrompt?.nonce]);
   const [streaming, setStreaming] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
+  // Set alongside errorText when the server's error has a known `code`
+  // (ventsAi.ts attaches it from the response's `error` field) -- lets the
+  // error banner below show a real "View Plans" action specifically for
+  // AI_BETA_RESTRICTED (no active subscription), instead of only ever
+  // showing plain text with no path forward.
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   // Dedicated Plan Workspace screen (P07/P08) -- distinct destination from
   // a plan's chat thread (P24: "Ask SI opens the plan thread; Open plan
   // opens Overview"). null means neither workspace tab is open.
@@ -3650,6 +3656,7 @@ export function VentsAiScreen({
     if (!q || streaming) return;
     setInputText('');
     setErrorText(null);
+    setErrorCode(null);
 
     let convId: string;
     let planId: string | undefined;
@@ -3712,6 +3719,7 @@ export function VentsAiScreen({
       // Per the export's STATE_CARDS tone ("Something went wrong … Nothing
       // was charged or changed") -- adapted copy, no literal states screen.
       setErrorText(e?.message || "Something went wrong reaching VENTS AI. Nothing was charged or changed.");
+      setErrorCode(e?.code || null);
     } finally {
       setStreaming(false);
     }
@@ -3833,6 +3841,7 @@ export function VentsAiScreen({
                 onOpenWorkspace={(planId) => setWorkspacePlanId(planId)}
                 onQuickSend={(text) => sendText(text)}
                 errorText={errorText}
+                errorCode={errorCode}
                 isDesktop={isDesktop}
                 onViewPlans={() => setShowPlans(true)}
                 entitlementRefreshKey={entitlementRefreshKey}
@@ -3854,6 +3863,8 @@ export function VentsAiScreen({
                 onUndoChange={(changeLogId) => handleUndoChange(active!.id, changeLogId)}
                 onSelectPlanForThread={(planId, title) => sendText(`Use my "${title}" plan for this.`, undefined, active!.id, planId)}
                 errorText={errorText}
+                errorCode={errorCode}
+                onViewPlans={() => setShowPlans(true)}
               />
             )}
           </div>
@@ -3942,6 +3953,7 @@ function HomeView({
   onOpenWorkspace,
   onQuickSend,
   errorText,
+  errorCode,
   isDesktop,
   onViewPlans,
   entitlementRefreshKey,
@@ -3956,6 +3968,7 @@ function HomeView({
   onOpenWorkspace: (planId: string) => void;
   onQuickSend: (text: string) => void;
   errorText: string | null;
+  errorCode?: string | null;
   isDesktop?: boolean;
   onViewPlans: () => void;
   entitlementRefreshKey: number;
@@ -4154,7 +4167,16 @@ function HomeView({
 
             {errorText && (
               <div style={{ marginBottom: 18, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10 }}>
-                {errorText}
+                <div>{errorText}</div>
+                {errorCode === 'AI_BETA_RESTRICTED' && (
+                  <button
+                    onClick={onViewPlans}
+                    data-testid="vents-ai-error-view-plans"
+                    style={{ marginTop: 8, background: 'none', border: 'none', padding: 0, color: '#d3b8ff', fontSize: 12, fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
+                  >
+                    View Plans ›
+                  </button>
+                )}
               </div>
             )}
 
@@ -4532,6 +4554,8 @@ function ConversationView({
   onUndoChange,
   onSelectPlanForThread,
   errorText,
+  errorCode,
+  onViewPlans,
 }: {
   conversation: LocalConversation;
   streaming: boolean;
@@ -4548,6 +4572,8 @@ function ConversationView({
   onUndoChange?: (changeLogId: string) => void;
   onSelectPlanForThread?: (planId: string, title: string) => void;
   errorText: string | null;
+  errorCode?: string | null;
+  onViewPlans?: () => void;
 }) {
   // Used only to switch the streaming indicator to BuildingPlanLoader
   // (P06) specifically for the "Build my plan." turn -- every other
@@ -4651,7 +4677,9 @@ function ConversationView({
               // a button that only dismisses the banner.
               <div style={{ marginBottom: 14, fontSize: 12, color: '#fbbf24', background: 'rgba(251,191,36,.08)', border: '1px solid rgba(251,191,36,.3)', borderRadius: 10, padding: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
                 <span>{errorText}</span>
-                {lastConvUserText && (
+                {errorCode === 'AI_BETA_RESTRICTED' && onViewPlans ? (
+                  <span onClick={onViewPlans} role="button" data-testid="vents-ai-error-view-plans" style={{ fontWeight: 700, color: '#d3b8ff', cursor: 'pointer', flexShrink: 0 }}>View Plans ›</span>
+                ) : lastConvUserText && (
                   <span onClick={() => onQuickAction?.(lastConvUserText)} role="button" data-testid="ai-generic-error-retry" style={{ fontWeight: 700, color: '#fbbf24', cursor: 'pointer', flexShrink: 0 }}>Retry</span>
                 )}
               </div>
