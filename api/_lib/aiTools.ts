@@ -1063,7 +1063,12 @@ export async function executeApplyPlanUpdate(client: SupabaseClient, _userId: st
   return { plan_id: planId, change_log_id: changeLogId, applied: true, actor };
 }
 
-export async function executeRecommendProviders(client: SupabaseClient, _userId: string, input: any) {
+export async function executeRecommendProviders(
+  client: SupabaseClient,
+  _userId: string,
+  input: any,
+  context?: { location?: { lat: number; lng: number } }
+) {
   const limit = clampLimit(input?.limit);
   // service_providers.starting_price (0034) is a plain naira numeric, not
   // kobo -- unlike every plans/plan_categories amount column, which really
@@ -1073,6 +1078,46 @@ export async function executeRecommendProviders(client: SupabaseClient, _userId:
   if (maxPriceNaira !== null && (!isFinite(maxPriceNaira) || maxPriceNaira < 0)) {
     throw new Error('max_price_naira must be a non-negative number');
   }
+
+  // Real GPS-distance search (the same get_nearby_service_providers()
+  // haversine RPC ServicesHomeScreen's own "Near You" uses -- fetchNearby
+  // ServiceProviders in serviceProviders.ts) when the client actually sent
+  // real, server-validated coordinates (aiAssistantHandler.ts's
+  // toolContext.location; never fabricated, never derived from the
+  // model's free-text `location` guess). Falls back to the existing
+  // fuzzy text-location match whenever coordinates aren't available --
+  // permission denied, unsupported device, or simply not granted yet --
+  // so a typed location (e.g. "Lagos") keeps working exactly as before.
+  // A max_price_naira filter has no equivalent on the distance RPC (it
+  // has no price column to filter on), so that combination still goes
+  // through the text-match path even when coordinates are present.
+  if (context?.location && maxPriceNaira === null) {
+    const { data: nearby, error: nearbyError } = await client.rpc('get_nearby_service_providers', {
+      p_lat: context.location.lat,
+      p_lng: context.location.lng,
+      p_category: input?.category ? String(input.category) : null,
+      p_limit: limit,
+    });
+    if (nearbyError) throw new Error(nearbyError.message);
+    const rows = Array.isArray(nearby) ? nearby : [];
+    if (rows.length > 0) {
+      return rows.map((row: any) => ({
+        provider_id: row.id,
+        business_name: row.business_name,
+        category: row.category,
+        location: row.location,
+        distance_km: row.distance_km != null ? Math.round(Number(row.distance_km) * 10) / 10 : null,
+        starting_price_naira: row.starting_price != null ? Number(row.starting_price) : null,
+        is_sponsored: false,
+        availability_note: 'Confirm availability with provider.',
+      }));
+    }
+    // Zero providers with real coordinates within range -- fall through
+    // to the text-match path below rather than returning an empty result,
+    // since a provider without geocoded coordinates yet (never shown by
+    // the distance RPC) might still be a genuine text match.
+  }
+
   const { data, error } = await client.rpc('search_services_fuzzy_filtered', {
     p_query: String(input?.query ?? ''),
     p_category: input?.category ? String(input.category) : null,
@@ -1315,7 +1360,7 @@ export async function executeDisambiguatePlans(client: SupabaseClient, _userId: 
   return { category_hint: categoryHint || null, candidates };
 }
 
-const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, input: any) => Promise<unknown>> = {
+const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, input: any, context?: { location?: { lat: number; lng: number } }) => Promise<unknown>> = {
   create_plan_draft: executeCreatePlanDraft,
   get_plan: executeGetPlan,
   propose_plan_update: executeProposePlanUpdate,
@@ -1330,8 +1375,14 @@ const PLAN_EXECUTORS: Record<string, (client: SupabaseClient, userId: string, in
   disambiguate_plans: executeDisambiguatePlans,
 };
 
-export async function executePlanTool(name: string, client: SupabaseClient, userId: string, input: any): Promise<unknown> {
+export async function executePlanTool(
+  name: string,
+  client: SupabaseClient,
+  userId: string,
+  input: any,
+  context?: { location?: { lat: number; lng: number } }
+): Promise<unknown> {
   const fn = PLAN_EXECUTORS[name];
   if (!fn) throw new Error(`Unknown plan tool: ${name}`);
-  return fn(client, userId, input);
+  return fn(client, userId, input, context);
 }

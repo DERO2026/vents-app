@@ -252,6 +252,62 @@ describe('executeRecommendProviders', () => {
     const { client } = makeFakeClient();
     await expect(executeRecommendProviders(client, 'user1', { query: 'x', max_price_naira: -1 })).rejects.toThrow();
   });
+
+  it('with real coordinates in context, calls the real GPS-distance RPC (get_nearby_service_providers) instead of the fuzzy text match', async () => {
+    const { client, rpcCalls } = makeFakeClient({
+      rpc: {
+        data: [{ id: 'p1', business_name: 'Biz', category: 'Photography', location: 'Lagos', distance_km: 3.456, starting_price: 250000 }],
+        error: null,
+      },
+    });
+    const result: any = await executeRecommendProviders(client, 'user1', { query: 'photographer', category: 'Photography' }, { location: { lat: 6.5244, lng: 3.3792 } });
+
+    expect(rpcCalls[0].name).toBe('get_nearby_service_providers');
+    expect(rpcCalls[0].args.p_lat).toBe(6.5244);
+    expect(rpcCalls[0].args.p_lng).toBe(3.3792);
+    expect(result[0].provider_id).toBe('p1');
+    expect(result[0].distance_km).toBe(3.5);
+    expect(result[0].is_sponsored).toBe(false);
+  });
+
+  it('falls back to the fuzzy text-location match when no coordinates are available (typed location keeps working)', async () => {
+    const { client, rpcCalls } = makeFakeClient({
+      rpc: {
+        data: [{ provider_id: 'p1', business_name: 'Biz', provider_category: 'Photography', location: 'Lagos', starting_price: 250000, service_id: 's1', service_name: 'Shoot', service_price: 250000 }],
+        error: null,
+      },
+    });
+    const result: any = await executeRecommendProviders(client, 'user1', { query: 'photographer', location: 'Lagos' });
+
+    expect(rpcCalls[0].name).toBe('search_services_fuzzy_filtered');
+    expect(rpcCalls[0].args.p_location).toBe('Lagos');
+    expect(result[0].provider_id).toBe('p1');
+  });
+
+  it('falls back to the text match when coordinates ARE available but a max_price_naira filter is set (the distance RPC has no price column to filter on)', async () => {
+    const { client, rpcCalls } = makeFakeClient({
+      rpc: {
+        data: [{ provider_id: 'p1', business_name: 'Biz', provider_category: 'Photography', location: 'Lagos', starting_price: 250000, service_id: 's1', service_name: 'Shoot', service_price: 250000 }],
+        error: null,
+      },
+    });
+    await executeRecommendProviders(client, 'user1', { query: 'photographer', max_price_naira: 300000 }, { location: { lat: 6.5244, lng: 3.3792 } });
+
+    expect(rpcCalls[0].name).toBe('search_services_fuzzy_filtered');
+  });
+
+  it('falls back to the text match when the distance RPC finds zero providers with real coordinates nearby', async () => {
+    const { client, rpcCalls } = makeFakeClient({
+      rpc: (name: string) =>
+        name === 'get_nearby_service_providers'
+          ? { data: [], error: null }
+          : { data: [{ provider_id: 'p1', business_name: 'Biz', provider_category: 'Photography', location: 'Lagos', starting_price: 250000, service_id: 's1', service_name: 'Shoot', service_price: 250000 }], error: null },
+    });
+    const result: any = await executeRecommendProviders(client, 'user1', { query: 'photographer' }, { location: { lat: 6.5244, lng: 3.3792 } });
+
+    expect(rpcCalls.map((c) => c.name)).toEqual(['get_nearby_service_providers', 'search_services_fuzzy_filtered']);
+    expect(result[0].provider_id).toBe('p1');
+  });
 });
 
 describe('executeAssignProvider', () => {

@@ -48,7 +48,11 @@ export function OrganizerDashboard({
   const [revenue, setRevenue] = useState(0);
   const [ticketsSold, setTicketsSold] = useState(0);
   const [orgEvents, setOrgEvents] = useState<any[]>([]);
-  const [chartData, setChartData] = useState<{ name: string; sold: number; goal: number }[]>([]);
+  // goal is null when the organizer never set a ticket_goal for that event
+  // -- this used to silently fall back to a hardcoded 500, which fabricated
+  // a goal the organizer never set and could show a false "exceeded your
+  // goal" (green) or "missed your goal" read on a number nobody chose.
+  const [chartData, setChartData] = useState<{ name: string; sold: number; goal: number | null }[]>([]);
 
   useEffect(() => {
     async function loadDashboardData() {
@@ -110,7 +114,7 @@ export function OrganizerDashboard({
               .map((e: any) => ({
                 name: (e.title as string).length > 12 ? (e.title as string).slice(0, 12) + '…' : e.title,
                 sold: soldByEvent[e.id] || 0,
-                goal: Number(e.ticket_goal) || 500,
+                goal: e.ticket_goal != null && Number(e.ticket_goal) > 0 ? Number(e.ticket_goal) : null,
               }))
               .sort((a: any, b: any) => b.sold - a.sold)
               .slice(0, 5);
@@ -565,7 +569,11 @@ export function OrganizerDashboard({
 
         {/* ── Tickets Sold vs Goal Chart ──────────────────────────────────── */}
         {chartData.length > 0 && (
-          <div style={{ background: ventsColors.surface, borderRadius: '20px', border: '1px solid rgba(255,255,255,0.05)', padding: '20px', marginBottom: '28px' }}>
+          // Modest accent treatment -- same faint purple border + soft
+          // glow used on Home's search bar refinement, applied here so
+          // the one data card on this screen reads as a live, premium
+          // surface rather than a flat grey panel. Data/layout unchanged.
+          <div style={{ background: ventsColors.surface, borderRadius: '20px', border: '1px solid rgba(139,92,246,0.18)', boxShadow: '0 2px 14px rgba(139,92,246,0.08)', padding: '20px', marginBottom: '28px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
               <div>
                 <h3 style={{ color: ventsColors.ink1, fontSize: '14px', fontWeight: 700, margin: 0, fontFamily: 'Manrope, sans-serif' }}>Tickets Sold vs Goal</h3>
@@ -599,14 +607,18 @@ export function OrganizerDashboard({
                   labelStyle={{ color: ventsColors.ink1, fontWeight: 700, marginBottom: '4px' }}
                   itemStyle={{ color: ventsColors.accentSoft }}
                 />
+                {/* No goal bar/fill for an event with goal: null -- recharts
+                    simply skips a null value, so an event with no
+                    ticket_goal set shows no goal bar at all rather than a
+                    fabricated one. */}
                 <Bar dataKey="goal" fill="rgba(167,139,250,0.15)" radius={[4, 4, 0, 0]} name="Goal" />
                 <Bar dataKey="sold" radius={[4, 4, 0, 0]} name="Sold">
                   {chartData.map((entry, idx) => (
                     <Cell
                       key={idx}
-                      fill={entry.sold >= entry.goal
-                        ? ventsColors.success  // green = hit goal
-                        : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty
+                      fill={entry.goal != null && entry.sold >= entry.goal
+                        ? ventsColors.success  // green = hit a REAL goal the organizer actually set
+                        : entry.sold > 0 ? 'url(#orgDashBarGradient)' : 'rgba(167,139,250,0.3)'  // gradient or empty -- never claims "hit goal" when there's no real goal to compare against
                       }
                     />
                   ))}
@@ -614,6 +626,11 @@ export function OrganizerDashboard({
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+            {chartData.some((d) => d.goal == null) && (
+              <p style={{ color: ventsColors.ink3, fontSize: '10.5px', margin: '10px 0 0' }}>
+                No goal bar is shown for an event with no ticket goal set.
+              </p>
+            )}
           </div>
         )}
 

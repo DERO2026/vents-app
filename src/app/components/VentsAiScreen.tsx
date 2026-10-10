@@ -5,6 +5,7 @@ import { PickerSheet, PickerField } from './shared/PickerSheet';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { AiPlansScreen } from './AiPlansScreen';
 import { resolveHasRealAiAccess } from '../../lib/aiEntitlementClient';
+import { useGeolocation } from '../../lib/useGeolocation';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -3602,6 +3603,16 @@ export function VentsAiScreen({
   const [conversations, setConversations] = useState<LocalConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
+  // Same real, non-blocking geolocation read ServicesHomeScreen's "Near
+  // You" already uses (useGeolocation.ts) -- a one-shot navigator.
+  // geolocation call, never persisted, auto-falling back (status
+  // 'denied'/'unavailable') without ever blocking chat. Only used when
+  // 'granted': recommend_providers then does a real GPS-distance search
+  // (aiTools.ts's executeRecommendProviders) instead of guessing from
+  // whatever location text the model extracted from the conversation.
+  // Typed locations (the Area control, or just naming a city in chat)
+  // keep working exactly as before when this isn't granted.
+  const geo = useGeolocation(true);
   // Applies a contextual seed prompt to the composer -- only while on the
   // Home view with no active conversation (a seed arriving mid-conversation
   // would otherwise clobber whatever the user is already typing or
@@ -3720,7 +3731,11 @@ export function VentsAiScreen({
         role: m.role,
         content: planId && m.role === 'user' ? `[plan_id: ${planId}] ${m.text}` : m.text,
       }));
-      const res = await sendVentsAiMessage(apiMessages);
+      const res = await sendVentsAiMessage(
+        apiMessages,
+        undefined,
+        geo.status === 'granted' && geo.lat != null && geo.lng != null ? { lat: geo.lat, lng: geo.lng } : undefined
+      );
       appendAssistantResponse(convId, res);
     } catch (e: any) {
       // Per the export's STATE_CARDS tone ("Something went wrong … Nothing

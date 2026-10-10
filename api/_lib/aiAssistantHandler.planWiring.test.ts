@@ -27,7 +27,10 @@ describe('aiAssistantHandler.ts: SI Planner tool dispatch', () => {
 
   it('includes plan tools as auto-executed (isPlanTool), not behind the proposal/confirmation branch', () => {
     expect(handlerSrc).toMatch(/PLAN_TOOL_NAMES\.has\(block\.name\)/);
-    expect(handlerSrc).toMatch(/executePlanTool\(block\.name, client, session\.userId, block\.input\)/);
+    // 5th arg (toolContext) carries the real, server-validated
+    // coordinates recommend_providers uses for real GPS-distance search --
+    // see aiTools.ts's executeRecommendProviders.
+    expect(handlerSrc).toMatch(/executePlanTool\(block\.name, client, session\.userId, block\.input, toolContext\)/);
   });
 
   it('never passes a client-supplied user id to executePlanTool -- only the server-verified session.userId', () => {

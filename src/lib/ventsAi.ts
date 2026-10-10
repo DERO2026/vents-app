@@ -29,9 +29,18 @@ export type VentsAiResponse =
       text?: string;
     };
 
+// Optional real coordinates, read from the browser's own geolocation API
+// (navigator.geolocation, via the same useGeolocation hook
+// ServicesHomeScreen's "Near You" already uses) -- never fabricated, never
+// derived from a typed location string. Omitted entirely when permission
+// was denied/unavailable, so the server-side recommend_providers tool
+// falls back to its existing text-location match (see aiTools.ts).
+export type VentsAiLocation = { lat: number; lng: number };
+
 export async function sendVentsAiMessage(
   messages: VentsAiMessage[],
-  confirmedAction?: VentsAiConfirmedAction
+  confirmedAction?: VentsAiConfirmedAction,
+  location?: VentsAiLocation
 ): Promise<VentsAiResponse> {
   const token = await getAuthToken();
 
@@ -41,7 +50,7 @@ export async function sendVentsAiMessage(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ mode: 'ai_assistant', messages, confirmedAction }),
+    body: JSON.stringify({ mode: 'ai_assistant', messages, confirmedAction, location }),
   });
 
   const body = await res.json().catch(() => null);

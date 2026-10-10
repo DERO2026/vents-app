@@ -550,6 +550,66 @@ describe('handleAiAssistant: tool session forwarding (no service-role)', () => {
   });
 });
 
+describe('handleAiAssistant: real location passed to recommend_providers (never fabricated, always re-validated)', () => {
+  function stubRecommendProvidersRound() {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        content: [{ type: 'tool_use', id: 'tu1', name: 'get_plan', input: { plan_id: 'plan1' } }],
+      }),
+    })));
+    mockExecutePlanTool.mockResolvedValueOnce([{ provider_id: 'p1', business_name: 'Biz' }]);
+  }
+
+  it('forwards real, well-formed coordinates from the request body to executePlanTool as context', async () => {
+    stubRecommendProvidersRound();
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [{ role: 'user', content: 'find me a photographer' }], location: { lat: 6.5244, lng: 3.3792 } },
+    };
+    await handleAiAssistant(req, makeRes());
+
+    expect(mockExecutePlanTool).toHaveBeenCalledWith(
+      'get_plan',
+      { __fakeClient: true, accessToken: 'tok' },
+      'user-1',
+      { plan_id: 'plan1' },
+      { location: { lat: 6.5244, lng: 3.3792 } }
+    );
+  });
+
+  it('treats a missing location the same as an omitted one -- no location in the context passed to executePlanTool', async () => {
+    stubRecommendProvidersRound();
+    const req: any = { method: 'POST', headers: { authorization: 'Bearer tok' }, body: { messages: [{ role: 'user', content: 'find me a photographer' }] } };
+    await handleAiAssistant(req, makeRes());
+
+    const call = mockExecutePlanTool.mock.calls[0];
+    expect(call[4]).toEqual({});
+  });
+
+  it.each([
+    ['out-of-range latitude', { lat: 200, lng: 3.3792 }],
+    ['out-of-range longitude', { lat: 6.5244, lng: 999 }],
+    ['non-numeric latitude', { lat: 'not-a-number', lng: 3.3792 }],
+    ['a bare string instead of an object', 'Lagos'],
+    ['null', null],
+  ])('rejects malformed location (%s) and falls back to no-location rather than throwing or passing it through unchecked', async (_label, badLocation) => {
+    stubRecommendProvidersRound();
+    const req: any = {
+      method: 'POST',
+      headers: { authorization: 'Bearer tok' },
+      body: { messages: [{ role: 'user', content: 'find me a photographer' }], location: badLocation },
+    };
+    const res = makeRes();
+    await handleAiAssistant(req, res);
+
+    expect(res.status).not.toHaveBeenCalledWith(500);
+    const call = mockExecutePlanTool.mock.calls[0];
+    expect(call[4]).toEqual({});
+  });
+});
+
 describe('handleAiAssistant: Phase 2 explain -> confirm -> execute (no mutating tool executes inline)', () => {
   it('never executes a proposal tool inside the model loop -- it mints a confirmation token and returns confirmation_required', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => ({

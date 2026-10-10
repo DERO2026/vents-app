@@ -130,6 +130,80 @@ describe('AiPlansScreen: real current-tier status (never a hardcoded "unlocked" 
   });
 });
 
+describe('AiPlansScreen: self-service cancellation (real RPC, requires explicit confirmation)', () => {
+  it('does not cancel anything until the user confirms -- the first tap only shows the confirmation step', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockImplementation((name: string) =>
+      name === 'get_my_ai_entitlement'
+        ? Promise.resolve({ data: { plan_id: 'ai', status: 'active', period_end: null, grace_until: null }, error: null })
+        : Promise.resolve({ data: null, error: null })
+    );
+    await mount();
+
+    const startButton = container!.querySelector('[data-testid="ai-plans-cancel-start"]') as HTMLButtonElement;
+    expect(startButton).toBeTruthy();
+    act(() => { startButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(rpc.mock.calls.some(([name]) => name === 'cancel_my_ai_subscription')).toBe(false);
+    expect(container!.querySelector('[data-testid="ai-plans-cancel-confirm"]')).toBeTruthy();
+  });
+
+  it('cancels via the real cancel_my_ai_subscription RPC only after explicit confirmation, and updates the status shown', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockImplementation((name: string) => {
+      if (name === 'get_my_ai_entitlement') return Promise.resolve({ data: { plan_id: 'ai', status: 'active', period_end: null, grace_until: null }, error: null });
+      if (name === 'cancel_my_ai_subscription') return Promise.resolve({ data: { status: 'canceled', plan_id: 'ai' }, error: null });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+
+    act(() => { (container!.querySelector('[data-testid="ai-plans-cancel-start"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => {
+      (container!.querySelector('[data-testid="ai-plans-cancel-confirm"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(rpc).toHaveBeenCalledWith('cancel_my_ai_subscription');
+    expect(container!.textContent).toContain("don't have an active VENTS AI subscription");
+  });
+
+  it('"Keep my subscription" backs out of the confirm step without calling the cancel RPC', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockImplementation((name: string) =>
+      name === 'get_my_ai_entitlement'
+        ? Promise.resolve({ data: { plan_id: 'ai', status: 'active', period_end: null, grace_until: null }, error: null })
+        : Promise.resolve({ data: null, error: null })
+    );
+    await mount();
+
+    act(() => { (container!.querySelector('[data-testid="ai-plans-cancel-start"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const keepButton = Array.from(container!.querySelectorAll('button')).find((b) => b.textContent === 'Keep my subscription')!;
+    act(() => { keepButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(rpc.mock.calls.some(([name]) => name === 'cancel_my_ai_subscription')).toBe(false);
+    expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeTruthy();
+  });
+
+  it('shows an error and keeps the subscription shown as active if the cancel RPC fails', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockImplementation((name: string) => {
+      if (name === 'get_my_ai_entitlement') return Promise.resolve({ data: { plan_id: 'ai', status: 'active', period_end: null, grace_until: null }, error: null });
+      if (name === 'cancel_my_ai_subscription') return Promise.resolve({ data: null, error: new Error('network down') });
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+
+    act(() => { (container!.querySelector('[data-testid="ai-plans-cancel-start"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    await act(async () => {
+      (container!.querySelector('[data-testid="ai-plans-cancel-confirm"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container!.textContent).toContain('network down');
+    expect(container!.textContent).toContain("You're on");
+  });
+});
+
 describe('AiPlansScreen: purchase flow (never grants access from a client-side signal alone)', () => {
   it('initiates a real pending payment, opens Paystack with the server-returned amount, and only shows success after verify() confirms it', async () => {
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);

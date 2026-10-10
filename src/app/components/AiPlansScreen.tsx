@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscriptionPayment, type AiPlanPublic } from '../../lib/aiSubscription';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
-import { resolveHasRealAiAccess, type AiEntitlementRow } from '../../lib/aiEntitlementClient';
+import { resolveHasRealAiAccess, cancelMyAiSubscription, type AiEntitlementRow } from '../../lib/aiEntitlementClient';
 
 // Real VENTS AI paywall/plans screen. Every price, plan name, and unit
 // count shown here comes from get_ai_plans_public() (0175_ai_subscription_
@@ -78,6 +78,8 @@ export function AiPlansScreen({
   // no row", never a default of "active" -- no renewal date or status is
   // ever shown here unless this call actually returned one.
   const [entitlement, setEntitlement] = useState<AiEntitlementRow | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -97,6 +99,29 @@ export function AiPlansScreen({
 
   const hasRealAccess = resolveHasRealAiAccess(entitlement);
   const currentPlanId = hasRealAccess ? entitlement?.plan_id : null;
+
+  // Cancellation is immediate, not "stop auto-renewing" -- see the
+  // migration's own comment (0177_ai_subscription_self_cancellation.sql)
+  // for why: this product has no recurring Paystack subscription object,
+  // so there's no future charge to defer against. The confirm step exists
+  // because this gives up real, already-paid-for access right now.
+  async function handleCancel() {
+    setError(null);
+    setCancelling(true);
+    try {
+      const result = await cancelMyAiSubscription();
+      if (result.status === 'canceled' || result.status === 'already_canceled') {
+        setEntitlement((prev) => (prev ? { ...prev, status: 'canceled' } : prev));
+        setConfirmingCancel(false);
+      } else {
+        setError('Could not cancel your subscription. Please try again.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Could not cancel your subscription. Please try again.');
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   async function handleSubscribe(plan: AiPlanPublic) {
     setError(null);
@@ -178,6 +203,36 @@ export function AiPlansScreen({
                   You're on <strong>{plans?.find((p) => p.plan_id === currentPlanId)?.label || currentPlanId}</strong>.
                   {entitlement?.period_end && (
                     <> {entitlement.status === 'grace' ? 'Renewal is overdue —' : 'Renews'} {formatDate(entitlement.period_end)}.</>
+                  )}
+                  {' '}
+                  {confirmingCancel ? (
+                    <>
+                      Cancelling ends your access immediately (this plan has no recurring charge to stop, so there's nothing to keep paying for).{' '}
+                      <button
+                        onClick={handleCancel}
+                        disabled={cancelling}
+                        data-testid="ai-plans-cancel-confirm"
+                        style={{ background: 'none', border: 'none', padding: 0, color: '#f87171', fontSize: 12.5, fontWeight: 700, cursor: cancelling ? 'default' : 'pointer', textDecoration: 'underline' }}
+                      >
+                        {cancelling ? 'Cancelling…' : 'Yes, cancel now'}
+                      </button>
+                      {' · '}
+                      <button
+                        onClick={() => setConfirmingCancel(false)}
+                        disabled={cancelling}
+                        style={{ background: 'none', border: 'none', padding: 0, color: INK3, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        Keep my subscription
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      onClick={() => setConfirmingCancel(true)}
+                      data-testid="ai-plans-cancel-start"
+                      style={{ background: 'none', border: 'none', padding: 0, color: INK3, fontSize: 12.5, fontWeight: 600, cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      Cancel subscription
+                    </button>
                   )}
                 </>
               ) : (

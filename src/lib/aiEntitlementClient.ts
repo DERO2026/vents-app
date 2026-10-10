@@ -17,6 +17,20 @@ export interface AiEntitlementRow {
   hard_ceiling?: number;
 }
 
+import { supabase } from './supabase';
+
+// Self-service cancellation (0177_ai_subscription_self_cancellation.sql).
+// This product has no recurring Paystack subscription object to cancel --
+// every purchase is a one-time charge with a fixed period_end, nothing
+// auto-charges again -- so cancelling here means giving up REMAINING
+// access immediately, not "stop auto-renewing." The RPC is scoped to
+// auth.uid() server-side; this client call carries no user id at all.
+export async function cancelMyAiSubscription(): Promise<{ status: string; plan_id?: string }> {
+  const { data, error } = await supabase.rpc('cancel_my_ai_subscription');
+  if (error) throw error;
+  return data as { status: string; plan_id?: string };
+}
+
 export function resolveHasRealAiAccess(ent: AiEntitlementRow | null): boolean {
   if (!ent || !ent.plan_id || ent.status === 'inactive') return false;
   if (ent.status === 'expired' || ent.status === 'canceled') return false;

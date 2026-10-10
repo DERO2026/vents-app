@@ -244,7 +244,24 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
   const rateOk = await enforceRateLimit(String(authHeader), `ai_assistant:${session.userId}`, 20, 3600);
   if (!rateOk) return res.status(429).json({ error: 'Too many requests. Please try again in a bit.' });
 
-  const { messages, confirmedAction } = req.body || {};
+  const { messages, confirmedAction, location: rawLocation } = req.body || {};
+
+  // Real coordinates only -- the client only ever sends this from an
+  // actual navigator.geolocation read (ventsAi.ts's VentsAiLocation type),
+  // never fabricated. Still re-validated server-side (never trust client
+  // JSON shape/range unchecked): both fields must be finite numbers in a
+  // real coordinate range, otherwise this is treated as "no location"
+  // exactly like an omitted field -- recommend_providers then falls back
+  // to its existing text-location match, it never throws for a malformed
+  // location.
+  const toolContext: { location?: { lat: number; lng: number } } = {};
+  if (
+    rawLocation && typeof rawLocation === 'object' &&
+    Number.isFinite(rawLocation.lat) && Number.isFinite(rawLocation.lng) &&
+    Math.abs(rawLocation.lat) <= 90 && Math.abs(rawLocation.lng) <= 180
+  ) {
+    toolContext.location = { lat: Number(rawLocation.lat), lng: Number(rawLocation.lng) };
+  }
 
   // Audit finding F29: this used to be built from req.headers['x-forwarded-proto']
   // / req.headers.host -- both client-controllable on an inbound request. The
@@ -580,7 +597,7 @@ export async function handleAiAssistant(req: VercelRequest, res: VercelResponse)
           try {
             const result: any = isReadOnly
               ? await executeReadOnlyTool(block.name, client, block.input)
-              : await executePlanTool(block.name, client, session.userId, block.input);
+              : await executePlanTool(block.name, client, session.userId, block.input, toolContext);
             cards.push({ type: block.name, data: result, source: 'vents' as const });
             if (isPlanTool) {
               // The plan_id this call succeeded against -- either echoed
