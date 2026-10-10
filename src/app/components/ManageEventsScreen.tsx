@@ -207,11 +207,24 @@ export function ManageEventsScreen({
            single stretched mobile column -- header/search/list share a
            centered max-width content column, and events lay out as a
            responsive card grid rather than one wide stacked list. */
-        .vents-manage-shell { }
+        /* Root cause of the "My Events" scroll bug: both wrapper classes
+           below were block elements with no height of their own, so the
+           real scroll container further down (flex:1 + overflowY:auto)
+           had nothing bounding its height and just grew to fit every
+           card instead of scrolling. flex:1 only does anything inside a
+           flex-column parent -- these two classes now actually are one,
+           all the way down from the root (which already is display:flex;
+           flexDirection:column; height:100% inline), with min-height:0 so
+           they can shrink below their content size rather than fighting
+           it. The desktop media query below still overrides
+           .vents-manage-outer to a row layout for the sidebar, but keeps
+           flex:1/min-height:0 so it's still bounded, not just reflowed. */
+        .vents-manage-outer { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+        .vents-manage-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
         .vents-manage-list { display: flex; flex-direction: column; gap: 12px; }
         .vents-manage-sidebar { display: none; }
         @media (min-width: 900px) {
-          .vents-manage-outer { display: flex; align-items: flex-start; max-width: 1300px; width: 100%; margin: 0 auto; }
+          .vents-manage-outer { flex-direction: row; align-items: flex-start; max-width: 1300px; width: 100%; margin: 0 auto; }
           .vents-manage-sidebar {
             display: flex; flex-direction: column; gap: 4px; width: 220px; flex: none;
             padding: 20px 14px; border-right: 1px solid rgba(255,255,255,0.07);
@@ -298,7 +311,7 @@ export function ManageEventsScreen({
       </div>
 
       {/* Content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 100px', scrollbarWidth: 'none' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 16px 100px', scrollbarWidth: 'none' }}>
 
         {/* Error banner */}
         {error && (

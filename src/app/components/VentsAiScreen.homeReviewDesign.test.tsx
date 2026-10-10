@@ -50,8 +50,8 @@ async function mount() {
   });
 }
 
-describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabricated)', () => {
-  it('shows "access: active" for an active paid entitlement', async () => {
+describe('VentsAiScreen Home: real plan label (get_my_ai_entitlement, not fabricated, never clickable)', () => {
+  it('shows "PLAN: VENTS AI" for a real active ai entitlement', async () => {
     rpc.mockImplementation((name: string) => {
       if (name === 'get_my_ai_entitlement') return Promise.resolve({ data: { plan_id: 'ai', status: 'active', used_units: 3, included_units: 50, hard_ceiling: 75 }, error: null });
       if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
@@ -62,10 +62,10 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     root = createRoot(container);
     await act(async () => { root!.render(<VentsAiScreen onClose={() => {}} />); await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.textContent).toContain('VENTS AI access: active');
+    expect(container.textContent).toContain('PLAN: VENTS AI');
   });
 
-  it('shows "access: trial" for a trialing entitlement', async () => {
+  it('shows "PLAN: VENTS AI TRIAL" for a real trialing entitlement', async () => {
     rpc.mockImplementation((name: string) => {
       if (name === 'get_my_ai_entitlement') return Promise.resolve({ data: { plan_id: 'trial', status: 'trialing', used_units: 2, hard_ceiling: 15 }, error: null });
       if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
@@ -76,10 +76,10 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     root = createRoot(container);
     await act(async () => { root!.render(<VentsAiScreen onClose={() => {}} />); await Promise.resolve(); await Promise.resolve(); });
 
-    expect(container.textContent).toContain('VENTS AI access: trial');
+    expect(container.textContent).toContain('PLAN: VENTS AI TRIAL');
   });
 
-  it('shows "access: expired" for an expired entitlement, and "not subscribed" for no plan at all', async () => {
+  it('shows an honest non-subscriber message for an expired entitlement, never a fabricated plan name', async () => {
     rpc.mockImplementation((name: string) => {
       if (name === 'get_my_ai_entitlement') return Promise.resolve({ data: { plan_id: 'ai', status: 'expired' }, error: null });
       if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
@@ -89,20 +89,29 @@ describe('VentsAiScreen Home: real status pill (get_my_ai_entitlement, not fabri
     document.body.appendChild(container);
     root = createRoot(container);
     await act(async () => { root!.render(<VentsAiScreen onClose={() => {}} />); await Promise.resolve(); await Promise.resolve(); });
-    expect(container.textContent).toContain('VENTS AI access: expired');
+    expect(container.textContent).toContain('No active VENTS AI subscription');
+    expect(container.textContent).not.toContain('PLAN: VENTS AI');
   });
 
-  it('tapping the pill opens the real AiPlansScreen paywall (not a dead-end notice)', async () => {
+  it('the plan label itself is not a clickable button -- only the separate "View Plans" action opens the paywall', async () => {
     rpc.mockImplementation((name: string) => {
       if (name === 'get_ai_plans_public') return Promise.resolve({ data: [], error: null });
       if (name === 'get_plans_overview') return Promise.resolve({ data: [], error: null });
       return Promise.resolve({ data: null, error: null });
     });
     await mount();
-    const pill = Array.from(container!.querySelectorAll('div[role="button"]')).find((d) => d.textContent?.includes('Checking access'))!;
-    expect(pill).toBeTruthy();
+    const label = container!.querySelector('[data-testid="vents-ai-plan-label"]')!;
+    expect(label.getAttribute('role')).not.toBe('button');
     await act(async () => {
-      pill.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      label.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    // Clicking the plan label does nothing -- AiPlansScreen must not open.
+    expect(container!.textContent).not.toContain('VENTS AI Plans');
+
+    const viewPlansButton = container!.querySelector('[data-testid="vents-ai-view-plans"]') as HTMLButtonElement;
+    await act(async () => {
+      viewPlansButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
     expect(container!.textContent).toContain('VENTS AI Plans');

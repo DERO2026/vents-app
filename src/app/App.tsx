@@ -2119,25 +2119,19 @@ export default function App() {
     }
     setSelectedTicketType(ticketType);
     setSelectedTicketQty(qty);
-    // A single free ticket can skip straight to confirmation. Anything
-    // needing more than one attendee's details -- including a free group
-    // RSVP -- goes through CheckoutScreen's attendee form so every ticket
-    // in the group gets its own name/email (and its own QR code).
-    if ((ticketType.price ?? 0) === 0 && qty === 1) {
-      const freeTicket: PurchasedTicket = {
-        ticketId: `VNT-FREE-${Date.now()}`,
-        event: selectedEvent!,
-        ticketType,
-        quantity: qty,
-        totalAmount: 0,
-        purchasedAt: new Date().toISOString(),
-        holderName: currentUser.full_name || currentUser.username || '',
-      };
-      handleCheckoutSuccess(freeTicket);
-      return;
-    }
+    // Every ticket -- free or paid, one attendee or several -- goes
+    // through CheckoutScreen's attendee-details form and handlePay()'s
+    // validation (valid email, valid phone, all attendee fields) before
+    // anything is issued. A single-quantity free ticket used to skip
+    // straight to handleCheckoutSuccess() here with no confirmation step
+    // at all and only currentUser.full_name as the holder name -- tapping
+    // "Get tickets" issued a real ticket immediately, with nothing shown
+    // to the user and no attendee details collected or validated. That
+    // shortcut is removed; CheckoutScreen's own free-ticket branch
+    // (handlePay -> handleFreeTicket, gated by the same validation every
+    // paid ticket goes through) is the only path that issues a ticket now.
     navigateTo('checkout');
-  }, [navigateTo, selectedEvent, handleCheckoutSuccess]);
+  }, [navigateTo]);
 
   const handleToggleSave = useCallback(async (eventId: string) => {
     if (!currentUser) {

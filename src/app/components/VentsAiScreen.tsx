@@ -4,6 +4,7 @@ import { supabase } from '../../lib/supabase';
 import { PickerSheet, PickerField } from './shared/PickerSheet';
 import { COUNTRY_CODES } from '../../lib/countries';
 import { AiPlansScreen } from './AiPlansScreen';
+import { resolveHasRealAiAccess } from '../../lib/aiEntitlementClient';
 
 // VENTS AI full-screen conversational assistant, reproducing
 // design-export/"VENTS AI.dc.html"'s Home + Conversation views. Every color,
@@ -3897,44 +3898,24 @@ export function VentsAiScreen({
 // own spec text, plan threads now appear inline in RECENT CONVERSATIONS
 // (marked with a ◆), and the Plans tab shows a live count badge -- neither
 // is filtered out or static.
-// "VENTS AI Home Review.dc.html" (refined variant 1b/1c) -- the full-width
-// "access: active" row from the originally-approved "1a" screen becomes a
-// small header status pill. Real data only: sourced from the same
-// get_my_ai_entitlement() RPC AiAccessScreen.tsx already reads (STABLE,
-// SECURITY DEFINER, scoped to auth.uid() -- no way to ask for someone
-// else's status), never fabricated or derived from local state. Colors
-// mirror AiAccessScreen's own state semantics (green = usable right now,
-// amber = needs attention, grey = still loading) without duplicating its
-// full gating logic here -- this pill is informational, not a gate; actual
-// enforcement still happens server-side in check_and_reserve_ai_usage().
-type AiStatusPill = { label: string; dot: string; bg: string; border: string; color: string };
-
-function resolveStatusPill(ent: {
+// Compact, non-clickable plan disclaimer -- replaces the old yellow,
+// clickable status pill, which duplicated View Plans as a second way to
+// open the same screen and used an alarming color (amber/red) for the
+// completely normal "not subscribed yet" state. This never claims a plan
+// the user doesn't actually have: resolveHasRealAiAccess() mirrors the
+// server's own active/trialing/grace + period/grace logic (the same check
+// VentsAiUnlockedScreen and AiPlansScreen use), so "PLAN: X" only ever
+// appears for a genuinely valid entitlement.
+function resolvePlanLabel(ent: {
   plan_id: string | null;
   status: string;
-  used_units?: number;
-  hard_ceiling?: number;
   period_end?: string | null;
   grace_until?: string | null;
-} | null): AiStatusPill {
-  if (!ent) return { label: 'Checking access…', dot: '#5e5470', bg: 'rgba(255,255,255,.06)', border: 'rgba(255,255,255,.12)', color: '#b4aecb' };
-  const periodEndPassed = !!ent.period_end && new Date(ent.period_end).getTime() < Date.now();
-  if (!ent.plan_id || ent.status === 'inactive') {
-    return { label: 'VENTS AI access: not subscribed', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
-  }
-  if (ent.status === 'expired' || ent.status === 'canceled' || (periodEndPassed && !ent.grace_until)) {
-    return { label: 'VENTS AI access: expired', dot: '#f87171', bg: 'rgba(248,113,113,.08)', border: 'rgba(248,113,113,.3)', color: '#f87171' };
-  }
-  if (ent.hard_ceiling && (ent.used_units ?? 0) >= ent.hard_ceiling) {
-    return { label: 'VENTS AI access: limit reached', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
-  }
-  if (ent.status === 'trialing') {
-    return { label: 'VENTS AI access: trial', dot: '#34d399', bg: 'rgba(52,211,153,.08)', border: 'rgba(52,211,153,.3)', color: '#34d399' };
-  }
-  if (ent.status === 'grace') {
-    return { label: 'VENTS AI access: renewal pending', dot: '#fbbf24', bg: 'rgba(251,191,36,.08)', border: 'rgba(251,191,36,.3)', color: '#fbbf24' };
-  }
-  return { label: 'VENTS AI access: active', dot: '#34d399', bg: 'rgba(52,211,153,.08)', border: 'rgba(52,211,153,.3)', color: '#34d399' };
+} | null): string {
+  if (!ent) return 'Checking plan…';
+  if (!resolveHasRealAiAccess(ent)) return 'No active VENTS AI subscription';
+  const names: Record<string, string> = { ai: 'VENTS AI', ai_plus: 'VENTS AI+', ai_pro: 'VENTS AI PRO', trial: 'VENTS AI TRIAL' };
+  return `PLAN: ${names[ent.plan_id || ''] || (ent.plan_id || '').toUpperCase()}`;
 }
 
 // Mood/Budget/Area -- the design's "tune a search" card condensed to three
@@ -4069,7 +4050,7 @@ function HomeView({
     <div style={{ flex: 1, overflowY: 'auto', padding: '18px 16px 30px' }}>
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '.08em', color: '#c4b5fd', textTransform: 'uppercase' as const }}>VENTS AI</div>
+          <div style={{ fontSize: 13, fontWeight: 800, letterSpacing: '.08em', color: '#c4b5fd', textTransform: 'uppercase' as const }}>VENTS AI - BY DERO</div>
           <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS AI" role="button">✕</div>
         </div>
 
@@ -4081,7 +4062,7 @@ function HomeView({
             Sized with clamp() so it's noticeably bigger than the old
             76px fixed size on every device, without overflowing a small
             phone or looking undersized on a tablet/desktop. */}
-        <Vents3DOrb size="clamp(92px, 26vw, 136px)" />
+        <Vents3DOrb size="clamp(112px, 30vw, 160px)" />
 
         {/* Rotating headline -- plain text swap every ~2.5s (see the
             effect above), frozen on the first phrase under
@@ -4105,31 +4086,20 @@ function HomeView({
         </div>
         <div style={{ height: 14 }} />
 
-        {/* Two things, same destination: the pill (real status, small by
-            design -- a status indicator shouldn't shout) and an explicit,
-            unmistakable "View Plans" action next to it, so the only
-            subscription entry point on this screen isn't a 32px dot a
-            user could plausibly miss. Both call onViewPlans -- there is
-            exactly one way this screen opens AiPlansScreen, just two
-            visible affordances for it. Reachable regardless of
-            app_config.ai_entitlement_enforced -- this row isn't gated on
-            that flag at all, only on get_my_ai_entitlement() actually
-            resolving (or still loading, which the pill's own "Checking
-            access…" label already covers). */}
+        {/* Two separate, non-overlapping things: a plain-text, NON-clickable
+            plan disclaimer (never amber/red -- "not subscribed yet" is a
+            normal state, not a warning) and the one clickable action that
+            actually opens AiPlansScreen. The previous version made the
+            status pill clickable too, so there were two controls doing
+            the exact same thing next to each other -- now there is
+            exactly one click target for viewing/upgrading plans, and the
+            plan text is read-only, sourced from get_my_ai_entitlement()
+            exactly as resolvePlanLabel() computes it (never fabricated;
+            "PLAN: X" only appears for a genuinely valid entitlement). */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
-          {(() => {
-            const pill = resolveStatusPill(entitlement);
-            return (
-              <div
-                onClick={onViewPlans}
-                role="button"
-                style={{ display: 'flex', alignItems: 'center', gap: 7, height: 32, padding: '0 12px', borderRadius: 16, background: pill.bg, border: `1px solid ${pill.border}`, cursor: 'pointer', width: 'fit-content' }}
-              >
-                <span style={{ width: 7, height: 7, borderRadius: 4, background: pill.dot, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, fontWeight: 600, color: pill.color, fontFamily: "'Manrope',sans-serif" }}>{pill.label}</span>
-              </div>
-            );
-          })()}
+          <span data-testid="vents-ai-plan-label" style={{ fontSize: 12, fontWeight: 600, color: '#8a7f97', fontFamily: "'Manrope',sans-serif" }}>
+            {resolvePlanLabel(entitlement)}
+          </span>
           <button
             onClick={onViewPlans}
             data-testid="vents-ai-view-plans"
@@ -4318,10 +4288,14 @@ function HomeView({
 function Vents3DOrb({ size }: { size: string }) {
   return (
     <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }}>
+      {/* Glow halo -- widened (-26% vs -20%) and slightly brighter
+          (.58 vs .45 peak opacity) than the previous pass for a stronger
+          but still restrained purple presence, per the explicit "slightly
+          stronger but restrained" request. */}
       <div
         style={{
-          position: 'absolute', inset: '-20%', borderRadius: '50%',
-          background: 'radial-gradient(closest-side, rgba(139,92,246,.45), transparent)',
+          position: 'absolute', inset: '-26%', borderRadius: '50%',
+          background: 'radial-gradient(closest-side, rgba(139,92,246,.58), transparent)',
           animation: 'ventsAiOrbGlow 4.5s ease-in-out infinite',
         }}
       />
@@ -4330,7 +4304,10 @@ function Vents3DOrb({ size }: { size: string }) {
           position: 'absolute', inset: 0, borderRadius: '50%',
           background: 'radial-gradient(circle at 32% 28%, #e9ddff 0%, #a78bfa 22%, #6d28d9 58%, #1b1140 100%)',
           boxShadow: 'inset 0 -10px 24px rgba(0,0,0,.45), inset 0 8px 18px rgba(255,255,255,.28)',
-          animation: 'ventsAiOrbFloat 6s ease-in-out infinite',
+          // Slower (7.5s vs 6s) and travels further (-11px vs -6px) --
+          // "noticeable without being distracting": slow enough to read
+          // as a gentle float, not a bounce.
+          animation: 'ventsAiOrbFloat 7.5s ease-in-out infinite',
         }}
       />
       <div
@@ -4340,10 +4317,10 @@ function Vents3DOrb({ size }: { size: string }) {
         }}
       />
       <style>{`
-        @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .55; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.06); } }
-        @keyframes ventsAiOrbFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+        @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .6; transform: scale(.94); } 50% { opacity: 1; transform: scale(1.07); } }
+        @keyframes ventsAiOrbFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-11px); } }
         @media (prefers-reduced-motion: reduce) {
-          @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .8; transform: scale(1); } }
+          @keyframes ventsAiOrbGlow { 0%, 100% { opacity: .85; transform: scale(1); } }
           @keyframes ventsAiOrbFloat { 0%, 100% { transform: translateY(0); } }
         }
       `}</style>
@@ -4428,9 +4405,19 @@ function TunePopover({
     <div
       role="dialog"
       aria-label={`${field} options`}
+      // Area is the rightmost of the three chips, so anchoring its popover
+      // to the chip's LEFT edge (as Mood/Budget still do) pushed a 280px
+      // panel off the right side of the viewport on a narrow phone -- the
+      // actual "extends outside the visible screen" bug. Anchoring it to
+      // the chip's RIGHT edge instead keeps it fully on-screen, since the
+      // rightmost chip's right edge is the screen's own right edge (minus
+      // the Home view's own side padding). maxWidth is also clamped
+      // against the viewport directly, as a second guard for any screen
+      // narrow enough that even this anchor isn't enough on its own.
       style={{
-        position: 'absolute', top: 'calc(100% + 8px)', left: 0, zIndex: 20,
-        width: field === 'area' ? 280 : 220, maxHeight: 320, overflowY: 'auto',
+        position: 'absolute', top: 'calc(100% + 8px)', zIndex: 20,
+        ...(field === 'area' ? { right: 0 } : { left: 0 }),
+        width: field === 'area' ? 280 : 220, maxWidth: 'calc(100vw - 32px)', maxHeight: 320, overflowY: 'auto',
         background: '#161020', border: '1px solid #2a2438', borderRadius: 14,
         boxShadow: '0 12px 32px rgba(0,0,0,.5)', padding: 10,
         fontFamily: "'Manrope',sans-serif",

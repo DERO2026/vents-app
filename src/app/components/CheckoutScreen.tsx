@@ -129,6 +129,18 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
   // React re-rendering the disabled button. paymentLoading state still
   // drives the visual disabled state; this ref is the actual re-entrancy lock.
   const payingRef = useRef(false);
+  // One stable reference for the lifetime of this checkout attempt --
+  // generated once (not inside handleFreeTicket, which used to mint a new
+  // VNT-FREE-${Date.now()} on every call). purchase_ticket_with_tokens's
+  // own idempotency check (0004_functions.sql) short-circuits on a repeat
+  // of the SAME payment_ref, returning the already-issued ticket instead
+  // of issuing a second one -- but that only works if a retried/duplicate
+  // free-ticket request actually reuses the same reference. A fresh
+  // Date.now() value on every tap defeated that check entirely, so a fast
+  // double-tap or a client retry after a dropped response could issue two
+  // real tickets for one claim. Held in a ref (not state) so it survives
+  // re-renders without itself triggering one.
+  const freeTicketRefRef = useRef<string>(`VNT-FREE-${Date.now().toString(36).toUpperCase()}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`);
   const [payError, setPayError] = useState<string | null>(null);
   // Handoff S2: a genuine payment-attempt failure (Paystack's own onError,
   // or the popup failing to open at all) gets the dedicated full-screen
@@ -290,7 +302,7 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       event,
       ticketType,
       quantity,
-      ticketId: `VNT-FREE-${Date.now().toString(36).toUpperCase()}`,
+      ticketId: freeTicketRefRef.current,
       purchasedAt: new Date().toISOString(),
       totalAmount: 0,
       holderName: purchaserName,

@@ -215,3 +215,33 @@ describe('VentsAiScreen Home: clearly rounded premium controls', () => {
     expect(parseInt(composer.style.borderRadius, 10)).toBeGreaterThanOrEqual(20);
   });
 });
+
+describe('VentsAiScreen Home: Area popover stays on-screen (never extends past the viewport)', () => {
+  it('anchors the Area popover to the right edge of its chip, not the left -- Area is the rightmost of the three chips, so left-anchoring pushed it off the right side of a narrow phone', async () => {
+    await mount();
+    const areaChip = container!.querySelector('[data-testid="vents-ai-tune-area"]') as HTMLElement;
+    act(() => { areaChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    const popover = container!.querySelector('[aria-label="area options"]') as HTMLElement;
+    expect(popover.style.right).toBe('0px');
+    expect(popover.style.left).toBe('');
+    // Also clamped against the viewport directly, so it can never exceed
+    // the screen width even on a phone narrower than its own fixed width.
+    expect(popover.style.maxWidth).toBe('calc(100vw - 32px)');
+  });
+
+  it('still anchors Mood/Budget popovers to the left edge of their own chip (unaffected by the Area fix)', async () => {
+    await mount();
+    const moodChip = container!.querySelector('[data-testid="vents-ai-tune-mood"]') as HTMLElement;
+    act(() => { moodChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const popover = container!.querySelector('[aria-label="mood options"]') as HTMLElement;
+    expect(popover.style.left).toBe('0px');
+  });
+});
+
+describe('VentsAiScreen Home: header reads "VENTS AI - BY DERO"', () => {
+  it('renders the updated header text', async () => {
+    await mount();
+    expect(container!.textContent).toContain('VENTS AI - BY DERO');
+  });
+});
