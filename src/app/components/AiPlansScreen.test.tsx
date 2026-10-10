@@ -25,8 +25,12 @@ vi.mock('../../lib/paystack', () => ({
   openPaystackPopup: (...args: any[]) => openPaystackPopup(...args),
 }));
 
+const rpc = vi.fn((..._args: any[]) => Promise.resolve({ data: null, error: null }));
 vi.mock('../../lib/supabase', () => ({
-  supabase: { auth: { getUser: () => Promise.resolve({ data: { user: { email: 'buyer@example.com', user_metadata: { full_name: 'Buyer' } } } }) } },
+  supabase: {
+    auth: { getUser: () => Promise.resolve({ data: { user: { email: 'buyer@example.com', user_metadata: { full_name: 'Buyer' } } } }) },
+    rpc: (...args: any[]) => rpc(...args),
+  },
 }));
 
 let container: HTMLDivElement | null = null;
@@ -41,6 +45,8 @@ afterEach(() => {
   initiateAiSubscriptionPayment.mockReset();
   verifyAiSubscriptionPayment.mockReset();
   openPaystackPopup.mockReset();
+  rpc.mockReset();
+  rpc.mockResolvedValue({ data: null, error: null });
 });
 
 async function mount(onSubscribed = () => {}) {
@@ -67,9 +73,13 @@ describe('AiPlansScreen: real plan list (never hardcoded pricing)', () => {
     expect(container!.textContent).toContain('₦7,500');
     expect(container!.textContent).toContain('VENTS AI+');
     expect(container!.textContent).toContain('₦13,500');
-    // ai_pro was never returned by the mock (matching the real RPC, which
-    // excludes it server-side) -- confirms this screen doesn't invent it.
-    expect(container!.textContent).not.toContain('Pro');
+    // ai_pro is never returned by get_ai_plans_public() (excluded
+    // server-side: purchasable=false, price_kobo NULL) -- this screen
+    // shows a static "coming soon" card for it instead, with no price
+    // and no Subscribe button, never inventing either.
+    expect(container!.textContent).toContain('VENTS AI Pro');
+    expect(container!.textContent).toContain('COMING SOON');
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_pro"]')).toBeFalsy();
   });
 
   it('shows a real error state when the plan list fails to load', async () => {
@@ -82,6 +92,41 @@ describe('AiPlansScreen: real plan list (never hardcoded pricing)', () => {
     fetchAiPlansPublic.mockResolvedValueOnce([]);
     await mount();
     expect(container!.textContent).toContain('No plans are available for purchase right now.');
+  });
+});
+
+describe('AiPlansScreen: real current-tier status (never a hardcoded "unlocked" claim)', () => {
+  it('marks the plan the user actually holds as CURRENT and shows its real renewal date, never an invented one', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: 'ai_plus', status: 'active', period_end: '2026-11-15T00:00:00Z', grace_until: null }, error: null });
+    await mount();
+
+    expect(container!.textContent).toContain("You're on");
+    expect(container!.textContent).toContain('VENTS AI+');
+    expect(container!.textContent).toContain('Renews');
+    // The current plan shows no Subscribe button -- a user cannot
+    // re-subscribe to the plan they're already on.
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai"]')).toBeTruthy();
+  });
+
+  it('shows an honest "no active subscription" message for a user with no entitlement row, never a renewal date', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: null, status: 'inactive' }, error: null });
+    await mount();
+
+    expect(container!.textContent).toContain("don't have an active VENTS AI subscription");
+    expect(container!.textContent).not.toContain('Renews');
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai"]')).toBeTruthy();
+  });
+
+  it('never shows a renewal date that the entitlement row did not actually provide (open-ended trial-like row)', async () => {
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockResolvedValueOnce({ data: { plan_id: 'ai', status: 'trialing', period_end: null, grace_until: null }, error: null });
+    await mount();
+
+    expect(container!.textContent).toContain("You're on");
+    expect(container!.textContent).not.toContain('Renews');
   });
 });
 

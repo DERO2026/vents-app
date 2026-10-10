@@ -180,7 +180,10 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
     expect(input.value.toLowerCase()).toContain('chill');
   });
 
-  it('combines Mood + Budget selections into one composer line', async () => {
+  it('combines Mood + a custom Budget amount into one composer line', async () => {
+    // Budget presets ("under 10k"/"over 150k") were removed -- the only
+    // way to set a budget now is the custom-amount field, see the
+    // dedicated coverage in VentsAiScreen.homeRedesign.test.tsx.
     await mount();
     const moodChip = Array.from(container!.querySelectorAll('div[role="button"]')).find((d) => d.textContent?.includes('Mood'))!;
     act(() => { moodChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
@@ -191,13 +194,18 @@ describe('VentsAiScreen Home: Mood/Budget/Area chips', () => {
 
     const budgetChip = Array.from(container!.querySelectorAll('div[role="button"]')).find((d) => d.textContent?.includes('Budget'))!;
     act(() => { budgetChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const customInput = container!.querySelector('[data-testid="vents-ai-tune-budget-custom"]') as HTMLInputElement;
     act(() => {
-      Array.from(container!.querySelectorAll('div,span')).find((el) => el.textContent?.trim() === 'Under ₦10,000')!
-        .dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(customInput, '20000');
+      customInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    act(() => {
+      (container!.querySelector('[data-testid="vents-ai-tune-budget-custom-apply"]') as HTMLButtonElement).dispatchEvent(new MouseEvent('click', { bubbles: true }));
     });
 
     const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
-    expect(input.value.toLowerCase()).toContain('under ₦10,000');
+    expect(input.value.toLowerCase()).toContain('20,000');
   });
 });
 

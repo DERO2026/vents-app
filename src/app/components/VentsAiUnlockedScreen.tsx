@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { resolveHasRealAiAccess } from '../../lib/aiEntitlementClient';
 
 // Exact reproduction of VentsPrototype.dc.html's `ai.ph.unlocked` state --
 // the one place the approved prototype actually specifies an animated
@@ -27,20 +28,6 @@ import { supabase } from '../../lib/supabase';
 
 type RealAccessState = 'checking' | 'has_access' | 'no_access';
 
-function resolveHasRealAccess(ent: {
-  plan_id: string | null;
-  status: string;
-  period_end?: string | null;
-  grace_until?: string | null;
-} | null): boolean {
-  if (!ent || !ent.plan_id || ent.status === 'inactive') return false;
-  if (ent.status === 'expired' || ent.status === 'canceled') return false;
-  if (ent.status !== 'trialing' && ent.status !== 'active' && ent.status !== 'grace') return false;
-  const periodEndPassed = !!ent.period_end && new Date(ent.period_end).getTime() < Date.now();
-  if (periodEndPassed && (!ent.grace_until || new Date(ent.grace_until).getTime() < Date.now())) return false;
-  return true;
-}
-
 export function VentsAiUnlockedScreen({
   onStartPlanning,
   onViewPlans,
@@ -54,7 +41,7 @@ export function VentsAiUnlockedScreen({
     let cancelled = false;
     supabase.rpc('get_my_ai_entitlement').then(({ data, error }) => {
       if (cancelled) return;
-      setRealAccess(!error && resolveHasRealAccess(data) ? 'has_access' : 'no_access');
+      setRealAccess(!error && resolveHasRealAiAccess(data) ? 'has_access' : 'no_access');
     });
     return () => { cancelled = true; };
   }, []);

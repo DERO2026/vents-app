@@ -3947,12 +3947,16 @@ function resolveStatusPill(ent: {
 // in this file. Option sets are plain, generic presets (not AI-generated
 // or scraped data) -- nothing here claims to be live inventory.
 const MOOD_OPTIONS = ['Chill', 'Romantic', 'Adventure', 'Nightlife', 'Luxury', 'Family-friendly'];
-const BUDGET_OPTIONS = ['Under ₦10,000', '₦10,000–₦50,000', '₦50,000–₦150,000', 'Over ₦150,000'];
 
 // Rotating Home headline -- cut to short, bold phrases per the approved
 // design review, rotating every ~2.5s (HomeView's own effect, skipped
 // entirely under prefers-reduced-motion).
-const HOME_HEADLINES = ['What are we planning?', 'Where are we going?', "What's the vibe?", 'What experience are you looking for?'];
+// Short, single-line phrases only -- the previous "What experience are
+// you looking for?" wrapped to two lines on a narrow phone and pushed the
+// rest of the screen down every time it rotated in. Every phrase here is
+// deliberately short enough to stay on one line at the Home headline's
+// font size down to a 320px-wide viewport.
+const HOME_HEADLINES = ["What's the plan?", 'Where to?', "What's the vibe?", 'Ready to plan something?'];
 
 function HomeView({
   inputText,
@@ -4073,21 +4077,33 @@ function HomeView({
             sphere + offset highlight + a rotating glassy sheen + outer
             glow halo) rather than a flat circle with a glyph. Pure CSS,
             no new dependency, frozen to a static single frame under
-            prefers-reduced-motion (handled inside Vents3DOrb itself). */}
-        <Vents3DOrb size={76} />
+            prefers-reduced-motion (handled inside Vents3DOrb itself).
+            Sized with clamp() so it's noticeably bigger than the old
+            76px fixed size on every device, without overflowing a small
+            phone or looking undersized on a tablet/desktop. */}
+        <Vents3DOrb size="clamp(92px, 26vw, 136px)" />
 
         {/* Rotating headline -- plain text swap every ~2.5s (see the
             effect above), frozen on the first phrase under
-            prefers-reduced-motion. */}
-        <div style={{ textAlign: 'center', marginTop: 14 }}>
-          <div data-testid="vents-ai-headline" style={{ fontSize: 24, fontWeight: 800, color: '#f5f2f8', letterSpacing: '-.01em' }}>
+            prefers-reduced-motion. Fixed-height wrapper (headline +
+            supporting line) so a longer/shorter phrase in the rotation
+            never reflows the orb, pill, toggle or composer below it --
+            the single biggest layout-stability bug in the previous pass,
+            where "What experience are you looking for?" wrapped to a
+            second line and visibly pushed the whole screen down every
+            2.5 seconds. Headlines themselves are now short, single-line
+            phrases by design (see HOME_HEADLINES), and the wrapper's
+            min-height is sized for two lines of the supporting text as a
+            safety margin even if a future phrase is longer than expected. */}
+        <div style={{ textAlign: 'center', marginTop: 12, minHeight: 74, display: 'flex', flexDirection: 'column', justifyContent: 'flex-start' }}>
+          <div data-testid="vents-ai-headline" style={{ fontSize: 19, fontWeight: 800, color: '#f5f2f8', letterSpacing: '-.01em', lineHeight: 1.25 }}>
             {HOME_HEADLINES[headlineIndex]}
           </div>
-          <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 0' }}>
+          <div style={{ fontSize: 12.5, color: '#a89db3', margin: '6px 0 0', lineHeight: 1.4 }}>
             Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
           </div>
         </div>
-        <div style={{ height: 16 }} />
+        <div style={{ height: 14 }} />
 
         {/* Two things, same destination: the pill (real status, small by
             design -- a status indicator shouldn't shout) and an explicit,
@@ -4128,14 +4144,20 @@ function HomeView({
           </button>
         </div>
 
-        <div style={{ display: 'flex', background: '#120e1a', border: '1px solid #221d2d', borderRadius: 11, padding: 3, marginBottom: 18 }}>
+        {/* Fully rounded pill toggle (height 40, radius 20 = half the
+            height) -- the previous radius-11 container with radius-8
+            tabs read as barely-rounded rectangles, not the premium pill
+            style the rest of this screen uses (the composer input, the
+            Mood/Budget/Area chips, the status pill all round to roughly
+            half their own height). */}
+        <div style={{ display: 'flex', height: 40, background: '#120e1a', border: '1px solid #221d2d', borderRadius: 20, padding: 3, marginBottom: 18 }}>
           {([['chat', 'Chat'], ['plans', plans && plans.length > 0 ? `Plans · ${plans.length}` : 'Plans']] as const).map(([id, label]) => (
             <div
               key={id}
               onClick={() => setRoom(id as 'chat' | 'plans')}
               data-testid={`si-room-${id}`}
               style={{
-                flex: 1, textAlign: 'center', padding: 8, borderRadius: 8, fontSize: 13, fontWeight: room === id ? 700 : 600, cursor: 'pointer',
+                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 17, fontSize: 13, fontWeight: room === id ? 700 : 600, cursor: 'pointer',
                 background: room === id ? '#1c1726' : 'transparent',
                 color: room === id ? '#f2eff6' : '#a89db3',
               }}
@@ -4158,9 +4180,14 @@ function HomeView({
                 // fixed full-viewport layout has no graceful recovery from.
                 // Matches the design review's own note ("Inputs are
                 // 16px-equivalent to avoid Safari zoom on focus").
-                style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 14, padding: '15px 52px 15px 16px', fontSize: 16, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
+                // borderRadius 26 on a ~54px-tall field reads as a clear
+                // rounded pill (roughly half the field's own height),
+                // matching the chip/toggle/status-pill rounding
+                // elsewhere on this screen -- 14px on a field this tall
+                // looked barely rounded.
+                style={{ width: '100%', boxSizing: 'border-box', background: '#120e1a', border: '1px solid #2a2438', borderRadius: 26, padding: '15px 52px 15px 20px', fontSize: 16, color: '#e8e3ee', outline: 'none', fontFamily: 'inherit' }}
               />
-              <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 10, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
+              <div onClick={onSend} style={{ position: 'absolute', right: 8, top: 8, width: 36, height: 36, borderRadius: 18, background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontSize: 14 }}>↑</div>
             </div>
 
             {/* Mood/Budget/Area -- compact popovers anchored directly under
@@ -4283,12 +4310,17 @@ function HomeView({
 // screens' orbs read as the same visual object) and the same
 // prefers-reduced-motion override pattern. `size` controls everything
 // proportionally so this one component serves every call site.
-function Vents3DOrb({ size }: { size: number }) {
+// `size` is a CSS length (often clamp(min, preferred-vw, max)) so the orb
+// scales with viewport width instead of being pinned to one device's
+// pixel value -- a fixed px size either looks tiny on a tablet or
+// overflows a small phone. All the inner layers use percentages, which
+// resolve against this element's own box, so they scale with it for free.
+function Vents3DOrb({ size }: { size: string }) {
   return (
     <div style={{ position: 'relative', width: size, height: size, margin: '0 auto' }}>
       <div
         style={{
-          position: 'absolute', inset: -size * 0.2, borderRadius: '50%',
+          position: 'absolute', inset: '-20%', borderRadius: '50%',
           background: 'radial-gradient(closest-side, rgba(139,92,246,.45), transparent)',
           animation: 'ventsAiOrbGlow 4.5s ease-in-out infinite',
         }}
@@ -4419,20 +4451,16 @@ function TunePopover({
         </>
       )}
 
-      {field === 'budget' && (
-        <>
-          {BUDGET_OPTIONS.map((b) => (
-            <div
-              key={b}
-              onClick={() => onSelect(b)}
-              data-testid={`vents-ai-tune-option-${b}`}
-              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, color: value === b ? '#d3b8ff' : '#e8e3ee', background: value === b ? 'rgba(163,92,255,.14)' : 'transparent', cursor: 'pointer' }}
-            >
-              {b}
-            </div>
-          ))}
-          <div style={{ borderTop: '1px solid #2a2438', margin: '8px 0', paddingTop: 8 }}>
-            <div style={{ fontSize: 11, color: '#8a7f97', marginBottom: 6 }}>Or enter an amount (₦)</div>
+      {field === 'budget' && (() => {
+        const n = Number(budgetCustom);
+        const invalid = budgetCustom.trim().length > 0 && (!Number.isFinite(n) || n <= 0);
+        const canApply = budgetCustom.trim().length > 0 && !invalid;
+        return (
+          <>
+            {/* No preset ranges -- "under 10k"/"over 150k" are promotional
+                guesses this screen has no real basis for; the only honest
+                control is letting the user state their own number. */}
+            <div style={{ fontSize: 11, color: '#8a7f97', marginBottom: 6 }}>Enter your budget (₦)</div>
             <input
               type="number"
               inputMode="numeric"
@@ -4440,41 +4468,51 @@ function TunePopover({
               value={budgetCustom}
               onChange={(e) => onBudgetCustomChange(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && budgetCustom.trim()) onSelect(`₦${Number(budgetCustom).toLocaleString()}`);
+                if (e.key === 'Enter' && canApply) onSelect(`₦${n.toLocaleString()}`);
               }}
               placeholder="e.g. 75000"
               data-testid="vents-ai-tune-budget-custom"
-              style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: '1px solid #2a2438', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: '#e8e3ee', outline: 'none' }}
+              style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: `1px solid ${invalid ? 'rgba(248,113,113,.6)' : '#2a2438'}`, borderRadius: 14, padding: '10px 12px', fontSize: 13, color: '#e8e3ee', outline: 'none' }}
             />
+            {invalid && (
+              <div style={{ fontSize: 11, color: '#f87171', marginTop: 6 }}>Enter an amount greater than ₦0.</div>
+            )}
             <button
-              onClick={() => budgetCustom.trim() && onSelect(`₦${Number(budgetCustom).toLocaleString()}`)}
-              disabled={!budgetCustom.trim()}
+              onClick={() => canApply && onSelect(`₦${n.toLocaleString()}`)}
+              disabled={!canApply}
               data-testid="vents-ai-tune-budget-custom-apply"
-              style={{ marginTop: 6, width: '100%', border: 0, borderRadius: 8, padding: '7px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: budgetCustom.trim() ? GRADIENT : '#2a2438', cursor: budgetCustom.trim() ? 'pointer' : 'default' }}
+              style={{ marginTop: 10, width: '100%', border: 0, borderRadius: 16, padding: '9px 0', fontSize: 12.5, fontWeight: 700, color: '#fff', background: canApply ? GRADIENT : '#2a2438', cursor: canApply ? 'pointer' : 'default' }}
             >
               Use this amount
             </button>
-          </div>
-        </>
-      )}
+          </>
+        );
+      })()}
 
       {field === 'area' && (
         <>
+          {/* Typed search only -- no country list. GPS is never requested
+              here; profileCountryName only narrows the Google Places
+              region bias (preferredRegionIso, passed in from the
+              caller) and shows up as placeholder context, never as a
+              picker the user must act on. Typing stays fully usable even
+              if geocoding fails or returns nothing (onSelect fires on
+              Enter with the raw typed text either way). */}
           <input
             value={areaCity}
             onChange={(e) => onAreaCityChange(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && areaCity.trim()) onSelect(areaCity.trim()); }}
             placeholder={profileCountryName ? `City, state or area in ${profileCountryName}` : 'Type a city, state or area'}
             data-testid="vents-ai-tune-area-input"
-            style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: '1px solid #2a2438', borderRadius: 8, padding: '8px 10px', fontSize: 13, color: '#e8e3ee', outline: 'none', marginBottom: 8 }}
+            style={{ width: '100%', boxSizing: 'border-box', background: '#0e0a15', border: '1px solid #2a2438', borderRadius: 14, padding: '10px 12px', fontSize: 13, color: '#e8e3ee', outline: 'none' }}
           />
           {areaSuggestions.length > 0 && (
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginTop: 8 }}>
               {areaSuggestions.map((s) => (
                 <div
                   key={s.key}
                   onClick={() => onSelect(s.mainText)}
-                  style={{ padding: '8px 10px', borderRadius: 8, fontSize: 12.5, color: '#e8e3ee', cursor: 'pointer' }}
+                  style={{ padding: '8px 10px', borderRadius: 10, fontSize: 12.5, color: '#e8e3ee', cursor: 'pointer' }}
                 >
                   {s.mainText}
                   {s.secondaryText && <span style={{ color: '#8a7f97' }}> · {s.secondaryText}</span>}
@@ -4482,25 +4520,6 @@ function TunePopover({
               ))}
             </div>
           )}
-          <div style={{ fontSize: 11, color: '#8a7f97', margin: '2px 0 6px' }}>Or choose a country</div>
-          {profileCountryName && (
-            <div
-              onClick={() => onSelect(profileCountryName)}
-              data-testid="vents-ai-tune-area-profile-country"
-              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, fontWeight: 700, color: value === profileCountryName ? '#d3b8ff' : '#e8e3ee', background: value === profileCountryName ? 'rgba(163,92,255,.14)' : 'rgba(255,255,255,.04)', cursor: 'pointer', marginBottom: 4 }}
-            >
-              {profileCountryName} (your profile)
-            </div>
-          )}
-          {COUNTRY_CODES.filter((c) => c.name !== profileCountryName).map((c) => (
-            <div
-              key={c.iso}
-              onClick={() => onSelect(c.name)}
-              style={{ padding: '9px 10px', borderRadius: 8, fontSize: 13, color: value === c.name ? '#d3b8ff' : '#e8e3ee', background: value === c.name ? 'rgba(163,92,255,.14)' : 'transparent', cursor: 'pointer' }}
-            >
-              {c.name}
-            </div>
-          ))}
         </>
       )}
 

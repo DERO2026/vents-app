@@ -86,6 +86,33 @@ describe('VentsAiScreen Home: rotating headline', () => {
     expect(headline!.textContent).toBe(first);
     window.matchMedia = originalMatchMedia;
   });
+
+  it('reserves a fixed-height wrapper around the headline so rotation never reflows the rest of the screen', async () => {
+    // jsdom has no real layout engine (getBoundingClientRect is always
+    // zero), so this can't measure actual pixel movement -- it instead
+    // asserts the structural guarantee: the headline's wrapper declares
+    // an explicit minHeight (never 'auto'), which is what makes a
+    // longer/shorter rotated phrase incapable of reflowing the orb,
+    // toggle or composer below it.
+    await mount();
+    const headline = container!.querySelector('[data-testid="vents-ai-headline"]') as HTMLElement;
+    const wrapper = headline.parentElement as HTMLElement;
+    expect(wrapper.style.minHeight).not.toBe('');
+    expect(wrapper.style.minHeight).not.toBe('auto');
+  });
+
+  it('every rotating headline is a short, single-line phrase (no long sentence that would wrap and grow the wrapper)', async () => {
+    // Advance through all 4 rotation slots and check each phrase actually
+    // rendered is short -- a long phrase defeats the fixed-height wrapper
+    // by wrapping to two lines within it. Uses real timers, so this test
+    // is given a longer-than-default timeout to cover all 4 ~2.5s ticks.
+    await mount();
+    for (let i = 0; i < 4; i++) {
+      const headline = container!.querySelector('[data-testid="vents-ai-headline"]') as HTMLElement;
+      expect(headline.textContent!.length).toBeLessThanOrEqual(28);
+      await act(async () => { await new Promise((r) => setTimeout(r, 2600)); });
+    }
+  }, 20000);
 });
 
 describe('VentsAiScreen Home: compact anchored popovers (never fullscreen)', () => {
@@ -108,14 +135,21 @@ describe('VentsAiScreen Home: compact anchored popovers (never fullscreen)', () 
     expect(popover.style.position).toBe('absolute');
   });
 
-  it('defaults the Area control to the profile country and lets the user pick it', async () => {
+  it('uses the profile country as internal default context, without a country list to pick from', async () => {
     await mount({ currentUserCountryIso: 'NG' } as any);
     const areaChip = container!.querySelector('[data-testid="vents-ai-tune-area"]') as HTMLElement;
-    act(() => { areaChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    // The chip itself starts labeled with the profile country -- real
+    // default context the user never had to choose.
+    expect(areaChip.textContent).toContain('Nigeria');
 
-    const profileOption = container!.querySelector('[data-testid="vents-ai-tune-area-profile-country"]');
-    expect(profileOption).toBeTruthy();
-    expect(profileOption!.textContent).toContain('Nigeria');
+    act(() => { areaChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const popover = container!.querySelector('[aria-label="area options"]') as HTMLElement;
+    // No country list inside the popover -- only the typed search field
+    // (and the profile country shows up as placeholder context, not a
+    // row the user must tap).
+    expect(popover.textContent).not.toContain('Ghana');
+    expect(popover.querySelector('[data-testid="vents-ai-tune-area-input"]')).toBeTruthy();
+    expect(popover.querySelector('[data-testid="vents-ai-tune-area-profile-country"]')).toBeFalsy();
   });
 
   it('supports a user-entered custom budget amount', async () => {
@@ -136,5 +170,48 @@ describe('VentsAiScreen Home: compact anchored popovers (never fullscreen)', () 
 
     const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
     expect(input.value).toContain('75,000');
+  });
+
+  it('rejects a negative or zero custom budget amount (Apply stays disabled, no composer text added)', async () => {
+    await mount();
+    const budgetChip = container!.querySelector('[data-testid="vents-ai-tune-budget"]') as HTMLElement;
+    act(() => { budgetChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    const customInput = container!.querySelector('[data-testid="vents-ai-tune-budget-custom"]') as HTMLInputElement;
+    const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+
+    act(() => { setter.call(customInput, '-50'); customInput.dispatchEvent(new Event('input', { bubbles: true })); });
+    let applyButton = container!.querySelector('[data-testid="vents-ai-tune-budget-custom-apply"]') as HTMLButtonElement;
+    expect(applyButton.disabled).toBe(true);
+
+    act(() => { setter.call(customInput, '0'); customInput.dispatchEvent(new Event('input', { bubbles: true })); });
+    applyButton = container!.querySelector('[data-testid="vents-ai-tune-budget-custom-apply"]') as HTMLButtonElement;
+    expect(applyButton.disabled).toBe(true);
+
+    act(() => { applyButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    const input = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
+    expect(input.value).toBe('');
+  });
+
+  it('leaves the custom budget amount empty as a no-op (Apply disabled, no error shown yet)', async () => {
+    await mount();
+    const budgetChip = container!.querySelector('[data-testid="vents-ai-tune-budget"]') as HTMLElement;
+    act(() => { budgetChip.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    const applyButton = container!.querySelector('[data-testid="vents-ai-tune-budget-custom-apply"]') as HTMLButtonElement;
+    expect(applyButton.disabled).toBe(true);
+  });
+});
+
+describe('VentsAiScreen Home: clearly rounded premium controls', () => {
+  it('the Chat/Plan toggle and the composer input both use a clear pill radius (roughly half their own height), not a barely-rounded rectangle', async () => {
+    await mount();
+    const toggle = container!.querySelector('[data-testid="si-room-chat"]')!.parentElement as HTMLElement;
+    expect(parseInt(toggle.style.borderRadius, 10)).toBeGreaterThanOrEqual(parseInt(toggle.style.height, 10) / 2 - 1);
+
+    const composer = container!.querySelector('input[placeholder="Ask about events or plans"]') as HTMLInputElement;
+    // 26px radius on a padding-driven ~54px-tall field reads as a clear
+    // rounded pill; the previous 14px on the same field did not.
+    expect(parseInt(composer.style.borderRadius, 10)).toBeGreaterThanOrEqual(20);
   });
 });
