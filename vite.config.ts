@@ -91,6 +91,28 @@ export default defineConfig(({ mode }) => {
         'unaffected: its own Production environment variables already override the committed values.'
       );
     }
+
+    // Same failure shape as the two guards above, closing the one credential
+    // this pattern hadn't covered yet: .env.production's VITE_GOOGLE_PLACES_
+    // API_KEY is intentionally left empty (this exact value was previously
+    // committed in plaintext and has since been cleared -- see this file's
+    // own comment and commit b70696e). Without a guard, a native build run
+    // without it exported builds "successfully" and ships with
+    // googleMaps.ts's own silent fallback to manual address entry on every
+    // launch -- no build-time signal, same failure shape the Paystack guard
+    // above exists to catch. A real Google Maps Platform key always starts
+    // with "AIza" -- presence + that prefix is enough to catch both a
+    // missing and an accidentally-placeholder value without needing to know
+    // the live key itself.
+    const mapsKey = env.VITE_GOOGLE_PLACES_API_KEY || '';
+    if (!mapsKey.startsWith('AIza')) {
+      throw new Error(
+        `[build guard] VITE_GOOGLE_PLACES_API_KEY is ${mapsKey ? 'not a valid Google Maps Platform key' : 'missing'} in a production build. ` +
+        'Export the real key as an actual environment variable (never in a committed .env file) ' +
+        'before building for iOS/Android/TestFlight. Vercel\'s web deploy is unaffected: its own ' +
+        'Production environment variable already overrides the committed value.'
+      );
+    }
   }
   return {
   plugins: [
