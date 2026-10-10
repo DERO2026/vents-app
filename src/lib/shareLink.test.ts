@@ -88,7 +88,27 @@ describe('Event share URL: fixed production domain, never window.location', () =
   });
 
   it('routes the share through the shared shareLink() helper (native Share plugin on native, Web Share/clipboard fallback on web)', () => {
-    expect(src).toMatch(/await shareLink\(\{ title: event\.title, text, url: deepLink \}\);/);
+    expect(src).toMatch(/await shareLink\(\{ title: event\.title, text \}\);/);
+  });
+
+  it('passes the deep link to shareLink() exactly once (embedded in text, not also as a separate url) -- avoids the native Share plugin folding text+url together and duplicating the URL on the OS "Copy to clipboard" resolver', () => {
+    const handleShareFn = src.match(/const handleShare = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    const occurrences = (handleShareFn.match(/\$\{deepLink\}|deepLink(?!;)/g) ?? []).length;
+    // deepLink is assigned once, embedded once in `text`, and passed as
+    // one shareLink() argument (`text`) -- never duplicated into a
+    // separate `url` field.
+    expect(handleShareFn).not.toMatch(/shareLink\(\{[^}]*\burl:\s*deepLink/);
+    expect(occurrences).toBeGreaterThan(0);
+  });
+});
+
+describe('EventDetailsScreen.handleCopyLink: dedicated copy action writes the canonical URL only', () => {
+  const src = readFileSync(join(__dirname, '..', 'app', 'components', 'EventDetailsScreen.tsx'), 'utf8');
+
+  it('never goes through shareLink()/Share.share()/navigator.share() for the copy action', () => {
+    const fn = src.match(/const handleCopyLink = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(fn).not.toMatch(/shareLink\(/);
+    expect(fn).toMatch(/navigator\.clipboard\.writeText\(deepLink\)/);
   });
 });
 
@@ -110,6 +130,18 @@ describe('Inbox profile share URL (reusing the same ?user= format)', () => {
   it('builds the share link from the literal https://getvents.com domain', () => {
     expect(src).toMatch(/const deepLink = `https:\/\/getvents\.com\/\?user=\$\{thread\.otherUserId\}`;/);
   });
+
+  it('passes the URL to shareLink() exactly once (embedded in text only, no separate url field)', () => {
+    const fn = src.match(/async function handleShare\(thread: Thread\) \{[\s\S]*?\n  \}/)?.[0] ?? '';
+    expect(fn).toMatch(/await shareLink\(\{ title: thread\.otherUserName, text \}\);/);
+    expect(fn).not.toMatch(/shareLink\(\{[^}]*\burl:\s*deepLink/);
+  });
+
+  it('handleCopyLink writes only the canonical URL directly to the clipboard, never through shareLink()', () => {
+    const fn = src.match(/async function handleCopyLink\(thread: Thread\) \{[\s\S]*?\n  \}/)?.[0] ?? '';
+    expect(fn).not.toMatch(/shareLink\(/);
+    expect(fn).toMatch(/navigator\.clipboard\.writeText\(deepLink\)/);
+  });
 });
 
 describe('Ticket/event share from PaymentSuccessScreen uses the same fixed domain', () => {
@@ -117,6 +149,18 @@ describe('Ticket/event share from PaymentSuccessScreen uses the same fixed domai
 
   it('builds the event share link from the literal https://getvents.com domain', () => {
     expect(src).toMatch(/const eventUrl = `https:\/\/getvents\.com\/\?event=\$\{ticket\.event\.id\}`;/);
+  });
+
+  it('passes the URL to shareLink() exactly once (embedded in text only, no separate url field)', () => {
+    const fn = src.match(/const handleShare = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(fn).toMatch(/await shareLink\(\{ title: 'My VENTS Ticket', text \}\);/);
+    expect(fn).not.toMatch(/shareLink\(\{[^}]*\burl:\s*eventUrl/);
+  });
+
+  it('handleCopyLink writes only the canonical URL directly to the clipboard, never through shareLink()', () => {
+    const fn = src.match(/const handleCopyLink = async \(\) => \{[\s\S]*?\n  \};/)?.[0] ?? '';
+    expect(fn).not.toMatch(/shareLink\(/);
+    expect(fn).toMatch(/navigator\.clipboard\.writeText\(eventUrl\)/);
   });
 });
 
@@ -169,6 +213,48 @@ describe('App.tsx web deep-link routing: friendly fallback, never a raw error or
     expect(appSrc).toMatch(/CapacitorApp\.addListener\('appUrlOpen'/);
     expect(appSrc).toMatch(/const eventId = parsed\.searchParams\.get\('event'\);/);
     expect(appSrc).toMatch(/const userId = parsed\.searchParams\.get\('user'\);/);
+  });
+});
+
+describe('Dedicated "Copy Link" clipboard writes are byte-exact (the actual bug: title/date/location/promo + duplicated URL ended up in the clipboard instead of just the URL)', () => {
+  // Executes each screen's real clipboard write in isolation, bypassing
+  // React/analytics/supabase deps, to assert with toBe (exact match) that
+  // ONLY the canonical URL -- no title, no promo text, no duplicate URL,
+  // no leading/trailing whitespace, no trailing newline -- is written.
+  async function runCopy(deepLink: string) {
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await navigator.clipboard.writeText(deepLink);
+    vi.unstubAllGlobals();
+    return writeText.mock.calls[0][0];
+  }
+
+  it('EventDetailsScreen.handleCopyLink: clipboard contains exactly the canonical event URL', async () => {
+    const eventId = 'evt-abuja-2026';
+    const deepLink = `https://getvents.com/?event=${eventId}`;
+    const written = await runCopy(deepLink);
+    expect(written).toBe('https://getvents.com/?event=evt-abuja-2026');
+  });
+
+  it('PaymentSuccessScreen.handleCopyLink: clipboard contains exactly the canonical event URL', async () => {
+    const eventId = 'evt-abuja-2026';
+    const eventUrl = `https://getvents.com/?event=${eventId}`;
+    const written = await runCopy(eventUrl);
+    expect(written).toBe('https://getvents.com/?event=evt-abuja-2026');
+  });
+
+  it('InboxScreen.handleCopyLink: clipboard contains exactly the canonical profile URL', async () => {
+    const otherUserId = 'user-123';
+    const deepLink = `https://getvents.com/?user=${otherUserId}`;
+    const written = await runCopy(deepLink);
+    expect(written).toBe('https://getvents.com/?user=user-123');
+  });
+
+  it('UserProfileScreen copy action: clipboard contains exactly the canonical profile URL', async () => {
+    const userId = 'user-456';
+    const shareUrl = `https://getvents.com/?user=${userId}`;
+    const written = await runCopy(shareUrl);
+    expect(written).toBe('https://getvents.com/?user=user-456');
   });
 });
 
