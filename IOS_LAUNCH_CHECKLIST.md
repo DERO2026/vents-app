@@ -133,26 +133,59 @@ code changes needed for this:
    Links verification hasn't completed yet, so this is a safe, non-blocking
    fallback either way.
 
-## 7. Google Maps / Places API key — iOS referrer restriction
+## 7. Google Maps / Places API key — referrer restriction (corrected)
 
-**Your Android key working does not mean iOS will work.** VENTS loads Maps
-via the JavaScript API (`src/lib/googleMaps.ts`), not a native SDK — so it's
-restricted by **HTTP referrer**, not by app bundle ID. Inside a Capacitor
-WKWebView, the referrer Google sees is `capacitor://localhost`, not
-`getvents.com`.
+**Stale guidance corrected.** This section previously said to add
+`capacitor://localhost/*` as an HTTP referrer pattern for iOS. That is
+**wrong** and contradicts what the codebase actually does — do not add it.
 
-**Fix (in Google Cloud Console → APIs & Services → Credentials → your Maps
-key → Application restrictions → HTTP referrers):** add these two referrer
-patterns alongside your existing `https://getvents.com/*`:
+VENTS loads Maps via the JavaScript API (`src/lib/googleMaps.ts`), not a
+native SDK, restricted by **HTTP referrer**, not app bundle ID — but the
+app does NOT rely on a custom-scheme referrer for iOS at all:
+
+- **Web (browser) and Android** call `loadGoogleMaps()` directly. Android's
+  Capacitor WebView origin is `https://localhost` (`capacitor.config.ts`'s
+  `androidScheme: 'https'`, `hostname: 'localhost'`) — a real HTTPS
+  referrer, reliably matchable.
+- **iOS** cannot do this: a Capacitor WKWebView's origin is permanently
+  `capacitor://localhost` (confirmed against `@capacitor/ios`'s source —
+  there is no config flag to change it), and Google's own documentation
+  describes custom-scheme referrer matching as unreliable. Instead, VENTS
+  deliberately renders the map inside a real
+  `<iframe src="https://getvents.com/embed/map.html">`
+  (`src/lib/mapEmbed.ts`, `shouldUseMapEmbed()`) — a genuine HTTPS
+  navigation, so the Maps JS API script it loads carries a real
+  `Referer: https://getvents.com/...` header, covered by the same
+  restriction entry the ordinary web app already needs. iOS therefore
+  needs **no separate referrer entry** — it rides on the `getvents.com`
+  one.
+
+**The correct, complete HTTP referrer allowlist (Application restrictions,
+Google Cloud Console → APIs & Services → Credentials → your Maps key) is
+exactly these two entries — nothing else:**
 
 ```
-capacitor://localhost/*
+https://getvents.com/*
 https://localhost/*
 ```
 
-Do this **before** testing location search on the physical device — it
-will silently fail to `googleMaps.ts`'s "falls back to manual address
-entry" path otherwise, with no obvious error.
+Do **not** add `capacitor://localhost/*` — it is unnecessary (iOS never
+presents that origin to Google; it goes through the iframe above instead)
+and Google's own docs call custom-scheme referrer matching unreliable, so
+adding it buys nothing and only widens the allowlist without reason.
+
+Also set **API restrictions** on the key (same Credentials page) to
+exactly the three APIs this app actually calls (`src/lib/googleMaps.ts`):
+**Maps JavaScript API**, **Places API (New)**, and **Geocoding API** — no
+others. This is a separate, additional restriction from the referrer
+allowlist above (defense in depth: even a referrer-allowed caller can't
+use the key for an unrelated Google API).
+
+Do this **before** testing location search on the physical device — a
+missing/incomplete referrer entry fails silently to `googleMaps.ts`'s
+"falls back to manual address entry" path, with no obvious error; the
+`gm_authFailure` handler reports this to Sentry when it happens, which is
+the fastest way to confirm it live.
 
 ## 8. On-device verification (do these on the physical iPhone, not the simulator, where possible — camera/push/Paystack popups don't work reliably in the simulator)
 
