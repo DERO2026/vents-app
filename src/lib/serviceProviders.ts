@@ -119,6 +119,53 @@ export async function fetchApprovedServiceProviders(opts: {
   return (data || []).map(mapDbServiceProviderToFrontend);
 }
 
+// Escapes the three characters PostgREST's `ilike`/`or` filter syntax
+// treats specially inside a pattern -- `%` and `_` are ILIKE wildcards,
+// `,` would terminate the current `.or()` clause early. Without this, a
+// provider named e.g. "50% Off Events" or searching "a,b" would silently
+// corrupt the query instead of matching literally.
+function escapeIlikeTerm(term: string): string {
+  return term.replace(/[%_,]/g, (c) => `\\${c}`);
+}
+
+// Real server-side search -- replaces filtering an already-fetched,
+// capped/nearby-scoped local array (which could never find a provider
+// outside whatever small batch happened to load first). Matches the
+// fields the UI actually promises to search: provider name, category,
+// description, and location/area, via a case-insensitive substring
+// match (ILIKE) on each -- plus an exact-element match against
+// services_offered (specialty tags), since partial-matching inside a
+// text[] column needs a different operator (`cs`/contains) than ILIKE.
+// Scoped to status='approved' (same public-discovery RLS every other
+// discovery read already relies on, service_providers_public_select_approved,
+// 0034) and, when given, the active discovery country -- consistent with
+// fetchApprovedServiceProviders/fetchNearbyServiceProviders never
+// surfacing another country's providers just because a global search
+// would technically find them.
+export async function searchServiceProviders(opts: {
+  query: string;
+  country?: string;
+  limit?: number;
+}): Promise<ServiceProvider[]> {
+  const q = opts.query.trim();
+  if (!q) return [];
+  const pattern = `%${escapeIlikeTerm(q)}%`;
+  let query = supabase
+    .from('service_providers')
+    .select(SERVICE_PROVIDER_COLUMNS)
+    .eq('status', 'approved')
+    .or(
+      `business_name.ilike.${pattern},category.ilike.${pattern},description.ilike.${pattern},location.ilike.${pattern},services_offered.cs.{${escapeIlikeTerm(q)}}`
+    )
+    .order('created_at', { ascending: false });
+  if (opts.country) query = query.eq('country', opts.country);
+  query = query.limit(opts.limit || 30);
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data || []).map(mapDbServiceProviderToFrontend);
+}
+
 export interface NearbyServiceProvider extends ServiceProvider {
   distanceKm: number;
 }

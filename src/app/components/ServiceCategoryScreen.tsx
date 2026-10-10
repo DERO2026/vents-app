@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, AlertCircle, Home, Truck, Zap, Sparkles } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Home, Truck, Zap, Sparkles, Search, X } from 'lucide-react';
 import { ServiceProvider } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents, CATEGORY_ICONS } from '../../lib/servicesDesignTokens';
 import { fetchApprovedServiceProviders } from '../../lib/serviceProviders';
@@ -52,6 +52,12 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress, count
   // back to false the instant a retry starts.
   const [reloadKey, setReloadKey] = useState(0);
   const [activeChips, setActiveChips] = useState<Set<'home' | 'delivery' | 'sameDay'>>(new Set());
+  // This screen's fetch below (fetchApprovedServiceProviders({ category,
+  // country })) is already the full, unlimited real result set for this
+  // category/country -- unlike ServicesHomeScreen's capped "near you"
+  // list, filtering it client-side here is a real search over real data,
+  // not a fake one. This screen simply had no search input at all before.
+  const [search, setSearch] = useState('');
   const accent = categoryAccents[category] || servicesColors.accentPurple;
 
   useEffect(() => {
@@ -76,13 +82,20 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress, count
 
   const filtered = useMemo(() => {
     if (!providers) return [];
+    const q = search.trim().toLowerCase();
     return providers.filter((p) => {
       if (activeChips.has('home') && !p.offersHomeService) return false;
       if (activeChips.has('delivery') && !p.offersDelivery) return false;
       if (activeChips.has('sameDay') && !p.offersSameDay) return false;
-      return true;
+      if (!q) return true;
+      return (
+        p.businessName.toLowerCase().includes(q) ||
+        (p.description || '').toLowerCase().includes(q) ||
+        (p.location || '').toLowerCase().includes(q) ||
+        p.servicesOffered.some((s) => s.toLowerCase().includes(q))
+      );
     });
-  }, [providers, activeChips]);
+  }, [providers, activeChips, search]);
 
   return (
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -100,6 +113,37 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress, count
         <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 14px' }}>
           {providers === null ? 'Loading providers…' : `${filtered.length} provider${filtered.length === 1 ? '' : 's'}`}
         </p>
+
+        {/* Search within this category -- same search-row treatment as
+            ServicesHomeScreen's (height 52px, radius 26px, bg #181330,
+            border rgba(139,92,246,.35)), filtering the real, already-fully
+            -fetched provider list for this category/country by name,
+            description, location, and specialty tags. */}
+        <div style={{ display: 'flex', alignItems: 'center', height: '48px', borderRadius: '24px', background: '#181330', border: '1px solid rgba(139,92,246,0.35)', padding: '0 4px 0 14px', gap: '6px', marginBottom: '12px' }}>
+          <Search size={15} color={servicesColors.textSecondary} />
+          <input
+            type="search"
+            enterKeyHint="search"
+            aria-label={`Search ${category} providers`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={`Search ${category.toLowerCase()}…`}
+            style={{ flex: 1, minWidth: 0, height: '44px', border: 'none', outline: 'none', background: 'transparent', color: servicesColors.textPrimary, font: "500 14px 'Manrope', sans-serif" }}
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              aria-label="Clear search"
+              style={{
+                flexShrink: 0, width: '28px', height: '28px', borderRadius: '14px',
+                background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+                color: servicesColors.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
 
         {/* Filter chips */}
         <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none' }}>
@@ -144,10 +188,10 @@ export function ServiceCategoryScreen({ category, onBack, onProviderPress, count
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '48px 20px' }}>
             <p style={{ color: servicesColors.textPrimary, fontSize: '16px', fontWeight: 700, margin: '0 0 6px' }}>
-              No {category} providers yet
+              {search.trim() ? `No matches for "${search.trim()}"` : `No ${category} providers yet`}
             </p>
             <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: 0 }}>
-              Try another country or check back soon
+              {search.trim() ? 'Try a different name, specialty, or area' : 'Try another country or check back soon'}
             </p>
           </div>
         ) : (

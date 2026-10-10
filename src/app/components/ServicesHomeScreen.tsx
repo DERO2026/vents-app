@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, AlertCircle, ChevronDown } from 'lucide-react';
+import { ArrowLeft, AlertCircle, ChevronDown, X } from 'lucide-react';
 import { ServiceProvider } from './types';
 import {
   servicesColors, servicesRadii, servicesSpacing, SERVICE_CATEGORIES,
 } from '../../lib/servicesDesignTokens';
-import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, withProviderRatings } from '../../lib/serviceProviders';
+import { fetchApprovedServiceProviders, fetchNearbyServiceProviders, searchServiceProviders, withProviderRatings } from '../../lib/serviceProviders';
 import { useGeolocation } from '../../lib/useGeolocation';
 import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
-import { ServiceProviderCompactCard } from './ServiceProviderCard';
+import { ServiceProviderCard, ServiceProviderCompactCard } from './ServiceProviderCard';
 import { COUNTRY_CODES, CountryOption } from '../../lib/countries';
 import { CountryMark } from './PhoneInput';
 import { PickerSheet } from './shared/PickerSheet';
@@ -26,6 +26,15 @@ interface ServicesHomeScreenProps {
   // onOpenVentsAi. Optional for the same reason: the icon simply doesn't
   // render without a handler.
   onOpenVentsAi?: () => void;
+  // "Offer your services" -- VentsPrototype.dc.html's own Services-home
+  // row (right under the category grid: "Offer your services / Register
+  // as a provider under your profession", toReg) that was never
+  // implemented here -- the only reachable entry point into
+  // ServiceProviderSetupScreen was ProfileScreen's "Set Up Your Service
+  // Profile" button, which the approved design never meant as the sole
+  // path. Optional so the row simply doesn't render pre-auth, same
+  // pattern as onOpenVentsAi.
+  onOfferServices?: () => void;
 }
 
 function CardSkeleton() {
@@ -63,7 +72,7 @@ function DiscoveryCountryPicker({ selectedIso, onSelect, onClose }: { selectedIs
 }
 
 export function ServicesHomeScreen({
-  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress, onOpenVentsAi,
+  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress, onOpenVentsAi, onOfferServices,
 }: ServicesHomeScreenProps) {
   // Same desktop-shell widening HomeScreen already uses (src/lib/
   // useDesktopWideShell.ts) -- reuses the one approved responsive
@@ -123,12 +132,56 @@ export function ServicesHomeScreen({
 
   const handleRetry = () => setReloadKey((k) => k + 1);
 
-  const filteredNearYou = useMemo(() => {
-    if (!providers) return [];
-    const q = search.trim().toLowerCase();
-    if (!q) return providers;
-    return providers.filter((p) => p.businessName.toLowerCase().includes(q) || p.category.toLowerCase().includes(q));
-  }, [providers, search]);
+  // Real search -- was previously a client-side `.filter()` over whatever
+  // 20 rows the "near you" discovery effect above happened to have already
+  // fetched, so a real provider outside that small, country/GPS-scoped
+  // batch could never be found no matter what was typed. Debounced
+  // (300ms) on every keystroke, and also runs immediately on submit
+  // (search action or Enter) so pressing Enter never has to wait out the
+  // debounce. Scoped to the active discovery country, same as every other
+  // discovery read on this screen -- a global search would resurface the
+  // "GPS silently overriding the selected country" bug this app already
+  // fixed once (aca0b07).
+  const [searchResults, setSearchResults] = useState<ServiceProvider[] | null>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState(false);
+  const isSearching = search.trim().length > 0;
+
+  function runSearch(q: string) {
+    const trimmed = q.trim();
+    if (!trimmed) {
+      setSearchResults(null);
+      setSearchError(false);
+      setSearchLoading(false);
+      return;
+    }
+    setSearchLoading(true);
+    setSearchError(false);
+    searchServiceProviders({ query: trimmed, country: activeIso })
+      .then((rows) => withProviderRatings(rows))
+      .then((rows) => setSearchResults(rows))
+      .catch(() => { setSearchResults([]); setSearchError(true); })
+      .finally(() => setSearchLoading(false));
+  }
+
+  useEffect(() => {
+    if (!isSearching) {
+      setSearchResults(null);
+      setSearchError(false);
+      setSearchLoading(false);
+      return;
+    }
+    const handle = setTimeout(() => runSearch(search), 300);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, activeIso]);
+
+  function clearSearch() {
+    setSearch('');
+    setSearchResults(null);
+    setSearchError(false);
+    setSearchLoading(false);
+  }
 
   return (
     <div style={{ background: servicesColors.bg, width: '100%', height: '100%', display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden' }}>
@@ -173,11 +226,28 @@ export function ServicesHomeScreen({
             #a78bfa→#6d28d9), not a lucide icon. */}
         <div style={{ display: 'flex', alignItems: 'center', height: '52px', borderRadius: '26px', background: '#181330', border: '1px solid rgba(139,92,246,0.35)', padding: '0 4px 0 18px', gap: '8px' }}>
           <input
+            type="search"
+            enterKeyHint="search"
+            aria-label="Search a service"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); runSearch(search); } }}
             placeholder="Search a service, e.g. wedding MC"
             style={{ flex: 1, minWidth: 0, height: '48px', border: 'none', outline: 'none', background: 'transparent', color: servicesColors.textPrimary, font: "500 15px 'Manrope', sans-serif" }}
           />
+          {isSearching && (
+            <button
+              onClick={clearSearch}
+              aria-label="Clear search"
+              style={{
+                flexShrink: 0, width: '32px', height: '32px', borderRadius: '16px',
+                background: 'rgba(255,255,255,0.06)', border: 'none', cursor: 'pointer',
+                color: servicesColors.textSecondary, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <X size={15} />
+            </button>
+          )}
           {/* Same "one AI control lives inside the search bar" entry point
               as Home's compact search pill -- see onOpenVentsAi above. */}
           {onOpenVentsAi && (
@@ -210,6 +280,54 @@ export function ServicesHomeScreen({
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', scrollbarWidth: 'none', padding: `0 ${servicesSpacing.lg}px calc(40px + env(safe-area-inset-bottom))` }}>
+        {isSearching ? (
+          <>
+            <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 12px' }}>
+              {searchLoading ? 'Searching…' : `Results for "${search.trim()}"`}
+            </p>
+            {searchLoading ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: servicesSpacing.md }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <div key={i} style={{ display: 'flex', gap: '12px', padding: '14px', borderRadius: servicesRadii.md, background: servicesColors.cardBg, border: `1px solid ${servicesColors.border}` }}>
+                    <div style={{ width: '60px', height: '60px', borderRadius: '12px', background: 'rgba(255,255,255,0.05)', flexShrink: 0 }} />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ width: '60%', height: '13px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)', marginBottom: '8px' }} />
+                      <div style={{ width: '40%', height: '10px', borderRadius: '4px', background: 'rgba(255,255,255,0.06)' }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : searchError ? (
+              <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+                <AlertCircle size={28} color={servicesColors.error} style={{ marginBottom: '8px', marginLeft: 'auto', marginRight: 'auto' }} />
+                <p style={{ color: servicesColors.textPrimary, fontSize: '14px', fontWeight: 700, margin: '0 0 4px' }}>Couldn't search right now</p>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: '0 0 14px' }}>Check your connection and try again.</p>
+                <button
+                  onClick={() => runSearch(search)}
+                  style={{ background: 'rgba(239,68,68,0.12)', border: `1px solid ${servicesColors.error}`, borderRadius: servicesRadii.md, padding: '10px 20px', color: servicesColors.error, fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}
+                >
+                  Retry
+                </button>
+              </div>
+            ) : !searchResults || searchResults.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '32px 20px' }}>
+                <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>
+                  No providers matched "{search.trim()}"
+                </p>
+                <p style={{ color: servicesColors.textSecondary, fontSize: '13px', margin: 0 }}>
+                  Try a different name, category, or area
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: servicesSpacing.md }}>
+                {searchResults.map((p) => (
+                  <ServiceProviderCard key={p.id} provider={p} onPress={onProviderPress} />
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {/* "BROWSE BY PROFESSION · 12 CATEGORIES" grid -- reproduced
             value-for-value from VentsPrototype.dc.html's own category card
             (minHeight 112px, radius 22px, bg #100d1a, border
@@ -247,6 +365,33 @@ export function ServicesHomeScreen({
           ))}
         </div>
 
+        {/* "Offer your services" -- VentsPrototype.dc.html's own row right
+            here, under the category grid (min-height 60px, radius 18px,
+            bg rgba(139,92,246,.14), border rgba(139,92,246,.35), a bold
+            title line + a lighter subtitle line + a trailing ›). This was
+            the actual missing provider-setup entry point: ProfileScreen's
+            "Set Up Your Service Profile" button existed, but Services
+            itself -- where someone browsing categories would naturally
+            think "I could offer this" -- had no path into the same,
+            already-working ServiceProviderSetupScreen at all. */}
+        {onOfferServices && (
+          <button
+            onClick={onOfferServices}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+              padding: '0 16px', minHeight: '60px', borderRadius: '18px',
+              background: 'rgba(139,92,246,0.14)', border: '1px solid rgba(139,92,246,0.35)',
+              cursor: 'pointer', textAlign: 'left', marginBottom: servicesSpacing.xl,
+            }}
+          >
+            <span style={{ flex: 1 }}>
+              <span style={{ display: 'block', font: "700 15px 'Manrope', sans-serif", color: servicesColors.textPrimary }}>Offer your services</span>
+              <span style={{ display: 'block', fontSize: '12px', color: servicesColors.textSecondary, marginTop: '2px' }}>Register as a provider under your profession</span>
+            </span>
+            <span style={{ color: servicesColors.textSecondary, fontSize: '18px' }}>&rsaquo;</span>
+          </button>
+        )}
+
         {/* Providers near you */}
         <p style={{ color: servicesColors.textSecondary, fontSize: '11px', fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, margin: '0 0 12px' }}>
           {usingGps ? 'Providers Near You' : `Providers in ${activeCountry?.name || 'your area'}`}
@@ -268,7 +413,7 @@ export function ServicesHomeScreen({
               Retry
             </button>
           </div>
-        ) : filteredNearYou.length === 0 ? (
+        ) : providers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '32px 20px' }}>
             <p style={{ color: servicesColors.textPrimary, fontSize: '15px', fontWeight: 700, margin: '0 0 6px' }}>
               No providers in {activeCountry?.name || 'this area'} yet
@@ -279,10 +424,12 @@ export function ServicesHomeScreen({
           </div>
         ) : (
           <div style={{ display: 'flex', gap: servicesSpacing.md, overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: '4px' }}>
-            {filteredNearYou.map((p) => (
+            {providers.map((p) => (
               <ServiceProviderCompactCard key={p.id} provider={p} onPress={onProviderPress} />
             ))}
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

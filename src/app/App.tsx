@@ -2935,6 +2935,7 @@ export default function App() {
               }}
               onMyBookingsPress={currentUser ? () => navigateTo('service-bookings') : undefined}
               onOpenVentsAi={() => seedAndOpenVentsAi()}
+              onOfferServices={() => (currentUser ? navigateTo('service-provider-setup') : navigateTo('auth'))}
             />
           )}
           {screen === 'services-category' && selectedServiceCategory && (

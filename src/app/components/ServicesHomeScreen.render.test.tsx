@@ -8,10 +8,12 @@ import { ServicesHomeScreen } from './ServicesHomeScreen';
 // "Providers near you" section.
 const fetchApprovedServiceProviders = vi.fn();
 const fetchNearbyServiceProviders = vi.fn();
+const searchServiceProviders = vi.fn();
 const withProviderRatings = vi.fn(async (rows: any[]) => rows);
 vi.mock('../../lib/serviceProviders', () => ({
   fetchApprovedServiceProviders: (...args: any[]) => fetchApprovedServiceProviders(...args),
   fetchNearbyServiceProviders: (...args: any[]) => fetchNearbyServiceProviders(...args),
+  searchServiceProviders: (...args: any[]) => searchServiceProviders(...args),
   withProviderRatings: (...args: any[]) => withProviderRatings(...args as [any[]]),
 }));
 // Location denied/unavailable -> exercises the country-fallback branch
@@ -31,9 +33,10 @@ afterEach(() => {
   root = null;
   fetchApprovedServiceProviders.mockReset();
   fetchNearbyServiceProviders.mockReset();
+  searchServiceProviders.mockReset();
 });
 
-function renderScreen(extraProps: { onOpenVentsAi?: () => void } = {}) {
+function renderScreen(extraProps: { onOpenVentsAi?: () => void; onOfferServices?: () => void } = {}) {
   root = createRoot(container!);
   return act(async () => {
     root!.render(
@@ -168,5 +171,156 @@ describe('ServicesHomeScreen: 12-category grid (Batch 2 taxonomy)', () => {
     const firstButton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes(categories[0]))!;
     act(() => { firstButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
     expect(onCategoryPress).toHaveBeenCalledWith(categories[0]);
+  });
+});
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+  setter.call(input, value);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+describe('ServicesHomeScreen: real search (not a client-side filter over the capped "near you" list)', () => {
+  it('debounces typed input into a real searchServiceProviders call scoped to the active country, and renders real results', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    vi.useFakeTimers();
+    try {
+      await renderScreen();
+
+      const input = container.querySelector('input[aria-label="Search a service"]') as HTMLInputElement;
+      let resolveSearch: (rows: any[]) => void = () => {};
+      searchServiceProviders.mockImplementationOnce(() => new Promise((resolve) => { resolveSearch = resolve; }));
+
+      act(() => { setInputValue(input, 'mc'); });
+      // Not called yet -- still inside the debounce window.
+      expect(searchServiceProviders).not.toHaveBeenCalled();
+
+      await act(async () => { vi.advanceTimersByTime(300); });
+      expect(searchServiceProviders).toHaveBeenCalledWith({ query: 'mc', country: 'NG' });
+      expect(container.textContent).toContain('Searching');
+
+      await act(async () => {
+        resolveSearch([{ id: 'p1', businessName: 'DJ Mc Real', category: 'Entertainment & Talent', photoUrls: [], servicesOffered: [] }] as any);
+        await Promise.resolve();
+      });
+      expect(container.textContent).toContain('DJ Mc Real');
+      expect(container.textContent).not.toContain('BROWSE BY PROFESSION');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pressing Enter runs the search immediately, without waiting for the debounce', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    searchServiceProviders.mockResolvedValueOnce([{ id: 'p2', businessName: 'MC Jollof', category: 'Entertainment & Talent', photoUrls: [], servicesOffered: [] }] as any);
+    await renderScreen();
+
+    const input = container.querySelector('input[aria-label="Search a service"]') as HTMLInputElement;
+    act(() => { setInputValue(input, 'mc'); });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(searchServiceProviders).toHaveBeenCalledWith({ query: 'mc', country: 'NG' });
+    expect(container.textContent).toContain('MC Jollof');
+  });
+
+  it('shows a distinct "no matches" state for a search miss, not the generic empty-country copy', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    searchServiceProviders.mockResolvedValueOnce([]);
+    await renderScreen();
+
+    const input = container.querySelector('input[aria-label="Search a service"]') as HTMLInputElement;
+    act(() => { setInputValue(input, 'zzzznomatch'); });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain('No providers matched "zzzznomatch"');
+    expect(container.textContent).not.toContain('No providers in');
+  });
+
+  it('shows a real error + Retry on search failure, distinct from the discovery-load error', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    searchServiceProviders.mockRejectedValueOnce(new Error('network down'));
+    await renderScreen();
+
+    const input = container.querySelector('input[aria-label="Search a service"]') as HTMLInputElement;
+    act(() => { setInputValue(input, 'mc'); });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Couldn't search right now");
+    const retryButton = Array.from(container.querySelectorAll('button')).find((b) => b.textContent === 'Retry')!;
+    expect(retryButton).toBeTruthy();
+
+    searchServiceProviders.mockResolvedValueOnce([{ id: 'p3', businessName: 'MC Tunde', category: 'Entertainment & Talent', photoUrls: [], servicesOffered: [] }] as any);
+    await act(async () => {
+      retryButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('MC Tunde');
+  });
+
+  it('the clear (X) button resets the search and returns to the browse view', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValue([]);
+    searchServiceProviders.mockResolvedValueOnce([{ id: 'p4', businessName: 'MC Dayo', category: 'Entertainment & Talent', photoUrls: [], servicesOffered: [] }] as any);
+    await renderScreen();
+
+    const input = container.querySelector('input[aria-label="Search a service"]') as HTMLInputElement;
+    act(() => { setInputValue(input, 'mc'); });
+    await act(async () => {
+      input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain('MC Dayo');
+
+    const clearButton = container.querySelector('button[aria-label="Clear search"]') as HTMLButtonElement;
+    expect(clearButton).toBeTruthy();
+    act(() => { clearButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+
+    expect(input.value).toBe('');
+    expect(container.textContent).toContain('BROWSE BY PROFESSION');
+    expect(container.textContent).not.toContain('MC Dayo');
+  });
+});
+
+describe('ServicesHomeScreen: "Offer your services" provider-setup entry point', () => {
+  it('renders the prototype\'s row and calls onOfferServices when tapped', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    const onOfferServices = vi.fn();
+    await renderScreen({ onOfferServices });
+
+    expect(container.textContent).toContain('Offer your services');
+    expect(container.textContent).toContain('Register as a provider under your profession');
+
+    const button = Array.from(container.querySelectorAll('button')).find((b) => b.textContent?.includes('Offer your services'))!;
+    act(() => { button.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onOfferServices).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render the row when no handler is passed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    await renderScreen();
+
+    expect(container.textContent).not.toContain('Offer your services');
   });
 });
