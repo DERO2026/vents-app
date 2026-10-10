@@ -33,7 +33,7 @@ afterEach(() => {
   fetchNearbyServiceProviders.mockReset();
 });
 
-function renderScreen() {
+function renderScreen(extraProps: { onOpenVentsAi?: () => void } = {}) {
   root = createRoot(container!);
   return act(async () => {
     root!.render(
@@ -43,6 +43,7 @@ function renderScreen() {
         onProviderPress={() => {}}
         discoveryCountryIso="NG"
         onDiscoveryCountryChange={() => {}}
+        {...extraProps}
       />
     );
     await Promise.resolve();
@@ -102,5 +103,32 @@ describe('ServicesHomeScreen: discovery-load Retry', () => {
 
     await act(async () => { pendingResolve([]); await Promise.resolve(); await Promise.resolve(); });
     expect(container.textContent).not.toContain("Couldn't load providers");
+  });
+});
+
+describe('ServicesHomeScreen: VENTS AI search-bar entry point', () => {
+  it('renders the sparkle control and calls onOpenVentsAi when tapped', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    const onOpenVentsAi = vi.fn();
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    await renderScreen({ onOpenVentsAi });
+
+    const aiButton = container.querySelector('button[aria-label="Ask VENTS AI"]') as HTMLButtonElement;
+    expect(aiButton).toBeTruthy();
+
+    act(() => { aiButton.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onOpenVentsAi).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render the sparkle control when no handler is passed', async () => {
+    container = document.createElement('div');
+    document.body.appendChild(container);
+
+    fetchApprovedServiceProviders.mockResolvedValueOnce([]);
+    await renderScreen();
+
+    expect(container.querySelector('button[aria-label="Ask VENTS AI"]')).toBeNull();
   });
 });

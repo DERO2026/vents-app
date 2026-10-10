@@ -25,6 +25,7 @@ import {
   ScanLine,
   LayoutDashboard,
   AlertCircle,
+  Sparkles,
 } from 'lucide-react';
 import { Sentry } from '../../lib/sentry';
 import { Event, TicketType } from './types';
@@ -71,6 +72,11 @@ interface EventDetailsScreenProps {
   // also rejects with 'purchases_disabled' if this is bypassed, so this
   // prop is purely a graceful-degradation UI state, not the real gate.
   purchasesDisabled?: boolean;
+  // Contextual VENTS AI entry point -- the approved prototype's "Ask
+  // VENTS AI to plan this night" row on event details. Receives the event
+  // itself (not just an id) so the caller can seed the AI composer with
+  // real event context -- see App.tsx's openVentsAiForEvent.
+  onAskVentsAi?: (event: Event) => void;
 }
 
 // Root admin account — same convention used in App.tsx / the Admin Console.
@@ -252,6 +258,7 @@ export function EventDetailsScreen({
   onOpenDoorScanner,
   onOpenDoorManager,
   purchasesDisabled = false,
+  onAskVentsAi,
 }: EventDetailsScreenProps) {
   const isEventOwner = !!currentUserId && !!event.organizer_id && currentUserId === event.organizer_id;
   const isSubAdmin = currentUserRole === 'sub-admin';
@@ -920,6 +927,31 @@ export function EventDetailsScreen({
             {expanded ? 'Show less' : 'Show more'}
             {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           </button>
+          {/* Approved prototype's "Ask VENTS AI to plan this night" row --
+              hands the event off as real context (see onAskVentsAi /
+              App.tsx's openVentsAiForEvent), not a floating button. */}
+          {onAskVentsAi && (
+            <button
+              onClick={() => onAskVentsAi(event)}
+              style={{
+                marginTop: '12px', width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
+                background: 'linear-gradient(90deg, rgba(139,92,246,0.16), rgba(16,13,26,0.4))',
+                border: '1px solid rgba(139,92,246,0.3)', borderRadius: '16px', padding: '12px 14px',
+                cursor: 'pointer', textAlign: 'left',
+              }}
+            >
+              <span style={{
+                flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
+                background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Sparkles size={14} color="#fff" />
+              </span>
+              <span style={{ color: ventsColors.white, fontSize: '13.5px', fontWeight: 600 }}>
+                Ask VENTS AI to plan this night
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Info cards */}

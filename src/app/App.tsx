@@ -224,6 +224,14 @@ export default function App() {
   // authority on every actual AI request regardless of this flag).
   // Starts false so a fresh session always re-verifies at least once.
   const [ventsAiAccessGranted, setVentsAiAccessGranted] = useState(false);
+  // Contextual entry points (Home/Services search-bar sparkle, event
+  // details "Ask VENTS AI to plan this night") hand off real context by
+  // pre-filling VentsAiScreen's composer -- not a new backend call, just
+  // seeding the same text box the user could type into themselves. nonce
+  // forces the seeding effect inside VentsAiScreen to re-apply even when
+  // the same event is asked about twice in a row (text alone wouldn't
+  // change, so a plain useEffect keyed on text could miss the repeat).
+  const [ventsAiSeedPrompt, setVentsAiSeedPrompt] = useState<{ text: string; nonce: number } | null>(null);
   const [isDesktopWidth, setIsDesktopWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth >= 1200 : false));
   useEffect(() => {
     const onResize = () => setIsDesktopWidth(window.innerWidth >= 1200);
@@ -372,6 +380,14 @@ export default function App() {
     setScreenStack((prev) => [...prev, screen]);
     setScreen(next);
   }, [currentUser, screen]);
+
+  const seedAndOpenVentsAi = useCallback((text?: string) => {
+    if (text) setVentsAiSeedPrompt({ text, nonce: Date.now() });
+    navigateTo('vents-ai');
+  }, [navigateTo]);
+  const openVentsAiForEvent = useCallback((event: Event) => {
+    seedAndOpenVentsAi(`Help me plan my night around "${event.title}".`);
+  }, [seedAndOpenVentsAi]);
 
   const goBack = useCallback(() => {
     // Returning from a "Related Events" hop: restore the previously viewed
@@ -2910,6 +2926,7 @@ export default function App() {
                 navigateTo('service-provider-profile');
               }}
               onMyBookingsPress={currentUser ? () => navigateTo('service-bookings') : undefined}
+              onOpenVentsAi={() => seedAndOpenVentsAi()}
             />
           )}
           {screen === 'services-category' && selectedServiceCategory && (
@@ -3061,6 +3078,7 @@ export default function App() {
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
               onServicesPress={() => handleTabChange('services')}
+              onOpenVentsAi={() => seedAndOpenVentsAi()}
               onProviderPress={(provider) => {
                 setSelectedServiceProvider(provider);
                 navigateTo('service-provider-profile');
@@ -3210,6 +3228,7 @@ export default function App() {
               <VentsAiScreen
                 isDesktop={isDesktopWidth}
                 onClose={goBack}
+                seedPrompt={ventsAiSeedPrompt}
                 onOpenEvent={(eventId) => {
                   supabase
                     .from('events')
@@ -3320,6 +3339,7 @@ export default function App() {
               onOpenDoorScanner={() => navigateTo('checkin-scanner')}
               onOpenDoorManager={() => navigateTo('door-manager')}
               purchasesDisabled={featureFlags.disablePurchases}
+              onAskVentsAi={openVentsAiForEvent}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await supabase
                   .from('public_profiles')

@@ -45,6 +45,13 @@ interface HomeScreenProps {
   onStateChange?: (stateName: string) => void;
   onLiveMapPress?: () => void;
   onServicesPress?: () => void;
+  // Contextual VENTS AI entry point -- the sparkle control inside the
+  // search bar per the approved redesign prototype (Design Foundation,
+  // "04 - CORE JOURNEY MAP": "one AI control lives inside the search bar
+  // on Home and Services"). Optional so this screen still renders sanely
+  // in existing tests/stories that don't pass it -- the icon simply
+  // doesn't render without a handler, same pattern as onServicesPress.
+  onOpenVentsAi?: () => void;
   onProviderPress?: (provider: ServiceProvider) => void;
   dbEvents: Event[];
   loading: boolean;
@@ -839,6 +846,7 @@ export function HomeScreen({
   onUserPress,
   onLiveMapPress,
   onServicesPress,
+  onOpenVentsAi,
   onProviderPress,
   dbEvents,
   loading,
@@ -1567,19 +1575,43 @@ export function HomeScreen({
           <VentsLogo size={26} />
           {/* Compact "Search" pill per the export (was a full-width input
               showing its own placeholder text -- this still opens the same
-              real search overlay via setSearchOpen). */}
-          <button
-            onClick={() => setSearchOpen(true)}
+              real search overlay via setSearchOpen). A second tap target
+              for the sparkle (VENTS AI) sits inside the same visual pill,
+              per the approved prototype's "one AI control lives inside the
+              search bar" spec -- a <div> wrapper with two inner buttons
+              rather than a nested <button>, which HTML disallows. */}
+          <div
             style={{
-              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+              flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', gap: '2px',
               background: 'rgba(255,255,255,0.07)', backdropFilter: 'blur(20px) saturate(180%)', WebkitBackdropFilter: 'blur(20px) saturate(180%)',
               border: '1px solid rgba(255,255,255,0.12)',
-              borderRadius: '999px', padding: '9px 14px', cursor: 'pointer',
+              borderRadius: '999px', padding: '3px 3px 3px 14px',
             }}
           >
-            <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
-            <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>Search</span>
-          </button>
+            <button
+              onClick={() => setSearchOpen(true)}
+              style={{
+                flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                background: 'none', border: 'none', padding: '6px 0', cursor: 'pointer',
+              }}
+            >
+              <Search size={14} color={ventsColors.ink3} style={{ flexShrink: 0 }} />
+              <span style={{ color: ventsColors.ink3, fontSize: '13px' }}>Search</span>
+            </button>
+            {onOpenVentsAi && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onOpenVentsAi(); }}
+                aria-label="Ask VENTS AI"
+                style={{
+                  flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
+                  background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
+                  border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <Sparkles size={13} color="#fff" />
+              </button>
+            )}
+          </div>
           {/* Services entry point -- the export's Home has no Services
               affordance at all, but removing this would make the entire
               Services vertical (ServicesHomeScreen and everything under

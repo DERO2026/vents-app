@@ -3572,6 +3572,7 @@ export function VentsAiScreen({
   onOpenEvent,
   onOpenProvider,
   isDesktop,
+  seedPrompt,
 }: {
   onClose: () => void;
   onOpenEvent?: (id: string) => void;
@@ -3581,10 +3582,26 @@ export function VentsAiScreen({
   // window.innerWidth check since this repo has no existing responsive
   // breakpoint helper to reuse (grep found none).
   isDesktop?: boolean;
+  // Contextual entry points (Home/Services sparkle, event details' "Ask
+  // VENTS AI to plan this night") pre-fill the composer with real context
+  // via this prop -- never auto-sent, the user still taps Send themselves,
+  // so this touches no AI backend call or access check, only the text box
+  // they'd otherwise have typed into. `nonce` lets the same text be
+  // reapplied if the user asks about the same event twice in a row.
+  seedPrompt?: { text: string; nonce: number } | null;
 }) {
   const [conversations, setConversations] = useState<LocalConversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
+  // Applies a contextual seed prompt to the composer -- only while on the
+  // Home view with no active conversation (a seed arriving mid-conversation
+  // would otherwise clobber whatever the user is already typing or
+  // mid-send). Keyed on seedPrompt?.nonce, not just its text, so tapping
+  // "Ask VENTS AI" about the same event twice still re-applies it.
+  useEffect(() => {
+    if (seedPrompt?.text && !activeId) setInputText(seedPrompt.text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seedPrompt?.nonce]);
   const [streaming, setStreaming] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   // Dedicated Plan Workspace screen (P07/P08) -- distinct destination from
@@ -3900,13 +3917,30 @@ function HomeView({
       <div style={{ maxWidth: 640, margin: '0 auto' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {/* Approved prototype's "animated purple AI orb" -- integrated
+                here as a restrained pulsing glow on the existing header
+                glyph rather than porting in VentsAiOrb.tsx's full
+                floating/draggable component, which was built as a
+                screen-level entry point (fixed position, drag, a
+                first-launch tooltip) and would fight this static header
+                layout rather than fit it. Pure CSS (no new state, no
+                layout/perf cost), flattened under reduced-motion. */}
+            <div style={{ width: 34, height: 34, borderRadius: '50%', background: GRADIENT, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, animation: 'ventsAiOrbGlow 2.6s ease-in-out infinite' }}>
               <span style={{ fontSize: 15, color: '#fff' }}>✦</span>
             </div>
             <div style={{ fontSize: 19, fontWeight: 800, color: '#f5f2f8' }}>VENTS AI</div>
           </div>
           <div onClick={onClose} style={{ fontSize: 19, color: '#a89db3', cursor: 'pointer', padding: 4 }} aria-label="Close VENTS AI" role="button">✕</div>
         </div>
+        <style>{`
+          @keyframes ventsAiOrbGlow {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(163,92,255,0.45); }
+            50% { box-shadow: 0 0 0 8px rgba(163,92,255,0); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            @keyframes ventsAiOrbGlow { 0%, 100% { box-shadow: 0 0 0 3px rgba(163,92,255,0.25); } }
+          }
+        `}</style>
         <div style={{ fontSize: 13, color: '#a89db3', margin: '6px 0 16px' }}>
           Ask about events, services, tickets, wallet or bookings — or plan a whole event, step by step.
         </div>

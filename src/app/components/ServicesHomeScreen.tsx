@@ -33,6 +33,11 @@ interface ServicesHomeScreenProps {
   discoveryCountryIso: string | undefined;
   onDiscoveryCountryChange: (iso: string) => void;
   onMyBookingsPress?: () => void;
+  // Contextual VENTS AI entry point -- same "one AI control lives inside
+  // the search bar on Home and Services" spec as HomeScreen's
+  // onOpenVentsAi. Optional for the same reason: the icon simply doesn't
+  // render without a handler.
+  onOpenVentsAi?: () => void;
 }
 
 function CardSkeleton() {
@@ -70,7 +75,7 @@ function DiscoveryCountryPicker({ selectedIso, onSelect, onClose }: { selectedIs
 }
 
 export function ServicesHomeScreen({
-  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress,
+  onBack, onCategoryPress, onProviderPress, accountCountryIso, discoveryCountryIso, onDiscoveryCountryChange, onMyBookingsPress, onOpenVentsAi,
 }: ServicesHomeScreenProps) {
   const [search, setSearch] = useState('');
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -167,14 +172,29 @@ export function ServicesHomeScreen({
           </button>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '11px 14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: servicesColors.cardBgAlt, border: `1px solid ${servicesColors.border}`, borderRadius: servicesRadii.sm, padding: '6px 6px 6px 14px' }}>
           <Search size={16} color={servicesColors.textSecondary} style={{ flexShrink: 0 }} />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search services or providers"
-            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Manrope, sans-serif' }}
+            style={{ flex: 1, minWidth: 0, background: 'none', border: 'none', outline: 'none', color: servicesColors.textPrimary, fontSize: '14px', fontFamily: 'Manrope, sans-serif', padding: '5px 0' }}
           />
+          {/* Same "one AI control lives inside the search bar" entry point
+              as Home's compact search pill -- see onOpenVentsAi above. */}
+          {onOpenVentsAi && (
+            <button
+              onClick={onOpenVentsAi}
+              aria-label="Ask VENTS AI"
+              style={{
+                flexShrink: 0, width: '30px', height: '30px', borderRadius: '50%',
+                background: 'linear-gradient(135deg,#c084fc,#7c3aed)',
+                border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              <Sparkles size={13} color="#fff" />
+            </button>
+          )}
         </div>
 
         {onMyBookingsPress && (

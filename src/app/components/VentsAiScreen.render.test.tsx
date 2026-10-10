@@ -38,12 +38,12 @@ afterEach(() => {
   sendVentsAiMessage.mockReset();
 });
 
-function mount() {
+function mount(seedPrompt?: { text: string; nonce: number } | null) {
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
   act(() => {
-    root!.render(<VentsAiScreen onClose={() => {}} />);
+    root!.render(<VentsAiScreen onClose={() => {}} seedPrompt={seedPrompt} />);
   });
 }
 
@@ -165,5 +165,40 @@ describe('VentsAiScreen: external vs VENTS-source cards', () => {
     const externalCardText = ventsCard!.textContent || '';
     expect(externalCardText).not.toContain('View Event');
     expect(externalCardText).toContain('Some Concert Elsewhere');
+  });
+});
+
+describe('VentsAiScreen: contextual seedPrompt (Home/Services sparkle, event details hand-off)', () => {
+  it('pre-fills the composer from seedPrompt without sending anything', () => {
+    mount({ text: 'Help me plan my night around "Afrobeats Fest".', nonce: 1 });
+    const input = container!.querySelector('input') as HTMLInputElement;
+    expect(input.value).toBe('Help me plan my night around "Afrobeats Fest".');
+    // Pre-filling is not auto-sending -- the backend seam must stay untouched
+    // until the user actually taps Send themselves.
+    expect(sendVentsAiMessage).not.toHaveBeenCalled();
+  });
+
+  it('renders with an empty composer when no seedPrompt is given', () => {
+    mount(null);
+    const input = container!.querySelector('input') as HTMLInputElement;
+    expect(input.value).toBe('');
+  });
+
+  it('re-applies the same text when nonce changes, so asking about a second event twice in a row still seeds it', () => {
+    mount({ text: 'Help me plan my night around "Afrobeats Fest".', nonce: 1 });
+    const input = container!.querySelector('input') as HTMLInputElement;
+    act(() => {
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!;
+      setter.call(input, '');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    expect(input.value).toBe('');
+
+    act(() => {
+      root!.render(
+        <VentsAiScreen onClose={() => {}} seedPrompt={{ text: 'Help me plan my night around "Afrobeats Fest".', nonce: 2 }} />
+      );
+    });
+    expect(input.value).toBe('Help me plan my night around "Afrobeats Fest".');
   });
 });
