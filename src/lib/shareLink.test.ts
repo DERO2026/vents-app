@@ -164,12 +164,52 @@ describe('Ticket/event share from PaymentSuccessScreen uses the same fixed domai
   });
 });
 
+describe('Service provider share URL: fixed production domain, distinct ?provider= param (never window.location)', () => {
+  const src = readFileSync(join(__dirname, '..', 'app', 'components', 'ServiceProviderProfileScreen.tsx'), 'utf8');
+
+  it('builds the share link from the literal https://getvents.com domain with the provider id', () => {
+    expect(src).toMatch(/const shareUrl = `https:\/\/getvents\.com\/\?provider=\$\{provider\.id\}`;/);
+  });
+
+  it('passes the URL to shareLink() exactly once (embedded in text only, no separate url field)', () => {
+    const shareBlock = src.match(/onClick=\{async \(\) => \{\s*\/\/ Same canonical-URL[\s\S]*?\n              \}\}/)?.[0] ?? '';
+    expect(shareBlock).toMatch(/await shareLink\(\{ title: `\$\{provider\.businessName\} on Vents`, text: /);
+    expect(shareBlock).not.toMatch(/shareLink\(\{[^}]*\burl:\s*shareUrl/);
+  });
+
+  it('two different providers generate two different canonical URLs', () => {
+    const makeUrl = (id: string) => `https://getvents.com/?provider=${id}`;
+    expect(makeUrl('prov-1')).toBe('https://getvents.com/?provider=prov-1');
+    expect(makeUrl('prov-2')).toBe('https://getvents.com/?provider=prov-2');
+    expect(makeUrl('prov-1')).not.toBe(makeUrl('prov-2'));
+  });
+
+  it('handleCopyLink writes only the canonical URL directly to the clipboard, never through shareLink()', () => {
+    const copyBlock = src.match(/onClick=\{async \(\) => \{\s*\/\/ Dedicated, OS-share-sheet-independent Copy Link[\s\S]*?\n              \}\}/)?.[0] ?? '';
+    expect(copyBlock).not.toMatch(/shareLink\(/);
+    expect(copyBlock).toMatch(/navigator\.clipboard\.writeText\(shareUrl\)/);
+  });
+});
+
+describe('ServiceProviderProfileScreen.handleCopyLink: clipboard write is byte-exact (no title/promo/duplicate/whitespace)', () => {
+  it('writes exactly the canonical provider URL', async () => {
+    const providerId = 'prov-xyz';
+    const shareUrl = `https://getvents.com/?provider=${providerId}`;
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal('navigator', { clipboard: { writeText } });
+    await navigator.clipboard.writeText(shareUrl);
+    vi.unstubAllGlobals();
+    expect(writeText.mock.calls[0][0]).toBe('https://getvents.com/?provider=prov-xyz');
+  });
+});
+
 describe('No production share/deep-link construction anywhere leaks capacitor://localhost or a local dev URL', () => {
   const files = [
     'EventDetailsScreen.tsx',
     'UserProfileScreen.tsx',
     'InboxScreen.tsx',
     'PaymentSuccessScreen.tsx',
+    'ServiceProviderProfileScreen.tsx',
   ].map((f) => ({ name: f, src: readFileSync(join(__dirname, '..', 'app', 'components', f), 'utf8') }));
 
   for (const { name, src } of files) {
@@ -207,6 +247,18 @@ describe('App.tsx web deep-link routing: friendly fallback, never a raw error or
   it('the ?user= handler shows a friendly toast rather than a raw error for a missing/private profile', () => {
     const block = appSrc.match(/\/\/ Intercept profile deep links: \?user=<userId>[\s\S]*?\.finally\(\(\) => \{ setDeepLinkPending\(false\); \}\);/)?.[0] ?? '';
     expect(block).toMatch(/setAppToastError\('This profile is no longer available\.'\)/);
+  });
+
+  it('the ?provider= handler queries service_providers via fetchServiceProviderById (status=approved only, distinct id space from events/users)', () => {
+    const block = appSrc.match(/\/\/ Intercept service-provider deep links: \?provider=<service_providers\.id>[\s\S]*?\.finally\(\(\) => \{ setDeepLinkPending\(false\); \}\);/)?.[0] ?? '';
+    expect(block).toMatch(/fetchServiceProviderById\(providerDeepLink\)/);
+    expect(block).toMatch(/setScreen\('service-provider-profile'\)/);
+  });
+
+  it('the ?provider= handler shows a friendly toast rather than a raw error or blank screen for a missing/unapproved provider', () => {
+    const block = appSrc.match(/\/\/ Intercept service-provider deep links: \?provider=<service_providers\.id>[\s\S]*?\.finally\(\(\) => \{ setDeepLinkPending\(false\); \}\);/)?.[0] ?? '';
+    expect(block).toMatch(/setAppToastError\('This provider is no longer available\.'\)/);
+    expect(block).toMatch(/setAppToastError\('Could not open that provider link\. Please try again\.'\)/);
   });
 
   it('native appUrlOpen handling exists for getvents.com/vents:// links opened while the app is installed', () => {
@@ -279,5 +331,6 @@ describe('Native deep-link platform configuration is present in the repo (Androi
     const queryKeys = details.components.flatMap((c: any) => Object.keys(c['?'] || {}));
     expect(queryKeys).toContain('event');
     expect(queryKeys).toContain('user');
+    expect(queryKeys).toContain('provider');
   });
 });

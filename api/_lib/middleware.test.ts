@@ -94,6 +94,42 @@ describe('middleware (Vercel Edge Middleware, not a serverless function)', () =>
     expect(html).toContain('VENTS');
   });
 
+  it('serves per-provider preview HTML to a crawler requesting ?provider=', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ business_name: 'Glow Makeup Studio', category: 'Beauty', location: 'Lagos', photo_urls: ['https://cdn.example/p1.png'], status: 'approved' }],
+      })
+    );
+    const middleware = await loadMiddleware();
+    const req = new Request('https://getvents.com/?provider=prov-1', {
+      headers: { 'user-agent': 'facebookexternalhit/1.1' },
+    });
+    const res = await middleware(req);
+    expect(res).toBeInstanceOf(Response);
+    const html = await (res as Response).text();
+    expect(html).toContain('Glow Makeup Studio | VENTS');
+  });
+
+  it('never leaks an unapproved provider to a crawler, and never throws', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ business_name: 'Pending Provider', status: 'pending' }],
+      })
+    );
+    const middleware = await loadMiddleware();
+    const req = new Request('https://getvents.com/?provider=prov-pending', {
+      headers: { 'user-agent': 'WhatsApp/2.23' },
+    });
+    const res = await middleware(req);
+    const html = await (res as Response).text();
+    expect(html).not.toContain('Pending Provider');
+    expect(html).toContain('VENTS');
+  });
+
   it('falls through gracefully (undefined) if preview building throws unexpectedly', async () => {
     vi.stubGlobal(
       'fetch',

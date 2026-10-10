@@ -3,6 +3,7 @@ import {
   isCrawlerUserAgent,
   buildEventPreview,
   buildUserPreview,
+  buildProviderPreview,
   renderPreviewHtml,
 } from './socialPreview';
 
@@ -131,6 +132,71 @@ describe('buildUserPreview', () => {
   it('falls back to the generic site preview, never throwing, when the fetch itself fails', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
     const meta = await buildUserPreview('user-1', 'https://getvents.com/?user=user-1');
+    expect(meta.title).toBe('VENTS');
+  });
+});
+
+describe('buildProviderPreview', () => {
+  it('returns the provider-specific title/image for a real, approved provider', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ business_name: 'Glow Makeup Studio', category: 'Beauty', location: 'Lagos', photo_urls: ['https://cdn.example/p1.png'], status: 'approved' }],
+      })
+    );
+    const meta = await buildProviderPreview('prov-1', 'https://getvents.com/?provider=prov-1');
+    expect(meta.title).toBe('Glow Makeup Studio | VENTS');
+    expect(meta.description).toContain('Beauty');
+    expect(meta.image).toBe('https://cdn.example/p1.png');
+    expect(meta.canonicalUrl).toBe('https://getvents.com/?provider=prov-1');
+  });
+
+  it('two different providers produce two different canonical previews', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ business_name: 'Other Provider', category: 'Catering', location: 'Abuja', photo_urls: [], status: 'approved' }],
+      })
+    );
+    const meta = await buildProviderPreview('prov-2', 'https://getvents.com/?provider=prov-2');
+    expect(meta.title).toBe('Other Provider | VENTS');
+    expect(meta.canonicalUrl).toBe('https://getvents.com/?provider=prov-2');
+    expect(meta.canonicalUrl).not.toBe('https://getvents.com/?provider=prov-1');
+  });
+
+  it('falls back to the generic site preview for an unapproved/suspended provider (never leaks its name/image)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ business_name: 'Pending Provider', category: 'Beauty', location: 'Lagos', photo_urls: ['https://cdn.example/secret.png'], status: 'pending' }],
+      })
+    );
+    const meta = await buildProviderPreview('prov-pending', 'https://getvents.com/?provider=prov-pending');
+    expect(meta.title).toBe('VENTS');
+    expect(meta.title).not.toContain('Pending Provider');
+    expect(meta.image).not.toBe('https://cdn.example/secret.png');
+  });
+
+  it('falls back to the generic site preview for an unknown provider id', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => [] }));
+    const meta = await buildProviderPreview('does-not-exist', 'https://getvents.com/?provider=does-not-exist');
+    expect(meta.title).toBe('VENTS');
+    expect(meta.image).toBe('https://getvents.com/og-image.png');
+  });
+
+  it('falls back to the generic site preview, never throwing, when the fetch itself fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    const meta = await buildProviderPreview('prov-1', 'https://getvents.com/?provider=prov-1');
+    expect(meta.title).toBe('VENTS');
+  });
+
+  it('falls back safely when Supabase env vars are not configured', async () => {
+    delete process.env.VITE_SUPABASE_URL;
+    delete process.env.VITE_SUPABASE_ANON_KEY;
+    const meta = await buildProviderPreview('prov-1', 'https://getvents.com/?provider=prov-1');
     expect(meta.title).toBe('VENTS');
   });
 });

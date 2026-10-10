@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check, Bookmark } from 'lucide-react';
+import { ArrowLeft, MapPin, Tag, Zap, MessageCircle, Check, Bookmark, Share2, Link as LinkIcon } from 'lucide-react';
+import { shareLink } from '../../lib/shareLink';
 import { ServiceProvider, ProviderService } from './types';
 import { servicesColors, servicesRadii, servicesSpacing, categoryAccents } from '../../lib/servicesDesignTokens';
 import { fetchServiceProviderById, withProviderRatings } from '../../lib/serviceProviders';
@@ -95,6 +96,10 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
   // over data this screen already fetches -- no new data source.
   const [activeTab, setActiveTab] = useState<'services' | 'about' | 'reviews'>('services');
   const [reviews, setReviews] = useState<ProviderReviewRow[] | null>(null);
+  // Share/Copy Link toast -- same transient-pill pattern as
+  // UserProfileScreen's copiedToast (EventDetailsScreen/PaymentSuccessScreen/
+  // InboxScreen all do the same thing independently; no shared component).
+  const [copiedToast, setCopiedToast] = useState(false);
 
   // The sticky bottom CTA bar's real height varies a lot on this screen --
   // it can grow from a single "Book this provider" button up to a stacked
@@ -357,19 +362,70 @@ export function ServiceProviderProfileScreen({ providerId, initialProvider, onBa
             <button onClick={onBack} style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
               <ArrowLeft size={16} color="#fff" />
             </button>
-            {/* saved_service_providers (0118) -- the backend gap the
-                previous comment here described is now closed. */}
-            {onToggleSave && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <button
-                onClick={() => onToggleSave(provider.id)}
-                aria-label={isSaved ? 'Remove from saved' : 'Save this provider'}
+                onClick={async () => {
+                  // Same canonical-URL/Share.share() contract as
+                  // UserProfileScreen/EventDetailsScreen -- real public
+                  // domain (never window.location.origin, meaningless
+                  // inside the native WebView), URL embedded in `text`
+                  // only, never a separate `url` field passed alongside
+                  // promo text (that's what causes the native share
+                  // sheet's "Copy" resolver to duplicate it).
+                  const shareUrl = `https://getvents.com/?provider=${provider.id}`;
+                  const promo = [provider.businessName, [provider.category, provider.location].filter(Boolean).join(' · ')]
+                    .filter(Boolean)
+                    .join(' — ');
+                  const result = await shareLink({ title: `${provider.businessName} on Vents`, text: `${promo} on VENTS: ${shareUrl}` });
+                  if (result === 'copied') {
+                    setCopiedToast(true);
+                    setTimeout(() => setCopiedToast(false), 2000);
+                  }
+                }}
+                title="Share profile"
                 style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
               >
-                <Bookmark size={16} color={isSaved ? accent : '#fff'} fill={isSaved ? accent : 'none'} />
+                <Share2 size={16} color="#fff" />
               </button>
-            )}
+              <button
+                onClick={async () => {
+                  // Dedicated, OS-share-sheet-independent Copy Link --
+                  // writes ONLY the canonical URL directly to the
+                  // clipboard, same as UserProfileScreen.handleCopyLink
+                  // (see its comment for the full rationale).
+                  const shareUrl = `https://getvents.com/?provider=${provider.id}`;
+                  try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    setCopiedToast(true);
+                    setTimeout(() => setCopiedToast(false), 2000);
+                  } catch {
+                    // ignore -- no toast on failure
+                  }
+                }}
+                title="Copy Link"
+                style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <LinkIcon size={16} color="#fff" />
+              </button>
+              {/* saved_service_providers (0118) -- the backend gap the
+                  previous comment here described is now closed. */}
+              {onToggleSave && (
+                <button
+                  onClick={() => onToggleSave(provider.id)}
+                  aria-label={isSaved ? 'Remove from saved' : 'Save this provider'}
+                  style={{ background: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(6px)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <Bookmark size={16} color={isSaved ? accent : '#fff'} fill={isSaved ? accent : 'none'} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
+        {copiedToast && (
+          <div style={{ position: 'fixed', bottom: '100px', left: '50%', transform: 'translateX(-50%)', background: 'rgba(20,12,30,0.95)', border: '1px solid rgba(255,255,255,0.15)', color: '#f6f4f9', fontSize: '13px', fontWeight: 600, padding: '8px 16px', borderRadius: servicesRadii.pill, zIndex: 50 }}>
+            Link copied
+          </div>
+        )}
 
         {/* Floating profile card -- real business name, category, rating
             (service_provider_ratings aggregate) and location. No verified

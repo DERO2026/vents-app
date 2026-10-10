@@ -5,7 +5,8 @@
         "appIDs": ["V7774S7GHB.com.getvents.app"],
         "components": [
           { "/": "/", "?": { "event": "*" } },
-          { "/": "/", "?": { "user": "*" } }
+          { "/": "/", "?": { "user": "*" } },
+          { "/": "/", "?": { "provider": "*" } }
         ]
       }
     ]

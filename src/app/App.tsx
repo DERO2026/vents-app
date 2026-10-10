@@ -6,7 +6,7 @@ import { registerPushNotifications, unregisterPushNotifications, setPushActionHa
 import { Capacitor } from '@capacitor/core';
 import { apiUrl } from '../lib/apiBase';
 import { getPendingVerification, clearPendingVerification } from '../lib/pendingVerification';
-import { fetchSavedServiceProviderIds, saveServiceProvider, unsaveServiceProvider } from '../lib/serviceProviders';
+import { fetchSavedServiceProviderIds, saveServiceProvider, unsaveServiceProvider, fetchServiceProviderById, withProviderRatings } from '../lib/serviceProviders';
 import { isEventDiscoverable } from '../lib/eventLifecycle';
 import { openExternalUrl } from '../lib/externalLink';
 import { identifyUser, capturePageview } from '../lib/analytics';
@@ -724,6 +724,39 @@ export default function App() {
               console.error('Deep link user fetch failed:', err);
               Sentry.captureException(err);
               setAppToastError('Could not open that profile link. Please try again.');
+            })
+            .finally(() => { setDeepLinkPending(false); });
+        }
+
+        // Intercept service-provider deep links: ?provider=<service_providers.id>
+        // -- distinct from both ?event= (events.id) and ?user= (users.id):
+        // service_providers has its own id space, and ServiceProviderProfileScreen
+        // is navigated to with a providerId prop, never reachable via ?user=.
+        // Same safe shape as the ?event=/?user= handlers above: clean the URL
+        // immediately, fetch public-only fields, and fall back to a friendly
+        // toast (never a crash or blank screen) for a missing/unapproved/
+        // deleted listing. fetchServiceProviderById already restricts to
+        // status='approved' via its own query (mirrors RLS), so an
+        // unapproved/removed listing resolves to null here exactly like a
+        // deleted event resolves to evtData.deleted_at above.
+        const providerDeepLink = params.get('provider');
+        if (providerDeepLink) {
+          const cleanUrl = window.location.pathname + window.location.hash;
+          window.history.replaceState({}, document.title, cleanUrl);
+          setDeepLinkPending(true);
+          Promise.resolve(fetchServiceProviderById(providerDeepLink))
+            .then(async (providerData) => {
+              if (!providerData) {
+                setAppToastError('This provider is no longer available.');
+                return;
+              }
+              const [rated] = await withProviderRatings([providerData]);
+              setSelectedServiceProvider(rated);
+              setScreen('service-provider-profile');
+            }, (err: any) => {
+              console.error('Deep link provider fetch failed:', err);
+              Sentry.captureException(err);
+              setAppToastError('Could not open that provider link. Please try again.');
             })
             .finally(() => { setDeepLinkPending(false); });
         }

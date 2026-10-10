@@ -2,6 +2,7 @@ import {
   isCrawlerUserAgent,
   buildEventPreview,
   buildUserPreview,
+  buildProviderPreview,
   renderPreviewHtml,
 } from './api/_lib/socialPreview';
 
@@ -31,7 +32,8 @@ export default async function middleware(req: Request) {
   const url = new URL(req.url);
   const eventId = url.searchParams.get('event');
   const userId = url.searchParams.get('user');
-  if (!eventId && !userId) {
+  const providerId = url.searchParams.get('provider');
+  if (!eventId && !userId && !providerId) {
     return undefined;
   }
 
@@ -40,7 +42,9 @@ export default async function middleware(req: Request) {
   try {
     const meta = eventId
       ? await buildEventPreview(eventId, canonicalUrl)
-      : await buildUserPreview(userId as string, canonicalUrl);
+      : userId
+      ? await buildUserPreview(userId, canonicalUrl)
+      : await buildProviderPreview(providerId as string, canonicalUrl);
     return new Response(renderPreviewHtml(meta), {
       status: 200,
       headers: { 'content-type': 'text/html; charset=utf-8' },
