@@ -1,0 +1,22 @@
+-- Fix: production "permission denied for table saved_service_providers"
+-- (Sentry JAVASCRIPT-REACT-1Y / -1Z, 128+ occurrences, 19 users, since
+-- 2026-10-01). Root cause confirmed live against project
+-- slrtjxtzhowhwhebjprv: 0118_saved_service_providers.sql created the table,
+-- enabled RLS, and defined correctly-scoped own-row-only policies for
+-- `authenticated` (select/insert/delete), but never granted the underlying
+-- table-level privileges those policies depend on. This project revokes all
+-- default table privileges from PUBLIC/anon/authenticated for every table
+-- (0012_fix_default_table_grants.sql), so a table with no explicit GRANT
+-- has none at all -- confirmed live via information_schema.role_table_grants,
+-- which shows `authenticated` holding only REFERENCES/TRIGGER/TRUNCATE on
+-- this table, none of SELECT/INSERT/UPDATE/DELETE. RLS itself was never
+-- the problem (its live policies already match this file's and saved_events'
+-- own-row scoping exactly) -- this migration only restores the grant the
+-- existing policies were already written to sit behind.
+--
+-- No UPDATE: the table has no update code path (fetchSavedServiceProviderIds
+-- reads, saveServiceProvider inserts, unsaveServiceProvider deletes -- see
+-- src/lib/serviceProviders.ts). No `anon` grant: all three RLS policies are
+-- scoped to `authenticated` only, so granting `anon` would add privilege
+-- with no matching policy to use it.
+GRANT SELECT, INSERT, DELETE ON public.saved_service_providers TO authenticated;
