@@ -52,7 +52,7 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- "Providers Near You" (Services) -- distance-sorted discovery via
+    <!-- "Providers Near You" (Services) — distance-sorted discovery via
          the WebView's own navigator.geolocation, not a separate native
          plugin. COARSE is enough for city/neighborhood-level provider
          discovery; FINE is declared too so the OS offers precise location
