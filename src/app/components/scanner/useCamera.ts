@@ -8,6 +8,7 @@
 // decoding — just a stable, live preview surface.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { askPermission } from '../../../lib/permissionPrimer';
 
 export type CameraStatus = 'idle' | 'starting' | 'ready' | 'error';
 export type Facing = 'environment' | 'user';
@@ -80,6 +81,28 @@ export function useCamera(active: boolean): CameraController {
 
     (async () => {
       try {
+        // Apple's Oct 2026 rejection of VENTS 1.0.2 (Guideline 5.1.1(iv))
+        // was about the OTHER camera entry point (pickImage.ts's photo
+        // picker) having a dismissible pre-permission screen; auditing
+        // "every relevant caller" for this same fix turned up this one too
+        // -- until now, opening the check-in scanner called getUserMedia
+        // directly with zero explanation, firing the real OS prompt the
+        // instant an organizer navigated here. Same primer, same
+        // non-dismissible contract as pickImage.ts (dismissible: false --
+        // no skip path, "Continue" is the only way out, and it leads
+        // straight into the real getUserMedia call below). Shares the one
+        // "shown once per device" key with pickImage.ts's own 'camera'
+        // primer (lib/permissionPrimer.ts) -- whichever camera-using
+        // feature a user reaches first explains it once; a later feature
+        // never needs to repeat an explanation the OS has already acted on.
+        await askPermission('camera', {
+          icon: 'camera',
+          title: 'Allow Camera Access',
+          message: 'VENTS uses your camera to scan attendee QR codes for ticket check-in.',
+          dismissible: false,
+        });
+        if (cancelled || !mountedRef.current) return;
+
         // Minimal constraints only. Demanding an explicit resolution/frame rate
         // caused getUserMedia to reject on some devices/WebViews; quality is the
         // sensor's default, which is more than enough for QR decoding.
