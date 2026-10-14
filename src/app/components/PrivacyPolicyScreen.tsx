@@ -9,9 +9,9 @@ const PRIVACY_POLICY_TEXT = `PRIVACY POLICY — VENTS
 
 This policy explains what information Vents collects, how it's used, and your rights over it.
 
-Information we collect: your name, email, and phone number when you create an account; your location, only if you allow it, so we can show events near you; event details you create, attend, or save. Payment is handled directly by our payment partner, Paystack — we never see or store your full card number.
+Information we collect: your name, email, and phone number when you create an account; your location, only if you allow it, so we can show events near you; event details you create, attend, or save. Photos you choose to add — profile pictures, event cover images, service-provider verification documents, or pictures you send in chat — using your camera or photo library, only after you grant that permission. Payment is handled directly by our payment partner, Paystack — we never see or store your full card number.
 
-How we use it: to run your account; to show you relevant nearby events; to process ticket payments through Paystack; to contact you about your tickets or account; to investigate reports of abuse or policy violations.
+How we use it: to run your account; to show you relevant nearby events; to process ticket payments through Paystack; to display the photos and documents you choose to upload; to send you push notifications about ticket confirmations, event reminders, and new messages, if you allow them; to contact you about your tickets or account; to investigate reports of abuse or policy violations.
 
 Who we share it with: Paystack, to process payments. Nobody else, unless required by law.
 
