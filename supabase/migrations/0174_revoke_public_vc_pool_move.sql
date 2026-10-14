@@ -1,0 +1,45 @@
+-- Corrective follow-up to 0173, which was applied to production but did
+-- NOT close the vulnerability. 0173 ran `REVOKE EXECUTE ... FROM anon`,
+-- but live has_function_privilege('anon', '_vc_pool_move(...)', 'EXECUTE')
+-- remained true afterward -- confirmed by reading pg_proc.proacl directly:
+-- proacl = {=X/postgres, postgres=X/postgres}. The `=X/postgres` entry is
+-- a grant to PUBLIC (the empty-grantee ACL notation), not to anon
+-- specifically. This function's EXECUTE privilege was always at
+-- Postgres's default -- EXECUTE-to-PUBLIC -- which every role, including
+-- anon, inherits automatically regardless of what is or isn't granted to
+-- anon by name. Revoking a privilege anon never held in its own right was
+-- a correctly-executed no-op against the real access path.
+--
+-- 0173 itself is left unedited and un-superseded in this repo's history --
+-- it was already applied to production, so this is a NEW migration
+-- (0174), not a correction of an already-applied file.
+--
+-- Fix: revoke from PUBLIC itself, which removes the privilege for every
+-- role that was inheriting it, including anon.
+--
+-- Role analysis -- NO re-grant to authenticated or project_admin, by
+-- design, for a reason specific to this function (confirmed, not assumed):
+--   - Repo-wide grep (src/, api/) for any supabase.rpc('_vc_pool_move', ...)
+--     client call site: ZERO matches. No application code anywhere calls
+--     this function directly over PostgREST.
+--   - All 4 legitimate callers (admin_credit_vents_cents (5-arg),
+--     admin_debit_vents_cents (4-arg), award_vc_reward, reverse_vc_reward)
+--     are themselves SECURITY DEFINER, owned by postgres (confirmed live
+--     via pg_proc.prosecdef/proowner). A SECURITY DEFINER function's
+--     internal PERFORM calls execute as its OWNER -- postgres, a
+--     superuser that bypasses all grant checks entirely -- never as the
+--     role that invoked the outer function over the API. None of these 4
+--     callers need, use, or are affected by _vc_pool_move's own grants at
+--     all.
+--   - There is therefore no evidence any client-facing role (anon,
+--     authenticated) or even project_admin (which only ever reaches this
+--     function the same internal way, via the same 4 callers) requires
+--     direct EXECUTE here. Granting any of them "just in case" would
+--     re-introduce exactly the kind of unnecessary, unused attack surface
+--     this fix exists to remove -- the same rationale 0111/0170 already
+--     establish elsewhere in this schema.
+--   - If this analysis is ever found wrong (a real caller discovered that
+--     does need direct access), that is a new, evidence-based GRANT in a
+--     future migration -- not something to pre-emptively add here without
+--     proof.
+REVOKE EXECUTE ON FUNCTION public._vc_pool_move(text, numeric, uuid, uuid, text, uuid) FROM PUBLIC;
