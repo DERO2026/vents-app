@@ -4,6 +4,7 @@ import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscription
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
 import { resolveHasRealAiAccess, cancelMyAiSubscription, type AiEntitlementRow } from '../../lib/aiEntitlementClient';
+import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
 // Apple App Store rejection (Guideline 3.1.1, submission
 // 3098bebc-a2ff-43de-8b7e-358a82693200, Oct 14 2026): VENTS AI/AI+ could be
@@ -194,6 +195,14 @@ export function AiPlansScreen({
       setError(e?.message === 'plan_not_purchasable' ? 'This plan is not available for purchase yet.' : (e?.message || 'Could not start checkout.'));
     }
   }
+
+  // Self-guard (Guideline 3.1.1): never reach this screen's price/plan
+  // rendering on native iOS, independent of the App.tsx-level gate and of
+  // the per-element IS_IOS_NATIVE guards below (which cover the button and
+  // banner but never gated the Naira price display itself) -- replace the
+  // whole screen with Coming Soon so no price, plan, or purchase element
+  // can render on iOS regardless of how this component was reached.
+  if (IS_IOS_NATIVE) return <VentsAiIosComingSoonScreen onClose={onClose} />;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: BG, display: 'flex', flexDirection: 'column', zIndex: 960 }}>
