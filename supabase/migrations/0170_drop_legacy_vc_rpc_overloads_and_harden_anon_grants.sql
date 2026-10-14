@@ -108,7 +108,7 @@ END; $function$;
 DROP FUNCTION IF EXISTS public.admin_credit_vents_cents(uuid, numeric, text);
 DROP FUNCTION IF EXISTS public.admin_debit_vents_cents(uuid, integer, text);
 
--- F16: three newer VC-economy RPCs (introduced in migration 0147, after the
+-- F16: four newer VC-economy RPCs (introduced in migration 0147, after the
 -- anon-EXECUTE revocation sweep in 0111) were never folded into that sweep,
 -- so they still carry Postgres's default EXECUTE-to-PUBLIC grant, making
 -- them anon-reachable at the grant layer. None are exploitable -- each
@@ -116,6 +116,13 @@ DROP FUNCTION IF EXISTS public.admin_debit_vents_cents(uuid, integer, text);
 -- revoke matches the exact rationale 0111 itself documents (unnecessary
 -- attack surface, not a live hole). Mirrors 0111's own pattern exactly:
 -- REVOKE FROM anon only, never touching authenticated/project_admin.
+--
+-- CORRECTED (Release-Critical Audit 3 follow-up): the original draft of
+-- this migration revoked only 3 of the 4 anon-executable functions, missing
+-- the 5-arg admin_credit_vents_cents overload -- confirmed live via
+-- has_function_privilege('anon', ..., 'EXECUTE') = true for all four before
+-- this fix. All four are now covered.
+REVOKE EXECUTE ON FUNCTION public.admin_credit_vents_cents(uuid, numeric, text, boolean, uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.admin_debit_vents_cents(uuid, integer, text, uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.admin_get_user_vc_summary(uuid) FROM anon;
 REVOKE EXECUTE ON FUNCTION public.admin_get_vc_pool_status() FROM anon;

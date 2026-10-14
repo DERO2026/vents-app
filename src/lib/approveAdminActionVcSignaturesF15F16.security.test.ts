@@ -67,11 +67,30 @@ describe('F15: approve_admin_action() repoints credit/debit_vents_cents at the p
   });
 });
 
-describe('F16: anon EXECUTE revoked on the newer VC-economy RPCs', () => {
-  it('revokes anon on admin_debit_vents_cents (4-arg), admin_get_user_vc_summary, and admin_get_vc_pool_status', () => {
+describe('F16: anon EXECUTE revoked on all four newer VC-economy RPCs', () => {
+  // FIXED (was a KNOWN GAP as of the prior draft): live has_function_
+  // privilege('anon', admin_credit_vents_cents(uuid, numeric, text,
+  // boolean, uuid), 'EXECUTE') was confirmed TRUE on 2026-10-14
+  // (Release-Critical Audit 3) -- a fourth anon-executable VC RPC the
+  // original draft of this migration missed (it only covered 3). This
+  // migration now revokes all four; this test requires all four rather
+  // than the previous three, so a future regression that drops this line
+  // again fails loudly instead of silently passing.
+  it('revokes anon on admin_credit_vents_cents (5-arg), admin_debit_vents_cents (4-arg), admin_get_user_vc_summary, and admin_get_vc_pool_status', () => {
+    expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.admin_credit_vents_cents\(uuid, numeric, text, boolean, uuid\) FROM anon;/);
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.admin_debit_vents_cents\(uuid, integer, text, uuid\) FROM anon;/);
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.admin_get_user_vc_summary\(uuid\) FROM anon;/);
     expect(sql).toMatch(/REVOKE EXECUTE ON FUNCTION public\.admin_get_vc_pool_status\(\) FROM anon;/);
+  });
+
+  it('revokes exactly these four functions, no more, no fewer', () => {
+    const matches = [...sql.matchAll(/REVOKE EXECUTE ON FUNCTION public\.([^;]+) FROM anon;/g)].map((m) => m[1]);
+    expect(matches.sort()).toEqual([
+      'admin_credit_vents_cents(uuid, numeric, text, boolean, uuid)',
+      'admin_debit_vents_cents(uuid, integer, text, uuid)',
+      'admin_get_user_vc_summary(uuid)',
+      'admin_get_vc_pool_status()',
+    ].sort());
   });
 
   it('does NOT touch authenticated or project_admin', () => {
@@ -79,21 +98,5 @@ describe('F16: anon EXECUTE revoked on the newer VC-economy RPCs', () => {
     for (const line of revokeLines) {
       expect(line).not.toMatch(/FROM (authenticated|project_admin)/);
     }
-  });
-
-  // KNOWN GAP, deliberately left failing rather than loosened to pass:
-  // live has_function_privilege('anon', admin_credit_vents_cents(uuid,
-  // numeric, text, boolean, uuid), 'EXECUTE') is also currently TRUE
-  // (confirmed live, 2026-10-14, Release-Critical Audit 3) -- a fourth
-  // anon-executable VC RPC this draft does not revoke. F16's own
-  // MASTER_AUDIT.md text says "the 3 confirmed functions", but a live
-  // re-check during this audit found a 4th. This test documents the gap
-  // rather than silently expecting it, so fixing the migration (adding the
-  // missing REVOKE line) is what turns this red, not a definition of done
-  // that's already satisfied.
-  it.fails('[KNOWN GAP] does not yet revoke anon on the 5-arg admin_credit_vents_cents, which is also anon-executable live', () => {
-    expect(sql).toMatch(
-      /REVOKE EXECUTE ON FUNCTION public\.admin_credit_vents_cents\(uuid, numeric, text, boolean, uuid\) FROM anon;/
-    );
   });
 });
