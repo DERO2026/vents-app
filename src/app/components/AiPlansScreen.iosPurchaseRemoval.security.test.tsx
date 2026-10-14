@@ -84,7 +84,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix)', () => {
     expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai"]')).toBeFalsy();
     expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeFalsy();
     expect(container!.querySelector('[data-testid="ai-plans-ios-purchase-unavailable"]')).toBeTruthy();
-    expect(container!.textContent).toContain("VENTS AI+ subscriptions aren't available for purchase in the iOS app at this time.");
+    expect(container!.textContent).toContain("VENTS AI and AI+ subscriptions aren't available for purchase in the iOS app at this time.");
     // No external purchase link/CTA -- Apple's separate 3.1.3 restriction.
     expect(container!.querySelector('a[href*="getvents.com"]')).toBeFalsy();
     expect(container!.textContent?.toLowerCase()).not.toContain('subscribe on');
