@@ -4,6 +4,7 @@
   "rewrites": [
     { "source": "/api/v1/(.*)", "destination": "/api/$1" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/help", "destination": "/help.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "crons": [

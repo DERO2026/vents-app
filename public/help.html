@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Help &amp; Support | VENTS</title>
+<meta name="description" content="Get help with your VENTS account, tickets, payments, and technical issues. Contact support@getvents.com." />
+<meta name="robots" content="index, follow" />
+<style>
+  :root {
+    --bg: #020005;
+    --surface: #0a0810;
+    --border: rgba(255,255,255,0.08);
+    --ink1: #f0f0ff;
+    --ink2: #c4c9e0;
+    --ink3: #8b8fa8;
+    --accent: #a78bfa;
+    --accent-soft: rgba(168,85,247,0.08);
+    --accent-border: rgba(168,85,247,0.2);
+    --green: #22c55e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink1); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.5;
+    padding: 24px 16px calc(40px + env(safe-area-inset-bottom, 0px));
+  }
+  .wrap { max-width: 640px; margin: 0 auto; }
+  .logo { font-size: 20px; font-weight: 800; color: var(--ink1); margin-bottom: 4px; }
+  h1 { font-size: 24px; font-weight: 800; margin: 16px 0 8px; color: var(--ink1); }
+  .intro { color: var(--ink2); font-size: 15px; margin-bottom: 24px; }
+  .contact-card {
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-border);
+    border-radius: 14px;
+    padding: 18px 16px;
+    margin-bottom: 28px;
+  }
+  .contact-card p { color: var(--ink2); font-size: 14px; margin: 0 0 12px; }
+  .contact-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 15px;
+    font-weight: 600;
+    text-decoration: none;
+    margin-bottom: 10px;
+  }
+  .contact-row:last-child { margin-bottom: 0; }
+  .contact-row.email { color: var(--accent); }
+  .contact-row.whatsapp { color: var(--green); }
+  h2 { font-size: 16px; font-weight: 800; color: var(--ink1); margin: 28px 0 10px; }
+  .topic {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 10px;
+  }
+  .topic h3 { font-size: 14px; font-weight: 700; color: var(--ink1); margin: 0 0 6px; }
+  .topic p { font-size: 13.5px; color: var(--ink2); margin: 0; }
+  .topic p + p { margin-top: 8px; }
+  footer { margin-top: 32px; font-size: 12px; color: var(--ink3); }
+  footer a { color: var(--accent); text-decoration: none; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="logo">VENTS</div>
+    <h1>Help &amp; Support</h1>
+    <p class="intro">
+      Need help with your VENTS account, a ticket, a payment, or something not working right?
+      We're here to help — reach us directly, or check the common topics below.
+    </p>
+
+    <div class="contact-card">
+      <p>Contact VENTS Support:</p>
+      <a class="contact-row email" href="mailto:support@getvents.com">✉️ support@getvents.com</a>
+      <a class="contact-row whatsapp" href="https://wa.me/2349030737368">📱 WhatsApp: +234 903 073 7368</a>
+    </div>
+
+    <h2>Account access</h2>
+    <div class="topic">
+      <h3>I can't log in or I forgot my password</h3>
+      <p>Use "Forgot Password" on the sign-in screen to reset your password by email. If you no longer have access to that email, contact support@getvents.com with the username or email on your account so we can verify and help you regain access.</p>
+    </div>
+    <div class="topic">
+      <h3>I want to delete my account</h3>
+      <p>In the app, go to Profile → Settings → Delete Account. This anonymizes your data immediately and cannot be reversed. If you run into trouble, email support@getvents.com.</p>
+    </div>
+
+    <h2>Tickets</h2>
+    <div class="topic">
+      <h3>How do I buy a ticket?</h3>
+      <p>Open any event in the app, choose a ticket type and quantity, then tap "Buy Ticket." You can pay by card, bank transfer, or USSD. Your ticket and QR code appear under My Tickets right after payment.</p>
+    </div>
+    <div class="topic">
+      <h3>I paid but my ticket isn't showing</h3>
+      <p>Pull down to refresh on the My Tickets screen. If it still hasn't appeared after a few minutes, email support@getvents.com with your payment reference and we'll sort it out.</p>
+    </div>
+
+    <h2>Payments</h2>
+    <div class="topic">
+      <h3>What payment methods are accepted?</h3>
+      <p>Debit/credit cards (Visa, Mastercard, Verve), bank transfer, and USSD, all processed through Paystack — VENTS never stores your card details.</p>
+    </div>
+    <div class="topic">
+      <h3>Can I get a refund?</h3>
+      <p>Ticket refunds are handled by the event organizer — contact them directly from the event page. If an event was cancelled by its organizer, email support@getvents.com and we'll help.</p>
+    </div>
+
+    <h2>Technical problems</h2>
+    <div class="topic">
+      <h3>Something in the app isn't working</h3>
+      <p>Try closing and reopening the app, or updating to the latest version from the App Store/Play Store. If the problem continues, email support@getvents.com with a description of what happened and, if possible, a screenshot — we read every message.</p>
+    </div>
+    <div class="topic">
+      <h3>Report a problem with an event or user</h3>
+      <p>In the app, tap the (⋯) menu on the event or profile and choose "Report." For anything urgent, email support@getvents.com or message us on WhatsApp above.</p>
+    </div>
+
+    <footer>
+      VENTS · <a href="/privacy">Privacy Policy</a> · <a href="/terms">Terms of Service</a>
+    </footer>
+  </div>
+</body>
+</html>
