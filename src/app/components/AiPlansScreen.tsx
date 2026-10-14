@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Capacitor } from '@capacitor/core';
+import { isIosNative } from '../../lib/platform';
 import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscriptionPayment, type AiPlanPublic } from '../../lib/aiSubscription';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
@@ -30,9 +30,6 @@ import { resolveHasRealAiAccess, cancelMyAiSubscription, type AiEntitlementRow }
 // (3.1.3), which this app has no approved entitlement for. The iOS message
 // below states unavailability only, with no call to action to pay outside
 // the app.
-function isIosNative(): boolean {
-  return Capacitor.getPlatform() === 'ios';
-}
 
 // Real VENTS AI paywall/plans screen. Every price, plan name, and unit
 // count shown here comes from get_ai_plans_public() (0175_ai_subscription_
