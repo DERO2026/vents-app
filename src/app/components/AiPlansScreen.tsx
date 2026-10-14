@@ -1,8 +1,38 @@
 import { useEffect, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
 import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscriptionPayment, type AiPlanPublic } from '../../lib/aiSubscription';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
 import { resolveHasRealAiAccess, cancelMyAiSubscription, type AiEntitlementRow } from '../../lib/aiEntitlementClient';
+
+// Apple App Store rejection (Guideline 3.1.1, submission
+// 3098bebc-a2ff-43de-8b7e-358a82693200, Oct 14 2026): VENTS AI/AI+ could be
+// purchased in the iOS app through Paystack -- a payment mechanism other
+// than Apple In-App Purchase. This screen is the only purchase surface for
+// VENTS AI (confirmed: the only AiPlansScreen/openPaystackPopup-for-AI call
+// site in the app; every other openPaystackPopup use is for tickets, wallet
+// top-ups, service bookings, or event promotion, which are Apple's
+// "physical goods/services" exception, not digital-subscription content,
+// and are deliberately untouched by this fix).
+//
+// Fix scope: remove the Paystack purchase mechanism from the iOS app only.
+// Does NOT touch Android/web (still full Paystack checkout, unchanged) and
+// does NOT revoke any existing iOS subscriber's already-paid-for access --
+// entitlement display and self-cancellation both stay exactly as they were,
+// since Apple's objection is to the ongoing purchase mechanism, not to an
+// iOS user keeping what they already bought. No real Apple In-App Purchase
+// exists in this codebase yet (no StoreKit/RevenueCat/Capacitor purchase
+// plugin anywhere) -- implementing one is a separate, much larger task,
+// not something this release can safely include.
+//
+// Deliberately NOT a link to buy elsewhere ("subscribe on getvents.com")
+// -- that would trip Apple's separate external-purchase-link restriction
+// (3.1.3), which this app has no approved entitlement for. The iOS message
+// below states unavailability only, with no call to action to pay outside
+// the app.
+function isIosNative(): boolean {
+  return Capacitor.getPlatform() === 'ios';
+}
 
 // Real VENTS AI paywall/plans screen. Every price, plan name, and unit
 // count shown here comes from get_ai_plans_public() (0175_ai_subscription_
@@ -59,6 +89,7 @@ export function AiPlansScreen({
   onClose: () => void;
   onSubscribed: () => void;
 }) {
+  const IS_IOS_NATIVE = isIosNative();
   const [plans, setPlans] = useState<AiPlanPublic[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [purchasingPlanId, setPurchasingPlanId] = useState<string | null>(null);
@@ -124,6 +155,10 @@ export function AiPlansScreen({
   }
 
   async function handleSubscribe(plan: AiPlanPublic) {
+    // Belt-and-suspenders: the button itself is hidden/disabled on iOS
+    // (see the render below), but this guard means even a programmatic
+    // call can never open the Paystack popup on iOS.
+    if (IS_IOS_NATIVE) return;
     setError(null);
     if (!userEmail) {
       setError('Could not read your account email. Please try again in a moment.');
@@ -181,6 +216,17 @@ export function AiPlansScreen({
           <p style={{ fontSize: 13, color: INK2, lineHeight: 1.5, marginBottom: 16 }}>
             VENTS itself stays free. VENTS AI is a monthly subscription that unlocks the AI assistant for planning events, finding services, and checking your account — real answers backed by real VENTS data.
           </p>
+
+          {/* iOS purchase removal (Guideline 3.1.1) -- see this file's top
+              comment. Deliberately no link/CTA to pay elsewhere. */}
+          {IS_IOS_NATIVE && (
+            <div
+              data-testid="ai-plans-ios-purchase-unavailable"
+              style={{ marginBottom: 16, fontSize: 12.5, borderRadius: 10, padding: '10px 12px', color: INK3, background: 'rgba(255,255,255,.04)', border: `1px solid ${BORDER}` }}
+            >
+              VENTS AI+ subscriptions aren't available for purchase in the iOS app at this time.
+            </div>
+          )}
 
           {/* Real current-tier status -- resolveHasRealAiAccess() mirrors
               the server's own active/trialing/grace + period/grace logic,
@@ -295,6 +341,13 @@ export function AiPlansScreen({
                 {isCurrent ? (
                   <div style={{ width: '100%', height: 44, borderRadius: 12, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: INK3 }}>
                     Your current plan
+                  </div>
+                ) : IS_IOS_NATIVE ? (
+                  <div
+                    data-testid={`ai-plan-unavailable-ios-${plan.plan_id}`}
+                    style={{ width: '100%', height: 44, borderRadius: 12, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: INK3 }}
+                  >
+                    Not available for purchase in the iOS app
                   </div>
                 ) : (
                   <button
