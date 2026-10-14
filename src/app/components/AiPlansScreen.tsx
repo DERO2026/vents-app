@@ -224,7 +224,7 @@ export function AiPlansScreen({
               data-testid="ai-plans-ios-purchase-unavailable"
               style={{ marginBottom: 16, fontSize: 12.5, borderRadius: 10, padding: '10px 12px', color: INK3, background: 'rgba(255,255,255,.04)', border: `1px solid ${BORDER}` }}
             >
-              VENTS AI+ subscriptions aren't available for purchase in the iOS app at this time.
+              VENTS AI and AI+ subscriptions aren't available for purchase in the iOS app at this time.
             </div>
           )}
 
