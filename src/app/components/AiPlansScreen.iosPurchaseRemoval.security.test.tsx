@@ -16,7 +16,14 @@ import { createRoot, Root } from 'react-dom/client';
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
-  Capacitor: { getPlatform: () => getPlatformMock() },
+  Capacitor: {
+    getPlatform: () => getPlatformMock(),
+    // isIosNative() (src/lib/platform.ts) requires both isNativePlatform()
+    // and getPlatform() === 'ios' -- mirror that here instead of hardcoding
+    // true, so this mock stays accurate if a 'web'-platform case is ever
+    // added to this suite.
+    isNativePlatform: () => getPlatformMock() !== 'web',
+  },
 }));
 
 const fetchAiPlansPublic = vi.fn();
@@ -76,31 +83,37 @@ async function mount() {
   });
 }
 
-describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix)', () => {
-  it('shows no Subscribe button for any plan on iOS, and a plain unavailability message with no link/CTA', async () => {
+describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per Oct 2026 Apple escalation)', () => {
+  it('renders only the Coming Soon screen on iOS -- no plans, no prices, no purchase UI reaches the DOM at all', async () => {
     getPlatformMock.mockReturnValue('ios');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     await mount();
+    // The self-guard added in response to Apple's Oct 2026 escalation
+    // replaces the ENTIRE screen on iOS -- not just the Subscribe button --
+    // so none of the per-element testids below should exist, and neither
+    // should the real Naira price text, which the older per-element guard
+    // never covered.
     expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai"]')).toBeFalsy();
     expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeFalsy();
-    expect(container!.querySelector('[data-testid="ai-plans-ios-purchase-unavailable"]')).toBeTruthy();
-    expect(container!.textContent).toContain("VENTS AI and AI+ subscriptions aren't available for purchase in the iOS app at this time.");
+    expect(container!.querySelector('[data-testid="ai-plans-ios-purchase-unavailable"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeFalsy();
+    expect(container!.textContent).not.toContain('VENTS AI+');
+    expect(container!.textContent).not.toMatch(/₦/);
     // No external purchase link/CTA -- Apple's separate 3.1.3 restriction.
     expect(container!.querySelector('a[href*="getvents.com"]')).toBeFalsy();
     expect(container!.textContent?.toLowerCase()).not.toContain('subscribe on');
-    expect(container!.textContent?.toLowerCase()).not.toContain('website');
+    expect(container!.textContent).toContain('Coming soon');
   });
 
-  it('never calls openPaystackPopup or initiateAiSubscriptionPayment on iOS, even if the button were somehow clicked', async () => {
+  it('never calls openPaystackPopup or initiateAiSubscriptionPayment on iOS -- the real screen content never renders', async () => {
     getPlatformMock.mockReturnValue('ios');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     await mount();
-    // The real UI renders no clickable Subscribe control on iOS (asserted
-    // above); this independently proves the handler itself is a no-op on
-    // iOS, so no future UI regression could silently reopen a purchase path.
-    const unavailable = container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai_plus"]') as HTMLElement;
-    expect(unavailable).toBeTruthy();
-    unavailable.click();
+    // The self-guard is a render-level early return after the data-loading
+    // hooks (React's rules of hooks require every hook to run
+    // unconditionally), so the background plans fetch may still fire, but
+    // nothing it loads ever reaches the DOM, and no purchase handler is
+    // reachable from any rendered element.
     expect(initiateAiSubscriptionPayment).not.toHaveBeenCalled();
     expect(openPaystackPopup).not.toHaveBeenCalled();
   });
@@ -130,7 +143,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix)', () => {
     expect(openPaystackPopup).toHaveBeenCalled();
   });
 
-  it('iOS: an existing subscriber still sees their current plan and can still cancel (entitlement/cancellation untouched)', async () => {
+  it('iOS: an existing subscriber sees Coming Soon too, not their plan/cancel UI -- Apple\'s Oct 2026 escalation objects to ANY AI plan/price/subscription surface on iOS, with no carve-out for existing subscribers', async () => {
     getPlatformMock.mockReturnValue('ios');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     rpc.mockImplementation((fn: string) => {
@@ -143,11 +156,13 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix)', () => {
       return Promise.resolve({ data: null, error: null });
     });
     await mount();
-    expect(container!.textContent).toContain('VENTS AI+');
-    expect(container!.textContent).toContain('Your current plan');
-    expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeTruthy();
-    // The non-current plan ('ai') still correctly shows as unavailable to
-    // purchase, not hidden entirely and not showing stale pricing as buyable.
-    expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeTruthy();
+    expect(container!.textContent).not.toContain('VENTS AI+');
+    expect(container!.textContent).not.toContain('Your current plan');
+    expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeFalsy();
+    // Coming Soon's own copy says as much: manage any existing subscription
+    // from Android or the web instead, nothing is lost, it's just not shown
+    // on iOS.
+    expect(container!.textContent).toContain('Coming soon');
   });
 });
