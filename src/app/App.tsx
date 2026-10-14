@@ -32,6 +32,8 @@ import { VentsAiScreen } from './components/VentsAiScreen';
 import { AiAccessScreen } from './components/AiAccessScreen';
 import { VentsAiUnlockedScreen } from './components/VentsAiUnlockedScreen';
 import { AiPlansScreen } from './components/AiPlansScreen';
+import { VentsAiIosComingSoonScreen } from './components/VentsAiIosComingSoonScreen';
+import { isIosNative } from '../lib/platform';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
 import { SavedScreen } from './components/SavedScreen';
@@ -299,6 +301,14 @@ export default function App() {
     setVentsAiEnabledState(enabled);
     setVentsAiEnabled(enabled);
   }, []);
+  // VENTS AI is temporarily unavailable on iOS (interim measure, not real
+  // Apple In-App Purchase -- see VentsAiIosComingSoonScreen.tsx). The
+  // bottom-nav tab, Home/Services sparkle, and "Ask VENTS AI" on event
+  // details all funnel into `navigateTo('vents-ai')`, so gating the single
+  // render block below is sufficient to cover every entry point without
+  // touching those call sites. Computed once per render, same as
+  // AiPlansScreen.tsx's own IS_IOS_NATIVE.
+  const IS_IOS_NATIVE_FOR_AI = isIosNative();
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
   // that's harmless on its own (the deep link's setScreen call still wins,
@@ -3288,63 +3298,81 @@ export default function App() {
           )}
 
           {/* ── VENTS AI ── */}
-          {ventsAiEverMounted && !ventsAiAccessGranted && (
-            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-              <AiAccessScreen
-                onClose={goBack}
-                onContinue={() => { setVentsAiAccessGranted(true); setVentsAiJustUnlocked(true); }}
-                onUpgrade={() => setVentsAiShowPlans(true)}
-              />
-            </div>
-          )}
-          {/* Reachable from any of the three VENTS AI sub-states above
-              (AiAccessScreen's Upgrade CTA, VentsAiUnlockedScreen's View
-              Plans CTA when the user has no real entitlement, and
-              VentsAiScreen's own status pill/error banner) -- one overlay,
-              not duplicated per state. */}
-          {ventsAiEverMounted && ventsAiShowPlans && (
-            <AiPlansScreen
-              onClose={() => setVentsAiShowPlans(false)}
-              onSubscribed={() => setVentsAiShowPlans(false)}
-            />
-          )}
-          {ventsAiEverMounted && ventsAiAccessGranted && ventsAiJustUnlocked && (
-            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-              <VentsAiUnlockedScreen
-                onStartPlanning={() => setVentsAiJustUnlocked(false)}
-                onViewPlans={() => setVentsAiShowPlans(true)}
-              />
-            </div>
-          )}
-          {ventsAiEverMounted && ventsAiAccessGranted && !ventsAiJustUnlocked && (
-            <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-              <VentsAiScreen
-                isDesktop={isDesktopWidth}
-                onClose={goBack}
-                seedPrompt={ventsAiSeedPrompt}
-                currentUserCountryIso={currentUser?.country}
-                onOpenEvent={(eventId) => {
-                  supabase
-                    .from('events')
-                    .select('*')
-                    .eq('id', eventId)
-                    .maybeSingle()
-                    .then(({ data: evtData, error: evtError }) => {
-                      if (evtError || !evtData || evtData.deleted_at) return;
-                      setSelectedEvent(mapDbEventToFrontend(evtData));
-                      navigateTo('event-details');
-                    });
-                }}
-                onOpenProvider={(providerId) => {
-                  // ServiceProviderProfileScreen re-fetches by providerId
-                  // itself whenever initialProvider is absent/mismatched
-                  // (see its own effect), so no separate fetch is needed
-                  // here -- same as ServicesHomeScreen's onProviderPress.
-                  setSelectedServiceProvider({ id: providerId } as any);
-                  navigateTo('service-provider-profile');
-                }}
-              />
-            </div>
+          {/* iOS: temporarily replaced wholesale by a static "coming soon"
+              screen (see VentsAiIosComingSoonScreen.tsx and the
+              IS_IOS_NATIVE_FOR_AI comment above) -- AiAccessScreen,
+              AiPlansScreen, VentsAiUnlockedScreen, and VentsAiScreen (which
+              has its own internal AiPlansScreen) are not mounted at all on
+              iOS, so there is no code path left that could show plan/price
+              data or a purchase button. Android and web render the real
+              flow, completely unchanged. */}
+          {IS_IOS_NATIVE_FOR_AI ? (
+            ventsAiEverMounted && (
+              <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                <VentsAiIosComingSoonScreen onClose={goBack} />
+              </div>
+            )
+          ) : (
+            <>
+              {ventsAiEverMounted && !ventsAiAccessGranted && (
+                <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                  <AiAccessScreen
+                    onClose={goBack}
+                    onContinue={() => { setVentsAiAccessGranted(true); setVentsAiJustUnlocked(true); }}
+                    onUpgrade={() => setVentsAiShowPlans(true)}
+                  />
+                </div>
+              )}
+              {/* Reachable from any of the three VENTS AI sub-states above
+                  (AiAccessScreen's Upgrade CTA, VentsAiUnlockedScreen's View
+                  Plans CTA when the user has no real entitlement, and
+                  VentsAiScreen's own status pill/error banner) -- one overlay,
+                  not duplicated per state. */}
+              {ventsAiEverMounted && ventsAiShowPlans && (
+                <AiPlansScreen
+                  onClose={() => setVentsAiShowPlans(false)}
+                  onSubscribed={() => setVentsAiShowPlans(false)}
+                />
+              )}
+              {ventsAiEverMounted && ventsAiAccessGranted && ventsAiJustUnlocked && (
+                <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                  <VentsAiUnlockedScreen
+                    onStartPlanning={() => setVentsAiJustUnlocked(false)}
+                    onViewPlans={() => setVentsAiShowPlans(true)}
+                  />
+                </div>
+              )}
+              {ventsAiEverMounted && ventsAiAccessGranted && !ventsAiJustUnlocked && (
+                <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
+                  <VentsAiScreen
+                    isDesktop={isDesktopWidth}
+                    onClose={goBack}
+                    seedPrompt={ventsAiSeedPrompt}
+                    currentUserCountryIso={currentUser?.country}
+                    onOpenEvent={(eventId) => {
+                      supabase
+                        .from('events')
+                        .select('*')
+                        .eq('id', eventId)
+                        .maybeSingle()
+                        .then(({ data: evtData, error: evtError }) => {
+                          if (evtError || !evtData || evtData.deleted_at) return;
+                          setSelectedEvent(mapDbEventToFrontend(evtData));
+                          navigateTo('event-details');
+                        });
+                    }}
+                    onOpenProvider={(providerId) => {
+                      // ServiceProviderProfileScreen re-fetches by providerId
+                      // itself whenever initialProvider is absent/mismatched
+                      // (see its own effect), so no separate fetch is needed
+                      // here -- same as ServicesHomeScreen's onProviderPress.
+                      setSelectedServiceProvider({ id: providerId } as any);
+                      navigateTo('service-provider-profile');
+                    }}
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {/* ── UTILITY SCREENS ── */}
