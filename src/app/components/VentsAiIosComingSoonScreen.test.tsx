@@ -3,11 +3,14 @@ import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
-// Interim fix (not real Apple In-App Purchase): VENTS AI is temporarily
-// unavailable on iOS. This screen replaces the real paywall/chat flow on
-// iOS -- it must never claim a subscription was purchased or activated,
-// never show a price/plan, never link out for payment, and must always
-// give the user a way back.
+// Interim fix (not real Apple In-App Purchase / Google Play Billing):
+// VENTS AI is temporarily unavailable on native iOS and Android. This
+// screen replaces the real paywall/chat flow on both native platforms --
+// it must never claim a subscription was purchased or activated, never
+// show a price/plan, never link out for payment, must always give the
+// user a way back, and must never claim the feature is "live" on whichever
+// native platform isn't the one currently showing this screen (false once
+// both iOS and Android are gated).
 
 let container: HTMLDivElement | null = null;
 let root: Root | null = null;
@@ -29,11 +32,18 @@ function mount(onClose: () => void) {
 }
 
 describe('VentsAiIosComingSoonScreen', () => {
-  it('clearly explains VENTS AI is coming soon to iOS and that the iOS experience is being prepared', () => {
+  it('clearly explains VENTS AI is coming soon to the app and that the mobile experience is being prepared', () => {
     mount(() => {});
-    expect(container!.textContent).toContain('VENTS AI is coming to iOS');
-    expect(container!.textContent?.toLowerCase()).toContain('preparing the ios experience');
+    expect(container!.textContent).toContain('VENTS AI is coming to the app');
+    expect(container!.textContent?.toLowerCase()).toContain('preparing the mobile app experience');
     expect(container!.querySelector('[data-testid="vents-ai-ios-coming-soon-badge"]')?.textContent).toMatch(/coming soon/i);
+  });
+
+  it('never claims the feature is live on "Android" specifically -- that would be false now that Android is also gated', () => {
+    mount(() => {});
+    const text = container!.textContent ?? '';
+    expect(text).not.toContain('Android');
+    expect(text).toContain('already live on the web');
   });
 
   it('never implies a subscription was purchased or activated', () => {

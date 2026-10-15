@@ -10,6 +10,10 @@ import { createRoot, Root } from 'react-dom/client';
 // gate. It has no onClose prop (only onStartPlanning/onViewPlans), so this
 // also proves onStartPlanning is what Coming Soon's close action is wired
 // to on iOS.
+//
+// Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
+// same Google Play Payments Policy concern as the iOS fix. The gate is now
+// isMobileNativeForAiGate() (true on iOS OR Android); web is unaffected.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -50,7 +54,7 @@ async function mount(onStartPlanning = vi.fn(), onViewPlans = vi.fn()) {
   return { onStartPlanning, onViewPlans };
 }
 
-describe('VentsAiUnlockedScreen: native iOS self-guard', () => {
+describe('VentsAiUnlockedScreen: native iOS/Android self-guard', () => {
   it('iOS + no real entitlement (would normally show "Welcome"/"View Plans") -> renders Coming Soon instead', async () => {
     getPlatformMock.mockReturnValue('ios');
     rpc.mockResolvedValue({ data: { plan_id: null, status: 'inactive' }, error: null });
@@ -79,12 +83,24 @@ describe('VentsAiUnlockedScreen: native iOS self-guard', () => {
     expect(onStartPlanning).toHaveBeenCalledTimes(1);
   });
 
-  it('Android: real "View Plans" CTA and unlocked copy render unchanged, same as before the iOS fix', async () => {
+  it('Android + a genuinely active entitlement (would normally say "unlocked") -> renders Coming Soon, not the unlocked copy', async () => {
     getPlatformMock.mockReturnValue('android');
     rpc.mockResolvedValue({ data: { plan_id: 'ai_plus', status: 'active' }, error: null });
     await mount();
-    expect(container!.textContent).toContain('VENTS AI is unlocked');
-    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).not.toContain('VENTS AI is unlocked');
+    expect(container!.textContent).not.toContain('View Plans');
+    expect(container!.querySelector('[data-testid="vents-ai-unlocked-view-plans"]')).toBeFalsy();
+    expect(container!.textContent).toContain('Coming soon');
+  });
+
+  it('Android: Coming Soon’s close action is wired to onStartPlanning, same as iOS', async () => {
+    getPlatformMock.mockReturnValue('android');
+    rpc.mockResolvedValue({ data: { plan_id: null, status: 'inactive' }, error: null });
+    const { onStartPlanning } = await mount();
+    const closeBtn = Array.from(container!.querySelectorAll('button')).find((b) => /back to vents/i.test(b.textContent || ''));
+    expect(closeBtn).toBeTruthy();
+    act(() => { closeBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onStartPlanning).toHaveBeenCalledTimes(1);
   });
 
   it('Web: real "View Plans" CTA renders unchanged, same as before the iOS fix', async () => {
