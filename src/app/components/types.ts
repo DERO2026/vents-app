@@ -332,6 +332,7 @@ export type Screen =
   | 'attendee-list'
   | 'user-profile'
   | 'promote-event'
+  | 'promotions'
   | 'nigeria-live'
   | 'admin-console'
   | 'checkin-scanner'
