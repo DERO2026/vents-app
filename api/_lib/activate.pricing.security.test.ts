@@ -1,5 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+// Lives in api/_lib/ (not api/promotions/) so it isn't counted as its own
+// serverless function by Vercel's zero-config detection -- same reason
+// promotionVerifyRateLimit.security.test.ts already lives here instead of
+// next to api/promotions/activate.ts. A first version of this file placed
+// in api/promotions/ pushed this project's function count from 12 to 13,
+// exceeding the Hobby plan's 12-function-per-deployment limit and failing
+// the real Vercel deploy outright (errorCode
+// exceeded_serverless_functions_per_deployment) -- confirmed by reading
+// that deployment's actual error, not guessed.
+//
 // VENTS Phase 5 -- centralized event-promotion pricing. Before this,
 // PromoteEventScreen.tsx and api/promotions/activate.ts each hand-copied
 // the same plan/duration price table, and the two had already drifted
@@ -20,13 +30,13 @@ const { mockCallProjectAdminRpc, mockVerifyInsforgeSession } = vi.hoisted(() => 
   mockVerifyInsforgeSession: vi.fn(),
 }));
 
-vi.mock('../_lib/projectAdminDb.js', () => ({
+vi.mock('./projectAdminDb.js', () => ({
   callProjectAdminRpc: mockCallProjectAdminRpc,
 }));
-vi.mock('../_lib/verifyAuth.js', () => ({ verifyInsforgeSession: mockVerifyInsforgeSession }));
-vi.mock('../_lib/cors.js', () => ({ applyCors: vi.fn() }));
+vi.mock('./verifyAuth.js', () => ({ verifyInsforgeSession: mockVerifyInsforgeSession }));
+vi.mock('./cors.js', () => ({ applyCors: vi.fn() }));
 
-import handler from './activate';
+import handler from '../promotions/activate';
 import {
   EVENT_PROMOTION_PRICES_NAIRA,
   EVENT_PROMOTION_PLAN_DB_TYPE,
