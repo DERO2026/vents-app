@@ -15,17 +15,15 @@ import { useDesktopWideShell } from '../../lib/useDesktopWideShell';
 // buttons for actions the server can't actually perform would be worse
 // than not having them.
 //
-// Query security: event_promotions' own SELECT RLS policy
-// (select_event_promotions, 0008) is currently public ("anon, authenticated
-// ... USING (true)") -- relied on by App.tsx's Home/Explore feed to show a
-// promoted badge to signed-out visitors too. That pre-existing policy is
-// NOT tightened here (out of this change's scope, and column-level
-// narrowing would need its own migration/view). This screen instead
-// enforces ownership itself, the same way every WRITE policy on this table
-// already does it (organizer_id = auth.uid()): the query below is always
-// explicitly scoped with .eq('organizer_id', currentUser.id), so this
-// screen never renders another organizer's promotion rows even though the
-// table itself doesn't enforce that on read.
+// Query security: event_promotions' SELECT RLS policy (select_event_promotions,
+// 0181) now matches every WRITE policy already on this table -- authenticated
+// only, organizer_id = auth.uid() -- so the database itself, not just this
+// screen's own .eq('organizer_id', currentUser.id) filter, guarantees an
+// organizer can never read another organizer's promotion rows. (Prior to
+// 0181 this policy was public -- "anon, authenticated ... USING (true)" --
+// and this screen's ownership filter was the only thing enforcing that;
+// App.tsx's Home/Explore feed now gets its public badge data from the
+// get_public_event_promotion_badges RPC instead of reading this table.)
 //
 // Status derivation: event_promotions.status is written once at
 // activation time ('active') and never updated afterward by any existing

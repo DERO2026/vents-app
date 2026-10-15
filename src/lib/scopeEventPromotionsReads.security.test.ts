@@ -2,17 +2,19 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// VENTS Phase 8 -- audit-and-propose only. This migration is DRAFTED but
-// NOT applied to production (per the phase's explicit constraint). These
-// are static-text assertions against the drafted file itself (same
+// VENTS Phase 8/9 -- Phase 8 audited the public exposure and drafted this
+// migration; Phase 9 implements the App.tsx side and hardens the function
+// (array-size cap, empty search_path) but still does NOT apply 0181 to
+// production (per Phase 9's explicit "stop before applying" constraint).
+// These are static-text assertions against the drafted file itself (same
 // convention as rejectBoostedEventPromotionActivation.security.test.ts),
 // so they exercise no live database state and stay green whether or not
-// the migration is ever applied -- they just prove the drafted file still
-// says what the audit report says it says.
+// the migration is ever applied.
 
 let m0181: string;
 let m0008: string;
 let m0012: string;
+let appTsx: string;
 
 beforeAll(() => {
   m0181 = readFileSync(
@@ -21,6 +23,7 @@ beforeAll(() => {
   );
   m0008 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0008_rls_and_policies.sql'), 'utf8');
   m0012 = readFileSync(join(__dirname, '..', '..', 'supabase', 'migrations', '0012_fix_default_table_grants.sql'), 'utf8');
+  appTsx = readFileSync(join(__dirname, '..', 'app', 'App.tsx'), 'utf8');
 });
 
 describe('0008/0012 (live, applied): the exposure this phase audits', () => {
@@ -71,5 +74,22 @@ describe('0181 (drafted, NOT applied): scoped reads + public badge RPC', () => {
     expect(m0181).not.toMatch(/activate_event_promotion/);
     expect(m0181).not.toMatch(/duration_days/);
     expect(m0181).not.toMatch(/PromotionsScreen/);
+  });
+
+  it('caps the badge function input and pins an empty search_path (Phase 9 hardening)', () => {
+    const fn = m0181.match(/CREATE OR REPLACE FUNCTION public\.get_public_event_promotion_badges[\s\S]*?\$\$;/)?.[0] ?? '';
+    expect(fn).toMatch(/SET search_path = ''/);
+    expect(fn).toMatch(/cardinality\(p_event_ids\) <= 200/);
+    expect(fn).toMatch(/p_event_ids IS NOT NULL/);
+  });
+});
+
+describe('App.tsx (Phase 9, implemented): public badges go through the RPC, not the base table', () => {
+  it('fetches promotion badges via get_public_event_promotion_badges', () => {
+    expect(appTsx).toMatch(/supabase\.rpc\('get_public_event_promotion_badges', \{\s*p_event_ids: eventIds,?\s*\}\)/);
+  });
+
+  it('no longer reads the event_promotions table directly for the public feed', () => {
+    expect(appTsx).not.toMatch(/\.from\('event_promotions'\)/);
   });
 });
