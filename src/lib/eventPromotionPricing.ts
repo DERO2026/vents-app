@@ -30,12 +30,29 @@
 // prices without that making the client authoritative for what it's
 // actually charged.
 //
-// Spotlight/'boosted' is intentionally still priced here and left
-// unchanged -- removing it from the product lineup is a separate,
-// coordinated change (client UI + this table + the DB check constraint
-// in activate_event_promotion), not done in this pass.
+// Phase 6 (Spotlight removal): VENTS now sells only Trending and Featured.
+// 'spotlight'/'boosted' has been removed from this module entirely --
+// isEventPromotionPlan('spotlight') now returns false, which is what makes
+// api/promotions/activate.ts reject a new Spotlight purchase/activation
+// request with 400 "Invalid plan" (that endpoint's validation reads
+// directly off this function; no separate change was needed there beyond
+// removing its own now-redundant local copy of the plan type).
+//
+// This does NOT touch the `event_promotions` table's existing rows, or its
+// `plan_type` CHECK constraint (which still allows the historical value
+// 'boosted' at the database level, deliberately left alone -- tightening
+// it is a separate, higher-risk change that would need to validate every
+// existing row in production first; not required to stop NEW Spotlight
+// purchases, since this module and the activation RPC are the only paths
+// that can ever insert a new row). See
+// supabase/migrations/0180_reject_boosted_event_promotion_activation.sql
+// for the matching server-side RPC change, and HomeScreen.tsx's promoPlan
+// badge, which still correctly renders "SPOTLIGHT" for any historical
+// event_promotions row with plan_type='boosted' -- that display logic is
+// about PAST records, not a purchase option, and is intentionally
+// untouched.
 
-export type EventPromotionPlan = 'spotlight' | 'trending' | 'featured';
+export type EventPromotionPlan = 'trending' | 'featured';
 export type EventPromotionDuration = 3 | 7 | 14 | 30;
 
 export const EVENT_PROMOTION_DURATIONS: readonly EventPromotionDuration[] = [3, 7, 14, 30];
@@ -46,26 +63,19 @@ export const EVENT_PROMOTION_DURATIONS: readonly EventPromotionDuration[] = [3, 
 // Paystack's kobo-denominated transaction amount, exactly as it already
 // did with its own local copy of these numbers.
 export const EVENT_PROMOTION_PRICES_NAIRA: Record<EventPromotionPlan, Record<EventPromotionDuration, number>> = {
-  // Unchanged -- Spotlight is not part of this pricing update.
-  spotlight: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
-  // Updated prices (this pass): matches the agreed Trending/Featured price
-  // list exactly.
   trending: { 3: 75000, 7: 150000, 14: 275000, 30: 500000 },
   featured: { 3: 150000, 7: 250000, 14: 450000, 30: 800000 },
 };
 
 // Maps the client-facing plan id to the value `activate_event_promotion`'s
-// own `p_plan_type` check constraint actually accepts in the database
-// ('boosted' | 'featured' | 'trending' -- note 'spotlight' itself is never
-// a valid DB value, only its UI-facing id).
+// own `p_plan_type` check constraint accepts in the database.
 export const EVENT_PROMOTION_PLAN_DB_TYPE: Record<EventPromotionPlan, string> = {
-  spotlight: 'boosted',
   trending: 'trending',
   featured: 'featured',
 };
 
 export function isEventPromotionPlan(value: unknown): value is EventPromotionPlan {
-  return value === 'spotlight' || value === 'trending' || value === 'featured';
+  return value === 'trending' || value === 'featured';
 }
 
 export function isEventPromotionDuration(value: unknown): value is EventPromotionDuration {

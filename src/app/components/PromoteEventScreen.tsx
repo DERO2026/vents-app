@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
@@ -25,29 +25,23 @@ interface PromoteEventScreenProps {
 type Plan = EventPromotionPlan;
 type Duration = EventPromotionDuration;
 
-// Featured Campaign remains the premium/highest tier conceptually, but the
-// requested display order for this screen is Spotlight -> Trending ->
-// Featured. Prices now come from eventPromotionPricing.ts (the single
-// shared source of truth with api/promotions/activate.ts) instead of being
-// hand-copied here -- label/icon/color/perks/ctaVerb are presentation-only
-// and stay local to this component.
+// Phase 6: Spotlight Boost removed from the purchasable lineup -- VENTS
+// promotions now offer only Trending and Featured, per product decision.
+// Historical events already promoted with Spotlight/'boosted' are
+// untouched server-side and still display correctly (see
+// HomeScreen.tsx's promoPlan badge); this screen simply no longer offers
+// it as something new to buy. Prices come from eventPromotionPricing.ts
+// (the single shared source of truth with api/promotions/activate.ts) --
+// label/icon/color/perks/ctaVerb are presentation-only and stay local to
+// this component.
 const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[]; ctaVerb: string }[] = [
-  {
-    id: 'spotlight',
-    label: 'Spotlight Boost',
-    icon: Zap,
-    color: ventsColors.info,
-    price: EVENT_PROMOTION_PRICES_NAIRA.spotlight,
-    perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
-    ctaVerb: 'Boost',
-  },
   {
     id: 'trending',
     label: 'Trending Boost',
     icon: Crown,
     color: ventsColors.pending,
     price: EVENT_PROMOTION_PRICES_NAIRA.trending,
-    perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
+    perks: ['Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner', 'Basic analytics'],
     ctaVerb: 'Boost',
   },
   {
@@ -56,7 +50,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     icon: Star,
     color: ventsColors.accent,
     price: EVENT_PROMOTION_PRICES_NAIRA.featured,
-    perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
+    perks: ['Everything in Trending', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
     ctaVerb: 'Feature',
   },
 ];

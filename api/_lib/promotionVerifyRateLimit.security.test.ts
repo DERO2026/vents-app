@@ -37,14 +37,20 @@ function req(body: any, authorization = 'Bearer tok') {
   return { method: 'POST', headers: { authorization }, body } as any;
 }
 
-const VALID_BODY = { event_id: 'event-1', reference: 'ref-abc', plan: 'spotlight', duration_days: 7 };
+// Phase 6: Spotlight/'boosted' is no longer a purchasable plan -- this
+// rate-limit test suite isn't about plan validity at all, so it now uses
+// 'trending' (still real and purchasable) at its correct current price
+// (₦150,000 = 15,000,000 kobo, from eventPromotionPricing.ts) instead of
+// Spotlight's old, now-removed ₦10,000 price.
+const VALID_BODY = { event_id: 'event-1', reference: 'ref-abc', plan: 'trending', duration_days: 7 };
+const VALID_AMOUNT_KOBO = 15000000;
 
 function makePaystackFetchMock() {
   const calls: string[] = [];
   const fn = vi.fn(async (url: string) => {
     calls.push(url);
     if (url.includes('api.paystack.co')) {
-      return { ok: true, json: async () => ({ status: true, data: { status: 'success', amount: 1000000 } }) } as any;
+      return { ok: true, json: async () => ({ status: true, data: { status: 'success', amount: VALID_AMOUNT_KOBO } }) } as any;
     }
     return { ok: true, json: async () => ({}) } as any;
   });
@@ -110,7 +116,7 @@ describe('promotions/activate: Paystack verification rate limit', () => {
     vi.stubGlobal('fetch', fn);
     const res = makeRes();
     await handler(req(VALID_BODY), res);
-    expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('activate_event_promotion', ['event-1', 'boosted', 7, 'ref-abc', 'user-1']);
+    expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('activate_event_promotion', ['event-1', 'trending', 7, 'ref-abc', 'user-1']);
     expect(res.status).toHaveBeenCalledWith(200);
     vi.unstubAllGlobals();
   });

@@ -18,6 +18,8 @@ import {
   EVENT_PROMOTION_PLAN_DB_TYPE,
   isEventPromotionPlan,
   isEventPromotionDuration,
+  type EventPromotionPlan,
+  type EventPromotionDuration,
 } from '../../src/lib/eventPromotionPricing.js';
 
 // Paystack financial-exposure audit finding: this endpoint's Paystack
@@ -32,14 +34,20 @@ import {
 const PROMOTION_VERIFY_RATE_MAX = 30;
 const PROMOTION_VERIFY_RATE_WINDOW_SECONDS = 3600;
 
-type Plan = 'spotlight' | 'featured' | 'trending';
-type Duration = 3 | 7 | 14 | 30;
+// Local Plan/Duration aliases removed (Phase 6) -- this file now uses
+// EventPromotionPlan/EventPromotionDuration directly from
+// eventPromotionPricing.ts instead of redeclaring its own copy, so a
+// future plan addition/removal there can't silently drift out of sync
+// with this file's own type again (the exact class of bug that caused
+// the swapped Trending/Featured prices this pricing centralization
+// fixed). PRICES/PLAN_TYPE read directly off the same shared constants:
+// Spotlight/'boosted' is no longer a member of EventPromotionPlan at
+// all, so `isEventPromotionPlan('spotlight')` below returns false and
+// any new Spotlight purchase/activation attempt is rejected with 400
+// before Paystack is ever called.
+type Plan = EventPromotionPlan;
+type Duration = EventPromotionDuration;
 
-// PRICES/PLAN_TYPE now read directly from eventPromotionPricing.ts -- the
-// single shared source of truth with PromoteEventScreen.tsx, so the
-// amount Paystack reports as paid can be checked against the exact same
-// number the client displayed and charged, with no possibility of the two
-// drifting apart again.
 const PRICES: Record<Plan, Record<Duration, number>> = EVENT_PROMOTION_PRICES_NAIRA;
 
 const PLAN_TYPE: Record<Plan, string> = EVENT_PROMOTION_PLAN_DB_TYPE;

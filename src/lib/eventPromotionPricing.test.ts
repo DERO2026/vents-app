@@ -10,8 +10,10 @@ import {
 // Direct coverage of the shared pricing module itself -- the one place
 // PromoteEventScreen.tsx and api/promotions/activate.ts both read these
 // numbers from. Locks in the agreed Trending/Featured prices exactly, and
-// confirms Spotlight's existing prices are untouched (removing Spotlight
-// is a separate, not-yet-done change).
+// (Phase 6) confirms Spotlight/'boosted' has been fully removed as a
+// purchasable plan -- isEventPromotionPlan('spotlight') now returns
+// false, which is what makes api/promotions/activate.ts reject a new
+// Spotlight purchase/activation request.
 
 describe('EVENT_PROMOTION_PRICES_NAIRA: agreed Trending prices', () => {
   it('matches the agreed price list exactly', () => {
@@ -25,15 +27,16 @@ describe('EVENT_PROMOTION_PRICES_NAIRA: agreed Featured prices', () => {
   });
 });
 
-describe('EVENT_PROMOTION_PRICES_NAIRA: Spotlight is untouched by this pricing change', () => {
-  it('still has its pre-existing prices', () => {
-    expect(EVENT_PROMOTION_PRICES_NAIRA.spotlight).toEqual({ 3: 5000, 7: 10000, 14: 18000, 30: 30000 });
+describe('EVENT_PROMOTION_PRICES_NAIRA: Spotlight is no longer a purchasable plan (Phase 6)', () => {
+  it('has no spotlight key at all', () => {
+    expect(Object.keys(EVENT_PROMOTION_PRICES_NAIRA).sort()).toEqual(['featured', 'trending']);
   });
 });
 
 describe('EVENT_PROMOTION_PLAN_DB_TYPE', () => {
-  it('maps spotlight to the DB check constraint’s real value "boosted", not a literal "spotlight"', () => {
-    expect(EVENT_PROMOTION_PLAN_DB_TYPE.spotlight).toBe('boosted');
+  it('has no spotlight/boosted mapping at all (Phase 6 removal)', () => {
+    expect(Object.keys(EVENT_PROMOTION_PLAN_DB_TYPE).sort()).toEqual(['featured', 'trending']);
+    expect(Object.values(EVENT_PROMOTION_PLAN_DB_TYPE)).not.toContain('boosted');
   });
 
   it('maps trending/featured to themselves', () => {
@@ -49,10 +52,14 @@ describe('EVENT_PROMOTION_DURATIONS', () => {
 });
 
 describe('isEventPromotionPlan', () => {
-  it('accepts the three real plan ids', () => {
-    expect(isEventPromotionPlan('spotlight')).toBe(true);
+  it('accepts the two real plan ids', () => {
     expect(isEventPromotionPlan('trending')).toBe(true);
     expect(isEventPromotionPlan('featured')).toBe(true);
+  });
+
+  it('rejects spotlight/boosted -- Phase 6 removal, no longer purchasable', () => {
+    expect(isEventPromotionPlan('spotlight')).toBe(false);
+    expect(isEventPromotionPlan('boosted')).toBe(false);
   });
 
   it('rejects anything else, including a not-yet-real "explore" and non-strings', () => {
