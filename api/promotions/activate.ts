@@ -2,6 +2,23 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
+// Cross-boundary import by design: this is the SAME file
+// PromoteEventScreen.tsx imports its own plan prices from. Before this,
+// each side hand-copied the same numbers, and they had already drifted
+// out of sync (see eventPromotionPricing.ts's own top comment for the
+// exact bug this caused -- every real Trending/Featured payment was being
+// rejected here as an amount mismatch, against the wrong expected
+// number). Vercel's Node function bundler resolves relative imports by
+// real filesystem path at build time, independent of tsconfig's
+// "include": ["src"] (that scope only governs `tsc --noEmit`/Vite's own
+// type-checking, not what a serverless function can import), so this
+// works the same way every other relative import in this file does.
+import {
+  EVENT_PROMOTION_PRICES_NAIRA,
+  EVENT_PROMOTION_PLAN_DB_TYPE,
+  isEventPromotionPlan,
+  isEventPromotionDuration,
+} from '../../src/lib/eventPromotionPricing.js';
 
 // Paystack financial-exposure audit finding: this endpoint's Paystack
 // verification call had no rate limit at all -- an authenticated user
@@ -18,16 +35,14 @@ const PROMOTION_VERIFY_RATE_WINDOW_SECONDS = 3600;
 type Plan = 'spotlight' | 'featured' | 'trending';
 type Duration = 3 | 7 | 14 | 30;
 
-// Mirrors PromoteEventScreen.tsx's PLANS pricing table — the source of
-// truth for what a given plan/duration is actually supposed to cost, so
-// the amount Paystack reports as paid can be checked against it server-side.
-const PRICES: Record<Plan, Record<Duration, number>> = {
-  spotlight: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
-  featured: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
-  trending: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
-};
+// PRICES/PLAN_TYPE now read directly from eventPromotionPricing.ts -- the
+// single shared source of truth with PromoteEventScreen.tsx, so the
+// amount Paystack reports as paid can be checked against the exact same
+// number the client displayed and charged, with no possibility of the two
+// drifting apart again.
+const PRICES: Record<Plan, Record<Duration, number>> = EVENT_PROMOTION_PRICES_NAIRA;
 
-const PLAN_TYPE: Record<Plan, string> = { spotlight: 'boosted', featured: 'featured', trending: 'trending' };
+const PLAN_TYPE: Record<Plan, string> = EVENT_PROMOTION_PLAN_DB_TYPE;
 
 // Activates an event promotion only after independently verifying the
 // Paystack transaction server-side — PromoteEventScreen.tsx previously
@@ -64,10 +79,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!reference || typeof reference !== 'string') {
     return res.status(400).json({ error: 'reference is required' });
   }
-  if (!plan || !(plan in PRICES)) {
+  if (!isEventPromotionPlan(plan)) {
     return res.status(400).json({ error: 'Invalid plan' });
   }
-  if (![3, 7, 14, 30].includes(duration_days)) {
+  if (!isEventPromotionDuration(duration_days)) {
     return res.status(400).json({ error: 'Invalid duration_days' });
   }
 

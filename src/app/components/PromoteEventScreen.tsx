@@ -8,6 +8,12 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { Sentry } from '../../lib/sentry';
+import {
+  EVENT_PROMOTION_PRICES_NAIRA,
+  EVENT_PROMOTION_DURATIONS,
+  type EventPromotionPlan,
+  type EventPromotionDuration,
+} from '../../lib/eventPromotionPricing';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -16,20 +22,22 @@ interface PromoteEventScreenProps {
   onPromoted?: () => void;
 }
 
-type Plan = 'spotlight' | 'featured' | 'trending';
-type Duration = 3 | 7 | 14 | 30;
+type Plan = EventPromotionPlan;
+type Duration = EventPromotionDuration;
 
 // Featured Campaign remains the premium/highest tier conceptually, but the
 // requested display order for this screen is Spotlight -> Trending ->
-// Featured. Featured and Trending's prices were swapped (Spotlight's price
-// is untouched); perks/ids/ctaVerb unchanged.
+// Featured. Prices now come from eventPromotionPricing.ts (the single
+// shared source of truth with api/promotions/activate.ts) instead of being
+// hand-copied here -- label/icon/color/perks/ctaVerb are presentation-only
+// and stay local to this component.
 const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[]; ctaVerb: string }[] = [
   {
     id: 'spotlight',
     label: 'Spotlight Boost',
     icon: Zap,
     color: ventsColors.info,
-    price: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
+    price: EVENT_PROMOTION_PRICES_NAIRA.spotlight,
     perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
     ctaVerb: 'Boost',
   },
@@ -38,7 +46,7 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     label: 'Trending Boost',
     icon: Crown,
     color: ventsColors.pending,
-    price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
+    price: EVENT_PROMOTION_PRICES_NAIRA.trending,
     perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
     ctaVerb: 'Boost',
   },
@@ -47,18 +55,16 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     label: 'Featured Campaign',
     icon: Star,
     color: ventsColors.accent,
-    price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
+    price: EVENT_PROMOTION_PRICES_NAIRA.featured,
     perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
     ctaVerb: 'Feature',
   },
 ];
 
-const DURATIONS: { value: Duration; label: string }[] = [
-  { value: 3, label: '3 Days' },
-  { value: 7, label: '7 Days' },
-  { value: 14, label: '14 Days' },
-  { value: 30, label: '30 Days' },
-];
+const DURATIONS: { value: Duration; label: string }[] = EVENT_PROMOTION_DURATIONS.map((value) => ({
+  value,
+  label: `${value} Days`,
+}));
 
 export function PromoteEventScreen({ onBack, currentUser, initialEventId, onPromoted }: PromoteEventScreenProps) {
   const [selectedPlan, setSelectedPlan] = useState<Plan>('featured');
