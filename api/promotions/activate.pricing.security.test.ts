@@ -1,0 +1,158 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// VENTS Phase 5 -- centralized event-promotion pricing. Before this,
+// PromoteEventScreen.tsx and api/promotions/activate.ts each hand-copied
+// the same plan/duration price table, and the two had already drifted
+// apart: the client's 'trending' and 'featured' prices were swapped
+// relative to the server's, so every real Trending/Featured payment was
+// rejected here as "Payment amount does not match the selected plan" --
+// the anti-fraud check working exactly as designed, just against the
+// wrong expected number. Both files now import the same
+// src/lib/eventPromotionPricing.ts. These tests prove, directly against
+// that shared module (never a second hardcoded copy in this test file),
+// that the server accepts every one of the 8 real plan/duration
+// combinations at their correct amount, rejects every one at a wrong
+// amount, and rejects an invalid plan or duration before any Paystack
+// call or activation.
+
+const { mockCallProjectAdminRpc, mockVerifyInsforgeSession } = vi.hoisted(() => ({
+  mockCallProjectAdminRpc: vi.fn(),
+  mockVerifyInsforgeSession: vi.fn(),
+}));
+
+vi.mock('../_lib/projectAdminDb.js', () => ({
+  callProjectAdminRpc: mockCallProjectAdminRpc,
+}));
+vi.mock('../_lib/verifyAuth.js', () => ({ verifyInsforgeSession: mockVerifyInsforgeSession }));
+vi.mock('../_lib/cors.js', () => ({ applyCors: vi.fn() }));
+
+import handler from './activate';
+import {
+  EVENT_PROMOTION_PRICES_NAIRA,
+  EVENT_PROMOTION_PLAN_DB_TYPE,
+  EVENT_PROMOTION_DURATIONS,
+  type EventPromotionPlan,
+  type EventPromotionDuration,
+} from '../../src/lib/eventPromotionPricing';
+
+function makeRes() {
+  const res: any = {};
+  res.status = vi.fn(() => res);
+  res.json = vi.fn(() => res);
+  res.end = vi.fn(() => res);
+  res.setHeader = vi.fn();
+  return res;
+}
+
+function req(body: any, authorization = 'Bearer tok') {
+  return { method: 'POST', headers: { authorization }, body } as any;
+}
+
+function makePaystackFetchMock(amountKobo: number, status: string = 'success') {
+  const calls: string[] = [];
+  const fn = vi.fn(async (url: string) => {
+    calls.push(url);
+    if (url.includes('api.paystack.co')) {
+      return { ok: true, json: async () => ({ status: true, data: { status, amount: amountKobo } }) } as any;
+    }
+    return { ok: true, json: async () => ({}) } as any;
+  });
+  return { fn, calls };
+}
+
+beforeEach(() => {
+  mockCallProjectAdminRpc.mockReset();
+  mockVerifyInsforgeSession.mockReset();
+  mockVerifyInsforgeSession.mockResolvedValue({ userId: 'user-1', email: 'user@example.com' });
+  mockCallProjectAdminRpc.mockResolvedValue(undefined);
+  process.env.PAYSTACK_SECRET_KEY = 'sk_test_123';
+});
+
+const PLANS: EventPromotionPlan[] = ['spotlight', 'trending', 'featured'];
+
+describe('promotions/activate: all plan/duration combinations accept the correct amount', () => {
+  for (const plan of PLANS) {
+    for (const duration of EVENT_PROMOTION_DURATIONS) {
+      const expectedNaira = EVENT_PROMOTION_PRICES_NAIRA[plan][duration];
+      const expectedKobo = expectedNaira * 100;
+
+      it(`${plan} / ${duration}d (₦${expectedNaira.toLocaleString()}) -> 200 and activates with the correct DB plan type`, async () => {
+        const { fn } = makePaystackFetchMock(expectedKobo);
+        vi.stubGlobal('fetch', fn);
+        const res = makeRes();
+        await handler(
+          req({ event_id: 'event-1', reference: `ref-${plan}-${duration}`, plan, duration_days: duration }),
+          res
+        );
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(mockCallProjectAdminRpc).toHaveBeenCalledWith('activate_event_promotion', [
+          'event-1',
+          EVENT_PROMOTION_PLAN_DB_TYPE[plan],
+          duration,
+          `ref-${plan}-${duration}`,
+          'user-1',
+        ]);
+        vi.unstubAllGlobals();
+      });
+    }
+  }
+});
+
+describe('promotions/activate: rejects an amount that does not match the selected plan/duration', () => {
+  it('Trending 3d charged as if it were Trending 7d’s price -> 402, never activates', async () => {
+    const wrongKobo = EVENT_PROMOTION_PRICES_NAIRA.trending[7] * 100; // paid the 7-day price
+    const { fn } = makePaystackFetchMock(wrongKobo);
+    vi.stubGlobal('fetch', fn);
+    const res = makeRes();
+    await handler(req({ event_id: 'event-1', reference: 'ref-x', plan: 'trending', duration_days: 3 }), res); // but claimed 3-day
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(mockCallProjectAdminRpc).not.toHaveBeenCalledWith('activate_event_promotion', expect.anything());
+    vi.unstubAllGlobals();
+  });
+
+  it('Featured priced as Trending (cheap-plan-pay, expensive-plan-activate attempt) -> 402, never activates', async () => {
+    const trendingKobo = EVENT_PROMOTION_PRICES_NAIRA.trending[7] * 100;
+    const { fn } = makePaystackFetchMock(trendingKobo);
+    vi.stubGlobal('fetch', fn);
+    const res = makeRes();
+    await handler(req({ event_id: 'event-1', reference: 'ref-y', plan: 'featured', duration_days: 7 }), res);
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(mockCallProjectAdminRpc).not.toHaveBeenCalledWith('activate_event_promotion', expect.anything());
+    vi.unstubAllGlobals();
+  });
+
+  it('a Paystack transaction that did not actually succeed is rejected regardless of amount', async () => {
+    const correctKobo = EVENT_PROMOTION_PRICES_NAIRA.featured[30] * 100;
+    const { fn } = makePaystackFetchMock(correctKobo, 'abandoned');
+    vi.stubGlobal('fetch', fn);
+    const res = makeRes();
+    await handler(req({ event_id: 'event-1', reference: 'ref-z', plan: 'featured', duration_days: 30 }), res);
+    expect(res.status).toHaveBeenCalledWith(402);
+    expect(mockCallProjectAdminRpc).not.toHaveBeenCalledWith('activate_event_promotion', expect.anything());
+    vi.unstubAllGlobals();
+  });
+});
+
+describe('promotions/activate: rejects invalid plan/duration before any Paystack call', () => {
+  it('an unknown plan id is rejected with 400, no Paystack call, no activation', async () => {
+    const { fn, calls } = makePaystackFetchMock(999999999);
+    vi.stubGlobal('fetch', fn);
+    const res = makeRes();
+    await handler(req({ event_id: 'event-1', reference: 'ref-a', plan: 'explore', duration_days: 7 }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(calls.length).toBe(0);
+    expect(mockCallProjectAdminRpc).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+
+  it('a duration outside 3/7/14/30 is rejected with 400, no Paystack call, no activation', async () => {
+    const { fn, calls } = makePaystackFetchMock(999999999);
+    vi.stubGlobal('fetch', fn);
+    const res = makeRes();
+    await handler(req({ event_id: 'event-1', reference: 'ref-b', plan: 'trending', duration_days: 10 }), res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(calls.length).toBe(0);
+    expect(mockCallProjectAdminRpc).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+  });
+});
