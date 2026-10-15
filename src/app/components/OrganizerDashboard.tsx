@@ -395,7 +395,7 @@ export function OrganizerDashboard({
             { key: 'overview', label: 'Overview', action: undefined },
             { key: 'events', label: 'Events', action: onManageEvents },
             { key: 'sales', label: 'Sales & Analytics', action: () => onNavigate('sales-analytics') },
-            { key: 'promotions', label: 'Promotions', action: () => onNavigate('promote-event') },
+            { key: 'promotions', label: 'Promotions', action: () => onNavigate('promotions') },
             { key: 'earnings', label: 'Earnings', action: () => onNavigate('wallet') },
           ].map((item) => (
             <button
@@ -634,7 +634,14 @@ export function OrganizerDashboard({
           </div>
         )}
 
-        {/* Action buttons row */}
+        {/* Action buttons row -- visible on mobile AND desktop (unlike
+            .cs-sidebar, which is hidden below 900px), so Promotions has a
+            real entry point on mobile too, not just the desktop sidebar
+            item above. This is the fix for Creator Studio's inconsistent
+            mobile/desktop navigation: Sales & Analytics and Earnings still
+            have no mobile-visible entry point here (out of scope for this
+            change, which only had to make Promotions consistent), but
+            Promotions now does. */}
         <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
           <button
             onClick={() => onManageEvents?.()}
@@ -652,6 +659,24 @@ export function OrganizerDashboard({
             }}
           >
             Edit All Events
+          </button>
+          <button
+            onClick={() => onNavigate?.('promotions')}
+            data-testid="org-dashboard-promotions-action"
+            style={{
+              flex: 1,
+              background: 'rgba(96,165,250,0.15)',
+              border: 'none',
+              borderRadius: '16px',
+              padding: '10px 20px',
+              color: '#60A5FA',
+              fontFamily: 'Manrope, sans-serif',
+              fontSize: '14px',
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Promotions
           </button>
         </div>
 

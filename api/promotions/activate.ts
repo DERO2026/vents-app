@@ -2,6 +2,25 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { verifyInsforgeSession } from '../_lib/verifyAuth.js';
 import { applyCors } from '../_lib/cors.js';
 import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
+// Cross-boundary import by design: this is the SAME file
+// PromoteEventScreen.tsx imports its own plan prices from. Before this,
+// each side hand-copied the same numbers, and they had already drifted
+// out of sync (see eventPromotionPricing.ts's own top comment for the
+// exact bug this caused -- every real Trending/Featured payment was being
+// rejected here as an amount mismatch, against the wrong expected
+// number). Vercel's Node function bundler resolves relative imports by
+// real filesystem path at build time, independent of tsconfig's
+// "include": ["src"] (that scope only governs `tsc --noEmit`/Vite's own
+// type-checking, not what a serverless function can import), so this
+// works the same way every other relative import in this file does.
+import {
+  EVENT_PROMOTION_PRICES_NAIRA,
+  EVENT_PROMOTION_PLAN_DB_TYPE,
+  isEventPromotionPlan,
+  isEventPromotionDuration,
+  type EventPromotionPlan,
+  type EventPromotionDuration,
+} from '../../src/lib/eventPromotionPricing.js';
 
 // Paystack financial-exposure audit finding: this endpoint's Paystack
 // verification call had no rate limit at all -- an authenticated user
@@ -15,19 +34,23 @@ import { callProjectAdminRpc } from '../_lib/projectAdminDb.js';
 const PROMOTION_VERIFY_RATE_MAX = 30;
 const PROMOTION_VERIFY_RATE_WINDOW_SECONDS = 3600;
 
-type Plan = 'spotlight' | 'featured' | 'trending';
-type Duration = 3 | 7 | 14 | 30;
+// Local Plan/Duration aliases removed (Phase 6) -- this file now uses
+// EventPromotionPlan/EventPromotionDuration directly from
+// eventPromotionPricing.ts instead of redeclaring its own copy, so a
+// future plan addition/removal there can't silently drift out of sync
+// with this file's own type again (the exact class of bug that caused
+// the swapped Trending/Featured prices this pricing centralization
+// fixed). PRICES/PLAN_TYPE read directly off the same shared constants:
+// Spotlight/'boosted' is no longer a member of EventPromotionPlan at
+// all, so `isEventPromotionPlan('spotlight')` below returns false and
+// any new Spotlight purchase/activation attempt is rejected with 400
+// before Paystack is ever called.
+type Plan = EventPromotionPlan;
+type Duration = EventPromotionDuration;
 
-// Mirrors PromoteEventScreen.tsx's PLANS pricing table — the source of
-// truth for what a given plan/duration is actually supposed to cost, so
-// the amount Paystack reports as paid can be checked against it server-side.
-const PRICES: Record<Plan, Record<Duration, number>> = {
-  spotlight: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
-  featured: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
-  trending: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
-};
+const PRICES: Record<Plan, Record<Duration, number>> = EVENT_PROMOTION_PRICES_NAIRA;
 
-const PLAN_TYPE: Record<Plan, string> = { spotlight: 'boosted', featured: 'featured', trending: 'trending' };
+const PLAN_TYPE: Record<Plan, string> = EVENT_PROMOTION_PLAN_DB_TYPE;
 
 // Activates an event promotion only after independently verifying the
 // Paystack transaction server-side — PromoteEventScreen.tsx previously
@@ -64,10 +87,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!reference || typeof reference !== 'string') {
     return res.status(400).json({ error: 'reference is required' });
   }
-  if (!plan || !(plan in PRICES)) {
+  if (!isEventPromotionPlan(plan)) {
     return res.status(400).json({ error: 'Invalid plan' });
   }
-  if (![3, 7, 14, 30].includes(duration_days)) {
+  if (!isEventPromotionDuration(duration_days)) {
     return res.status(400).json({ error: 'Invalid duration_days' });
   }
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ventsColors } from '../../lib/ventsDesignTokens';
-import { ArrowLeft, TrendingUp, Zap, Star, Crown, CheckCircle, Lock } from 'lucide-react';
+import { ArrowLeft, TrendingUp, Star, Crown, CheckCircle, Lock } from 'lucide-react';
 import { formatPrice } from './data';
 import { supabase, getAuthToken } from '../../lib/supabase';
 import { analytics } from '../../lib/analyticsEvents';
@@ -8,6 +8,12 @@ import { openPaystackPopup } from '../../lib/paystack';
 import { apiUrl } from '../../lib/apiBase';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { Sentry } from '../../lib/sentry';
+import {
+  EVENT_PROMOTION_PRICES_NAIRA,
+  EVENT_PROMOTION_DURATIONS,
+  type EventPromotionPlan,
+  type EventPromotionDuration,
+} from '../../lib/eventPromotionPricing';
 
 interface PromoteEventScreenProps {
   onBack: () => void;
@@ -16,30 +22,26 @@ interface PromoteEventScreenProps {
   onPromoted?: () => void;
 }
 
-type Plan = 'spotlight' | 'featured' | 'trending';
-type Duration = 3 | 7 | 14 | 30;
+type Plan = EventPromotionPlan;
+type Duration = EventPromotionDuration;
 
-// Featured Campaign remains the premium/highest tier conceptually, but the
-// requested display order for this screen is Spotlight -> Trending ->
-// Featured. Featured and Trending's prices were swapped (Spotlight's price
-// is untouched); perks/ids/ctaVerb unchanged.
+// Phase 6: Spotlight Boost removed from the purchasable lineup -- VENTS
+// promotions now offer only Trending and Featured, per product decision.
+// Historical events already promoted with Spotlight/'boosted' are
+// untouched server-side and still display correctly (see
+// HomeScreen.tsx's promoPlan badge); this screen simply no longer offers
+// it as something new to buy. Prices come from eventPromotionPricing.ts
+// (the single shared source of truth with api/promotions/activate.ts) --
+// label/icon/color/perks/ctaVerb are presentation-only and stay local to
+// this component.
 const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; price: Record<Duration, number>; perks: string[]; ctaVerb: string }[] = [
-  {
-    id: 'spotlight',
-    label: 'Spotlight Boost',
-    icon: Zap,
-    color: ventsColors.info,
-    price: { 3: 5000, 7: 10000, 14: 18000, 30: 30000 },
-    perks: ['Appear in Search results', 'Spotlight badge on event card', '2× more impressions', 'Basic analytics'],
-    ctaVerb: 'Boost',
-  },
   {
     id: 'trending',
     label: 'Trending Boost',
     icon: Crown,
     color: ventsColors.pending,
-    price: { 3: 15000, 7: 28000, 14: 48000, 30: 80000 },
-    perks: ['Everything in Featured', 'Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner'],
+    price: EVENT_PROMOTION_PRICES_NAIRA.trending,
+    perks: ['Trending Now top placement', 'Top priority in feed ranking', 'Dedicated promotion banner', 'Basic analytics'],
     ctaVerb: 'Boost',
   },
   {
@@ -47,18 +49,16 @@ const PLANS: { id: Plan; label: string; icon: React.ElementType; color: string; 
     label: 'Featured Campaign',
     icon: Star,
     color: ventsColors.accent,
-    price: { 3: 35000, 7: 65000, 14: 110000, 30: 180000 },
-    perks: ['Everything in Spotlight', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
+    price: EVENT_PROMOTION_PRICES_NAIRA.featured,
+    perks: ['Everything in Trending', 'Home screen Featured listing', 'Category featured section', 'Push notifications to users'],
     ctaVerb: 'Feature',
   },
 ];
 
-const DURATIONS: { value: Duration; label: string }[] = [
-  { value: 3, label: '3 Days' },
-  { value: 7, label: '7 Days' },
-  { value: 14, label: '14 Days' },
-  { value: 30, label: '30 Days' },
-];
+const DURATIONS: { value: Duration; label: string }[] = EVENT_PROMOTION_DURATIONS.map((value) => ({
+  value,
+  label: `${value} Days`,
+}));
 
 export function PromoteEventScreen({ onBack, currentUser, initialEventId, onPromoted }: PromoteEventScreenProps) {
   const [selectedPlan, setSelectedPlan] = useState<Plan>('featured');

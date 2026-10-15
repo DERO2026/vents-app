@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
+import { isMobileNativeForAiGate } from '../../lib/platform';
+import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
 // VENTS AI subscription/entitlement foundation -- the customer-facing
 // gate in front of VentsAiScreen. Mirrors VentsAiScreen's own hardcoded
@@ -168,6 +170,13 @@ export function AiAccessScreen({
   // the real VentsAiScreen once onContinue() fires above. 'checking' and
   // every gated/blocked state render the screen below.
   if (state.kind === 'allow' || state.kind === 'trial_active' || state.kind === 'paid_active') return null;
+
+  // Self-guard (Guideline 3.1.1 / Google Play Payments Policy): never
+  // surface this screen's paywall/trial CTAs on native iOS or Android,
+  // independent of the App.tsx-level gate -- this component renders the
+  // Coming Soon screen itself so no future caller or refactor can reach
+  // PaywallBody/ErrorBody/CheckingBody on either native platform.
+  if (isMobileNativeForAiGate()) return <VentsAiIosComingSoonScreen onClose={onClose} />;
 
   return (
     <div

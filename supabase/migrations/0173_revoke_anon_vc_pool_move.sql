@@ -1,0 +1,37 @@
+-- CRITICAL finding (surfaced during F15/F16/0170 review, not part of F16
+-- itself): public._vc_pool_move(text, numeric, uuid, uuid, text, uuid) has
+-- NO internal authorization check at all -- unlike every other admin/
+-- privileged VC function in this schema (all check is_admin_or_root() or
+-- similar before doing anything), this one validates only p_direction IN
+-- ('debit','credit') and p_amount > 0, then directly moves
+-- vc_system_pool.balance and inserts a vc_pool_ledger row. It is
+-- SECURITY DEFINER, owned by postgres, and anon has EXECUTE granted --
+-- confirmed live via has_function_privilege('anon', ..., 'EXECUTE') = true.
+--
+-- This means, as written, any unauthenticated caller can invoke this RPC
+-- directly and arbitrarily move the 1,000,000,000 VC system pool balance
+-- (bounded only by the pool's own balance for a debit) and insert a
+-- fabricated ledger row with any user_id/vc_transaction_id/reason/actor.
+-- This was NOT exercised against production as part of this fix --
+-- verified by static read of the function body and live grant state only,
+-- never called.
+--
+-- NOT YET APPLIED TO PRODUCTION -- drafted for review, pending explicit
+-- authorization.
+--
+-- Callers verified safe: every current caller of _vc_pool_move
+-- (admin_credit_vents_cents (5-arg), admin_debit_vents_cents (4-arg),
+-- award_vc_reward, reverse_vc_reward) is itself SECURITY DEFINER, owned by
+-- postgres -- confirmed live via pg_proc.prosecdef/proowner. A SECURITY
+-- DEFINER function's internal PERFORM calls execute as its OWNER (postgres,
+-- a superuser that bypasses all grants), never as the original invoking
+-- role. Revoking anon's direct EXECUTE on _vc_pool_move therefore cannot
+-- break any of these 4 legitimate internal call paths -- it only closes
+-- the direct-RPC-call exploit this migration exists to fix.
+--
+-- Scope deliberately narrow: this migration touches nothing else -- no
+-- function body change, no other grant, no data. Separate from 0170
+-- (which does not reference _vc_pool_move at all) by design, since this is
+-- a materially more severe, currently-exploitable gap that should not wait
+-- on 0170's own review/apply timeline.
+REVOKE EXECUTE ON FUNCTION public._vc_pool_move(text, numeric, uuid, uuid, text, uuid) FROM anon;

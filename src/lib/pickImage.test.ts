@@ -90,6 +90,22 @@ describe('pickImage: camera permission flow (Apple 5.1.1(iv) fix)', () => {
     expect(deniedCopy.message).toMatch(/settings/i);
   });
 
+  it('restricted (e.g. parental controls/MDM, not a user-reversible denial): falls back silently, never shows the misleading "Open Settings" sheet', async () => {
+    // Audit finding: 'restricted' is distinct from 'denied' -- the user has
+    // no Settings toggle that can change it, so offering "Open Settings"
+    // here would be a dead end at best and misleading at worst. Correct
+    // behavior is the same silent fallback-to-file-picker as any other
+    // non-'denied' failure, not an unhandled/untested gap.
+    getPhotoMock.mockRejectedValue(new Error('NotAllowedError'));
+    checkPermissionsMock.mockResolvedValue({ camera: 'restricted', photos: 'restricted' });
+    const { pickImage } = await import('./pickImage');
+
+    const result = await pickImage();
+
+    expect(result).toBeNull();
+    expect(notifyPermissionDeniedMock).not.toHaveBeenCalled();
+  });
+
   it('user cancelling the native picker sheet (not a real denial) never shows the Settings-recovery sheet', async () => {
     getPhotoMock.mockRejectedValue(new Error('User cancelled photos app'));
     checkPermissionsMock.mockResolvedValue({ camera: 'granted', photos: 'granted' });

@@ -20,7 +20,7 @@ interface SalesAnalyticsScreenProps {
   // equivalent (DT1) -- only shown on the all-events portfolio view, not
   // the per-event drill-down, since the export's DT2 is the "Sales &
   // Analytics" landing page, not a single event's numbers.
-  onNavigate?: (screen: 'org-dashboard' | 'manage-events' | 'promote-event' | 'wallet') => void;
+  onNavigate?: (screen: 'org-dashboard' | 'manage-events' | 'promote-event' | 'promotions' | 'wallet') => void;
 }
 
 function BarChartSVG({ data }: { data: { day: string; revenue: number }[] }) {
@@ -417,7 +417,7 @@ function PortfolioAnalyticsScreen({ currentUser, onBack, onNavigate }: { current
           { key: 'overview', label: 'Overview', action: onNavigate ? () => onNavigate('org-dashboard') : undefined },
           { key: 'events', label: 'Events', action: onNavigate ? () => onNavigate('manage-events') : undefined },
           { key: 'sales', label: 'Sales & Analytics', action: undefined },
-          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promote-event') : undefined },
+          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promotions') : undefined },
           { key: 'earnings', label: 'Earnings', action: onNavigate ? () => onNavigate('wallet') : undefined },
         ].map((item) => (
           <button

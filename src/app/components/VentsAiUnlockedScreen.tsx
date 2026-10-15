@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { resolveHasRealAiAccess } from '../../lib/aiEntitlementClient';
+import { isMobileNativeForAiGate } from '../../lib/platform';
+import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
 // Exact reproduction of VentsPrototype.dc.html's `ai.ph.unlocked` state --
 // the one place the approved prototype actually specifies an animated
@@ -47,6 +49,16 @@ export function VentsAiUnlockedScreen({
   }, []);
 
   const hasRealAccess = realAccess === 'has_access';
+
+  // Self-guard (Guideline 3.1.1 / Google Play Payments Policy): this
+  // screen's "Welcome" copy and "View Plans" CTA imply a subscription to
+  // sell -- never render that on native iOS or Android, independent of the
+  // App.tsx-level gate. There's no onClose prop here (only
+  // onStartPlanning/onViewPlans), so wire Coming Soon's close to
+  // onStartPlanning -- the same action App.tsx's own web-only branch
+  // already uses to move the user forward into the real VentsAiScreen
+  // chat, which self-guards its own plans mount separately.
+  if (isMobileNativeForAiGate()) return <VentsAiIosComingSoonScreen onClose={onStartPlanning} />;
 
   return (
     <div

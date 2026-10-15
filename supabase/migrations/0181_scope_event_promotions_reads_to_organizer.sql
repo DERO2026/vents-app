@@ -34,16 +34,28 @@ CREATE POLICY select_event_promotions ON public.event_promotions
 REVOKE ALL ON public.event_promotions FROM anon;
 
 -- 3. Public, column-narrow read path for Home/Explore badges.
+--
+-- Input safeguards: a null/empty array returns no rows rather than erroring
+-- (matches App.tsx's existing short-circuit for an empty event_ids list);
+-- the array is capped at 200 ids -- comfortably above a single Home/Explore
+-- page's event count -- so this cannot be turned into an unbounded-IN-list
+-- enumeration/DoS vector by a caller passing an oversized array. search_path
+-- is pinned to '' (not just `public`) and every reference is schema-qualified,
+-- which is the stricter Supabase-recommended setting for SECURITY DEFINER
+-- functions -- it removes any ambiguity from a caller-influenced search_path.
 CREATE OR REPLACE FUNCTION public.get_public_event_promotion_badges(p_event_ids uuid[])
 RETURNS TABLE (event_id uuid, plan_type text)
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public
+SET search_path = ''
 AS $$
   SELECT ep.event_id, ep.plan_type
   FROM public.event_promotions ep
-  WHERE ep.event_id = ANY (p_event_ids)
+  WHERE p_event_ids IS NOT NULL
+    AND cardinality(p_event_ids) > 0
+    AND cardinality(p_event_ids) <= 200
+    AND ep.event_id = ANY (p_event_ids)
     AND ep.status = 'active'
     AND now() >= ep.start_date
     AND now() <= ep.end_date;

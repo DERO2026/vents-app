@@ -31,7 +31,7 @@ interface ManageEventsScreenProps {
   // (CS1), so the desktop organizer surfaces read as one shell instead of
   // each tool being its own disconnected full-page screen. Optional so a
   // caller that hasn't been updated just doesn't render the sidebar.
-  onNavigate?: (screen: 'org-dashboard' | 'sales-analytics' | 'promote-event' | 'wallet') => void;
+  onNavigate?: (screen: 'org-dashboard' | 'sales-analytics' | 'promote-event' | 'promotions' | 'wallet') => void;
 }
 
 // ─── Midnight Neon palette (shared with Door Manager for a consistent
@@ -251,7 +251,7 @@ export function ManageEventsScreen({
           { key: 'overview', label: 'Overview', action: onNavigate ? () => onNavigate('org-dashboard') : undefined },
           { key: 'events', label: 'Events', action: undefined },
           { key: 'sales', label: 'Sales & Analytics', action: onNavigate ? () => onNavigate('sales-analytics') : undefined },
-          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promote-event') : undefined },
+          { key: 'promotions', label: 'Promotions', action: onNavigate ? () => onNavigate('promotions') : undefined },
           { key: 'earnings', label: 'Earnings', action: onNavigate ? () => onNavigate('wallet') : undefined },
         ].map((item) => (
           <button
