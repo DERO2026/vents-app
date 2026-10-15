@@ -20,8 +20,17 @@
 // Home/Services sparkle, "Ask VENTS AI to plan this night" on event
 // details) already funnels through that one `navigateTo('vents-ai')`
 // screen, so gating there covers all of them without touching any of the
-// call sites themselves. Android and web are untouched -- App.tsx only
-// swaps in this screen when Capacitor reports iOS.
+// call sites themselves. Web is untouched -- App.tsx only swaps in this
+// screen when Capacitor reports a native shell (see isMobileNativeForAiGate()
+// in src/lib/platform.ts).
+//
+// Reused as-is for the Android restriction added later (same Google Play
+// Payments Policy problem as Apple's Guideline 3.1.1 -- VENTS AI/AI+ sold
+// via Paystack, not the platform's own billing): kept the component name
+// (it's an internal identifier, not user-facing) but the copy below is
+// platform-neutral -- it never claims the feature is "live" on whichever
+// native platform isn't the one currently rendering this screen, since
+// that claim would be false the instant both iOS and Android are gated.
 
 const GRADIENT = 'linear-gradient(135deg,#c084fc,#7c3aed)';
 const BG = '#0a0810';
@@ -88,15 +97,14 @@ export function VentsAiIosComingSoonScreen({ onClose }: { onClose: () => void })
           Coming soon
         </div>
 
-        <div style={{ font: "800 24px 'Manrope', sans-serif", color: INK1 }}>VENTS AI is coming to iOS</div>
+        <div style={{ font: "800 24px 'Manrope', sans-serif", color: INK1 }}>VENTS AI is coming to the app</div>
 
         <p style={{ fontSize: 14, color: INK2, lineHeight: 1.55, maxWidth: 320, margin: 0 }}>
-          We're preparing the iOS experience for VENTS AI. It isn't available on iOS yet, but it's already live on
-          Android and the web.
+          We're preparing the mobile app experience for VENTS AI. It isn't available in the app yet, but it's
+          already live on the web.
         </p>
         <p style={{ fontSize: 12.5, color: INK3, lineHeight: 1.5, maxWidth: 320, margin: 0 }}>
-          If you already have a VENTS AI subscription, it hasn't changed — manage it from Android or the web in the
-          meantime.
+          If you already have a VENTS AI subscription, it hasn't changed — manage it from the web in the meantime.
         </p>
 
         <button

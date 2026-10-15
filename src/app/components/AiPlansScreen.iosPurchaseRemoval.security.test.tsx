@@ -6,22 +6,28 @@ import { createRoot, Root } from 'react-dom/client';
 // 3098bebc-a2ff-43de-8b7e-358a82693200, Oct 14 2026): VENTS AI/AI+ could be
 // purchased in the iOS app through Paystack, a non-Apple payment mechanism.
 // Fix: AiPlansScreen (the only purchase surface for VENTS AI/AI+) now
-// checks Capacitor.getPlatform() === 'ios' and, on iOS only: never calls
-// openPaystackPopup, shows no Subscribe button, and shows no link/CTA to
-// pay elsewhere (that would trip Apple's separate 3.1.3 external-purchase-
-// link rule). Android and web are completely unchanged. Existing
-// entitlement display and self-cancellation are also unchanged on every
-// platform, since Apple's objection is to the purchase mechanism, not to
-// an iOS user keeping access they already paid for.
+// checks isMobileNativeForAiGate() and, on native iOS/Android only: never
+// calls openPaystackPopup, shows no Subscribe button, and shows no link/CTA
+// to pay elsewhere (that would trip Apple's separate 3.1.3 external-
+// purchase-link rule). Web is completely unchanged. Existing entitlement
+// display and self-cancellation are also unchanged on web, since Apple's
+// objection is to the purchase mechanism, not to a user keeping access
+// they already paid for.
+//
+// Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
+// Google Play's Payments Policy treats this Paystack checkout the same way
+// Apple's 3.1.1 does -- VENTS AI/AI+ is digital, in-app-consumed
+// subscription content sold outside the platform's own billing (Google
+// Play Billing is not implemented). isMobileNativeForAiGate() now covers
+// both native platforms identically; only web keeps the real purchase flow.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
   Capacitor: {
     getPlatform: () => getPlatformMock(),
-    // isIosNative() (src/lib/platform.ts) requires both isNativePlatform()
-    // and getPlatform() === 'ios' -- mirror that here instead of hardcoding
-    // true, so this mock stays accurate if a 'web'-platform case is ever
-    // added to this suite.
+    // isMobileNativeForAiGate() (src/lib/platform.ts) requires
+    // isNativePlatform() true and getPlatform() 'ios' or 'android' --
+    // mirror the native-vs-web split here instead of hardcoding true.
     isNativePlatform: () => getPlatformMock() !== 'web',
   },
 }));
@@ -118,17 +124,49 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(openPaystackPopup).not.toHaveBeenCalled();
   });
 
-  it('Android: purchasing is completely unchanged -- the real Subscribe button works exactly as before', async () => {
+  it('renders only the Coming Soon screen on Android -- no plans, no prices, no purchase UI reaches the DOM at all', async () => {
+    getPlatformMock.mockReturnValue('android');
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    await mount();
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plans-ios-purchase-unavailable"]')).toBeFalsy();
+    expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeFalsy();
+    expect(container!.textContent).not.toContain('VENTS AI+');
+    expect(container!.textContent).not.toMatch(/₦/);
+    expect(container!.querySelector('a[href*="getvents.com"]')).toBeFalsy();
+    expect(container!.textContent?.toLowerCase()).not.toContain('subscribe on');
+    expect(container!.textContent).toContain('Coming soon');
+  });
+
+  it('never calls openPaystackPopup or initiateAiSubscriptionPayment on Android -- the real screen content never renders', async () => {
     getPlatformMock.mockReturnValue('android');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     initiateAiSubscriptionPayment.mockResolvedValueOnce({ reference: 'aisub_x', amount_kobo: 1350000, plan_id: 'ai_plus' });
     await mount();
-    const button = container!.querySelector('[data-testid="ai-plan-subscribe-ai_plus"]') as HTMLButtonElement;
-    expect(button).toBeTruthy();
-    await act(async () => { button.click(); await Promise.resolve(); });
-    expect(initiateAiSubscriptionPayment).toHaveBeenCalledWith('ai_plus');
-    expect(openPaystackPopup).toHaveBeenCalled();
-    expect(container!.querySelector('[data-testid="ai-plans-ios-purchase-unavailable"]')).toBeFalsy();
+    // No Subscribe button exists on Android to click, so this proves the
+    // handler path is unreachable, not merely unclicked.
+    expect(initiateAiSubscriptionPayment).not.toHaveBeenCalled();
+    expect(openPaystackPopup).not.toHaveBeenCalled();
+  });
+
+  it('Android: an existing subscriber sees Coming Soon too, not their plan/cancel UI -- no carve-out, same as iOS', async () => {
+    getPlatformMock.mockReturnValue('android');
+    fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
+    rpc.mockImplementation((fn: string) => {
+      if (fn === 'get_my_ai_entitlement') {
+        return Promise.resolve({
+          data: { plan_id: 'ai_plus', status: 'active', period_end: '2026-11-14T00:00:00Z', grace_until: null },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: null });
+    });
+    await mount();
+    expect(container!.textContent).not.toContain('VENTS AI+');
+    expect(container!.textContent).not.toContain('Your current plan');
+    expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeFalsy();
+    expect(container!.textContent).toContain('Coming soon');
   });
 
   it('Web: purchasing is completely unchanged -- the real Subscribe button works exactly as before', async () => {
@@ -161,8 +199,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeFalsy();
     expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeFalsy();
     // Coming Soon's own copy says as much: manage any existing subscription
-    // from Android or the web instead, nothing is lost, it's just not shown
-    // on iOS.
+    // from the web instead, nothing is lost, it's just not shown on iOS.
     expect(container!.textContent).toContain('Coming soon');
   });
 });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { isIosNative } from '../../lib/platform';
+import { isMobileNativeForAiGate } from '../../lib/platform';
 import { fetchAiPlansPublic, initiateAiSubscriptionPayment, verifyAiSubscriptionPayment, type AiPlanPublic } from '../../lib/aiSubscription';
 import { openPaystackPopup } from '../../lib/paystack';
 import { supabase } from '../../lib/supabase';
@@ -16,9 +16,11 @@ import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 // "physical goods/services" exception, not digital-subscription content,
 // and are deliberately untouched by this fix).
 //
-// Fix scope: remove the Paystack purchase mechanism from the iOS app only.
-// Does NOT touch Android/web (still full Paystack checkout, unchanged) and
-// does NOT revoke any existing iOS subscriber's already-paid-for access --
+// Fix scope (original, iOS-only): remove the Paystack purchase mechanism
+// from the iOS app only. Did NOT touch Android/web at the time (still full
+// Paystack checkout) -- see the Phase 2 note below for why Android is now
+// also restricted. Web remains untouched. Does NOT revoke any existing
+// iOS subscriber's already-paid-for access --
 // entitlement display and self-cancellation both stay exactly as they were,
 // since Apple's objection is to the ongoing purchase mechanism, not to an
 // iOS user keeping what they already bought. No real Apple In-App Purchase
@@ -31,6 +33,17 @@ import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 // (3.1.3), which this app has no approved entitlement for. The iOS message
 // below states unavailability only, with no call to action to pay outside
 // the app.
+//
+// Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
+// Google Play's Payments Policy treats VENTS AI/AI+'s Paystack checkout
+// the same way Apple's 3.1.1 does -- digital, in-app-consumed subscription
+// content sold outside the platform's own billing (Google Play Billing
+// here, not implemented in this codebase either). IS_MOBILE_NATIVE_FOR_AI_GATE
+// (src/lib/platform.ts's isMobileNativeForAiGate()) is now true on iOS OR
+// Android; web is still fully untouched. Same non-revocation guarantee
+// applies: an existing Android subscriber's already-paid-for access and
+// self-cancellation are unaffected -- only the ongoing purchase surface is
+// restricted, same as the iOS fix above.
 
 // Real VENTS AI paywall/plans screen. Every price, plan name, and unit
 // count shown here comes from get_ai_plans_public() (0175_ai_subscription_
@@ -87,7 +100,7 @@ export function AiPlansScreen({
   onClose: () => void;
   onSubscribed: () => void;
 }) {
-  const IS_IOS_NATIVE = isIosNative();
+  const IS_MOBILE_NATIVE_FOR_AI_GATE = isMobileNativeForAiGate();
   const [plans, setPlans] = useState<AiPlanPublic[] | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [purchasingPlanId, setPurchasingPlanId] = useState<string | null>(null);
@@ -153,10 +166,10 @@ export function AiPlansScreen({
   }
 
   async function handleSubscribe(plan: AiPlanPublic) {
-    // Belt-and-suspenders: the button itself is hidden/disabled on iOS
-    // (see the render below), but this guard means even a programmatic
-    // call can never open the Paystack popup on iOS.
-    if (IS_IOS_NATIVE) return;
+    // Belt-and-suspenders: the button itself is hidden/disabled on native
+    // iOS/Android (see the render below), but this guard means even a
+    // programmatic call can never open the Paystack popup there.
+    if (IS_MOBILE_NATIVE_FOR_AI_GATE) return;
     setError(null);
     if (!userEmail) {
       setError('Could not read your account email. Please try again in a moment.');
@@ -196,13 +209,17 @@ export function AiPlansScreen({
     }
   }
 
-  // Self-guard (Guideline 3.1.1): never reach this screen's price/plan
-  // rendering on native iOS, independent of the App.tsx-level gate and of
-  // the per-element IS_IOS_NATIVE guards below (which cover the button and
+  // Self-guard (Guideline 3.1.1 / Google Play Payments Policy): never
+  // reach this screen's price/plan rendering on native iOS or Android,
+  // independent of the App.tsx-level gate and of the per-element
+  // IS_MOBILE_NATIVE_FOR_AI_GATE guards below (which cover the button and
   // banner but never gated the Naira price display itself) -- replace the
   // whole screen with Coming Soon so no price, plan, or purchase element
-  // can render on iOS regardless of how this component was reached.
-  if (IS_IOS_NATIVE) return <VentsAiIosComingSoonScreen onClose={onClose} />;
+  // can render on either native platform regardless of how this component
+  // was reached. The per-element guards below are now unreachable while
+  // this early return stands -- kept only as defense-in-depth belt-and-
+  // suspenders should this early return ever be removed or bypassed.
+  if (IS_MOBILE_NATIVE_FOR_AI_GATE) return <VentsAiIosComingSoonScreen onClose={onClose} />;
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: BG, display: 'flex', flexDirection: 'column', zIndex: 960 }}>
@@ -223,14 +240,16 @@ export function AiPlansScreen({
             VENTS itself stays free. VENTS AI is a monthly subscription that unlocks the AI assistant for planning events, finding services, and checking your account — real answers backed by real VENTS data.
           </p>
 
-          {/* iOS purchase removal (Guideline 3.1.1) -- see this file's top
-              comment. Deliberately no link/CTA to pay elsewhere. */}
-          {IS_IOS_NATIVE && (
+          {/* Mobile purchase removal (Guideline 3.1.1 / Google Play
+              Payments Policy) -- see this file's top comment. Deliberately
+              no link/CTA to pay elsewhere. Unreachable while the early
+              return above stands; kept as defense-in-depth. */}
+          {IS_MOBILE_NATIVE_FOR_AI_GATE && (
             <div
               data-testid="ai-plans-ios-purchase-unavailable"
               style={{ marginBottom: 16, fontSize: 12.5, borderRadius: 10, padding: '10px 12px', color: INK3, background: 'rgba(255,255,255,.04)', border: `1px solid ${BORDER}` }}
             >
-              VENTS AI and AI+ subscriptions aren't available for purchase in the iOS app at this time.
+              VENTS AI and AI+ subscriptions aren't available for purchase in the app at this time.
             </div>
           )}
 
@@ -348,12 +367,12 @@ export function AiPlansScreen({
                   <div style={{ width: '100%', height: 44, borderRadius: 12, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: INK3 }}>
                     Your current plan
                   </div>
-                ) : IS_IOS_NATIVE ? (
+                ) : IS_MOBILE_NATIVE_FOR_AI_GATE ? (
                   <div
                     data-testid={`ai-plan-unavailable-ios-${plan.plan_id}`}
                     style={{ width: '100%', height: 44, borderRadius: 12, border: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: INK3 }}
                   >
-                    Not available for purchase in the iOS app
+                    Not available for purchase in the app
                   </div>
                 ) : (
                   <button

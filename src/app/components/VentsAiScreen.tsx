@@ -6,7 +6,7 @@ import { COUNTRY_CODES } from '../../lib/countries';
 import { AiPlansScreen } from './AiPlansScreen';
 import { resolveHasRealAiAccess } from '../../lib/aiEntitlementClient';
 import { useGeolocation } from '../../lib/useGeolocation';
-import { isIosNative } from '../../lib/platform';
+import { isMobileNativeForAiGate } from '../../lib/platform';
 import { VentsAiIosComingSoonScreen } from './VentsAiIosComingSoonScreen';
 
 // VENTS AI full-screen conversational assistant, reproducing
@@ -3833,14 +3833,15 @@ export function VentsAiScreen({
 
   const inConversation = !!active;
 
-  // Self-guard (Guideline 3.1.1): HomeView's status pill and "View Plans"
-  // CTA, and this screen's own internal AiPlansScreen mount below, both
-  // expose subscription/pricing UI -- never render any of this screen's
-  // real content on native iOS, independent of the App.tsx-level gate.
-  // AiPlansScreen self-guards too, but that only covers the moment
-  // showPlans is set; HomeView's pill renders unconditionally whenever this
-  // screen itself mounts, so the guard has to sit here, before that render.
-  if (isIosNative()) return <VentsAiIosComingSoonScreen onClose={onClose} />;
+  // Self-guard (Guideline 3.1.1 / Google Play Payments Policy): HomeView's
+  // status pill and "View Plans" CTA, and this screen's own internal
+  // AiPlansScreen mount below, both expose subscription/pricing UI -- never
+  // render any of this screen's real content on native iOS or Android,
+  // independent of the App.tsx-level gate. AiPlansScreen self-guards too,
+  // but that only covers the moment showPlans is set; HomeView's pill
+  // renders unconditionally whenever this screen itself mounts, so the
+  // guard has to sit here, before that render.
+  if (isMobileNativeForAiGate()) return <VentsAiIosComingSoonScreen onClose={onClose} />;
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 900, background: '#0a0810', color: '#f2eff6', fontFamily: "'Inter',system-ui,sans-serif", display: 'flex', flexDirection: 'column', overflow: 'hidden', paddingTop: 'env(safe-area-inset-top, 0px)' }}>

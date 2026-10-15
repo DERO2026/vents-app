@@ -8,6 +8,11 @@ import { createRoot, Root } from 'react-dom/client';
 // -- it renders VentsAiIosComingSoonScreen on iOS regardless of entitlement
 // state, independent of whether App.tsx ever reaches this component at
 // all, so no future route/refactor/direct-mount can bypass it.
+//
+// Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
+// Google Play Payments Policy treats VENTS AI/AI+'s Paystack checkout the
+// same way Apple's 3.1.1 does. isMobileNativeForAiGate() now covers both
+// native platforms; web stays fully unrestricted.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -51,7 +56,7 @@ function rpcImpl(responses: Record<string, any>) {
   return (fn: string) => Promise.resolve(responses[fn] ?? { data: null, error: new Error(`unmocked rpc ${fn}`) });
 }
 
-describe('AiAccessScreen: native iOS self-guard', () => {
+describe('AiAccessScreen: native iOS/Android self-guard', () => {
   it('iOS + no entitlement (would normally show the paywall) -> renders Coming Soon instead, never the paywall', async () => {
     getPlatformMock.mockReturnValue('ios');
     mockRpc.mockImplementation(
@@ -90,8 +95,9 @@ describe('AiAccessScreen: native iOS self-guard', () => {
     expect(container!.textContent).toContain('Coming soon');
   });
 
-  it('Android + no entitlement: real paywall renders unchanged, same as before the iOS fix', async () => {
+  it('Android + no entitlement (would normally show the paywall) -> renders Coming Soon instead, never the paywall', async () => {
     getPlatformMock.mockReturnValue('android');
+    const onContinue = vi.fn();
     mockRpc.mockImplementation(
       rpcImpl({
         ai_entitlement_enforced: { data: true, error: null },
@@ -99,11 +105,13 @@ describe('AiAccessScreen: native iOS self-guard', () => {
       })
     );
     act(() => {
-      root!.render(<AiAccessScreen onClose={() => {}} onContinue={() => {}} />);
+      root!.render(<AiAccessScreen onClose={() => {}} onContinue={onContinue} />);
     });
     await flush();
-    expect(container!.textContent).toContain('premium feature');
-    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).not.toContain('premium feature');
+    expect(container!.textContent).not.toContain('Choose a plan');
+    expect(container!.textContent).toContain('Coming soon');
+    expect(onContinue).not.toHaveBeenCalled();
   });
 
   it('Web + no entitlement: real paywall renders unchanged, same as before the iOS fix', async () => {

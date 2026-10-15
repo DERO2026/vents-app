@@ -11,7 +11,12 @@ import { createRoot, Root } from 'react-dom/client';
 // ever reached some other way (a future route, a direct render, a
 // refactor). This proves the self-guard: on iOS this screen renders ONLY
 // VentsAiIosComingSoonScreen, never HomeView/ConversationView or any plan
-// UI, while Android/web keep the real chat screen unchanged.
+// UI.
+//
+// Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
+// same Google Play Payments Policy concern as the iOS fix -- Android now
+// gets the identical Coming Soon treatment; only web keeps the real chat
+// screen unchanged.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -61,7 +66,7 @@ function mount() {
   });
 }
 
-describe('VentsAiScreen: native iOS self-guard', () => {
+describe('VentsAiScreen: native iOS/Android self-guard', () => {
   it('iOS: renders only Coming Soon -- no HomeView, no status pill, no "View Plans", no composer', async () => {
     getPlatformMock.mockReturnValue('ios');
     mount();
@@ -85,12 +90,27 @@ describe('VentsAiScreen: native iOS self-guard', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('Android: real HomeView (composer input) renders unchanged, same as before the iOS fix', async () => {
+  it('Android: renders only Coming Soon -- no HomeView, no status pill, no "View Plans", no composer', async () => {
     getPlatformMock.mockReturnValue('android');
     mount();
     await act(async () => { await Promise.resolve(); });
-    expect(container!.querySelector('input')).toBeTruthy();
-    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.querySelector('input')).toBeFalsy();
+    expect(container!.textContent).not.toContain('View Plans');
+    expect(container!.textContent).toContain('Coming soon');
+  });
+
+  it('Android: onClose is wired through to Coming Soon’s close action, same as iOS', async () => {
+    getPlatformMock.mockReturnValue('android');
+    const onClose = vi.fn();
+    container = document.createElement('div');
+    document.body.appendChild(container);
+    root = createRoot(container);
+    act(() => { root!.render(<VentsAiScreen onClose={onClose} />); });
+    await act(async () => { await Promise.resolve(); });
+    const closeBtn = Array.from(container!.querySelectorAll('button')).find((b) => /back to vents/i.test(b.textContent || ''));
+    expect(closeBtn).toBeTruthy();
+    act(() => { closeBtn!.dispatchEvent(new MouseEvent('click', { bubbles: true })); });
+    expect(onClose).toHaveBeenCalledTimes(1);
   });
 
   it('Web: real HomeView (composer input) renders unchanged, same as before the iOS fix', async () => {
