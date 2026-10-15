@@ -64,6 +64,7 @@ import { TicketRefundScreen } from './components/TicketRefundScreen';
 import { AttendeeListScreen } from './components/AttendeeListScreen';
 import { UserProfileScreen } from './components/UserProfileScreen';
 import { PromoteEventScreen } from './components/PromoteEventScreen';
+import { PromotionsScreen } from './components/PromotionsScreen';
 import { NigeriaLiveScreen } from './components/NigeriaLiveScreen';
 // Audit finding F32 (perf): AdminConsoleShell pulls in all 20+ Admin Console
 // screens (System/VC/Verification/Payouts/Users/Events/etc., already audited
@@ -3731,6 +3732,17 @@ export default function App() {
               currentUser={currentUser}
               initialEventId={promotionEventId}
               onPromoted={() => fetchEvents(true)}
+            />
+          )}
+          {screen === 'promotions' && (
+            <PromotionsScreen
+              onBack={goBack}
+              currentUser={currentUser}
+              onPromoteEvent={() => {
+                setPromotionEventId('');
+                navigateTo('promote-event');
+              }}
+              onNavigate={handleOrgNavigate}
             />
           )}
 
