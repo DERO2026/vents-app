@@ -1567,14 +1567,16 @@ export default function App() {
         let trendingScoreData: any[] = [];
 
         if (eventIds.length > 0) {
-          const nowStr = new Date().toISOString();
-          const { data: promoRes } = await supabase
-            .from('event_promotions')
-            .select('*')
-            .eq('status', 'active')
-            .lte('start_date', nowStr)
-            .gte('end_date', nowStr)
-            .in('event_id', eventIds);
+          // Public badge read path -- event_promotions' own SELECT RLS is
+          // scoped to the organizer's own rows (0181), so anonymous/other-
+          // organizer visitors can't read the table directly. This RPC is
+          // the sanctioned public surface: it returns only event_id/plan_type
+          // for rows that are already active and in their start/end window
+          // (so the status/date filtering that used to happen in this query
+          // is enforced server-side instead, not as a trusted client filter).
+          const { data: promoRes } = await supabase.rpc('get_public_event_promotion_badges', {
+            p_event_ids: eventIds,
+          });
           if (promoRes) promotionsData = promoRes;
 
           // Single source of truth for "tickets sold" across the whole
