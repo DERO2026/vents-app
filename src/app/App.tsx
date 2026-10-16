@@ -32,7 +32,6 @@ import { VentsAiScreen } from './components/VentsAiScreen';
 import { AiAccessScreen } from './components/AiAccessScreen';
 import { VentsAiUnlockedScreen } from './components/VentsAiUnlockedScreen';
 import { AiPlansScreen } from './components/AiPlansScreen';
-import { VentsAiIosComingSoonScreen } from './components/VentsAiIosComingSoonScreen';
 import { isMobileNativeForAiGate } from '../lib/platform';
 import { isVentsAiEnabled, setVentsAiEnabled } from '../lib/ventsAiPreference';
 import { ExploreScreen, mapDbUserToUserProfile } from './components/ExploreScreen';
@@ -302,14 +301,25 @@ export default function App() {
     setVentsAiEnabledState(enabled);
     setVentsAiEnabled(enabled);
   }, []);
-  // VENTS AI is temporarily unavailable on native iOS and Android (interim
-  // measure, not real Apple In-App Purchase / Google Play Billing -- see
-  // VentsAiIosComingSoonScreen.tsx and isMobileNativeForAiGate() in
-  // src/lib/platform.ts). The bottom-nav tab, Home/Services sparkle, and
-  // "Ask VENTS AI" on event details all funnel into `navigateTo('vents-ai')`,
-  // so gating the single render block below is sufficient to cover every
-  // entry point without touching those call sites. Computed once per
-  // render, same as AiPlansScreen.tsx's own IS_MOBILE_NATIVE_FOR_AI_GATE.
+  // VENTS AI web-only release: both the App Store (Apple, Guideline 3.1.1-
+  // adjacent "don't show a disabled/placeholder feature") and Google Play
+  // now require VENTS AI to be fully absent from the mobile apps -- not a
+  // disabled tab, not a "Coming Soon" screen, nothing reachable at all.
+  // isMobileNativeForAiGate() (src/lib/platform.ts) already covers "is
+  // this iOS or Android native" in one place, so this single constant now
+  // drives BOTH the entry-point removal (bottom-nav tab in BottomNav.tsx,
+  // Home/Services sparkle via onOpenVentsAi below, "Ask VENTS AI" on event
+  // details via onAskVentsAi below, the Settings toggle in
+  // SettingsScreen.tsx) and the 'vents-ai' route itself, which now renders
+  // nothing at all on mobile instead of VentsAiIosComingSoonScreen. Web is
+  // completely untouched -- isMobileNativeForAiGate() is false there, so
+  // the real flow renders exactly as before. The mobile purchase
+  // restriction (AiPlansScreen.tsx's own IS_MOBILE_NATIVE_FOR_AI_GATE,
+  // same helper) is unaffected by this UI change and stays in place.
+  // Reversing this for a future release (e.g. iOS-only or Android-only
+  // mobile launch) is a small, localized change: swap this constant back
+  // to isIosNative() / isAndroidNative() wherever the platform split needs
+  // to differ again -- nothing else about this gate's shape changes.
   const IS_MOBILE_NATIVE_FOR_AI = isMobileNativeForAiGate();
   // A ?event=/?user= deep link fetch is async and can resolve after the
   // splash routing effect below has already flipped away from 'splash' —
@@ -3009,7 +3019,7 @@ export default function App() {
                 navigateTo('service-provider-profile');
               }}
               onMyBookingsPress={currentUser ? () => navigateTo('service-bookings') : undefined}
-              onOpenVentsAi={() => seedAndOpenVentsAi()}
+              onOpenVentsAi={IS_MOBILE_NATIVE_FOR_AI ? undefined : () => seedAndOpenVentsAi()}
               onOfferServices={() => (currentUser ? navigateTo('service-provider-setup') : navigateTo('auth'))}
             />
           )}
@@ -3162,7 +3172,7 @@ export default function App() {
               onStateChange={setSelectedState}
               onLiveMapPress={() => navigateTo('nigeria-live')}
               onServicesPress={() => handleTabChange('services')}
-              onOpenVentsAi={() => seedAndOpenVentsAi()}
+              onOpenVentsAi={IS_MOBILE_NATIVE_FOR_AI ? undefined : () => seedAndOpenVentsAi()}
               onProviderPress={(provider) => {
                 setSelectedServiceProvider(provider);
                 navigateTo('service-provider-profile');
@@ -3302,21 +3312,32 @@ export default function App() {
           )}
 
           {/* ── VENTS AI ── */}
-          {/* iOS and Android: temporarily replaced wholesale by a static
-              "coming soon" screen (see VentsAiIosComingSoonScreen.tsx and
-              the IS_MOBILE_NATIVE_FOR_AI comment above) -- AiAccessScreen,
-              AiPlansScreen, VentsAiUnlockedScreen, and VentsAiScreen (which
-              has its own internal AiPlansScreen) are not mounted at all on
-              either native platform, so there is no code path left that
-              could show plan/price data or a purchase button. Web renders
-              the real flow, completely unchanged. */}
-          {IS_MOBILE_NATIVE_FOR_AI ? (
-            ventsAiEverMounted && (
-              <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
-                <VentsAiIosComingSoonScreen onClose={goBack} />
-              </div>
-            )
-          ) : (
+          {/* iOS and Android: renders nothing at all -- not even the
+              "coming soon" screen -- per the web-only release decision
+              (see IS_MOBILE_NATIVE_FOR_AI above). This is a pure platform
+              check, independent of entitlement/auth state: a user who
+              already subscribed on web and is logged into the same
+              account on iOS/Android still gets null here, same as a user
+              who never subscribed -- Apple's Guideline 3.1.1 concern is
+              about the app being able to *access* paid content purchased
+              outside Apple IAP at all, not just about offering to sell it,
+              so the gate cannot be entitlement-conditional.
+              `pushActionRef.current`'s deep-link/push `data.screen`
+              allowlist (~search "data.screen ===" above) never included
+              'vents-ai', so a vents://...?screen=vents-ai link cannot set
+              `screen` to 'vents-ai' in the first place -- this render
+              block is defense-in-depth against a future route/refactor
+              that might add such a path, not a currently-reachable one.
+              AiAccessScreen, AiPlansScreen, VentsAiUnlockedScreen, and
+              VentsAiScreen (which has its own internal AiPlansScreen) are
+              not mounted at all on either native platform -- the whole
+              subtree below is unmounted, not merely hidden, so none of
+              their effects/network calls run either -- and each also
+              self-guards independently (returns null on mobile via its
+              own isMobileNativeForAiGate() check) as a second layer should
+              any of them ever be mounted from somewhere other than this
+              block. Web renders the real flow, completely unchanged. */}
+          {IS_MOBILE_NATIVE_FOR_AI ? null : (
             <>
               {ventsAiEverMounted && !ventsAiAccessGranted && (
                 <div style={{ display: screen === 'vents-ai' ? 'flex' : 'none', flexDirection: 'column', height: '100%' }}>
@@ -3465,7 +3486,7 @@ export default function App() {
               onOpenDoorScanner={() => navigateTo('checkin-scanner')}
               onOpenDoorManager={() => navigateTo('door-manager')}
               purchasesDisabled={featureFlags.disablePurchases}
-              onAskVentsAi={openVentsAiForEvent}
+              onAskVentsAi={IS_MOBILE_NATIVE_FOR_AI ? undefined : openVentsAiForEvent}
               onOrganizerPress={async (organizerId) => {
                 const { data } = await supabase
                   .from('public_profiles')

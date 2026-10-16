@@ -20,6 +20,10 @@ import { createRoot, Root } from 'react-dom/client';
 // subscription content sold outside the platform's own billing (Google
 // Play Billing is not implemented). isMobileNativeForAiGate() now covers
 // both native platforms identically; only web keeps the real purchase flow.
+//
+// VENTS AI web-only release: the self-guard below now renders nothing at
+// all on mobile instead of VentsAiIosComingSoonScreen -- a "coming soon"
+// placeholder is no longer acceptable on either native platform.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -90,7 +94,7 @@ async function mount() {
 }
 
 describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per Oct 2026 Apple escalation)', () => {
-  it('renders only the Coming Soon screen on iOS -- no plans, no prices, no purchase UI reaches the DOM at all', async () => {
+  it('renders nothing on iOS -- no plans, no prices, no purchase UI, no placeholder reaches the DOM at all', async () => {
     getPlatformMock.mockReturnValue('ios');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     await mount();
@@ -108,7 +112,8 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     // No external purchase link/CTA -- Apple's separate 3.1.3 restriction.
     expect(container!.querySelector('a[href*="getvents.com"]')).toBeFalsy();
     expect(container!.textContent?.toLowerCase()).not.toContain('subscribe on');
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).toBe('');
   });
 
   it('never calls openPaystackPopup or initiateAiSubscriptionPayment on iOS -- the real screen content never renders', async () => {
@@ -124,7 +129,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(openPaystackPopup).not.toHaveBeenCalled();
   });
 
-  it('renders only the Coming Soon screen on Android -- no plans, no prices, no purchase UI reaches the DOM at all', async () => {
+  it('renders nothing on Android -- no plans, no prices, no purchase UI, no placeholder reaches the DOM at all', async () => {
     getPlatformMock.mockReturnValue('android');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     await mount();
@@ -136,7 +141,8 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(container!.textContent).not.toMatch(/₦/);
     expect(container!.querySelector('a[href*="getvents.com"]')).toBeFalsy();
     expect(container!.textContent?.toLowerCase()).not.toContain('subscribe on');
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).toBe('');
   });
 
   it('never calls openPaystackPopup or initiateAiSubscriptionPayment on Android -- the real screen content never renders', async () => {
@@ -150,7 +156,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(openPaystackPopup).not.toHaveBeenCalled();
   });
 
-  it('Android: an existing subscriber sees Coming Soon too, not their plan/cancel UI -- no carve-out, same as iOS', async () => {
+  it('Android: an existing subscriber sees nothing either, not their plan/cancel UI -- no carve-out, same as iOS', async () => {
     getPlatformMock.mockReturnValue('android');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     rpc.mockImplementation((fn: string) => {
@@ -166,7 +172,8 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(container!.textContent).not.toContain('VENTS AI+');
     expect(container!.textContent).not.toContain('Your current plan');
     expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeFalsy();
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).toBe('');
   });
 
   it('Web: purchasing is completely unchanged -- the real Subscribe button works exactly as before', async () => {
@@ -181,7 +188,7 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(openPaystackPopup).toHaveBeenCalled();
   });
 
-  it('iOS: an existing subscriber sees Coming Soon too, not their plan/cancel UI -- Apple\'s Oct 2026 escalation objects to ANY AI plan/price/subscription surface on iOS, with no carve-out for existing subscribers', async () => {
+  it('iOS: an existing subscriber sees nothing either, not their plan/cancel UI -- VENTS AI is web-only, with no carve-out for existing subscribers', async () => {
     getPlatformMock.mockReturnValue('ios');
     fetchAiPlansPublic.mockResolvedValueOnce(PLANS);
     rpc.mockImplementation((fn: string) => {
@@ -198,8 +205,10 @@ describe('AiPlansScreen: iOS purchase removal (Guideline 3.1.1 fix, hardened per
     expect(container!.textContent).not.toContain('Your current plan');
     expect(container!.querySelector('[data-testid="ai-plans-cancel-start"]')).toBeFalsy();
     expect(container!.querySelector('[data-testid="ai-plan-unavailable-ios-ai"]')).toBeFalsy();
-    // Coming Soon's own copy says as much: manage any existing subscription
-    // from the web instead, nothing is lost, it's just not shown on iOS.
-    expect(container!.textContent).toContain('Coming soon');
+    // Nothing is lost -- the subscription record/entitlement itself is
+    // preserved server-side, it's just not shown on either mobile app;
+    // manage it from the web instead.
+    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).toBe('');
   });
 });

@@ -1,6 +1,7 @@
 import { Home, Ticket, LayoutGrid, MessageSquare, User, Sparkle } from 'lucide-react';
 import { TabId } from './types';
 import { haptics } from '../../lib/haptics';
+import { isMobileNativeForAiGate } from '../../lib/platform';
 
 interface BottomNavProps {
   activeTab: TabId;
@@ -124,39 +125,48 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
         );
       })}
 
-      <button
-        onClick={() => {
-          if (!siEnabled) return;
-          if (!siActive) haptics.light();
-          onOpenSi?.();
-        }}
-        aria-label="VENTS AI"
-        aria-current={siActive ? 'page' : undefined}
-        aria-disabled={!siEnabled || undefined}
-        style={{
-          flex: 1,
-          minWidth: 0,
-          border: 'none',
-          borderRadius: '28px',
-          background: siActive ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : 'transparent',
-          color: siActive ? '#fff' : '#c4b5fd',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          gap: '3px',
-          padding: 0,
-          cursor: siEnabled ? 'pointer' : 'default',
-          opacity: siEnabled ? 1 : 0.35,
-          boxShadow: siActive ? '0 0 14px 2px rgba(139,92,246,0.55)' : 'none',
-          animation: siActive ? 'ventsAiTabGlow 2.4s ease-in-out infinite' : 'none',
-          transition: 'background 0.15s ease',
-          WebkitTapHighlightColor: 'transparent',
-        }}
-      >
-        <Sparkle size={22} strokeWidth={1.8} color="currentColor" fill={siActive ? 'currentColor' : 'none'} />
-        <span style={{ font: "600 9.5px 'Manrope', sans-serif", whiteSpace: 'nowrap' }}>VENTS AI</span>
-      </button>
+      {/* VENTS AI is web-only for this release -- not visible on either
+          mobile platform, "coming soon" included -- this sixth destination
+          is the global entry point into it (see App.tsx's comment on
+          IS_MOBILE_NATIVE_FOR_AI), so on iOS or Android it doesn't render
+          at all rather than rendering disabled/dimmed. Web is unaffected:
+          isMobileNativeForAiGate() is false there, same as every other
+          mobile-only restriction in this codebase (see platform.ts). */}
+      {!isMobileNativeForAiGate() && (
+        <button
+          onClick={() => {
+            if (!siEnabled) return;
+            if (!siActive) haptics.light();
+            onOpenSi?.();
+          }}
+          aria-label="VENTS AI"
+          aria-current={siActive ? 'page' : undefined}
+          aria-disabled={!siEnabled || undefined}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            border: 'none',
+            borderRadius: '28px',
+            background: siActive ? 'linear-gradient(135deg,#8b5cf6,#6d28d9)' : 'transparent',
+            color: siActive ? '#fff' : '#c4b5fd',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '3px',
+            padding: 0,
+            cursor: siEnabled ? 'pointer' : 'default',
+            opacity: siEnabled ? 1 : 0.35,
+            boxShadow: siActive ? '0 0 14px 2px rgba(139,92,246,0.55)' : 'none',
+            animation: siActive ? 'ventsAiTabGlow 2.4s ease-in-out infinite' : 'none',
+            transition: 'background 0.15s ease',
+            WebkitTapHighlightColor: 'transparent',
+          }}
+        >
+          <Sparkle size={22} strokeWidth={1.8} color="currentColor" fill={siActive ? 'currentColor' : 'none'} />
+          <span style={{ font: "600 9.5px 'Manrope', sans-serif", whiteSpace: 'nowrap' }}>VENTS AI</span>
+        </button>
+      )}
       <style>{`
         @keyframes ventsAiTabGlow {
           0%, 100% { box-shadow: 0 0 10px 1px rgba(139,92,246,0.45); }
