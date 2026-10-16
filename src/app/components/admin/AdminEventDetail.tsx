@@ -23,7 +23,7 @@ import { hideEvent, reinstateEvent, toggleEventFeatured, toggleEventTrending } f
 
 interface FullEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean; hidden_at: string | null;
-  created_at: string; event_date: string | null; venue: string | null; deleted_at: string | null;
+  created_at: string; event_date: string | null; location: string | null; deleted_at: string | null;
   is_featured: boolean; featured_until: string | null; admin_trending: boolean;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
@@ -75,7 +75,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
     try {
       const { data, error: err } = await supabase
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, venue, deleted_at, is_featured, featured_until, admin_trending, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, location, deleted_at, is_featured, featured_until, admin_trending, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .eq('id', eventId)
         .maybeSingle();
       if (err) throw err;
@@ -149,7 +149,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
             <div style={{ fontSize: 12.5, color: adminTheme.textMuted, marginTop: 4 }}>
               by {organizer?.username ? `@${organizer.username}` : organizer?.full_name || 'Unknown organizer'}
               {event.event_date && ` · ${new Date(event.event_date).toLocaleDateString('en-NG', { dateStyle: 'medium' })}`}
-              {event.venue && ` · ${event.venue}`}
+              {event.location && ` · ${event.location}`}
             </div>
             <span style={{ display: 'inline-block', marginTop: 8, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: status.bg, color: status.fg }}>{status.label}</span>
             {event.is_featured && <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(251,191,36,.12)', color: adminTheme.amber }}>★ Featured</span>}
