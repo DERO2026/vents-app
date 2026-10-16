@@ -15,7 +15,7 @@
 //    ticket's own owner or the event's organizer to read individual rows;
 //    there is no admin bypass and no admin RPC that lists ticket buyers for
 //    an arbitrary event.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
@@ -67,6 +67,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -102,17 +103,38 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
       .finally(() => setAnalyticsLoading(false));
   }, [tab, eventId, analytics, analyticsLoading]);
 
+  // Stale-response guard for the audit query, same pattern as
+  // AdminEventsList's event-search guard: each call gets its own ticket, and
+  // a response is only applied if it's still the latest -- a slower,
+  // superseded load (an old event's audit history, or an earlier retry
+  // attempt) can't overwrite state a newer call already set or is still
+  // loading.
+  const auditRequestIdRef = useRef(0);
+
+  const loadAudit = useCallback(async () => {
+    const requestId = ++auditRequestIdRef.current;
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const { data, error: err } = await (supabase.from('admin_logs').select('id, action, details, created_at, actor_role') as any)
+        .eq('details->>event_id', eventId).order('created_at', { ascending: false }).limit(50);
+      if (requestId !== auditRequestIdRef.current) return;
+      if (err) throw err;
+      setAudit(data || []);
+    } catch (e: any) {
+      if (requestId !== auditRequestIdRef.current) return;
+      setAuditError(e?.message || 'Unable to load admin activity. Please try again.');
+    } finally {
+      if (requestId === auditRequestIdRef.current) setAuditLoading(false);
+    }
+  }, [eventId]);
+
   useEffect(() => {
     if (tab !== 'audit') return;
-    setAuditLoading(true);
-    Promise.resolve(
-      (supabase.from('admin_logs').select('id, action, details, created_at, actor_role') as any)
-        .eq('details->>event_id', eventId).order('created_at', { ascending: false }).limit(50),
-    )
-      .then(({ data }: any) => setAudit(data || []))
-      .catch(() => setAudit([]))
-      .finally(() => setAuditLoading(false));
-  }, [tab, eventId]);
+    setAudit([]);
+    setAuditError(null);
+    loadAudit();
+  }, [tab, loadAudit]);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
   const run = async (fn: () => Promise<{ ok: boolean; message: string }>) => {
@@ -227,6 +249,14 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        : auditError ? (
+          <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center' }}>
+            <div style={{ color: adminTheme.red, fontSize: 12.5, marginBottom: 12 }}>Unable to load admin activity. Please try again.</div>
+            <button onClick={() => loadAudit()} style={{ fontSize: 12, fontWeight: 600, padding: '7px 14px', borderRadius: 8, background: adminTheme.borderChip, border: `1px solid ${adminTheme.border}`, color: adminTheme.text, cursor: 'pointer' }}>
+              Retry
+            </button>
+          </div>
+        )
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this event.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>
