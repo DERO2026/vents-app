@@ -8,7 +8,8 @@
 //    explicitly allows public.is_admin() for ANY event, not just the
 //    caller's own — a real, already-shipped admin-accessible aggregate.
 //  - Audit: `admin_logs` filtered on details->>'event_id' (the exact key
-//    admin_hide_event/admin_reinstate_event/admin_set_event_featured write).
+//    admin_hide_event/admin_reinstate_event/admin_set_event_featured/
+//    admin_set_event_trending write).
 // Explicit "not available" (no fabrication):
 //  - Tickets (per-buyer list) and Refunds: `tickets` RLS only allows the
 //    ticket's own owner or the event's organizer to read individual rows;
@@ -18,12 +19,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
-import { hideEvent, reinstateEvent, toggleEventFeatured } from './adminUserEventActions';
+import { hideEvent, reinstateEvent, toggleEventFeatured, toggleEventTrending } from './adminUserEventActions';
 
 interface FullEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean; hidden_at: string | null;
   created_at: string; event_date: string | null; venue: string | null; deleted_at: string | null;
-  is_featured: boolean; featured_until: string | null;
+  is_featured: boolean; featured_until: string | null; admin_trending: boolean;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
@@ -74,7 +75,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
     try {
       const { data, error: err } = await supabase
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, venue, deleted_at, is_featured, featured_until, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, venue, deleted_at, is_featured, featured_until, admin_trending, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .eq('id', eventId)
         .maybeSingle();
       if (err) throw err;
@@ -151,12 +152,18 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
               {event.venue && ` · ${event.venue}`}
             </div>
             <span style={{ display: 'inline-block', marginTop: 8, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: status.bg, color: status.fg }}>{status.label}</span>
+            {event.is_featured && <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(251,191,36,.12)', color: adminTheme.amber }}>★ Featured</span>}
+            {event.admin_trending && <span style={{ display: 'inline-block', marginTop: 8, marginLeft: 6, fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: 'rgba(248,113,113,.12)', color: adminTheme.red }}>🔥 Trending</span>}
           </div>
           {!event.deleted_at && (
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button disabled={busy} onClick={() => run(() => toggleEventFeatured(isSuperAdmin, event.id, label, !!event.is_featured))}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.is_featured ? 'rgba(251,191,36,.12)' : adminTheme.borderChip, border: `1px solid ${event.is_featured ? 'rgba(251,191,36,.35)' : adminTheme.border}`, color: event.is_featured ? adminTheme.amber : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
                 {event.is_featured ? '★ Featured' : '☆ Feature'}
+              </button>
+              <button disabled={busy} onClick={() => run(() => toggleEventTrending(isSuperAdmin, event.id, label, !!event.admin_trending))}
+                style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${event.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: event.admin_trending ? adminTheme.red : adminTheme.text, cursor: busy ? 'not-allowed' : 'pointer' }}>
+                {event.admin_trending ? '🔥 Trending' : '📈 Trend'}
               </button>
               <button disabled={busy} onClick={() => run(() => event.hidden_by_admin ? reinstateEvent(isSuperAdmin, event.id, label) : hideEvent(isSuperAdmin, event.id, label))}
                 style={{ fontSize: 12, fontWeight: 600, padding: '9px 14px', borderRadius: 8, background: event.hidden_by_admin ? 'rgba(52,211,153,.1)' : 'rgba(248,113,113,.1)', border: `1px solid ${event.hidden_by_admin ? 'rgba(52,211,153,.3)' : 'rgba(248,113,113,.3)'}`, color: event.hidden_by_admin ? adminTheme.green : adminTheme.red, cursor: busy ? 'not-allowed' : 'pointer' }}>

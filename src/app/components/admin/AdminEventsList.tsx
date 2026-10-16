@@ -7,12 +7,12 @@ import { BadgeCheck } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
-import { hideEvent, reinstateEvent, restoreDeletedEvent, toggleEventFeatured } from './adminUserEventActions';
+import { hideEvent, reinstateEvent, restoreDeletedEvent, toggleEventFeatured, toggleEventTrending } from './adminUserEventActions';
 
 interface AdminEventRow {
   id: string; title: string | null; organizer_id: string | null; hidden_by_admin: boolean;
   hidden_at: string | null; created_at: string; event_date: string | null; deleted_at: string | null;
-  is_featured: boolean; featured_until: string | null; image_url: string | null;
+  is_featured: boolean; featured_until: string | null; admin_trending: boolean; image_url: string | null;
   'users!events_organizer_id_fkey'?: { username: string | null; full_name: string | null; is_verified: boolean } | null;
 }
 
@@ -22,7 +22,7 @@ function statusChip(ev: AdminEventRow): { bg: string; fg: string; label: string 
   return { bg: 'rgba(52,211,153,.12)', fg: adminTheme.green, label: 'Visible' };
 }
 
-const FILTERS = ['active', 'hidden', 'deleted', 'featured'] as const;
+const FILTERS = ['active', 'hidden', 'deleted', 'featured', 'trending'] as const;
 
 export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
   isMobile: boolean; currentUser: PermissionUser | null | undefined; onSelectEvent: (id: string) => void;
@@ -40,7 +40,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
     try {
       let q = supabase
         .from('events')
-        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, deleted_at, is_featured, featured_until, image_url, users!events_organizer_id_fkey(username, full_name, is_verified)')
+        .select('id, title, organizer_id, hidden_by_admin, hidden_at, created_at, event_date, deleted_at, is_featured, featured_until, admin_trending, image_url, users!events_organizer_id_fkey(username, full_name, is_verified)')
         .order('created_at', { ascending: false })
         .limit(50);
       if (filter === 'deleted') q = q.not('deleted_at', 'is', null);
@@ -48,6 +48,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
         q = q.is('deleted_at', null);
         if (filter === 'hidden') q = q.eq('hidden_by_admin', true);
         if (filter === 'featured') q = q.eq('is_featured', true);
+        if (filter === 'trending') q = q.eq('admin_trending', true);
       }
       const { data, error: err } = await q;
       if (err) throw err;
@@ -103,6 +104,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
                   {ev.event_date && ` · ${new Date(ev.event_date).toLocaleDateString('en-NG', { dateStyle: 'medium' })}`}
                 </div>
                 {ev.is_featured && <div style={{ fontSize: 11, color: adminTheme.amber, marginTop: 4 }}>★ Featured</div>}
+                {ev.admin_trending && <div style={{ fontSize: 11, color: adminTheme.red, marginTop: 4 }}>🔥 Trending</div>}
               </div>
             );
           })}
@@ -121,7 +123,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
             return (
               <div key={ev.id} style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr 1fr .9fr 1.4fr', padding: '13px 16px', fontSize: 12.5, borderBottom: `1px solid ${adminTheme.borderSoft}`, alignItems: 'center' }}>
                 <div onClick={() => onSelectEvent(ev.id)} style={{ cursor: 'pointer', color: adminTheme.textStrong, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {ev.title || '(Untitled)'} {ev.is_featured && <span title="Featured" style={{ color: adminTheme.amber }}>★</span>}
+                  {ev.title || '(Untitled)'} {ev.is_featured && <span title="Featured" style={{ color: adminTheme.amber }}>★</span>} {ev.admin_trending && <span title="Trending" style={{ color: adminTheme.red }}>🔥</span>}
                 </div>
                 <div style={{ color: adminTheme.text, display: 'flex', alignItems: 'center', gap: 4 }}>
                   {organizer?.username ? `@${organizer.username}` : organizer?.full_name || 'Unknown'}
@@ -134,6 +136,12 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
                     <button disabled={isBusy} onClick={() => doAction(ev.id, label, () => toggleEventFeatured(isSuperAdmin, ev.id, label, !!ev.is_featured))}
                       style={{ fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 8, background: ev.is_featured ? 'rgba(251,191,36,.12)' : adminTheme.borderChip, border: `1px solid ${ev.is_featured ? 'rgba(251,191,36,.35)' : adminTheme.border}`, color: ev.is_featured ? adminTheme.amber : adminTheme.textMuted, cursor: isBusy ? 'not-allowed' : 'pointer' }}>
                       {ev.is_featured ? '★ Featured' : '☆ Feature'}
+                    </button>
+                  )}
+                  {!ev.deleted_at && (
+                    <button disabled={isBusy} onClick={() => doAction(ev.id, label, () => toggleEventTrending(isSuperAdmin, ev.id, label, !!ev.admin_trending))}
+                      style={{ fontSize: 11, fontWeight: 600, padding: '5px 9px', borderRadius: 8, background: ev.admin_trending ? 'rgba(248,113,113,.12)' : adminTheme.borderChip, border: `1px solid ${ev.admin_trending ? 'rgba(248,113,113,.35)' : adminTheme.border}`, color: ev.admin_trending ? adminTheme.red : adminTheme.textMuted, cursor: isBusy ? 'not-allowed' : 'pointer' }}>
+                      {ev.admin_trending ? '🔥 Trending' : '📈 Trend'}
                     </button>
                   )}
                   {ev.deleted_at ? (

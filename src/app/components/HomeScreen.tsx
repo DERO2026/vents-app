@@ -209,7 +209,11 @@ export function mapDbEventToFrontend(dbEvent: any): Event {
     isFeatured: dbEvent.is_featured === true && (
       !dbEvent.featured_until || new Date(dbEvent.featured_until) > new Date()
     ),
-    isTrending: false,
+    // Admin-only manual Trending placement (0182_admin_manual_trending_control.sql,
+    // admin_set_event_trending RPC) -- unlike isFeatured above, this has no
+    // expiry column to check: a manually trending event has no bounded
+    // duration to begin with, it stays trending until an admin removes it.
+    isTrending: dbEvent.admin_trending === true,
     attendees: 0,
     capacity: Number(dbEvent.ticket_goal || dbEvent.capacity || 1000),
     rating: 0,
@@ -1352,20 +1356,36 @@ export function HomeScreen({
     return d && d >= todayStart;
   }), [baseEvents, blockedIdSet]);
 
-  // Trending events: selection is the real, server-computed trending score
-  // (get_event_trending_scores — recent booking velocity weighted well
-  // above lifetime sales/saves, migrations/20260801134748). Purely organic:
-  // no promotion purchase or admin action can place an event here, and a
-  // brand-new event scores 0 until it earns real engagement. Display order
-  // is nearest-date-first.
-  const trendingEvents = useMemo(() =>
-    [...upcomingBaseEvents]
-      .filter((e) => (e.trendingScore || 0) > 0)
+  // Trending events: two independent sources, neither one fabricating the
+  // other's signal.
+  //
+  // 1. Organic: the real, server-computed trending score
+  //    (get_event_trending_scores — recent booking velocity weighted well
+  //    above lifetime sales/saves, migrations/20260801134748). A brand-new
+  //    event scores 0 until it earns real engagement, and this ranking
+  //    among organic events is never reordered by anything below.
+  // 2. Admin-pinned: an admin's manual Trending placement (isTrending,
+  //    sourced from events.admin_trending via admin_set_event_trending,
+  //    0182_admin_manual_trending_control.sql) — included regardless of
+  //    trendingScore, with no fabricated score of its own, so an admin can
+  //    manually trend an eligible event without an organizer having to buy
+  //    a promotion, and without inventing fake engagement numbers to get
+  //    there organically.
+  //
+  // Admin-pinned events always appear (an explicit admin decision isn't
+  // capped by slot count the way organic discovery is); any remaining
+  // slots up to 5 total go to the organic ranking. Display order is
+  // nearest-date-first, same as before.
+  const trendingEvents = useMemo(() => {
+    const adminPinned = upcomingBaseEvents.filter((e) => e.isTrending);
+    const adminPinnedIds = new Set(adminPinned.map((e) => e.id));
+    const organicSlots = Math.max(0, 5 - adminPinned.length);
+    const organic = [...upcomingBaseEvents]
+      .filter((e) => !adminPinnedIds.has(e.id) && (e.trendingScore || 0) > 0)
       .sort((a, b) => (b.trendingScore || 0) - (a.trendingScore || 0))
-      .slice(0, 5)
-      .sort(byNearestDate),
-    [upcomingBaseEvents]
-  );
+      .slice(0, organicSlots);
+    return [...adminPinned, ...organic].sort(byNearestDate);
+  }, [upcomingBaseEvents]);
 
   // Featured events: selection stays isFeatured + upcoming, display order
   // nearest-date-first.

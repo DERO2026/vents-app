@@ -181,3 +181,25 @@ export async function toggleEventFeatured(isSuperAdmin: boolean, eventId: string
       if (error) throw error;
     });
 }
+
+// Manual admin Trending placement (0182_admin_manual_trending_control.sql) --
+// the counterpart to toggleEventFeatured above, so an admin doesn't need an
+// organizer to buy a promotion just to pin an eligible event into Trending.
+// No duration/expiry here, unlike Featured's 14-day window: a manually
+// trending event stays trending until an admin removes it. The RPC itself
+// (not this client code) enforces the eligibility check (not hidden/deleted,
+// status live/published) and the real security boundary (Super Admin only,
+// Sub-Admins routed through submitOrExecute's request_admin_action path
+// exactly like every other admin_* action here).
+export async function toggleEventTrending(isSuperAdmin: boolean, eventId: string, label: string, currentlyTrending: boolean) {
+  const nextTrending = !currentlyTrending;
+  return submitOrExecute(isSuperAdmin, 'toggle_event_trending',
+    { target_type: 'event', target_id: eventId, target_label: label, previous: { admin_trending: currentlyTrending }, changes: { admin_trending: nextTrending } },
+    async () => {
+      const { error } = await supabase.rpc('admin_set_event_trending' as any, {
+        p_event_id: eventId,
+        p_trending: nextTrending,
+      });
+      if (error) throw error;
+    });
+}

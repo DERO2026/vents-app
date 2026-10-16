@@ -3,14 +3,23 @@ import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 import { HomeScreen } from './HomeScreen';
 
-// Task 3 (VENTS release sprint): "Trending" is HomeScreen.tsx's organic
-// Trending Events rail (trendingEvents, ~line 1361), sourced from
-// filterResults (filtersActive is now a hardcoded `true` -- see its own
-// comment: countryFilter must always be applied, so this country-scoped
-// query always runs instead of the country-blind dbEvents page) and the
-// real, server-computed get_event_trending_scores RPC (recent sold *5 +
-// total sold *2 + saves *1). An event only appears once it has positive
-// score; display is capped at 5, sorted by score desc then nearest date.
+// Task 3 (VENTS release sprint): "Trending" is HomeScreen.tsx's Trending
+// Events rail (trendingEvents, ~line 1361), sourced from filterResults
+// (filtersActive is now a hardcoded `true` -- see its own comment:
+// countryFilter must always be applied, so this country-scoped query always
+// runs instead of the country-blind dbEvents page) and the real,
+// server-computed get_event_trending_scores RPC (recent sold *5 + total
+// sold *2 + saves *1). An organic event only appears once it has positive
+// score; display is capped at 5 total, sorted by score desc then nearest
+// date.
+//
+// Admin manual placement (0182_admin_manual_trending_control.sql, added
+// after the original investigation below): an admin can additionally pin
+// an eligible event into this same rail via events.admin_trending,
+// independent of its organic score -- see the tests at the bottom of this
+// file. This does not touch get_event_trending_scores or fabricate a score
+// for the pinned event; it's a second, separate inclusion path merged in by
+// the client. Organic events' own relative ranking is never affected by it.
 //
 // Investigated before changing any code, per the task's instruction not
 // to invent a fix. Traced the full path and cross-checked against live
@@ -216,6 +225,74 @@ describe('HomeScreen "Trending Events": ranking, filtering, and failure handling
   it('excludes an otherwise-qualifying event once its date has passed (no stale trending content)', async () => {
     eventsRows = [makeEventRow('e-past', 'Past Event', -5)];
     rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-past', trending_score: 50 }], error: null }));
+    await renderHome();
+    expect(container!.textContent).not.toContain('Trending Events');
+  });
+
+  // Admin-only manual Trending control (0182_admin_manual_trending_control.sql,
+  // admin_set_event_trending RPC) -- an admin can pin an eligible event into
+  // Trending without it having any real engagement at all. This must not be
+  // implemented by faking a trending_score (that would be exactly the
+  // "fabricate engagement to force trending" the feature explicitly forbids);
+  // events.admin_trending is an independent signal the client merges in.
+  it('includes an admin-pinned event (admin_trending=true) in Trending even with zero organic score', async () => {
+    eventsRows = [makeEventRow('e-pinned', 'Admin Pinned Event', 10, { admin_trending: true })];
+    rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-pinned', trending_score: 0 }], error: null }));
+    await renderHome();
+    expect(container!.textContent).toContain('Trending Events');
+    expect(trendingSectionText()).toContain('Admin Pinned Event');
+  });
+
+  it('shows both an admin-pinned event and organically trending events together, without reordering the organic ones relative to each other', async () => {
+    eventsRows = [
+      makeEventRow('e-pinned', 'Pinned Event', 30, { admin_trending: true }),
+      makeEventRow('e-high', 'High Score Event', 10),
+      makeEventRow('e-low', 'Low Score Event', 20),
+    ];
+    rpcMock.mockImplementation(async (fn: string) => {
+      if (fn === 'get_event_trending_scores') {
+        return { data: [
+          { event_id: 'e-pinned', trending_score: 0 },
+          { event_id: 'e-high', trending_score: 42 },
+          { event_id: 'e-low', trending_score: 4 },
+        ], error: null };
+      }
+      return { data: [], error: null };
+    });
+    await renderHome();
+    const trending = trendingSectionText();
+    expect(trending).toContain('Pinned Event');
+    expect(trending).toContain('High Score Event');
+    expect(trending).toContain('Low Score Event');
+  });
+
+  it('an admin-pinned event never gets organically re-ranked by its own (zero or low) trending score', async () => {
+    // A pinned event with a real score of 0 must still appear -- the merge
+    // logic must not accidentally filter admin-pinned events through the
+    // same `trendingScore > 0` gate organic events go through.
+    eventsRows = Array.from({ length: 5 }, (_, i) => makeEventRow(`e-organic-${i}`, `Organic ${i}`, 10 + i))
+      .concat([makeEventRow('e-pinned', 'Pinned Zero Score', 50, { admin_trending: true })]);
+    rpcMock.mockImplementation(async () => ({
+      data: [
+        ...Array.from({ length: 5 }, (_, i) => ({ event_id: `e-organic-${i}`, trending_score: 10 - i })),
+        { event_id: 'e-pinned', trending_score: 0 },
+      ],
+      error: null,
+    }));
+    await renderHome();
+    expect(trendingSectionText()).toContain('Pinned Zero Score');
+  });
+
+  it('an admin-pinned event is still excluded once its date has passed -- the client-side upcoming-date filter applies to admin picks too, not only organic ones', async () => {
+    eventsRows = [makeEventRow('e-pinned-past', 'Pinned But Past', -5, { admin_trending: true })];
+    rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-pinned-past', trending_score: 0 }], error: null }));
+    await renderHome();
+    expect(container!.textContent).not.toContain('Trending Events');
+  });
+
+  it('does not show a pinned marker for an event where admin_trending is false (default), proving the field is read, not assumed', async () => {
+    eventsRows = [makeEventRow('e-not-pinned', 'Not Pinned Event', 10, { admin_trending: false })];
+    rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-not-pinned', trending_score: 0 }], error: null }));
     await renderHome();
     expect(container!.textContent).not.toContain('Trending Events');
   });
