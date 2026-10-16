@@ -2,12 +2,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { act } from 'react-dom/test-utils';
 import { createRoot, Root } from 'react-dom/client';
 
-// Apple re-rejected VENTS over VENTS AI being visible on iOS at all.
-// SettingsScreen's "VENTS AI" preference row is itself a promotional
-// entry point (it links the feature by name and lets the user turn it
-// back on) -- this proves it doesn't render on iOS, while Android/web
-// keep it exactly as before (same mocking convention as
-// AiAccessScreen.iosSelfGuard.security.test.tsx).
+// VENTS AI is web-only for this release. SettingsScreen's "VENTS AI"
+// preference row is itself a promotional entry point (it links the
+// feature by name and lets the user turn it back on) -- this proves it
+// doesn't render on iOS or Android, while web keeps it exactly as before
+// (same mocking convention as AiAccessScreen.iosSelfGuard.security.test.tsx).
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -55,7 +54,7 @@ async function flush() {
   });
 }
 
-describe('SettingsScreen: VENTS AI preference row removed entirely on iOS', () => {
+describe('SettingsScreen: VENTS AI preference row removed entirely on mobile', () => {
   it('iOS: no "VENTS AI" row at all', async () => {
     getPlatformMock.mockReturnValue('ios');
     act(() => {
@@ -75,7 +74,7 @@ describe('SettingsScreen: VENTS AI preference row removed entirely on iOS', () =
     expect(container!.textContent).not.toContain('VENTS AI');
   });
 
-  it('Android: "VENTS AI" row still renders, unchanged from before this fix', async () => {
+  it('Android: no "VENTS AI" row either, same as iOS', async () => {
     getPlatformMock.mockReturnValue('android');
     act(() => {
       root!.render(
@@ -91,7 +90,7 @@ describe('SettingsScreen: VENTS AI preference row removed entirely on iOS', () =
       );
     });
     await flush();
-    expect(container!.textContent).toContain('VENTS AI');
+    expect(container!.textContent).not.toContain('VENTS AI');
   });
 
   it('Web: "VENTS AI" row still renders, unchanged from before this fix', async () => {

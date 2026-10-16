@@ -5,14 +5,18 @@ import { createRoot, Root } from 'react-dom/client';
 // Apple App Store escalation (Guideline 3.1.1, Oct 2026): "VENTS AI plans
 // or pricing are still appearing" on native iOS despite the App.tsx-level
 // gate. This proves the defense-in-depth fix: AiAccessScreen now self-guards
-// -- it renders VentsAiIosComingSoonScreen on iOS regardless of entitlement
-// state, independent of whether App.tsx ever reaches this component at
-// all, so no future route/refactor/direct-mount can bypass it.
+// -- it renders nothing on iOS regardless of entitlement state, independent
+// of whether App.tsx ever reaches this component at all, so no future
+// route/refactor/direct-mount can bypass it.
 //
 // Extended to Android (Phase 2, Oct 2026 Android release-readiness audit):
 // Google Play Payments Policy treats VENTS AI/AI+'s Paystack checkout the
 // same way Apple's 3.1.1 does. isMobileNativeForAiGate() now covers both
 // native platforms; web stays fully unrestricted.
+//
+// VENTS AI web-only release: a "coming soon" placeholder is no longer
+// acceptable on either mobile platform either -- this screen now renders
+// nothing at all on mobile instead of VentsAiIosComingSoonScreen.
 
 const getPlatformMock = vi.fn<() => string>(() => 'web');
 vi.mock('@capacitor/core', () => ({
@@ -57,7 +61,7 @@ function rpcImpl(responses: Record<string, any>) {
 }
 
 describe('AiAccessScreen: native iOS/Android self-guard', () => {
-  it('iOS + no entitlement (would normally show the paywall) -> renders Coming Soon instead, never the paywall', async () => {
+  it('iOS + no entitlement (would normally show the paywall) -> renders nothing, never the paywall', async () => {
     getPlatformMock.mockReturnValue('ios');
     mockRpc.mockImplementation(
       rpcImpl({
@@ -72,11 +76,12 @@ describe('AiAccessScreen: native iOS/Android self-guard', () => {
     await flush();
     expect(container!.textContent).not.toContain('premium feature');
     expect(container!.textContent).not.toContain('Choose a plan');
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).not.toContain('Coming soon');
+    expect(container!.textContent).toBe('');
     expect(onContinue).not.toHaveBeenCalled();
   });
 
-  it('iOS + trial at hard ceiling (would normally show the upgrade CTA) -> renders Coming Soon, no upgrade CTA', async () => {
+  it('iOS + trial at hard ceiling (would normally show the upgrade CTA) -> renders nothing, no upgrade CTA', async () => {
     getPlatformMock.mockReturnValue('ios');
     mockRpc.mockImplementation(
       rpcImpl({
@@ -92,10 +97,10 @@ describe('AiAccessScreen: native iOS/Android self-guard', () => {
     });
     await flush();
     expect(container!.textContent).not.toContain('trial is complete');
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).toBe('');
   });
 
-  it('Android + no entitlement (would normally show the paywall) -> renders Coming Soon instead, never the paywall', async () => {
+  it('Android + no entitlement (would normally show the paywall) -> renders nothing, same as iOS', async () => {
     getPlatformMock.mockReturnValue('android');
     const onContinue = vi.fn();
     mockRpc.mockImplementation(
@@ -110,11 +115,11 @@ describe('AiAccessScreen: native iOS/Android self-guard', () => {
     await flush();
     expect(container!.textContent).not.toContain('premium feature');
     expect(container!.textContent).not.toContain('Choose a plan');
-    expect(container!.textContent).toContain('Coming soon');
+    expect(container!.textContent).toBe('');
     expect(onContinue).not.toHaveBeenCalled();
   });
 
-  it('Web + no entitlement: real paywall renders unchanged, same as before the iOS fix', async () => {
+  it('Web + no entitlement: real paywall renders unchanged, same as before the mobile fix', async () => {
     getPlatformMock.mockReturnValue('web');
     mockRpc.mockImplementation(
       rpcImpl({

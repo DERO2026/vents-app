@@ -1,7 +1,7 @@
 import { Home, Ticket, LayoutGrid, MessageSquare, User, Sparkle } from 'lucide-react';
 import { TabId } from './types';
 import { haptics } from '../../lib/haptics';
-import { isIosNative } from '../../lib/platform';
+import { isMobileNativeForAiGate } from '../../lib/platform';
 
 interface BottomNavProps {
   activeTab: TabId;
@@ -125,14 +125,14 @@ export function BottomNav({ activeTab, onTabChange, hasUnreadChats, siActive, si
         );
       })}
 
-      {/* Apple rejected VENTS again over any visible VENTS AI surface on
-          iOS, "coming soon" included -- this sixth destination is the
-          global entry point into it (see App.tsx's comment on
-          IS_IOS_NATIVE_FOR_AI), so on iOS it doesn't render at all rather
-          than rendering disabled/dimmed. Android and web are unaffected:
-          isIosNative() is false for both, same as every other iOS-only
-          restriction in this codebase (see platform.ts). */}
-      {!isIosNative() && (
+      {/* VENTS AI is web-only for this release -- not visible on either
+          mobile platform, "coming soon" included -- this sixth destination
+          is the global entry point into it (see App.tsx's comment on
+          IS_MOBILE_NATIVE_FOR_AI), so on iOS or Android it doesn't render
+          at all rather than rendering disabled/dimmed. Web is unaffected:
+          isMobileNativeForAiGate() is false there, same as every other
+          mobile-only restriction in this codebase (see platform.ts). */}
+      {!isMobileNativeForAiGate() && (
         <button
           onClick={() => {
             if (!siEnabled) return;

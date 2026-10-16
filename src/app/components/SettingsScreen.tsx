@@ -23,7 +23,7 @@ import { PhoneInput, COUNTRY_CODES } from './PhoneInput';
 import { DEFAULT_COUNTRY, isPlausibleNationalNumber } from '../../lib/countries';
 import { PickerField, PickerSheet } from './shared/PickerSheet';
 import { appVersionLabel } from '../../lib/appVersion';
-import { isIosNative } from '../../lib/platform';
+import { isMobileNativeForAiGate } from '../../lib/platform';
 
 interface SettingsScreenProps {
   currentUser: { id: string; email: string; full_name: string | null; role: string; username?: string; phone_number?: string; state?: string; vc_badge?: string; is_verified?: boolean } | null;
@@ -1914,11 +1914,11 @@ export function SettingsScreen({
               destination -- see src/lib/ventsAiPreference.ts. onToggle only
               fires the real toggle() handler below (not a bare
               SyntheticEvent-leak pattern, same guard as every other row
-              here -- see SettingRow's own comment). Apple rejected VENTS
-              again over any visible VENTS AI surface on iOS, so this row
-              -- a promotional entry point in its own right -- doesn't
-              render there at all; Android and web are unaffected. */}
-          {!isIosNative() && (
+              here -- see SettingRow's own comment). VENTS AI is web-only
+              for this release, so this row -- a promotional entry point in
+              its own right -- doesn't render on either mobile platform;
+              web is unaffected. */}
+          {!isMobileNativeForAiGate() && (
             <>
               <SettingRow
                 icon={Sparkles}
