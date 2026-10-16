@@ -283,6 +283,13 @@ describe('HomeScreen "Trending Events": ranking, filtering, and failure handling
     expect(trendingSectionText()).toContain('Pinned Zero Score');
   });
 
+  it('an admin-pinned event is still excluded once its date has passed -- the client-side upcoming-date filter applies to admin picks too, not only organic ones', async () => {
+    eventsRows = [makeEventRow('e-pinned-past', 'Pinned But Past', -5, { admin_trending: true })];
+    rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-pinned-past', trending_score: 0 }], error: null }));
+    await renderHome();
+    expect(container!.textContent).not.toContain('Trending Events');
+  });
+
   it('does not show a pinned marker for an event where admin_trending is false (default), proving the field is read, not assumed', async () => {
     eventsRows = [makeEventRow('e-not-pinned', 'Not Pinned Event', 10, { admin_trending: false })];
     rpcMock.mockImplementation(async () => ({ data: [{ event_id: 'e-not-pinned', trending_score: 0 }], error: null }));
