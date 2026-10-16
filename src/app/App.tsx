@@ -3314,19 +3314,29 @@ export default function App() {
           {/* ── VENTS AI ── */}
           {/* iOS and Android: renders nothing at all -- not even the
               "coming soon" screen -- per the web-only release decision
-              (see IS_MOBILE_NATIVE_FOR_AI above). Reachable only if
-              `screen` somehow becomes 'vents-ai' anyway (e.g. a stale
-              vents://...?screen=vents-ai deep link), since every in-app
-              entry point is already gated to undefined/hidden above; even
-              then, this renders a blank pane, never VENTS AI content.
+              (see IS_MOBILE_NATIVE_FOR_AI above). This is a pure platform
+              check, independent of entitlement/auth state: a user who
+              already subscribed on web and is logged into the same
+              account on iOS/Android still gets null here, same as a user
+              who never subscribed -- Apple's Guideline 3.1.1 concern is
+              about the app being able to *access* paid content purchased
+              outside Apple IAP at all, not just about offering to sell it,
+              so the gate cannot be entitlement-conditional.
+              `pushActionRef.current`'s deep-link/push `data.screen`
+              allowlist (~search "data.screen ===" above) never included
+              'vents-ai', so a vents://...?screen=vents-ai link cannot set
+              `screen` to 'vents-ai' in the first place -- this render
+              block is defense-in-depth against a future route/refactor
+              that might add such a path, not a currently-reachable one.
               AiAccessScreen, AiPlansScreen, VentsAiUnlockedScreen, and
               VentsAiScreen (which has its own internal AiPlansScreen) are
-              not mounted at all on either native platform, so there is no
-              code path left that could show plan/price data or a purchase
-              button -- confirmed by their own self-guards, which now
-              return null on mobile too (see each component's own
-              isMobileNativeForAiGate() check). Web renders the real flow,
-              completely unchanged. */}
+              not mounted at all on either native platform -- the whole
+              subtree below is unmounted, not merely hidden, so none of
+              their effects/network calls run either -- and each also
+              self-guards independently (returns null on mobile via its
+              own isMobileNativeForAiGate() check) as a second layer should
+              any of them ever be mounted from somewhere other than this
+              block. Web renders the real flow, completely unchanged. */}
           {IS_MOBILE_NATIVE_FOR_AI ? null : (
             <>
               {ventsAiEverMounted && !ventsAiAccessGranted && (
