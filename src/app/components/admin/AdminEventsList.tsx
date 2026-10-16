@@ -2,8 +2,8 @@
 // design-export's v_events block (~328-364). Reuses the exact query
 // AdminDashboardScreen's loadEvents already runs (same table, same
 // organizer join, same 50-row limit) and the same admin RPCs for actions.
-import React, { useState, useEffect, useCallback } from 'react';
-import { BadgeCheck } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { BadgeCheck, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import { adminTheme } from './adminConsoleTheme';
 import { isSuperAdmin as permIsSuperAdmin, type PermissionUser } from '../../../lib/permissions';
@@ -24,18 +24,46 @@ function statusChip(ev: AdminEventRow): { bg: string; fg: string; label: string 
 
 const FILTERS = ['active', 'hidden', 'deleted', 'featured', 'trending'] as const;
 
+// Escapes PostgREST ilike wildcards (%, _) and the comma/backslash that
+// would otherwise break out of the pattern or the .or()/.ilike() filter
+// syntax, so a title containing any of these characters is matched
+// literally instead of as a pattern -- same precaution any admin free-text
+// search into a LIKE-family filter needs.
+function escapeIlike(term: string): string {
+  return term.replace(/[\\%_,]/g, (c) => `\\${c}`);
+}
+
+const SEARCH_DEBOUNCE_MS = 300;
+
 export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
   isMobile: boolean; currentUser: PermissionUser | null | undefined; onSelectEvent: (id: string) => void;
 }) {
   const isSuperAdmin = permIsSuperAdmin(currentUser);
   const [filter, setFilter] = useState<typeof FILTERS[number]>('active');
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
   const [events, setEvents] = useState<AdminEventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
+  // Debounce: only the trailing value after SEARCH_DEBOUNCE_MS of no typing
+  // becomes a real server query, so fast typing doesn't fire a request per
+  // keystroke.
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
+  // Stale-response guard: each load() call gets its own ticket; if a newer
+  // call started (filter/search changed again) before this one resolves,
+  // its result is dropped instead of overwriting the newer, still-loading
+  // or already-applied state.
+  const requestIdRef = useRef(0);
+
   const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
     setLoading(true); setError(null);
     try {
       let q = supabase
@@ -50,15 +78,23 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
         if (filter === 'featured') q = q.eq('is_featured', true);
         if (filter === 'trending') q = q.eq('admin_trending', true);
       }
+      const term = search.trim();
+      if (term) q = q.ilike('title', `%${escapeIlike(term)}%`);
       const { data, error: err } = await q;
+      if (requestId !== requestIdRef.current) return; // a newer request superseded this one
       if (err) throw err;
       setEvents((data as any) || []);
     } catch (e: any) {
+      if (requestId !== requestIdRef.current) return;
       setError(e?.message || 'Failed to load events.');
-    } finally { setLoading(false); }
-  }, [filter]);
+    } finally {
+      if (requestId === requestIdRef.current) setLoading(false);
+    }
+  }, [filter, search]);
 
   useEffect(() => { load(); }, [load]);
+
+  const clearSearch = () => { setSearchInput(''); setSearch(''); };
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
@@ -70,8 +106,37 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
     setBusyId(null);
   };
 
+  const noResultsLabel = search.trim() ? `No events found for "${search.trim()}".` : 'No events found.';
+
   return (
     <div data-testid="admin-events-list">
+      <div style={{ position: 'relative', marginBottom: 12 }}>
+        <input
+          aria-label="Search events by title"
+          placeholder="Search events by title…"
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          style={{
+            width: '100%', boxSizing: 'border-box', fontSize: 12.5, padding: '9px 34px 9px 12px',
+            borderRadius: 8, border: `1px solid ${adminTheme.border}`, background: adminTheme.panel,
+            color: adminTheme.text, outline: 'none',
+          }}
+        />
+        {searchInput && (
+          <button
+            type="button"
+            aria-label="Clear search"
+            onClick={clearSearch}
+            style={{
+              position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+              border: 'none', background: 'transparent', cursor: 'pointer', padding: 4,
+              display: 'flex', color: adminTheme.textFaint,
+            }}
+          >
+            <X size={14} />
+          </button>
+        )}
+      </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, overflowX: 'auto', whiteSpace: 'nowrap' }}>
         {FILTERS.map((f) => (
           <div key={f} onClick={() => setFilter(f)} style={{
@@ -89,7 +154,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
         <div style={{ textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5, padding: 32 }}>Loading events…</div>
       ) : isMobile ? (
         <div>
-          {events.length === 0 && <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No events found.</div>}
+          {events.length === 0 && <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>{noResultsLabel}</div>}
           {events.map((ev) => {
             const organizer = ev['users!events_organizer_id_fkey'];
             const sc = statusChip(ev);
@@ -114,7 +179,7 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
           <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr 1fr .9fr 1.4fr', padding: '11px 16px', fontSize: 10.5, fontWeight: 700, letterSpacing: .4, color: adminTheme.textFaint, borderBottom: `1px solid ${adminTheme.borderSoft}` }}>
             <div>EVENT</div><div>ORGANIZER</div><div>DATE</div><div>STATUS</div><div>ACTIONS</div>
           </div>
-          {events.length === 0 && <div style={{ padding: 32, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No events found.</div>}
+          {events.length === 0 && <div style={{ padding: 32, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>{noResultsLabel}</div>}
           {events.map((ev) => {
             const organizer = ev['users!events_organizer_id_fkey'];
             const sc = statusChip(ev);
