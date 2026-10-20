@@ -40,26 +40,26 @@ const {
   mockSendTicketRefundEmail: vi.fn(),
 }));
 
-vi.mock('../_lib/mailer.js', () => ({
+vi.mock('./mailer.js', () => ({
   sendPayoutDecisionEmail: mockSendPayoutDecisionEmail,
   sendTicketRefundEmail: mockSendTicketRefundEmail,
 }));
-vi.mock('../_lib/projectAdminDb.js', () => ({
+vi.mock('./projectAdminDb.js', () => ({
   callProjectAdminRpc: mockCallProjectAdminRpc,
   callProjectAdminTableRpc: mockCallProjectAdminTableRpc,
 }));
-vi.mock('../_lib/finalizePaystackPayment.js', () => ({
+vi.mock('./finalizePaystackPayment.js', () => ({
   finalizeAndConfirmPurchase: mockFinalizeAndConfirmPurchase,
   finalizeAndConfirmServiceBooking: mockFinalizeAndConfirmServiceBooking,
 }));
-vi.mock('../_lib/verifyAuth.js', () => ({
+vi.mock('./verifyAuth.js', () => ({
   verifyInsforgeSession: mockVerifyInsforgeSession,
   enforceRateLimit: mockEnforceRateLimit,
 }));
-vi.mock('../_lib/cors.js', () => ({ applyCors: mockApplyCors }));
-vi.mock('../_lib/pushDelivery.js', () => ({ deliverPendingPushesForUser: mockDeliverPendingPushesForUser }));
+vi.mock('./cors.js', () => ({ applyCors: mockApplyCors }));
+vi.mock('./pushDelivery.js', () => ({ deliverPendingPushesForUser: mockDeliverPendingPushesForUser }));
 
-import handler from './paystack';
+import handler from '../webhook/paystack';
 
 const SECRET = 'sk_test_webhook_secret';
 
