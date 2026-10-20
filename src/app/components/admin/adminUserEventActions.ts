@@ -171,7 +171,13 @@ export async function restoreDeletedEvent(isSuperAdmin: boolean, eventId: string
 export async function toggleEventFeatured(isSuperAdmin: boolean, eventId: string, label: string, currentlyFeatured: boolean) {
   const nextFeatured = !currentlyFeatured;
   return submitOrExecute(isSuperAdmin, 'toggle_event_featured',
-    { target_type: 'event', target_id: eventId, target_label: label, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
+    // `payload.featured`/`payload.duration_days` are what approve_admin_action()
+    // actually reads on a Sub-Admin's request (0186_approve_admin_action_featured_executor_payload_fix.sql)
+    // -- `previous`/`changes` below are audit-log display only. Without this,
+    // a missing payload.featured was previously defaulting to `false` on
+    // approval regardless of the admin's actual intent (same bug class fixed
+    // for Trending in 0185).
+    { target_type: 'event', target_id: eventId, target_label: label, payload: { featured: nextFeatured, duration_days: nextFeatured ? 14 : null }, previous: { is_featured: currentlyFeatured }, changes: { is_featured: nextFeatured } },
     async () => {
       const { error } = await supabase.rpc('admin_set_event_featured', {
         p_event_id: eventId,
@@ -194,7 +200,12 @@ export async function toggleEventFeatured(isSuperAdmin: boolean, eventId: string
 export async function toggleEventTrending(isSuperAdmin: boolean, eventId: string, label: string, currentlyTrending: boolean) {
   const nextTrending = !currentlyTrending;
   return submitOrExecute(isSuperAdmin, 'toggle_event_trending',
-    { target_type: 'event', target_id: eventId, target_label: label, previous: { admin_trending: currentlyTrending }, changes: { admin_trending: nextTrending } },
+    // `payload.trending` is the field a Sub-Admin's request actually carries
+    // through to approve_admin_action() (0185_approve_admin_action_trending_executor.sql) --
+    // unlike `previous`/`changes` below (audit-log display only), this is
+    // read by the executor itself via r.payload->>'trending', so it must be
+    // present and correctly reflect the admin's actual intent.
+    { target_type: 'event', target_id: eventId, target_label: label, payload: { trending: nextTrending }, previous: { admin_trending: currentlyTrending }, changes: { admin_trending: nextTrending } },
     async () => {
       const { error } = await supabase.rpc('admin_set_event_trending' as any, {
         p_event_id: eventId,
