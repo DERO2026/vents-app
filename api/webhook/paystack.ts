@@ -139,7 +139,21 @@ async function readRawBody(req): Promise<Buffer> {
 }
 
 export default async function handler(req, res) {
-  const rawBody = await readRawBody(req);
+  // F17 follow-up: a request stream that errors mid-read (client
+  // disconnect, proxy reset, etc.) must not escape as an uncaught
+  // rejection -- that would skip this file's own error-handling/logging
+  // conventions and leave the actual failure mode invisible in the logs.
+  // Caught here, before any routing: no signature check, JSON parse, or
+  // RPC call ever runs against a partial/unavailable body. Only the
+  // error's own message is logged (never the signature header or any body
+  // content, which we don't have anyway -- the read itself failed).
+  let rawBody: Buffer;
+  try {
+    rawBody = await readRawBody(req);
+  } catch (err: any) {
+    console.error('[Paystack webhook] Failed to read request body:', err?.message || err);
+    return res.status(500).json({ error: 'Could not read request body' });
+  }
   if (req.query?.action === 'verify') return handleClientVerify(req, res, rawBody);
   if (req.query?.action === 'verify-deposit') return handleClientVerifyDeposit(req, res, rawBody);
   return handleWebhook(req, res, rawBody);
