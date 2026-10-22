@@ -1,30 +1,15 @@
 /**
  * Paystack Inline Payment Wrapper
  *
- * Loads the Paystack popup (the CDN script in index.html injects `PaystackPop`
- * on `window`). Amounts must be in KOBO (Naira × 100).
+ * Uses @paystack/inline-js v2 (npm, bundled — no CDN <script> tag needed;
+ * see index.html, which previously loaded v1/inline.js as a global). V1's
+ * channels option has no documented support for Apple Pay / Google Pay —
+ * both are only documented against v2's newTransaction()/checkout(), per
+ * the package's own README (fetched and inspected directly, not guessed).
+ * Amounts must be in KOBO (Naira × 100).
  */
-
-declare global {
-  interface Window {
-    PaystackPop?: {
-      setup(options: PaystackOptions): { openIframe(): void };
-    };
-  }
-}
-
-interface PaystackOptions {
-  key: string;
-  email: string;
-  amount: number; // in kobo
-  currency?: string;
-  ref?: string;
-  label?: string;
-  channels?: string[];
-  metadata?: Record<string, any>;
-  callback(response: { reference: string }): void;
-  onClose(): void;
-}
+import PaystackPop from '@paystack/inline-js';
+import { Capacitor } from '@capacitor/core';
 
 export interface PaystackSuccessResponse {
   reference: string;
@@ -39,7 +24,10 @@ export interface OpenPaystackOptions {
   // round-trip for no benefit.
   amountNaira?: number; // in Naira — converted to kobo internally
   amountKobo?: number;
-  channels?: string[];  // Paystack payment channels; defaults to all
+  // Paystack payment channels; defaults to all channels this build offers
+  // (see DEFAULT_CHANNELS below) — callers should normally omit this and
+  // let the default decide, rather than hand-list channels themselves.
+  channels?: string[];
   metadata?: Record<string, any>;
   // Caller-supplied transaction reference — e.g. a server-generated
   // payment_ref from create_pending_purchase, so the webhook can match
@@ -60,32 +48,58 @@ export interface OpenPaystackOptions {
   onError?(message: string): void;
 }
 
+// Apple Pay and Google Pay are web-wallet mechanisms: both require the
+// TOP-LEVEL page origin to be a domain the wallet provider has verified
+// (Apple Pay via the merchant-domain-association file + Paystack Dashboard
+// registration; Google Pay via a registered origin in the Google Pay
+// merchant console). Inside the Capacitor native app, the WebView's origin
+// is https://localhost (capacitor.config.ts: server.hostname = 'localhost'),
+// never https://getvents.com — no domain verification can ever attach to
+// that origin, on either platform. Paystack's own hosted checkout iframe
+// has no way to make that work either, since the wallet's own JS APIs key
+// off the PARENT page's origin, not the iframe's src. So these channels are
+// web-build-only; the native app's channel list is completely unchanged
+// from before this change, which is also what keeps this change from
+// having any ability to alter native-app behavior at all.
+const WALLET_CHANNELS = ['apple_pay', 'google_pay'];
+const BASE_CHANNELS = ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'];
+
+function defaultChannels(): string[] {
+  if (Capacitor.isNativePlatform()) return BASE_CHANNELS;
+  // google_pay must be passed alongside card or the transaction refuses to
+  // initialize (per @paystack/inline-js's own README) — card is already in
+  // BASE_CHANNELS, so this is satisfied. Paystack's hosted checkout iframe
+  // itself decides, per visiting browser/device, whether to actually show
+  // either wallet button — listing them here only makes both ELIGIBLE, it
+  // never fabricates a button for a browser/device that can't use one.
+  return [...BASE_CHANNELS, ...WALLET_CHANNELS];
+}
+
+// One PaystackPop instance for the module's lifetime, per the package's own
+// documented pattern (`const paystackInstance = new PaystackPop();`, reused
+// across calls) rather than constructing a new one per payment attempt.
+let paystackInstance: PaystackPop | null = null;
+function getPaystackInstance(): PaystackPop {
+  if (!paystackInstance) paystackInstance = new PaystackPop();
+  return paystackInstance;
+}
+
 /**
  * Opens the Paystack payment popup. This is the single place in the app
- * that reads VITE_PAYSTACK_PUBLIC_KEY and calls window.PaystackPop.setup() —
+ * that reads VITE_PAYSTACK_PUBLIC_KEY and talks to @paystack/inline-js —
  * every payment entry point (ticket checkout, event promotion) goes through
  * here, so there's exactly one code path to audit for which Paystack mode
- * (test vs live) a build is running in.
+ * (test vs live) a build is running in, and for which channels (including
+ * the wallets) are offered.
  * Requires VITE_PAYSTACK_PUBLIC_KEY in vercel.json env.
- * The Paystack inline script is loaded via index.html.
  */
 export function openPaystackPopup(opts: OpenPaystackOptions): void {
   const rawKey = (import.meta.env.VITE_PAYSTACK_PUBLIC_KEY as string | undefined) || '';
-  const publicKey = rawKey.replace(/^\uFEFF/, '').trim();
+  const publicKey = rawKey.replace(/^﻿/, '').trim();
 
   if (!publicKey) {
     const message = 'Payment system not configured. Please try again later.';
     console.error('[Paystack] VITE_PAYSTACK_PUBLIC_KEY is not set.');
-    (opts.onError || opts.onClose)(message);
-    return;
-  }
-
-  if (!window.PaystackPop) {
-    const message = 'Payment system not loaded. Please refresh the page and try again.';
-    console.error(
-      '[Paystack] PaystackPop not available — ensure ' +
-      '<script src="https://js.paystack.co/v1/inline.js"></script> is in index.html'
-    );
     (opts.onError || opts.onClose)(message);
     return;
   }
@@ -100,22 +114,27 @@ export function openPaystackPopup(opts: OpenPaystackOptions): void {
 
   const resolvedRef = opts.ref || `vents_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-  const handler = window.PaystackPop.setup({
-    key: publicKey,
-    email: opts.email,
-    amount,
-    currency: 'NGN',
-    ref: resolvedRef,
-    label: opts.label,
-    channels: opts.channels || ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
-    metadata: opts.metadata || {},
-    callback(response) {
-      opts.onSuccess({ reference: response.reference });
-    },
-    onClose() {
-      opts.onClose();
-    },
-  });
-
-  handler.openIframe();
+  try {
+    getPaystackInstance().newTransaction({
+      key: publicKey,
+      email: opts.email,
+      amount,
+      currency: 'NGN',
+      reference: resolvedRef,
+      channels: opts.channels || defaultChannels(),
+      metadata: opts.metadata || {},
+      onSuccess(response: { reference: string }) {
+        opts.onSuccess({ reference: response.reference });
+      },
+      onCancel() {
+        opts.onClose();
+      },
+      onError(error: { message: string }) {
+        (opts.onError || opts.onClose)(error?.message || 'Payment could not be completed.');
+      },
+    } as any);
+  } catch (err: any) {
+    console.error('[Paystack] newTransaction threw:', err?.message || err);
+    (opts.onError || opts.onClose)(err?.message || 'Payment system not loaded. Please refresh the page and try again.');
+  }
 }

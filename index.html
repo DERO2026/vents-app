@@ -52,8 +52,10 @@
       <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 
-      <!-- Paystack Inline Payment SDK -->
-      <script src="https://js.paystack.co/v1/inline.js"></script>
+      <!-- Paystack Inline Payment SDK is bundled via the @paystack/inline-js
+           npm package (src/lib/paystack.ts), not loaded from a CDN script
+           tag — v2 of the SDK, required for Apple Pay / Google Pay support,
+           ships as that package rather than a global <script>. -->
     </head>
 
     <body>

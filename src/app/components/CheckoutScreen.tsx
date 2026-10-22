@@ -373,16 +373,6 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
       return;
     }
 
-    // Checked here (before create_pending_purchase) rather than left solely
-    // to openPaystackPopup's own guard, so a missing/unloaded Paystack
-    // script fails fast without first creating a server-side pending
-    // purchase row for a payment that was never going to open. Wallet
-    // payments never touch Paystack at all, so they're exempt.
-    if (paymentMethod !== 'wallet' && !window.PaystackPop) {
-      setPayError('Payment system not loaded. Please refresh the page and try again.');
-      return;
-    }
-
     const purchaserName = name.trim() || currentUser?.full_name || 'Guest';
     const attendees = buildAttendees(purchaserName, payerEmail);
 

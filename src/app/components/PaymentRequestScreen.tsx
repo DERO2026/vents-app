@@ -115,11 +115,6 @@ export function PaymentRequestScreen({ paymentRef, currentUser, onBack, onPaid }
       setPayError('This payment request is no longer active.');
       return;
     }
-    if (!window.PaystackPop) {
-      setPayError('Payment system not loaded. Please refresh the page and try again.');
-      return;
-    }
-
     setPaying(true);
     setPayError(null);
 
