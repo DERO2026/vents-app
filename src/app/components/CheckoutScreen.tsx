@@ -501,7 +501,16 @@ export function CheckoutScreen({ event, ticketType, quantity, currentUser, onBac
         amountKobo: chargeAmountKobo,
         ref: paystackRef,
         label: currentUser?.full_name || currentUser?.username || name.trim() || '',
-        channels: ['card', 'bank_transfer', 'ussd', 'mobile_money', 'bank'],
+        // No channels override here — omitting it lets openPaystackPopup
+        // fall through to its own defaultChannels() (src/lib/paystack.ts),
+        // which is the one place that decides native vs. web and includes
+        // the wallet channels on web. A hardcoded array here previously
+        // silently overrode that default on this exact screen — the real
+        // ticket checkout, the one path that mattered — so Google Pay (and
+        // Apple Pay) were never actually requested despite being wired up
+        // correctly everywhere else. Native behavior is unchanged: that
+        // default's native branch is still the exact same five channels
+        // this array used to hardcode.
         // NOT setting callback_url here — confirmed against Paystack's own
         // documentation (PaystackHQ/documentation, using-popup.md) that
         // PaystackPop.setup() (the Inline/popup method used here) has no
