@@ -71,14 +71,18 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
   const [tab, setTab] = useState<Tab>('profile');
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [walletBalanceKobo, setWalletBalanceKobo] = useState<number | null>(null);
   const [walletTxns, setWalletTxns] = useState<{ id: string; type: string; amount_kobo: number; description: string | null; created_at: string }[]>([]);
   const [walletLoading, setWalletLoading] = useState(false);
+  const [walletError, setWalletError] = useState<string | null>(null);
   const [vcBalance, setVcBalance] = useState<number | null>(null);
   const [vcTxns, setVcTxns] = useState<{ id: string; amount: number; type: string; status: string; created_at: string }[]>([]);
   const [vcLoading, setVcLoading] = useState(false);
+  const [vcError, setVcError] = useState<string | null>(null);
   const [reports, setReports] = useState<{ id: string; reporter_id: string; target_type: string; target_id: string; reason: string; status: string; created_at: string }[]>([]);
   const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsError, setReportsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [banPickerOpen, setBanPickerOpen] = useState(false);
@@ -105,52 +109,72 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
 
   useEffect(() => {
     if (tab !== 'audit') return;
-    setAuditLoading(true);
+    setAuditLoading(true); setAuditError(null);
     Promise.resolve(
       supabase.from('admin_logs').select('id, action, details, created_at, admin_id, actor_role')
         .eq('target_user_id', userId).order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setAudit(data || []))
+      .then(({ data, error: err }: any) => {
+        // A failed fetch here previously fell through to the same "No
+        // admin actions recorded" as a genuinely clean history -- see the
+        // Audit Log screen's own version of this bug, fixed earlier in
+        // this audit. Every tab below had the identical gap: no .catch()
+        // at all, so a rejected promise skipped the success handler
+        // entirely and the state just stayed at its empty default,
+        // rendering as a confident (and for Wallet/VC, financially
+        // misleading -- "₦0.00" / "0 VC") answer instead of an error.
+        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
+        setAudit(data || []);
+      })
+      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
       .finally(() => setAuditLoading(false));
   }, [tab, userId]);
 
   useEffect(() => {
     if (tab !== 'wallet') return;
-    setWalletLoading(true);
+    setWalletLoading(true); setWalletError(null);
     Promise.all([
       supabase.from('user_wallets').select('balance_kobo').eq('user_id', userId).maybeSingle(),
       supabase.from('user_wallet_transactions').select('id, type, amount_kobo, description, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
     ])
       .then(([w, txns]: any) => {
+        if (w.error || txns.error) { setWalletError((w.error || txns.error)?.message || 'Failed to load wallet data.'); return; }
         setWalletBalanceKobo(w.data?.balance_kobo ?? 0);
         setWalletTxns(txns.data || []);
       })
+      .catch((e: any) => setWalletError(e?.message || 'Failed to load wallet data.'))
       .finally(() => setWalletLoading(false));
   }, [tab, userId]);
 
   useEffect(() => {
     if (tab !== 'vc') return;
-    setVcLoading(true);
+    setVcLoading(true); setVcError(null);
     Promise.all([
       supabase.from('vents_wallets').select('balance').eq('user_id', userId).maybeSingle(),
       supabase.from('vc_transactions').select('id, amount, type, status, created_at').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
     ])
       .then(([w, txns]: any) => {
+        if (w.error || txns.error) { setVcError((w.error || txns.error)?.message || 'Failed to load VENTS Cents data.'); return; }
         setVcBalance(w.data?.balance ?? 0);
         setVcTxns(txns.data || []);
       })
+      .catch((e: any) => setVcError(e?.message || 'Failed to load VENTS Cents data.'))
       .finally(() => setVcLoading(false));
   }, [tab, userId]);
 
   useEffect(() => {
     if (tab !== 'reports') return;
-    setReportsLoading(true);
+    setReportsLoading(true); setReportsError(null);
     Promise.resolve(
       supabase.from('reports').select('id, reporter_id, target_type, target_id, reason, status, created_at')
         .or(`reporter_id.eq.${userId},and(target_type.eq.user,target_id.eq.${userId})`)
         .order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setReports(data || []))
+      .then(({ data, error: err }: any) => {
+        if (err) { setReportsError(err.message || 'Failed to load reports.'); return; }
+        setReports(data || []);
+      })
+      .catch((e: any) => setReportsError(e?.message || 'Failed to load reports.'))
       .finally(() => setReportsLoading(false));
   }, [tab, userId]);
 
@@ -307,7 +331,8 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
       )}
 
       {tab === 'wallet' && (
-        walletLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> : (
+        walletLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div>
+        : walletError ? <NotAvailable reason={`could not load wallet data — ${walletError}`} /> : (
           <div>
             <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: adminTheme.textFainter, fontWeight: 600, marginBottom: 8 }}>VENTS WALLET BALANCE</div>
@@ -328,7 +353,8 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
         )
       )}
       {tab === 'vc' && (
-        vcLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> : (
+        vcLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div>
+        : vcError ? <NotAvailable reason={`could not load VENTS Cents data — ${vcError}`} /> : (
           <div>
             <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 16, marginBottom: 14 }}>
               <div style={{ fontSize: 11, color: adminTheme.textFainter, fontWeight: 600, marginBottom: 8 }}>VENTS CENTS BALANCE</div>
@@ -349,6 +375,7 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
       {tab === 'tickets' && <NotAvailable reason="tickets RLS (select_tickets) only allows the ticket owner or the event's organizer to read it — there is no admin bypass or admin RPC to list a specific user's tickets." />}
       {tab === 'reports' && (
         reportsLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 24, textAlign: 'center' }}>Loading…</div> :
+        reportsError ? <NotAvailable reason={`could not load reports — ${reportsError}`} /> :
         reports.length === 0 ? <NotAvailable reason="no reports filed by or against this user." /> : reports.map((r) => (
           <div key={r.id} style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 14, marginBottom: 10 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -366,6 +393,8 @@ export function AdminUserDetail({ userId, currentUser, isMobile, onBack }: {
       {tab === 'audit' && (
         auditLoading ? (
           <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        ) : auditError ? (
+          <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
         ) : audit.length === 0 ? (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this user.</div>
         ) : (

@@ -10,6 +10,7 @@ interface Stats { users: number; events: number; tickets: number; vc: number; re
 export function AdminAnalyticsScreen() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const loadStats = useCallback(() => {
     setLoading(true);
@@ -21,6 +22,16 @@ export function AdminAnalyticsScreen() {
       supabase.from('tickets').select('amount').eq('payment_status', 'paid'),
       supabase.rpc('admin_get_new_user_stats' as any),
     ]).then(([uRes, eRes, tRes, vcRes, revRes, newUserRes]) => {
+      // A failed query here previously fell through to the catch below,
+      // which only cleared `loading` and left `stats` untouched -- on a
+      // refresh triggered by the admin:stats broadcast, that meant a
+      // transient failure silently kept showing the LAST successful
+      // numbers forever, with nothing telling the admin the refresh had
+      // actually stopped working. Any one of the six queries erroring
+      // (RLS, network) is now surfaced instead of swallowed.
+      const firstError = [uRes.error, eRes.error, tRes.error, vcRes.error, revRes.error, newUserRes.error].find(Boolean);
+      if (firstError) { setError((firstError as any)?.message || 'Failed to load analytics.'); setLoading(false); return; }
+      setError(null);
       const vcTotal = (vcRes.data || []).reduce((s: number, r: any) => s + Number(r.amount), 0);
       const revenue = (revRes.data || []).reduce((s: number, r: any) => s + Number(r.amount || 0), 0);
       const newUserRow = (newUserRes.data || [])[0] || {};
@@ -29,7 +40,7 @@ export function AdminAnalyticsScreen() {
         newThisWeek: newUserRow.new_this_week ?? 0, newThisMonth: newUserRow.new_this_month ?? 0,
       });
       setLoading(false);
-    }).catch(() => setLoading(false));
+    }).catch((e: any) => { setError(e?.message || 'Failed to load analytics.'); setLoading(false); });
   }, []);
 
   useEffect(() => { loadStats(); }, [loadStats]);
@@ -50,6 +61,11 @@ export function AdminAnalyticsScreen() {
 
   return (
     <div data-testid="admin-analytics" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {error && (
+        <div style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 12, padding: '14px 16px', color: adminTheme.red, fontSize: 12.5 }}>
+          Could not refresh analytics: {error}{stats ? ' — showing the last successful numbers.' : ''}
+        </div>
+      )}
       {loading && !stats ? (
         <div style={{ textAlign: 'center', color: adminTheme.textFaint, fontSize: 13, padding: 32 }}>Loading stats…</div>
       ) : stats ? (
