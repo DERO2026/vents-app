@@ -98,6 +98,11 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
       }
       if (err) throw err;
       if (!data) throw new Error('Event not found.');
+      // The full select just succeeded -- if a previous load on this same
+      // mounted screen had set the latch (migration landed mid-session, or
+      // this is a retry after a transient error), clear it so Trending
+      // re-enables itself without needing a remount.
+      setTrendingColumnMissing(false);
       setEvent(data as any);
     } catch (e: any) {
       setError(e?.message || 'Failed to load event.');

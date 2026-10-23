@@ -106,6 +106,11 @@ export function AdminEventsList({ isMobile, currentUser, onSelectEvent }: {
         if (filter === 'trending') { setFilter('active'); return; }
         ({ data, error: err } = await buildQuery(false));
         if (data) data = (data as any[]).map((row) => ({ ...row, admin_trending: false }));
+      } else if (!err) {
+        // The full query just succeeded -- clear a latch set by an earlier
+        // load on this same mounted screen (migration landed mid-session)
+        // so Trending re-enables itself without needing a remount.
+        setTrendingColumnMissing(false);
       }
       if (requestId !== requestIdRef.current) return; // a newer request superseded this one
       if (err) throw err;

@@ -129,6 +129,32 @@ describe('AdminEventsList: admin_trending column missing in production', () => {
   });
 });
 
+describe('AdminEventsList: the missing-column latch clears once the migration lands mid-session', () => {
+  beforeEach(() => { failOnTrending = true; eventRows = [eventFixture(false)]; });
+
+  it('re-enables the Trending tab/button after a later reload succeeds, without remounting', async () => {
+    await act(async () => {
+      root!.render(<AdminEventsList isMobile={false} currentUser={CURRENT_USER} onSelectEvent={() => {}} />);
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+    expect(Array.from(container!.querySelectorAll('div')).map((d) => d.textContent)).not.toContain('trending');
+
+    // Simulate the migration landing mid-session, then trigger the
+    // component's own reload path (clicking a filter tab re-runs load(),
+    // same as a real admin switching tabs) -- no remount, no prop change.
+    failOnTrending = false;
+    eventRows = [eventFixture(true)];
+    const hiddenTab = Array.from(container!.querySelectorAll('div')).find((d) => d.textContent === 'hidden');
+    await act(async () => {
+      hiddenTab!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    });
+
+    const tabs = Array.from(container!.querySelectorAll('div')).map((d) => d.textContent);
+    expect(tabs).toContain('trending');
+  });
+});
+
 describe('AdminEventsList: unaffected once the column exists (post-migration)', () => {
   beforeEach(() => { failOnTrending = false; eventRows = [eventFixture(true)]; });
 

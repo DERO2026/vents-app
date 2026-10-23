@@ -12,17 +12,24 @@
 // copies of the same logic across the new files.
 import { supabase } from '../../../lib/supabase';
 
-// Detects the specific PostgREST error produced by migration
+// Detects the specific error produced by migration
 // 0182_admin_manual_trending_control.sql not having reached production yet
 // (apply_migration has timed out on it seven times -- see this repo's own
-// debug history; this is NOT a code bug, it's a pending DB change). Code
-// 42703 is Postgres's own "column does not exist"; PGRST202 is PostgREST's
-// "could not find the function ... in the schema cache" for a missing RPC.
-// Both admin_trending (the column) and admin_set_event_trending (the
-// function) come from that same unapplied migration, so one guard covers
-// both the list/detail screens' SELECT and the Trend button's RPC call.
+// debug history; this is NOT a code bug, it's a pending DB change).
+//
+// Verified directly against the live database (not guessed): running the
+// exact SELECT this screen used to send gives Postgres's own `42703`
+// ("column \"admin_trending\" does not exist"). Calling the missing RPC
+// function directly in SQL gives `42883` ("function ... does not exist") --
+// confirmed the same way. PostgREST's documented behavior is to resolve
+// `/rpc/<name>` against its own schema cache and return its own `PGRST202`
+// ("Could not find the function ... in the schema cache") without ever
+// reaching Postgres for a genuinely unknown function -- but that specific
+// HTTP-layer behavior could not be confirmed from this environment (no
+// network path to the live REST endpoint), so 42883 is included here too
+// rather than relying solely on the documented-but-unverified PGRST202 path.
 export function isMissingTrendingSchemaError(error: any): boolean {
-  return error?.code === '42703' || error?.code === 'PGRST202';
+  return error?.code === '42703' || error?.code === '42883' || error?.code === 'PGRST202';
 }
 
 export interface ActionMeta {
