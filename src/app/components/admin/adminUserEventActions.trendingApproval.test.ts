@@ -184,6 +184,33 @@ describe('toggle_event_trending: Sub-Admin submit -> Super Admin approve -> real
     expect(eventRpcCalls).toEqual([{ name: 'admin_set_event_trending', args: { p_event_id: 'event-1', p_trending: true } }]);
   });
 
+  it('a request already approved cannot be approved again (stale/duplicate click) -- RPC fires once, second attempt is rejected with no second RPC call', async () => {
+    await toggleEventTrending(false, 'event-1', 'My Event', false);
+    const requestId = requests[0].id;
+
+    const first = simulateApproveAdminAction(requestId, 'super-1', true);
+    expect(first.error).toBeNull();
+    expect(eventRpcCalls).toHaveLength(1);
+
+    const second = simulateApproveAdminAction(requestId, 'super-1', true);
+    expect(second.error?.message).toBe('Request already approved');
+    expect(eventRpcCalls).toHaveLength(1); // admin_set_event_trending not called twice
+  });
+
+  it('a rejected request cannot later be approved', async () => {
+    await toggleEventTrending(false, 'event-1', 'My Event', false);
+    requests[0].status = 'rejected';
+    const approval = simulateApproveAdminAction(requests[0].id, 'super-1', true);
+    expect(approval.error?.message).toBe('Request already rejected');
+    expect(eventRpcCalls).toHaveLength(0);
+  });
+
+  it('a stale/nonexistent request id (e.g. already deleted) is rejected cleanly', () => {
+    const approval = simulateApproveAdminAction('does-not-exist', 'super-1', true);
+    expect(approval.error?.message).toBe('Request not found');
+    expect(eventRpcCalls).toHaveLength(0);
+  });
+
   it('approving a trending request does not call the featured RPC, and a pre-existing toggle_event_featured request still works unchanged', () => {
     requests.push({ id: 'req-feat', action_type: 'toggle_event_featured', target_id: 'event-2', payload: { featured: true, duration_days: 14 }, requested_by: 'sub-1', status: 'pending' });
     const approval = simulateApproveAdminAction('req-feat', 'super-1', true);
