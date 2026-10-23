@@ -94,10 +94,12 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
   const [request, setRequest] = useState<ProviderRequestRow | null>(null);
   const [requestLoading, setRequestLoading] = useState(false);
   const [requestFetched, setRequestFetched] = useState(false);
+  const [requestError, setRequestError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectBox, setShowRejectBox] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [servicesLoading, setServicesLoading] = useState(false);
@@ -115,6 +117,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
 
   const flash = (ok: boolean, m: string) => { setMsg(m); setTimeout(() => setMsg(null), 3500); };
 
@@ -148,7 +151,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   useEffect(() => {
     if (tab !== 'overview' || !provider?.userId || requestFetched) return;
-    setRequestLoading(true);
+    setRequestLoading(true); setRequestError(null);
     Promise.resolve(
       supabase
         .from('service_provider_requests')
@@ -158,7 +161,11 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
         .limit(1)
         .maybeSingle(),
     )
-      .then(({ data }: any) => setRequest(data || null))
+      .then(({ data, error: err }: any) => {
+        if (err) { setRequestError(err.message || 'Failed to load the application status.'); return; }
+        setRequest(data || null);
+      })
+      .catch((e: any) => setRequestError(e?.message || 'Failed to load the application status.'))
       .finally(() => { setRequestLoading(false); setRequestFetched(true); });
   }, [tab, provider?.userId, requestFetched]);
 
@@ -234,16 +241,37 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
   useEffect(() => {
     if (tab !== 'audit' || !provider?.userId) return;
-    setAuditLoading(true);
+    setAuditLoading(true); setAuditError(null);
     Promise.resolve(
       supabase.from('admin_logs').select('id, action, details, created_at, actor_role')
         .eq('target_user_id', provider.userId)
         .eq('action', 'service_provider_request_decision')
         .order('created_at', { ascending: false }).limit(50),
     )
-      .then(({ data }: any) => setAudit(data || []))
+      .then(({ data, error: err }: any) => {
+        if (err) { setAuditError(err.message || 'Failed to load the audit trail.'); return; }
+        setAudit(data || []);
+      })
+      .catch((e: any) => setAuditError(e?.message || 'Failed to load the audit trail.'))
       .finally(() => setAuditLoading(false));
   }, [tab, provider?.userId]);
+
+  // AdminProviderRequestsScreen's equivalent queue already previews this
+  // same service_provider_requests.document_url as a signed URL from the
+  // private verification-docs bucket; this per-provider overview tab just
+  // printed the raw storage path as unlinked text, which an admin can't
+  // open (it isn't a public URL) and which leaks the internal storage key
+  // shape for no benefit.
+  const handlePreviewDocument = async () => {
+    if (!request?.document_url) return;
+    setPreviewLoading(true);
+    try {
+      const key = request.document_url.replace(/^verification-docs\//, '');
+      const { data, error } = await supabase.storage.from('verification-docs').createSignedUrl(key, 60);
+      if (error || !data?.signedUrl) throw new Error(error?.message || 'Could not load document');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: any) { flash(false, e.message || 'Could not open document'); } finally { setPreviewLoading(false); }
+  };
 
   const decide = async (status: 'approved' | 'rejected') => {
     if (!request) return;
@@ -329,6 +357,8 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
           <div style={{ fontSize: 13, fontWeight: 700, color: adminTheme.textStrong, marginBottom: 10 }}>Provider Application (KYC)</div>
           {requestLoading ? (
             <div style={{ color: adminTheme.textFaint, fontSize: 12.5, padding: 12 }}>Loading application status…</div>
+          ) : requestError ? (
+            <NotAvailable reason={`could not load the application status — ${requestError}`} />
           ) : !request ? (
             <NotAvailable reason="no service_provider_requests row exists for this owner — they were granted the capability another way (e.g. admin_set_service_provider_capability), not through the application flow." />
           ) : (
@@ -339,7 +369,9 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
               </div>
               {request.admin_note && <div style={{ fontSize: 12, color: adminTheme.textMuted, marginBottom: 8 }}>Note: {request.admin_note}</div>}
               {request.document_url && (
-                <div style={{ fontSize: 12, color: adminTheme.textFaint, marginBottom: 8 }}>Document on file: {request.document_url}</div>
+                <button onClick={handlePreviewDocument} disabled={previewLoading} style={{ display: 'block', background: 'none', border: 'none', padding: 0, marginBottom: 8, color: adminTheme.accentFrom, fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: previewLoading ? 'wait' : 'pointer' }}>
+                  {previewLoading ? 'Opening…' : 'Preview uploaded document ↗'}
+                </button>
               )}
               {request.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>
@@ -444,6 +476,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
 
       {tab === 'audit' && (
         auditLoading ? <div style={{ color: adminTheme.textFaint, fontSize: 12.5, textAlign: 'center', padding: 24 }}>Loading audit trail…</div>
+        : auditError ? <NotAvailable reason={`could not load the audit trail — ${auditError}`} />
         : audit.length === 0 ? <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 24, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No admin actions recorded for this provider's application.</div>
         : (
           <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, overflow: 'hidden' }}>

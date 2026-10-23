@@ -65,6 +65,7 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [analyticsError, setAnalyticsError] = useState<string | null>(null);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsFetched, setAnalyticsFetched] = useState(false);
   const [audit, setAudit] = useState<AuditRow[]>([]);
   const [auditLoading, setAuditLoading] = useState(false);
   const [auditError, setAuditError] = useState<string | null>(null);
@@ -112,8 +113,17 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
   useEffect(() => { loadEvent(); }, [loadEvent]);
 
   useEffect(() => {
-    if (tab !== 'overview' && tab !== 'checkins') return;
-    if (analytics || analyticsLoading) return;
+    // Guarding on `analytics`/`analyticsLoading` themselves (rather than a
+    // dedicated "have we fetched yet" flag) meant that on a failed RPC
+    // call -- analytics stays null forever, analyticsLoading cycles
+    // true->false -- this effect re-ran every time analyticsLoading
+    // flipped back to false, since that flip is itself a listed
+    // dependency and the guard no longer blocked it. That's an infinite
+    // fetch loop on any RPC failure, not just a cosmetic bug: it reruns
+    // get_event_analytics forever with no backoff. Switched to the same
+    // fetched-once flag pattern already used elsewhere in this console
+    // (e.g. AdminOrganizerDetail's KYC tab).
+    if ((tab !== 'overview' && tab !== 'checkins') || analyticsFetched || analyticsLoading) return;
     setAnalyticsLoading(true);
     setAnalyticsError(null);
     Promise.resolve(supabase.rpc('get_event_analytics' as any, { p_event_id: eventId }))
@@ -122,8 +132,8 @@ export function AdminEventDetail({ eventId, currentUser, isMobile, onBack }: {
         setAnalytics(data as any);
       })
       .catch((e: any) => setAnalyticsError(e?.message || 'Failed to load ticket stats.'))
-      .finally(() => setAnalyticsLoading(false));
-  }, [tab, eventId, analytics, analyticsLoading]);
+      .finally(() => { setAnalyticsLoading(false); setAnalyticsFetched(true); });
+  }, [tab, eventId, analyticsFetched, analyticsLoading]);
 
   // Stale-response guard for the audit query, same pattern as
   // AdminEventsList's event-search guard: each call gets its own ticket, and

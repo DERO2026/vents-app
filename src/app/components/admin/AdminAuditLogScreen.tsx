@@ -18,6 +18,7 @@ interface AuditRow {
 export function AdminAuditLogScreen() {
   const [logs, setLogs] = useState<AuditRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     supabase
@@ -25,14 +26,30 @@ export function AdminAuditLogScreen() {
       .select('id, action, details, created_at, admin_id, target_user_id, actor_role')
       .order('created_at', { ascending: false })
       .limit(200)
-      .then(({ data }) => { setLogs((data as any) || []); setLoading(false); }, () => setLoading(false));
+      .then(
+        ({ data, error: err }: any) => {
+          // A failed fetch previously fell through to the same "No audit
+          // entries yet." empty state as a genuinely clean log -- on the
+          // one screen whose entire job is to be a trustworthy compliance
+          // trail, that's indistinguishable from "nothing has happened"
+          // when the real story is "the query failed and we don't know."
+          if (err) { setError(err.message || 'Failed to load the audit log.'); setLoading(false); return; }
+          setLogs(data || []); setLoading(false);
+        },
+        (e: any) => { setError(e?.message || 'Failed to load the audit log.'); setLoading(false); },
+      );
   }, []);
 
   return (
     <div data-testid="admin-audit-log">
+      {error && !loading && (
+        <div style={{ background: 'rgba(248,113,113,.08)', border: '1px solid rgba(248,113,113,.25)', borderRadius: 12, padding: '14px 16px', marginBottom: 14, color: adminTheme.red, fontSize: 12.5 }}>
+          Could not load the audit log: {error}
+        </div>
+      )}
       {loading ? (
         <div style={{ textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5, padding: 32 }}>Loading audit log…</div>
-      ) : logs.length === 0 ? (
+      ) : error ? null : logs.length === 0 ? (
         <div style={{ background: adminTheme.panel, border: `1px solid ${adminTheme.border}`, borderRadius: 12, padding: 32, textAlign: 'center', color: adminTheme.textFaint, fontSize: 12.5 }}>No audit entries yet.</div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
