@@ -98,6 +98,7 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
   const [msg, setMsg] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectBox, setShowRejectBox] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [services, setServices] = useState<ProviderService[] | null>(null);
   const [servicesLoading, setServicesLoading] = useState(false);
@@ -245,6 +246,23 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
       .finally(() => setAuditLoading(false));
   }, [tab, provider?.userId]);
 
+  // AdminProviderRequestsScreen's equivalent queue already previews this
+  // same service_provider_requests.document_url as a signed URL from the
+  // private verification-docs bucket; this per-provider overview tab just
+  // printed the raw storage path as unlinked text, which an admin can't
+  // open (it isn't a public URL) and which leaks the internal storage key
+  // shape for no benefit.
+  const handlePreviewDocument = async () => {
+    if (!request?.document_url) return;
+    setPreviewLoading(true);
+    try {
+      const key = request.document_url.replace(/^verification-docs\//, '');
+      const { data, error } = await supabase.storage.from('verification-docs').createSignedUrl(key, 60);
+      if (error || !data?.signedUrl) throw new Error(error?.message || 'Could not load document');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: any) { flash(false, e.message || 'Could not open document'); } finally { setPreviewLoading(false); }
+  };
+
   const decide = async (status: 'approved' | 'rejected') => {
     if (!request) return;
     if (status === 'rejected' && !rejectReason.trim()) { flash(false, 'A rejection reason is required.'); return; }
@@ -339,7 +357,9 @@ export function AdminProviderDetail({ providerId, isSuperAdmin, isMobile, onBack
               </div>
               {request.admin_note && <div style={{ fontSize: 12, color: adminTheme.textMuted, marginBottom: 8 }}>Note: {request.admin_note}</div>}
               {request.document_url && (
-                <div style={{ fontSize: 12, color: adminTheme.textFaint, marginBottom: 8 }}>Document on file: {request.document_url}</div>
+                <button onClick={handlePreviewDocument} disabled={previewLoading} style={{ display: 'block', background: 'none', border: 'none', padding: 0, marginBottom: 8, color: adminTheme.accentFrom, fontSize: 12, fontWeight: 600, textDecoration: 'underline', cursor: previewLoading ? 'wait' : 'pointer' }}>
+                  {previewLoading ? 'Opening…' : 'Preview uploaded document ↗'}
+                </button>
               )}
               {request.status === 'pending' && (
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 8 }}>

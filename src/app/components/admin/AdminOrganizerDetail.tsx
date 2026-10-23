@@ -84,6 +84,7 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
   const [verifFetched, setVerifFetched] = useState(false);
   const [rejectReason, setRejectReason] = useState('');
   const [showRejectBox, setShowRejectBox] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [withdrawals, setWithdrawals] = useState<WithdrawalRow[] | null>(null);
   const [wallet, setWallet] = useState<WalletRow | null>(null);
@@ -166,6 +167,23 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
       .then(({ data }: any) => setAudit(data || []))
       .finally(() => setAuditLoading(false));
   }, [tab, organizerId]);
+
+  // AdminVerificationScreen's equivalent queue already has a working
+  // document preview (signed URL from the private verification-docs
+  // bucket); this per-organizer detail screen fetched document_url into
+  // state but never rendered anything for it, so an admin approving or
+  // rejecting CAC verification here had no way to see the actual
+  // submitted document.
+  const handlePreviewDocument = async () => {
+    if (!verif?.document_url) return;
+    setPreviewLoading(true);
+    try {
+      const key = verif.document_url.replace(/^verification-docs\//, '');
+      const { data, error } = await supabase.storage.from('verification-docs').createSignedUrl(key, 60);
+      if (error || !data?.signedUrl) throw new Error(error?.message || 'Could not load document');
+      window.open(data.signedUrl, '_blank', 'noopener,noreferrer');
+    } catch (e: any) { flash(false, e.message || 'Could not open document'); } finally { setPreviewLoading(false); }
+  };
 
   const decide = async (status: 'approved' | 'rejected') => {
     if (!verif) return;
@@ -304,6 +322,11 @@ export function AdminOrganizerDetail({ organizerId, isSuperAdmin, isMobile, onBa
             <div>Submitted: {new Date(verif.created_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}
               {verif.reviewed_at && ` · Reviewed ${new Date(verif.reviewed_at).toLocaleDateString('en-NG', { dateStyle: 'medium' })}`}</div>
             {verif.admin_note && <div>Note: {verif.admin_note}</div>}
+            {verif.document_url && (
+              <button onClick={handlePreviewDocument} disabled={previewLoading} style={{ background: 'none', border: 'none', padding: 0, marginTop: 4, color: adminTheme.accentFrom, fontSize: 12.5, fontWeight: 600, textDecoration: 'underline', cursor: previewLoading ? 'wait' : 'pointer' }}>
+                {previewLoading ? 'Opening…' : 'Preview uploaded CAC document ↗'}
+              </button>
+            )}
 
             {verif.status === 'pending' && (
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 12 }}>
